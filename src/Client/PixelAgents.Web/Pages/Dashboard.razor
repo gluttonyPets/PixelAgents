@@ -1,0 +1,57 @@
+@page "/dashboard"
+@inject ApiClient Api
+
+<PageTitle>PixelAgents - Dashboard</PageTitle>
+
+<div class="dashboard-container">
+    <h2 class="pixel-title">Dashboard</h2>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">@_agentCount</div>
+            <div class="stat-label">Active Agents</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_projectCount</div>
+            <div class="stat-label">Projects</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">@_completedPipelines</div>
+            <div class="stat-label">Completed</div>
+        </div>
+    </div>
+
+    <div class="modules-section">
+        <h3 class="pixel-subtitle">Registered Modules</h3>
+        <div class="modules-grid">
+            @foreach (var module in _modules)
+            {
+                <div class="module-card">
+                    <div class="module-header">
+                        <span class="module-icon">&#9632;</span>
+                        <h4>@module.DisplayName</h4>
+                    </div>
+                    <p class="module-role">@module.Role</p>
+                    <p class="module-desc">@module.Description</p>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private int _agentCount = 0;
+    private int _projectCount = 0;
+    private int _completedPipelines = 0;
+    private List<ModuleInfoDto> _modules = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _modules = await Api.GetModulesAsync();
+            _agentCount = _modules.Count;
+        }
+        catch { }
+    }
+}

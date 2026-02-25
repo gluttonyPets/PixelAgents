@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>PixelAgents.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.2" />
+    <PackageReference Include="Microsoft.SemanticKernel" Version="1.6.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PixelAgents.Application\PixelAgents.Application.csproj" />
+    <ProjectReference Include="..\PixelAgents.Domain\PixelAgents.Domain.csproj" />
+    <ProjectReference Include="..\PixelAgents.AgentSystem\PixelAgents.AgentSystem.csproj" />
+  </ItemGroup>
+
+</Project>

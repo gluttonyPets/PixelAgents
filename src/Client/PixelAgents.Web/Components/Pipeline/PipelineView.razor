@@ -1,0 +1,49 @@
+@using PixelAgents.Shared.DTOs
+
+<div class="pipeline-view">
+    @if (Pipeline is null)
+    {
+        <div class="pipeline-empty">No active pipeline</div>
+    }
+    else
+    {
+        <h4 class="pipeline-name">@Pipeline.Name</h4>
+        <div class="pipeline-steps">
+            @foreach (var step in Pipeline.Steps)
+            {
+                <div class="pipeline-step @step.Status.ToLower()">
+                    <div class="step-number">@step.Order</div>
+                    <div class="step-info">
+                        <span class="step-name">@step.Name</span>
+                        <span class="step-agent">@step.AssignedAgentName</span>
+                    </div>
+                    <div class="step-status-icon">
+                        @switch (step.Status.ToLower())
+                        {
+                            case "completed":
+                                <span>&#10003;</span>
+                                break;
+                            case "inprogress":
+                                <span class="spinner">&#9881;</span>
+                                break;
+                            case "failed":
+                                <span>&#10007;</span>
+                                break;
+                            default:
+                                <span>&#9679;</span>
+                                break;
+                        }
+                    </div>
+                </div>
+                @if (step.Order < Pipeline.Steps.Count)
+                {
+                    <div class="step-connector"></div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public PipelineDto? Pipeline { get; set; }
+}

@@ -1,0 +1,51 @@
+@using PixelAgents.Shared.DTOs
+
+<div class="office-scene">
+    <div class="office-floor">
+        @* Office grid - 8x6 tile grid *@
+        @for (int y = 0; y < 6; y++)
+        {
+            <div class="office-row">
+                @for (int x = 0; x < 8; x++)
+                {
+                    var tileX = x;
+                    var tileY = y;
+                    var agentHere = GetAgentAtPosition(tileX, tileY);
+                    <div class="office-tile @(agentHere is not null ? "has-agent" : "") @GetTileClass(tileX, tileY)">
+                        @if (agentHere is not null)
+                        {
+                            var visual = AgentVisuals?.GetValueOrDefault(agentHere.Id);
+                            <div class="agent-sprite @(visual?.CurrentAnimation ?? "idle") @(visual?.Status.ToString().ToLower() ?? "idle")">
+                                <div class="sprite-body"></div>
+                                <div class="agent-label">@agentHere.Name</div>
+                                @if (visual?.CurrentActivity is not null)
+                                {
+                                    <div class="speech-bubble">@visual.CurrentActivity</div>
+                                }
+                            </div>
+                            <div class="desk desk-@agentHere.Appearance.DeskStyle"></div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public List<AgentDto> Agents { get; set; } = [];
+    [Parameter] public Dictionary<Guid, AgentVisualState>? AgentVisuals { get; set; }
+
+    private AgentDto? GetAgentAtPosition(int x, int y)
+    {
+        return Agents.FirstOrDefault(a =>
+            a.Appearance.OfficePositionX == x && a.Appearance.OfficePositionY == y);
+    }
+
+    private string GetTileClass(int x, int y)
+    {
+        if (x == 3 || x == 4) return "hallway";
+        if (y == 0) return "wall";
+        return "floor";
+    }
+}

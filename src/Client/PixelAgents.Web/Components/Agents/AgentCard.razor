@@ -1,0 +1,42 @@
+@using PixelAgents.Shared.DTOs
+
+<div class="agent-card @(VisualState?.Status.ToString().ToLower() ?? "idle")">
+    <div class="agent-card-header">
+        <div class="agent-avatar-mini">
+            <div class="sprite-mini @(VisualState?.CurrentAnimation ?? "idle")"></div>
+        </div>
+        <div class="agent-info">
+            <h4 class="agent-name">@Agent.Name</h4>
+            <span class="agent-role">@Agent.Role</span>
+        </div>
+        <div class="status-indicator @(VisualState?.Status.ToString().ToLower() ?? "idle")"></div>
+    </div>
+
+    @if (VisualState?.CurrentActivity is not null)
+    {
+        <div class="agent-activity">
+            <span class="activity-indicator"></span>
+            @VisualState.CurrentActivity
+        </div>
+    }
+
+    <div class="agent-skills">
+        @foreach (var skill in Agent.Skills.Take(3))
+        {
+            <div class="skill-badge">
+                <span class="skill-name">@skill.Name</span>
+                <div class="skill-level">
+                    @for (int i = 0; i < 5; i++)
+                    {
+                        <span class="level-pip @(i < skill.Level ? "filled" : "")"></span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public AgentDto Agent { get; set; } = null!;
+    [Parameter] public AgentVisualState? VisualState { get; set; }
+}

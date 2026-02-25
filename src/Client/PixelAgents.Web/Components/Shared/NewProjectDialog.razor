@@ -1,0 +1,60 @@
+@using PixelAgents.Shared.DTOs
+
+<div class="dialog-overlay" @onclick="OnClose">
+    <div class="dialog pixel-dialog" @onclick:stopPropagation="true">
+        <h3 class="dialog-title">New Content Project</h3>
+
+        <div class="form-group">
+            <label class="pixel-label">Topic</label>
+            <input class="pixel-input" @bind="_topic" placeholder="e.g., Artificial Intelligence trends" />
+        </div>
+
+        <div class="form-group">
+            <label class="pixel-label">Target Platforms</label>
+            <div class="platform-checkboxes">
+                @foreach (var platform in _availablePlatforms)
+                {
+                    <label class="pixel-checkbox">
+                        <input type="checkbox"
+                               checked="@_selectedPlatforms.Contains(platform)"
+                               @onchange="@(e => TogglePlatform(platform, (bool)(e.Value ?? false)))" />
+                        <span>@platform</span>
+                    </label>
+                }
+            </div>
+        </div>
+
+        <div class="dialog-actions">
+            <button class="pixel-btn" @onclick="OnClose">Cancel</button>
+            <button class="pixel-btn primary" @onclick="HandleCreate" disabled="@(string.IsNullOrWhiteSpace(_topic))">
+                Create & Run Pipeline
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<CreateContentProjectRequest> OnCreate { get; set; }
+    [Parameter] public Guid WorkspaceId { get; set; }
+
+    private string _topic = "";
+    private readonly List<string> _selectedPlatforms = ["Instagram"];
+    private readonly string[] _availablePlatforms = ["Instagram", "Twitter", "Facebook", "TikTok", "LinkedIn", "YouTube"];
+
+    private void TogglePlatform(string platform, bool selected)
+    {
+        if (selected && !_selectedPlatforms.Contains(platform))
+            _selectedPlatforms.Add(platform);
+        else if (!selected)
+            _selectedPlatforms.Remove(platform);
+    }
+
+    private async Task HandleCreate()
+    {
+        if (string.IsNullOrWhiteSpace(_topic)) return;
+
+        await OnCreate.InvokeAsync(new CreateContentProjectRequest(
+            _topic, _selectedPlatforms, WorkspaceId, null));
+    }
+}

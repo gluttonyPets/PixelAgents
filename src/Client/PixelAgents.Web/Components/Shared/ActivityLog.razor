@@ -1,0 +1,21 @@
+<div class="activity-log">
+    @if (Entries.Count == 0)
+    {
+        <div class="log-empty">No activity yet. Create a workspace to get started.</div>
+    }
+    else
+    {
+        @foreach (var entry in Entries.Take(20))
+        {
+            <div class="log-entry @entry.Type">
+                <span class="log-time">@entry.Timestamp.ToString("HH:mm:ss")</span>
+                <span class="log-agent">[@entry.AgentName]</span>
+                <span class="log-message">@entry.Message</span>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public List<ActivityLogEntry> Entries { get; set; } = [];
+}
