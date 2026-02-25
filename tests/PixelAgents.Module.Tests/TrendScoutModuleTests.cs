@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using PixelAgents.AgentSystem.Abstractions;
 using PixelAgents.Module.TrendScout;
+using Xunit;
 
 namespace PixelAgents.Module.Tests;
 
