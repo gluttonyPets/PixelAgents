@@ -27,7 +27,7 @@ namespace Server.Services
             if (existing is not null)
                 throw new Exception("El email ya esta registrado");
 
-            var dbName = $"user_{Guid.NewGuid():N}";
+            var dbName = $"pixel_user_{Guid.NewGuid():N}";
 
             // Create tenant database
             var adminCs = _cfg.GetConnectionString("Core")!;
