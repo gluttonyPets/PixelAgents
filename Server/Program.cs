@@ -43,7 +43,14 @@ builder.Services.ConfigureApplicationCookie(opt =>
 // --- Services ---
 builder.Services.AddScoped<IAccountService, AccountService>();
 
+// --- Swagger ---
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 var app = builder.Build();
+
+app.UseSwagger();
+app.UseSwaggerUI();
 
 // --- Create core DB on startup ---
 using (var scope = app.Services.CreateScope())
