@@ -4,6 +4,7 @@ using Server;
 using Server.Data;
 using Server.Models;
 using Server.Services;
+using Server.Services.Ai;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,6 +44,12 @@ builder.Services.ConfigureApplicationCookie(opt =>
 // --- Services ---
 builder.Services.AddScoped<IAccountService, AccountService>();
 builder.Services.AddSingleton<ITenantDbContextFactory, TenantDbContextFactory>();
+
+// --- AI Providers ---
+builder.Services.AddSingleton<IAiProvider, OpenAiProvider>();
+builder.Services.AddSingleton<IAiProvider, AnthropicProvider>();
+builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
+builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
 
 // --- Swagger ---
 builder.Services.AddEndpointsApiExplorer();
@@ -512,6 +519,50 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
 }).RequireAuthorization();
 
 // ==================== Execution Endpoints ====================
+
+app.MapPost("/api/projects/{projectId}/execute", async (
+    Guid projectId, ExecuteProjectRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IPipelineExecutor executor) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var user = await um.GetUserAsync(ctx.User);
+    var claims = await um.GetClaimsAsync(user!);
+    var tenantDbName = claims.First(c => c.Type == "db_name").Value;
+
+    try
+    {
+        var execution = await executor.ExecuteAsync(projectId, req.UserInput, db, tenantDbName);
+
+        var exec = await db.ProjectExecutions
+            .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .ThenInclude(s => s.Files)
+            .Include(e => e.StepExecutions)
+                .ThenInclude(s => s.ProjectModule)
+                    .ThenInclude(pm => pm.AiModule)
+            .FirstAsync(e => e.Id == execution.Id);
+
+        var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+            new StepExecutionResponse(s.Id, s.ProjectModuleId,
+                s.ProjectModule.AiModule.Name, s.StepOrder,
+                s.Status, s.InputData, s.OutputData, s.ErrorMessage,
+                s.CreatedAt, s.CompletedAt,
+                s.Files.Select(f => new ExecutionFileResponse(
+                    f.Id, f.FileName, f.ContentType, f.FilePath,
+                    f.Direction, f.FileSize, f.CreatedAt)).ToList()
+            )).ToList();
+
+        return Results.Ok(new ExecutionDetailResponse(
+            exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
+            exec.CreatedAt, exec.CompletedAt, steps));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
 
 app.MapGet("/api/projects/{projectId}/executions", async (
     Guid projectId, HttpContext ctx,

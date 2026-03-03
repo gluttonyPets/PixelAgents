@@ -38,6 +38,7 @@ namespace Server.Models
         int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
 
     // ── Execution ──
+    public record ExecuteProjectRequest(string? UserInput);
     public record ExecutionResponse(
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
         DateTime CreatedAt, DateTime? CompletedAt);
