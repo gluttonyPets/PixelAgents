@@ -51,12 +51,25 @@ builder.Services.AddSingleton<IAiProvider, AnthropicProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
 
+// --- CORS (Blazor Client) ---
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("BlazorClient", policy =>
+    {
+        policy.WithOrigins("http://localhost:5100", "https://localhost:5101")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 // --- Swagger ---
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+app.UseCors("BlazorClient");
 app.UseSwagger();
 app.UseSwaggerUI();
 

@@ -1,0 +1,96 @@
+@page "/apikeys"
+@inject ApiClient Api
+
+<h2>API Keys</h2>
+
+<div class="card">
+    <h3>Nueva API Key</h3>
+    @if (_error is not null)
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+    <div class="form-row">
+        <div class="form-group">
+            <label>Nombre</label>
+            <input type="text" @bind="_name" placeholder="Mi clave OpenAI" />
+        </div>
+        <div class="form-group">
+            <label>Proveedor</label>
+            <select @bind="_provider">
+                <option value="OpenAI">OpenAI</option>
+                <option value="Anthropic">Anthropic</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>API Key</label>
+        <input type="password" @bind="_key" placeholder="sk-..." />
+    </div>
+    <button class="btn btn-primary" @onclick="Create" disabled="@_loading">Crear</button>
+</div>
+
+@if (_keys.Count > 0)
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Proveedor</th>
+                <th>Fecha</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var k in _keys)
+            {
+                <tr>
+                    <td>@k.Name</td>
+                    <td><span class="badge badge-info">@k.ProviderType</span></td>
+                    <td class="text-sm text-muted">@k.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td><button class="btn btn-danger" @onclick="() => Delete(k.Id)">Eliminar</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (!_loading)
+{
+    <p class="text-muted">No hay API Keys configuradas.</p>
+}
+
+@code {
+    private List<ApiKeyResponse> _keys = [];
+    private bool _loading;
+    private string? _error;
+
+    private string _name = "";
+    private string _provider = "OpenAI";
+    private string _key = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        try { _keys = await Api.GetApiKeysAsync(); } catch { }
+        _loading = false;
+    }
+
+    private async Task Create()
+    {
+        _error = null; _loading = true;
+        var (ok, error) = await Api.CreateApiKeyAsync(new CreateApiKeyRequest(_name, _provider, _key));
+        if (ok) { _name = ""; _key = ""; await Load(); }
+        else _error = error;
+        _loading = false;
+    }
+
+    private async Task Delete(Guid id)
+    {
+        await Api.DeleteApiKeyAsync(id);
+        await Load();
+    }
+}

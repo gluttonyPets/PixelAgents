@@ -1,0 +1,30 @@
+@inject ApiClient Api
+
+<nav class="sidebar">
+    <div class="sidebar-brand">PixelAgents</div>
+
+    <NavLink href="/" Match="NavLinkMatch.All">Auth</NavLink>
+    <NavLink href="/apikeys">API Keys</NavLink>
+    <NavLink href="/modules">Modulos IA</NavLink>
+    <NavLink href="/projects">Proyectos</NavLink>
+
+    <div class="auth-status">
+        @if (_user is not null)
+        {
+            <div>@_user.Email</div>
+        }
+        else
+        {
+            <div>No autenticado</div>
+        }
+    </div>
+</nav>
+
+@code {
+    private AuthResponse? _user;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _user = await Api.GetMeAsync(); } catch { }
+    }
+}

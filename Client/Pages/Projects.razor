@@ -1,0 +1,91 @@
+@page "/projects"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<h2>Proyectos</h2>
+
+<div class="card">
+    <h3>Nuevo Proyecto</h3>
+    @if (_error is not null)
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+    <div class="form-row">
+        <div class="form-group">
+            <label>Nombre</label>
+            <input type="text" @bind="_name" placeholder="Mi pipeline de IA" />
+        </div>
+        <div class="form-group">
+            <label>Descripcion</label>
+            <input type="text" @bind="_desc" placeholder="Pipeline que genera texto e imagen" />
+        </div>
+    </div>
+    <button class="btn btn-primary" @onclick="Create" disabled="@_loading">Crear Proyecto</button>
+</div>
+
+@if (_projects.Count > 0)
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Descripcion</th>
+                <th>Fecha</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in _projects)
+            {
+                <tr>
+                    <td><a class="link" @onclick="() => GoTo(p.Id)">@p.Name</a></td>
+                    <td class="text-sm text-muted">@(p.Description ?? "-")</td>
+                    <td class="text-sm text-muted">@p.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    <td><button class="btn btn-danger" @onclick="() => Delete(p.Id)">Eliminar</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (!_loading)
+{
+    <p class="text-muted">No hay proyectos creados.</p>
+}
+
+@code {
+    private List<ProjectResponse> _projects = [];
+    private bool _loading;
+    private string? _error;
+
+    private string _name = "";
+    private string _desc = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        try { _projects = await Api.GetProjectsAsync(); } catch { }
+        _loading = false;
+    }
+
+    private async Task Create()
+    {
+        _error = null; _loading = true;
+        var (ok, error) = await Api.CreateProjectAsync(new CreateProjectRequest(_name, string.IsNullOrWhiteSpace(_desc) ? null : _desc));
+        if (ok) { _name = ""; _desc = ""; await Load(); }
+        else _error = error;
+        _loading = false;
+    }
+
+    private void GoTo(Guid id) => Nav.NavigateTo($"/projects/{id}");
+
+    private async Task Delete(Guid id)
+    {
+        await Api.DeleteProjectAsync(id);
+        await Load();
+    }
+}

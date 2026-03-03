@@ -1,0 +1,279 @@
+@page "/projects/{ProjectId:guid}"
+@inject ApiClient Api
+
+<h2>@(_project?.Name ?? "Proyecto")</h2>
+
+@if (_project is null)
+{
+    <p class="text-muted">Cargando...</p>
+}
+else
+{
+    <p class="text-muted text-sm mb-1">@(_project.Description ?? "") | Creado: @_project.CreatedAt.ToString("yyyy-MM-dd HH:mm")</p>
+
+    <!-- Pipeline Steps -->
+    <h3>Pipeline</h3>
+
+    @if (_project.Modules.Count > 0)
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Paso</th>
+                    <th>Modulo</th>
+                    <th>Tipo</th>
+                    <th>InputMapping</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var pm in _project.Modules.OrderBy(m => m.StepOrder))
+                {
+                    <tr>
+                        <td>@pm.StepOrder</td>
+                        <td>@(pm.StepName ?? "-")</td>
+                        <td>@pm.AiModuleName</td>
+                        <td><span class="badge badge-warning">@pm.ModuleType</span></td>
+                        <td class="text-sm">@(pm.InputMapping ?? "user")</td>
+                        <td><button class="btn btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else
+    {
+        <p class="text-muted">Pipeline vacio. Agrega pasos abajo.</p>
+    }
+
+    <!-- Add Step -->
+    <div class="card">
+        <h3>Agregar Paso</h3>
+        @if (_stepError is not null)
+        {
+            <div class="alert alert-error">@_stepError</div>
+        }
+        <div class="form-row">
+            <div class="form-group">
+                <label>Modulo</label>
+                <select @bind="_stepModuleId">
+                    <option value="">-- Seleccionar --</option>
+                    @foreach (var m in _modules)
+                    {
+                        <option value="@m.Id">@m.Name (@m.ProviderType / @m.ModuleType)</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Step Order</label>
+                <input type="number" @bind="_stepOrder" />
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Nombre del paso</label>
+                <input type="text" @bind="_stepName" placeholder="Generar texto" />
+            </div>
+            <div class="form-group">
+                <label>InputMapping</label>
+                <select @bind="_inputMapping">
+                    <option value='{"source":"user"}'>Entrada del usuario</option>
+                    <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
+                    <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Configuracion (JSON opcional)</label>
+            <textarea @bind="_stepConfig" placeholder='{"systemPrompt":"..."}'></textarea>
+        </div>
+        <button class="btn btn-primary" @onclick="AddStep" disabled="@_loading">Agregar</button>
+    </div>
+
+    <!-- Execute -->
+    <div class="card">
+        <h3>Ejecutar Pipeline</h3>
+        @if (_execError is not null)
+        {
+            <div class="alert alert-error">@_execError</div>
+        }
+        <div class="form-group">
+            <label>Entrada del usuario</label>
+            <textarea @bind="_userInput" rows="3" placeholder="Escribe tu prompt aqui..."></textarea>
+        </div>
+        <button class="btn btn-success" @onclick="Execute" disabled="@_executing">
+            @if (_executing)
+            {
+                <span class="spinner"></span>
+                <span>Ejecutando...</span>
+            }
+            else
+            {
+                <span>Ejecutar</span>
+            }
+        </button>
+    </div>
+
+    <!-- Execution Result -->
+    @if (_result is not null)
+    {
+        <h3>Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span></h3>
+
+        @foreach (var step in _result.Steps.OrderBy(s => s.StepOrder))
+        {
+            <div class="step-card">
+                <div class="step-header">
+                    <strong>Paso @step.StepOrder: @step.ModuleName</strong>
+                    <span class="badge @StatusBadge(step.Status)">@step.Status</span>
+                </div>
+
+                @if (step.ErrorMessage is not null)
+                {
+                    <div class="alert alert-error">@step.ErrorMessage</div>
+                }
+
+                @if (step.InputData is not null)
+                {
+                    <p class="text-sm text-muted">Input:</p>
+                    <div class="output-block">@step.InputData</div>
+                }
+
+                @if (step.OutputData is not null)
+                {
+                    <p class="text-sm text-muted mt-1">Output:</p>
+                    <div class="output-block">@step.OutputData</div>
+                }
+
+                @if (step.Files.Count > 0)
+                {
+                    <p class="text-sm text-muted mt-1">Archivos:</p>
+                    @foreach (var f in step.Files)
+                    {
+                        <div class="text-sm">@f.FileName (@f.ContentType, @(f.FileSize / 1024) KB)</div>
+                    }
+                }
+            </div>
+        }
+    }
+
+    <!-- Execution History -->
+    <h3>Historial de Ejecuciones</h3>
+    @if (_executions.Count > 0)
+    {
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Status</th>
+                    <th>Fecha</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var e in _executions)
+                {
+                    <tr>
+                        <td class="text-sm">@e.Id.ToString()[..8]...</td>
+                        <td><span class="badge @StatusBadge(e.Status)">@e.Status</span></td>
+                        <td class="text-sm text-muted">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td><button class="btn btn-sm btn-primary" @onclick="() => LoadExecution(e.Id)">Ver</button></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    else
+    {
+        <p class="text-muted">Sin ejecuciones aun.</p>
+    }
+}
+
+@code {
+    [Parameter] public Guid ProjectId { get; set; }
+
+    private ProjectDetailResponse? _project;
+    private List<AiModuleResponse> _modules = [];
+    private List<ExecutionResponse> _executions = [];
+    private ExecutionDetailResponse? _result;
+
+    private bool _loading;
+    private bool _executing;
+
+    // Add step
+    private string _stepModuleId = "";
+    private int _stepOrder = 1;
+    private string _stepName = "";
+    private string _inputMapping = "{\"source\":\"user\"}";
+    private string _stepConfig = "";
+    private string? _stepError;
+
+    // Execute
+    private string _userInput = "";
+    private string? _execError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAll();
+    }
+
+    private async Task LoadAll()
+    {
+        _loading = true;
+        try
+        {
+            _project = await Api.GetProjectDetailAsync(ProjectId);
+            _modules = await Api.GetModulesAsync();
+            _executions = await Api.GetExecutionsAsync(ProjectId);
+            if (_project is not null)
+                _stepOrder = _project.Modules.Count + 1;
+        }
+        catch { }
+        _loading = false;
+    }
+
+    private async Task AddStep()
+    {
+        _stepError = null;
+        if (!Guid.TryParse(_stepModuleId, out var moduleId))
+        {
+            _stepError = "Selecciona un modulo";
+            return;
+        }
+        _loading = true;
+        var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping,
+            string.IsNullOrWhiteSpace(_stepConfig) ? null : _stepConfig);
+        var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
+        if (ok) { _stepName = ""; _stepConfig = ""; await LoadAll(); }
+        else _stepError = error;
+        _loading = false;
+    }
+
+    private async Task RemoveStep(Guid pmId)
+    {
+        await Api.DeleteProjectModuleAsync(ProjectId, pmId);
+        await LoadAll();
+    }
+
+    private async Task Execute()
+    {
+        _execError = null; _executing = true; _result = null;
+        var (ok, result, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput);
+        if (ok) { _result = result; _executions = await Api.GetExecutionsAsync(ProjectId); }
+        else _execError = error;
+        _executing = false;
+    }
+
+    private async Task LoadExecution(Guid id)
+    {
+        _result = await Api.GetExecutionDetailAsync(id);
+    }
+
+    private static string StatusBadge(string status) => status switch
+    {
+        "Completed" => "badge-success",
+        "Failed" => "badge-danger",
+        "Running" => "badge-warning",
+        _ => "badge-info"
+    };
+}

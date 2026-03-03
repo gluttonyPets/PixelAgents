@@ -1,0 +1,137 @@
+@page "/modules"
+@inject ApiClient Api
+
+<h2>Modulos IA</h2>
+
+<div class="card">
+    <h3>Nuevo Modulo</h3>
+    @if (_error is not null)
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+    <div class="form-row">
+        <div class="form-group">
+            <label>Nombre</label>
+            <input type="text" @bind="_name" placeholder="GPT-4o Text" />
+        </div>
+        <div class="form-group">
+            <label>Descripcion</label>
+            <input type="text" @bind="_desc" placeholder="Modulo de texto con GPT-4o" />
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Proveedor</label>
+            <select @bind="_provider">
+                <option value="OpenAI">OpenAI</option>
+                <option value="Anthropic">Anthropic</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Tipo</label>
+            <select @bind="_moduleType">
+                <option value="Text">Text</option>
+                <option value="Image">Image</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Modelo</label>
+            <input type="text" @bind="_model" placeholder="gpt-4o / claude-sonnet-4-20250514" />
+        </div>
+        <div class="form-group">
+            <label>API Key</label>
+            <select @bind="_apiKeyId">
+                <option value="">-- Seleccionar --</option>
+                @foreach (var k in _keys)
+                {
+                    <option value="@k.Id">@k.Name (@k.ProviderType)</option>
+                }
+            </select>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Configuracion (JSON opcional)</label>
+        <textarea @bind="_config" placeholder='{"systemPrompt":"Eres un asistente","temperature":0.7}'></textarea>
+    </div>
+    <button class="btn btn-primary" @onclick="Create" disabled="@_loading">Crear Modulo</button>
+</div>
+
+@if (_modules.Count > 0)
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Proveedor</th>
+                <th>Tipo</th>
+                <th>Modelo</th>
+                <th>API Key</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var m in _modules)
+            {
+                <tr>
+                    <td>@m.Name</td>
+                    <td><span class="badge badge-info">@m.ProviderType</span></td>
+                    <td><span class="badge badge-warning">@m.ModuleType</span></td>
+                    <td class="text-sm">@m.ModelName</td>
+                    <td class="text-sm text-muted">@(m.ApiKeyName ?? "-")</td>
+                    <td><button class="btn btn-danger" @onclick="() => Delete(m.Id)">Eliminar</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (!_loading)
+{
+    <p class="text-muted">No hay modulos creados.</p>
+}
+
+@code {
+    private List<AiModuleResponse> _modules = [];
+    private List<ApiKeyResponse> _keys = [];
+    private bool _loading;
+    private string? _error;
+
+    private string _name = "";
+    private string _desc = "";
+    private string _provider = "OpenAI";
+    private string _moduleType = "Text";
+    private string _model = "";
+    private string _apiKeyId = "";
+    private string _config = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        try
+        {
+            _modules = await Api.GetModulesAsync();
+            _keys = await Api.GetApiKeysAsync();
+        }
+        catch { }
+        _loading = false;
+    }
+
+    private async Task Create()
+    {
+        _error = null; _loading = true;
+        Guid? keyId = Guid.TryParse(_apiKeyId, out var id) ? id : null;
+        var req = new CreateAiModuleRequest(_name, _desc, _provider, _moduleType, _model, keyId,
+            string.IsNullOrWhiteSpace(_config) ? null : _config);
+        var (ok, error) = await Api.CreateModuleAsync(req);
+        if (ok) { _name = ""; _desc = ""; _model = ""; _config = ""; _modules = await Api.GetModulesAsync(); }
+        else _error = error;
+        _loading = false;
+    }
+
+    private async Task Delete(Guid moduleId)
+    {
+        await Api.DeleteModuleAsync(moduleId);
+        _modules = await Api.GetModulesAsync();
+    }
+}
