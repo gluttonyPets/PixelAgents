@@ -5,6 +5,7 @@ using Server.Data;
 using Server.Models;
 using Server.Services;
 using Server.Services.Ai;
+using Server.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -51,6 +52,8 @@ builder.Services.AddSingleton<IAiProvider, OpenAiProvider>();
 builder.Services.AddSingleton<IAiProvider, AnthropicProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
+builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
+builder.Services.AddSignalR();
 
 // --- CORS (Blazor Client) ---
 builder.Services.AddCors(options =>
@@ -661,5 +664,7 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     var bytes = await File.ReadAllBytesAsync(fullPath);
     return Results.File(bytes, file.ContentType, file.FileName);
 }).RequireAuthorization();
+
+app.MapHub<ExecutionHub>("/hubs/execution");
 
 app.Run();

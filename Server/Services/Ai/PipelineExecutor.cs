@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Server.Data;
+using Server.Hubs;
 using Server.Models;
 
 namespace Server.Services.Ai
@@ -8,10 +9,12 @@ namespace Server.Services.Ai
     public class PipelineExecutor : IPipelineExecutor
     {
         private readonly IAiProviderRegistry _registry;
+        private readonly IExecutionLogger _logger;
 
-        public PipelineExecutor(IAiProviderRegistry registry)
+        public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger)
         {
             _registry = registry;
+            _logger = logger;
         }
 
         public async Task<ProjectExecution> ExecuteAsync(
@@ -46,6 +49,9 @@ namespace Server.Services.Ai
 
             Directory.CreateDirectory(workspacePath);
 
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Iniciando pipeline con {project.ProjectModules.Count} paso(s)");
+
             var stepResults = new Dictionary<int, AiResult>();
             var stepOutputs = new Dictionary<int, StepOutput>();
             var stepModuleTypes = new Dictionary<int, string>();
@@ -67,6 +73,11 @@ namespace Server.Services.Ai
 
                 try
                 {
+                    var stepName = pm.StepName ?? pm.AiModule.Name;
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        pm.StepOrder, stepName);
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada para modulo '{pm.AiModule.Name}'");
 
@@ -82,9 +93,20 @@ namespace Server.Services.Ai
                         ? JsonSerializer.Serialize(new { prompt = inputs[0] })
                         : JsonSerializer.Serialize(new { prompts = inputs, count = inputs.Count });
 
+                    if (inputs.Count > 1)
+                    {
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Recibidos {inputs.Count} inputs del paso anterior — se ejecutara {inputs.Count} veces",
+                            pm.StepOrder, stepName);
+                    }
+
                     if (pm.AiModule.ModuleType == "Text")
                     {
                         // Text modules: single call, structured JSON output
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Enviando prompt al modelo de texto ({pm.AiModule.ModelName})...",
+                            pm.StepOrder, stepName);
+
                         var context = new AiExecutionContext
                         {
                             ModuleType = pm.AiModule.ModuleType,
@@ -101,6 +123,8 @@ namespace Server.Services.Ai
 
                         if (!result.Success)
                         {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                $"Error en texto: {result.Error}", pm.StepOrder, stepName);
                             await FailStep(stepExecution, execution, result.Error!, db);
                             return execution;
                         }
@@ -129,6 +153,13 @@ namespace Server.Services.Ai
                         db.ExecutionFiles.Add(execFile);
 
                         stepExecution.OutputData = JsonSerializer.Serialize(stepOutput);
+
+                        var itemsMsg = stepOutput.Items.Count > 0
+                            ? $" — {stepOutput.Items.Count} items generados"
+                            : "";
+                        await _logger.LogAsync(projectId, executionId, "success",
+                            $"Texto generado correctamente{itemsMsg}",
+                            pm.StepOrder, stepName);
                     }
                     else if (pm.AiModule.ModuleType == "Image")
                     {
@@ -137,6 +168,12 @@ namespace Server.Services.Ai
 
                         for (var i = 0; i < inputs.Count; i++)
                         {
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                inputs.Count > 1
+                                    ? $"Generando imagen {i + 1}/{inputs.Count}..."
+                                    : $"Generando imagen...",
+                                pm.StepOrder, stepName);
+
                             var singleInput = inputs[i];
 
                             // Apply truncation safety
@@ -158,6 +195,9 @@ namespace Server.Services.Ai
 
                             if (!result.Success)
                             {
+                                await _logger.LogAsync(projectId, executionId, "error",
+                                    $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}",
+                                    pm.StepOrder, stepName);
                                 await FailStep(stepExecution, execution,
                                     $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}", db);
                                 return execution;
@@ -206,6 +246,10 @@ namespace Server.Services.Ai
                         var imageOutput = OutputSchemaHelper.BuildImageOutput(outputFiles, pm.AiModule.ModelName);
                         stepOutputs[pm.StepOrder] = imageOutput;
                         stepExecution.OutputData = JsonSerializer.Serialize(imageOutput);
+
+                        await _logger.LogAsync(projectId, executionId, "success",
+                            $"{outputFiles.Count} imagen(es) generada(s) correctamente",
+                            pm.StepOrder, stepName);
                     }
                     else
                     {
@@ -266,6 +310,9 @@ namespace Server.Services.Ai
                 }
                 catch (Exception ex)
                 {
+                    await _logger.LogAsync(projectId, executionId, "error",
+                        $"Error inesperado: {ex.Message}", pm.StepOrder, pm.StepName ?? pm.AiModule.Name);
+
                     stepExecution.Status = "Failed";
                     stepExecution.ErrorMessage = ex.Message;
                     stepExecution.CompletedAt = DateTime.UtcNow;
@@ -281,6 +328,8 @@ namespace Server.Services.Ai
             execution.Status = "Completed";
             execution.CompletedAt = DateTime.UtcNow;
             await db.SaveChangesAsync();
+
+            await _logger.LogAsync(projectId, executionId, "success", "Pipeline completado correctamente");
 
             return execution;
         }

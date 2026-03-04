@@ -1,6 +1,9 @@
 @page "/projects/{ProjectId:guid}"
 @using System.Text.Json
+@using Microsoft.AspNetCore.SignalR.Client
 @inject ApiClient Api
+@inject IConfiguration Config
+@implements IAsyncDisposable
 
 <h2>@(_project?.Name ?? "Proyecto")</h2>
 
@@ -124,138 +127,184 @@ else
         </button>
     </div>
 
-    <!-- Execution Result -->
-    @if (_result is not null)
+    <!-- Execution Result + Log Panel -->
+    @if (_executing || _result is not null || _logEntries.Count > 0)
     {
-        <h3>Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span></h3>
-
-        @foreach (var step in _result.Steps.OrderBy(s => s.StepOrder))
-        {
-            <div class="step-card">
-                <div class="step-header">
-                    <strong>Paso @step.StepOrder: @step.ModuleName</strong>
-                    <span class="badge @StatusBadge(step.Status)">@step.Status</span>
-                </div>
-
-                @if (step.ErrorMessage is not null)
+        <div class="execution-layout">
+            <!-- Left: Results -->
+            <div class="execution-results">
+                @if (_result is not null)
                 {
-                    <div class="alert alert-error">@step.ErrorMessage</div>
-                }
+                    <h3>Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span></h3>
 
-                @if (step.OutputData is not null)
-                {
-                    var parsed = TryParseOutput(step.OutputData);
-                    if (parsed?.Type == "text")
+                    @foreach (var step in _result.Steps.OrderBy(s => s.StepOrder))
                     {
-                        @if (parsed.Summary is not null)
-                        {
-                            <p class="text-sm" style="color: var(--accent); margin-bottom: 0.3rem;">@parsed.Summary</p>
-                        }
-
-                        @if (parsed.Content is not null)
-                        {
-                            <div class="output-block">@parsed.Content</div>
-                        }
-
-                        @if (parsed.Items is not null && parsed.Items.Count > 0)
-                        {
-                            <details class="mt-1">
-                                <summary class="text-sm" style="cursor:pointer; color: var(--accent);">
-                                    @parsed.Items.Count elementos generados para el siguiente paso
-                                </summary>
-                                <div style="margin-top: 0.3rem;">
-                                    @foreach (var item in parsed.Items)
-                                    {
-                                        <div class="output-block" style="margin-bottom: 0.3rem; padding: 0.4rem 0.6rem; font-size: 0.8rem;">
-                                            @if (item.Label is not null) { <strong>@item.Label:</strong> }
-                                            @item.Content
-                                        </div>
-                                    }
-                                </div>
-                            </details>
-                        }
-
-                        @if (parsed.Metadata is not null)
-                        {
-                            <div class="step-meta mt-1">
-                                @if (parsed.Metadata.TryGetValue("caption", out var caption))
-                                {
-                                    <span class="badge badge-info">Caption: @caption</span>
-                                }
-                                @if (parsed.Metadata.TryGetValue("model", out var model))
-                                {
-                                    <span class="badge badge-warning">@model</span>
-                                }
-                                @if (parsed.Metadata.TryGetValue("inputTokens", out var inTok))
-                                {
-                                    <span class="text-sm text-muted">In: @inTok</span>
-                                }
-                                @if (parsed.Metadata.TryGetValue("outputTokens", out var outTok))
-                                {
-                                    <span class="text-sm text-muted">Out: @outTok</span>
-                                }
+                        <div class="step-card">
+                            <div class="step-header">
+                                <strong>Paso @step.StepOrder: @step.ModuleName</strong>
+                                <span class="badge @StatusBadge(step.Status)">@step.Status</span>
                             </div>
-                        }
-                    }
-                    else if (parsed?.Type == "image")
-                    {
-                        @if (parsed.Metadata is not null && parsed.Metadata.TryGetValue("model", out var imgModel))
-                        {
-                            <span class="badge badge-warning">@imgModel</span>
-                            <span class="text-sm text-muted ml-1">@(parsed.Files?.Count ?? 0) imagen(es)</span>
-                        }
 
-                        @if (parsed.Files is not null && parsed.Files.Count > 0)
-                        {
-                            <div class="image-grid mt-1">
-                                @foreach (var f in parsed.Files)
-                                {
-                                    var fileUrl = $"api/executions/{_result!.Id}/files/{f.FileId}";
-                                    <div class="image-grid-item">
-                                        <img src="@fileUrl" alt="@f.FileName" class="file-preview" />
-                                        @if (f.RevisedPrompt is not null)
-                                        {
-                                            <p class="text-sm text-muted" style="font-style: italic; margin: 0.2rem 0;">@f.RevisedPrompt</p>
-                                        }
-                                        <div class="file-info">
-                                            <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
-                                                Descargar @f.FileName
-                                            </a>
-                                            <span class="text-sm text-muted">(@(f.FileSize / 1024) KB)</span>
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        }
-                    }
-                    else
-                    {
-                        <!-- Fallback: raw output for old executions or unknown types -->
-                        <div class="output-block">@step.OutputData</div>
-
-                        @if (step.Files.Count > 0)
-                        {
-                            @foreach (var f in step.Files)
+                            @if (step.ErrorMessage is not null)
                             {
-                                var fileUrl = $"api/executions/{_result!.Id}/files/{f.Id}";
-                                <div class="file-item">
-                                    @if (f.ContentType.StartsWith("image/"))
-                                    {
-                                        <img src="@fileUrl" alt="@f.FileName" class="file-preview" />
-                                    }
-                                    <div class="file-info">
-                                        <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
-                                            Descargar @f.FileName
-                                        </a>
-                                        <span class="text-sm text-muted">(@f.ContentType, @(f.FileSize / 1024) KB)</span>
-                                    </div>
-                                </div>
+                                <div class="alert alert-error">@step.ErrorMessage</div>
                             }
-                        }
+
+                            @if (step.OutputData is not null)
+                            {
+                                var parsed = TryParseOutput(step.OutputData);
+                                if (parsed?.Type == "text")
+                                {
+                                    @if (parsed.Summary is not null)
+                                    {
+                                        <p class="text-sm" style="color: var(--accent); margin-bottom: 0.3rem;">@parsed.Summary</p>
+                                    }
+
+                                    @if (parsed.Content is not null)
+                                    {
+                                        <div class="output-block">@parsed.Content</div>
+                                    }
+
+                                    @if (parsed.Items is not null && parsed.Items.Count > 0)
+                                    {
+                                        <details class="mt-1">
+                                            <summary class="text-sm" style="cursor:pointer; color: var(--accent);">
+                                                @parsed.Items.Count elementos generados para el siguiente paso
+                                            </summary>
+                                            <div style="margin-top: 0.3rem;">
+                                                @foreach (var item in parsed.Items)
+                                                {
+                                                    <div class="output-block" style="margin-bottom: 0.3rem; padding: 0.4rem 0.6rem; font-size: 0.8rem;">
+                                                        @if (item.Label is not null) { <strong>@item.Label:</strong> }
+                                                        @item.Content
+                                                    </div>
+                                                }
+                                            </div>
+                                        </details>
+                                    }
+
+                                    @if (parsed.Metadata is not null)
+                                    {
+                                        <div class="step-meta mt-1">
+                                            @if (parsed.Metadata.TryGetValue("caption", out var caption))
+                                            {
+                                                <span class="badge badge-info">Caption: @caption</span>
+                                            }
+                                            @if (parsed.Metadata.TryGetValue("model", out var model))
+                                            {
+                                                <span class="badge badge-warning">@model</span>
+                                            }
+                                            @if (parsed.Metadata.TryGetValue("inputTokens", out var inTok))
+                                            {
+                                                <span class="text-sm text-muted">In: @inTok</span>
+                                            }
+                                            @if (parsed.Metadata.TryGetValue("outputTokens", out var outTok))
+                                            {
+                                                <span class="text-sm text-muted">Out: @outTok</span>
+                                            }
+                                        </div>
+                                    }
+                                }
+                                else if (parsed?.Type == "image")
+                                {
+                                    @if (parsed.Metadata is not null && parsed.Metadata.TryGetValue("model", out var imgModel))
+                                    {
+                                        <span class="badge badge-warning">@imgModel</span>
+                                        <span class="text-sm text-muted ml-1">@(parsed.Files?.Count ?? 0) imagen(es)</span>
+                                    }
+
+                                    @if (parsed.Files is not null && parsed.Files.Count > 0)
+                                    {
+                                        <div class="image-grid mt-1">
+                                            @foreach (var f in parsed.Files)
+                                            {
+                                                var fileUrl = $"api/executions/{_result!.Id}/files/{f.FileId}";
+                                                <div class="image-grid-item">
+                                                    <img src="@fileUrl" alt="@f.FileName" class="file-preview" />
+                                                    @if (f.RevisedPrompt is not null)
+                                                    {
+                                                        <p class="text-sm text-muted" style="font-style: italic; margin: 0.2rem 0;">@f.RevisedPrompt</p>
+                                                    }
+                                                    <div class="file-info">
+                                                        <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
+                                                            Descargar @f.FileName
+                                                        </a>
+                                                        <span class="text-sm text-muted">(@(f.FileSize / 1024) KB)</span>
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <!-- Fallback: raw output for old executions or unknown types -->
+                                    <div class="output-block">@step.OutputData</div>
+
+                                    @if (step.Files.Count > 0)
+                                    {
+                                        @foreach (var f in step.Files)
+                                        {
+                                            var fileUrl = $"api/executions/{_result!.Id}/files/{f.Id}";
+                                            <div class="file-item">
+                                                @if (f.ContentType.StartsWith("image/"))
+                                                {
+                                                    <img src="@fileUrl" alt="@f.FileName" class="file-preview" />
+                                                }
+                                                <div class="file-info">
+                                                    <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
+                                                        Descargar @f.FileName
+                                                    </a>
+                                                    <span class="text-sm text-muted">(@f.ContentType, @(f.FileSize / 1024) KB)</span>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                }
+                            }
+                        </div>
                     }
+                }
+                else if (_executing)
+                {
+                    <div class="card" style="text-align: center; padding: 2rem;">
+                        <span class="spinner"></span>
+                        <p class="text-muted mt-1">Ejecutando pipeline...</p>
+                    </div>
                 }
             </div>
-        }
+
+            <!-- Right: Execution Log -->
+            <div class="execution-log">
+                <div class="log-header">
+                    <strong>Log de Ejecucion</strong>
+                    @if (_logEntries.Count > 0)
+                    {
+                        <button class="btn btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem;" @onclick="ClearLog">Limpiar</button>
+                    }
+                </div>
+                <div class="log-entries" @ref="_logContainer">
+                    @if (_logEntries.Count == 0 && _executing)
+                    {
+                        <div class="log-entry log-info">
+                            <span class="log-time">--:--:--</span>
+                            <span>Esperando logs...</span>
+                        </div>
+                    }
+                    @foreach (var entry in _logEntries)
+                    {
+                        <div class="log-entry log-@entry.Level">
+                            <span class="log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                            @if (entry.StepOrder.HasValue)
+                            {
+                                <span class="log-step">P@(entry.StepOrder)</span>
+                            }
+                            <span class="log-message">@entry.Message</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
     }
 
     <!-- Execution History -->
@@ -312,9 +361,44 @@ else
     private string _userInput = "";
     private string? _execError;
 
+    // Execution log
+    private List<LogEntry> _logEntries = [];
+    private HubConnection? _hubConnection;
+    private ElementReference _logContainer;
+
+    private record LogEntry(string Level, string Message, int? StepOrder, string? StepName, DateTime Timestamp);
+
     protected override async Task OnInitializedAsync()
     {
         await LoadAll();
+        await InitializeSignalR();
+    }
+
+    private async Task InitializeSignalR()
+    {
+        var apiBase = (Config["ApiBaseUrl"] ?? "https://localhost:6951").TrimEnd('/');
+        var hubUrl = apiBase + "/hubs/execution";
+
+        _hubConnection = new HubConnectionBuilder()
+            .WithUrl(hubUrl)
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hubConnection.On<LogEntry>("ExecutionLog", entry =>
+        {
+            _logEntries.Add(entry);
+            InvokeAsync(StateHasChanged);
+        });
+
+        try
+        {
+            await _hubConnection.StartAsync();
+            await _hubConnection.InvokeAsync("JoinProject", ProjectId.ToString());
+        }
+        catch
+        {
+            // SignalR connection failed — logs won't show but execution still works
+        }
     }
 
     private async Task LoadAll()
@@ -371,6 +455,8 @@ else
     private async Task Execute()
     {
         _execError = null; _executing = true; _result = null;
+        _logEntries.Clear();
+
         try
         {
             var (ok, result, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput);
@@ -383,8 +469,14 @@ else
 
     private async Task LoadExecution(Guid id)
     {
+        _logEntries.Clear();
         try { _result = await Api.GetExecutionDetailAsync(id); }
         catch { }
+    }
+
+    private void ClearLog()
+    {
+        _logEntries.Clear();
     }
 
     private static StepOutputDto? TryParseOutput(string? json)
@@ -408,4 +500,13 @@ else
         "Running" => "badge-warning",
         _ => "badge-info"
     };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hubConnection is not null)
+        {
+            try { await _hubConnection.InvokeAsync("LeaveProject", ProjectId.ToString()); } catch { }
+            await _hubConnection.DisposeAsync();
+        }
+    }
 }
