@@ -17,7 +17,6 @@ obj/
 *.csproj.user
 *.dbmdl
 *.jfm
-launchSettings.json
 
 ## Rider
 .idea/
