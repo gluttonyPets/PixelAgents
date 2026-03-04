@@ -13,6 +13,7 @@ public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime
 public record CreateAiModuleRequest(
     string Name, string? Description, string ProviderType,
     string ModuleType, string ModelName, Guid? ApiKeyId, string? Configuration);
+public record UpdateAiModuleApiKeyRequest(Guid? ApiKeyId);
 public record AiModuleResponse(
     Guid Id, string Name, string? Description, string ProviderType,
     string ModuleType, string ModelName, Guid? ApiKeyId, string? ApiKeyName,

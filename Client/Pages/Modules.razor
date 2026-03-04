@@ -214,7 +214,17 @@
                     <td><span class="badge badge-info">@m.ProviderType</span></td>
                     <td><span class="badge badge-warning">@m.ModuleType</span></td>
                     <td class="text-sm">@m.ModelName</td>
-                    <td class="text-sm text-muted">@(m.ApiKeyName ?? "-")</td>
+                    <td>
+                        <select class="select-inline"
+                                value="@(m.ApiKeyId?.ToString() ?? "")"
+                                @onchange="(e) => ChangeApiKey(m, e)">
+                            <option value="">-- Sin API Key --</option>
+                            @foreach (var k in _keys.Where(k => k.ProviderType.Equals(m.ProviderType, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                <option value="@k.Id">@k.Name</option>
+                            }
+                        </select>
+                    </td>
                     <td><button class="btn btn-danger" @onclick="() => Delete(m.Id)">Eliminar</button></td>
                 </tr>
             }
@@ -486,6 +496,23 @@ else if (!_loading)
         }
         catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
         _loading = false;
+    }
+
+    private async Task ChangeApiKey(AiModuleResponse module, ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        Guid? newKeyId = Guid.TryParse(val, out var parsed) ? parsed : null;
+        if (newKeyId == module.ApiKeyId) return;
+
+        try
+        {
+            var (ok, error) = await Api.UpdateModuleApiKeyAsync(module.Id, module, newKeyId);
+            if (ok)
+                _modules = await Api.GetModulesAsync();
+            else
+                _error = error;
+        }
+        catch (Exception ex) { _error = $"Error al cambiar API Key: {ex.Message}"; }
     }
 
     private async Task Delete(Guid moduleId)

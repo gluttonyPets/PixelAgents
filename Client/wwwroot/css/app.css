@@ -133,6 +133,13 @@ input:focus, select:focus, textarea:focus {
     border-color: var(--accent);
 }
 
+select.select-inline {
+    width: auto;
+    min-width: 140px;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.82rem;
+}
+
 textarea {
     min-height: 60px;
     resize: vertical;
