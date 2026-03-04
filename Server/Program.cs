@@ -68,6 +68,9 @@ builder.Services.AddCors(options =>
     });
 });
 
+// --- Auth middleware ---
+builder.Services.AddAuthorization();
+
 // --- Swagger ---
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
