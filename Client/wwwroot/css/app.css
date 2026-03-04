@@ -313,6 +313,30 @@ tr:hover td {
 a.link { color: var(--accent); text-decoration: none; cursor: pointer; }
 a.link:hover { text-decoration: underline; }
 
+/* Config fieldset */
+.config-fieldset {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    margin-top: 0.8rem;
+}
+
+.config-fieldset legend {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 0 0.4rem;
+}
+
+/* Model info badges */
+.model-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    align-items: center;
+}
+
 /* Utility */
 .mt-1 { margin-top: 0.5rem; }
 .mb-1 { margin-bottom: 0.5rem; }

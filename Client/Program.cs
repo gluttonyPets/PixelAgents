@@ -15,5 +15,6 @@ builder.Services.AddScoped(sp => new HttpClient
 });
 
 builder.Services.AddScoped<ApiClient>();
+builder.Services.AddScoped<AuthStateService>();
 
 await builder.Build().RunAsync();

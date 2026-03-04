@@ -1,15 +1,16 @@
 @page "/"
 @inject ApiClient Api
+@inject AuthStateService AuthState
 @inject NavigationManager Nav
 
 <h2>Autenticacion</h2>
 
-@if (_user is not null)
+@if (AuthState.IsAuthenticated)
 {
     <div class="card">
-        <p>Conectado como <strong>@_user.Email</strong></p>
-        <p class="text-sm text-muted">Account ID: @_user.AccountId</p>
-        <p class="text-sm text-muted">DB: @_user.DbName</p>
+        <p>Conectado como <strong>@AuthState.User!.Email</strong></p>
+        <p class="text-sm text-muted">Account ID: @AuthState.User.AccountId</p>
+        <p class="text-sm text-muted">DB: @AuthState.User.DbName</p>
         <button class="btn btn-danger mt-1" @onclick="Logout">Cerrar sesion</button>
     </div>
 }
@@ -59,7 +60,6 @@ else
 }
 
 @code {
-    private AuthResponse? _user;
     private bool _loading;
 
     // Register
@@ -75,7 +75,15 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        try { _user = await Api.GetMeAsync(); } catch { }
+        if (!AuthState.IsAuthenticated)
+        {
+            try
+            {
+                var user = await Api.GetMeAsync();
+                if (user is not null) AuthState.SetUser(user);
+            }
+            catch { }
+        }
     }
 
     private async Task Register()
@@ -97,7 +105,11 @@ else
         try
         {
             var (ok, user, error) = await Api.LoginAsync(_loginEmail, _loginPassword);
-            if (ok) { _user = user; Nav.NavigateTo("/apikeys"); }
+            if (ok)
+            {
+                AuthState.SetUser(user);
+                Nav.NavigateTo("/apikeys");
+            }
             else _loginError = error;
         }
         catch (Exception ex) { _loginError = $"Error de conexion: {ex.Message}"; }
@@ -107,6 +119,6 @@ else
     private async Task Logout()
     {
         await Api.LogoutAsync();
-        _user = null;
+        AuthState.SetUser(null);
     }
 }

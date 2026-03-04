@@ -9,53 +9,188 @@
     {
         <div class="alert alert-error">@_error</div>
     }
-    <div class="form-row">
-        <div class="form-group">
-            <label>Nombre</label>
-            <input type="text" @bind="_name" placeholder="GPT-4o Text" />
-        </div>
-        <div class="form-group">
-            <label>Descripcion</label>
-            <input type="text" @bind="_desc" placeholder="Modulo de texto con GPT-4o" />
-        </div>
+
+    <!-- Step 1: Provider -->
+    <div class="form-group">
+        <label>Proveedor</label>
+        <select value="@_provider" @onchange="OnProviderChanged">
+            <option value="">-- Seleccionar proveedor --</option>
+            <option value="OpenAI">OpenAI</option>
+            <option value="Anthropic">Anthropic</option>
+        </select>
     </div>
-    <div class="form-row">
+
+    @if (!string.IsNullOrEmpty(_provider))
+    {
+        <!-- Step 2: Module Type (filtered by provider) -->
         <div class="form-group">
-            <label>Proveedor</label>
-            <select @bind="_provider">
-                <option value="OpenAI">OpenAI</option>
-                <option value="Anthropic">Anthropic</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Tipo</label>
-            <select @bind="_moduleType">
-                <option value="Text">Text</option>
-                <option value="Image">Image</option>
-            </select>
-        </div>
-    </div>
-    <div class="form-row">
-        <div class="form-group">
-            <label>Modelo</label>
-            <input type="text" @bind="_model" placeholder="gpt-4o / claude-sonnet-4-20250514" />
-        </div>
-        <div class="form-group">
-            <label>API Key</label>
-            <select @bind="_apiKeyId">
-                <option value="">-- Seleccionar --</option>
-                @foreach (var k in _keys)
+            <label>Tipo de modulo</label>
+            <select value="@_moduleType" @onchange="OnModuleTypeChanged">
+                <option value="">-- Seleccionar tipo --</option>
+                @foreach (var t in GetAvailableTypes())
                 {
-                    <option value="@k.Id">@k.Name (@k.ProviderType)</option>
+                    <option value="@t.Value">@t.Label</option>
                 }
             </select>
         </div>
-    </div>
-    <div class="form-group">
-        <label>Configuracion (JSON opcional)</label>
-        <textarea @bind="_config" placeholder='{"systemPrompt":"Eres un asistente","temperature":0.7}'></textarea>
-    </div>
-    <button class="btn btn-primary" @onclick="Create" disabled="@_loading">Crear Modulo</button>
+    }
+
+    @if (!string.IsNullOrEmpty(_moduleType))
+    {
+        <!-- Step 3: Model (filtered by provider + type) -->
+        <div class="form-group">
+            <label>Modelo</label>
+            <select @bind="_model">
+                <option value="">-- Seleccionar modelo --</option>
+                @foreach (var m in GetAvailableModels())
+                {
+                    <option value="@m.Id">@m.DisplayName</option>
+                }
+            </select>
+            @{ var selectedModel = GetSelectedModel(); }
+            @if (selectedModel is not null)
+            {
+                <div class="model-info">
+                    <span class="text-sm text-muted">@selectedModel.Description</span>
+                    @if (selectedModel.MaxContext is not null)
+                    {
+                        <span class="badge badge-info">@selectedModel.MaxContext tokens</span>
+                    }
+                    @foreach (var cap in selectedModel.Capabilities)
+                    {
+                        <span class="badge badge-success">@cap</span>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Name & Description -->
+        <div class="form-row">
+            <div class="form-group">
+                <label>Nombre del modulo</label>
+                <input type="text" @bind="_name" placeholder="Ej: GPT-4o para textos" />
+            </div>
+            <div class="form-group">
+                <label>Descripcion</label>
+                <input type="text" @bind="_desc" placeholder="Descripcion opcional" />
+            </div>
+        </div>
+
+        <!-- API Key (filtered by provider) -->
+        <div class="form-group">
+            <label>API Key (@_provider)</label>
+            <select @bind="_apiKeyId">
+                <option value="">-- Seleccionar --</option>
+                @foreach (var k in _keys.Where(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)))
+                {
+                    <option value="@k.Id">@k.Name</option>
+                }
+            </select>
+            @if (!_keys.Any(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)))
+            {
+                <span class="text-sm text-muted">No tienes API keys de @_provider. <a href="/apikeys">Crear una</a></span>
+            }
+        </div>
+
+        <!-- Dynamic Configuration (provider + type specific) -->
+        <fieldset class="config-fieldset">
+            <legend>Configuracion</legend>
+
+            @if (_moduleType == "Text")
+            {
+                <div class="form-group">
+                    <label>System Prompt</label>
+                    <textarea @bind="_systemPrompt" rows="3" placeholder="Ej: Eres un asistente experto en..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Temperatura <span class="text-sm text-muted">(0.0 - 2.0)</span></label>
+                        <input type="number" step="0.1" min="0" max="2" @bind="_temperature" />
+                    </div>
+                    <div class="form-group">
+                        <label>Max Tokens</label>
+                        <input type="number" min="1" max="200000" @bind="_maxTokens" />
+                    </div>
+                </div>
+            }
+            else if (_moduleType == "Image" && _provider == "OpenAI")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tamano</label>
+                        <select @bind="_imageSize">
+                            @foreach (var s in GetImageSizes())
+                            {
+                                <option value="@s">@s</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Calidad</label>
+                        <select @bind="_imageQuality">
+                            <option value="standard">Standard</option>
+                            <option value="hd">HD</option>
+                        </select>
+                    </div>
+                </div>
+                @if (IsGptImage())
+                {
+                    <div class="form-group">
+                        <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+                        <input type="number" min="1" max="4" @bind="_imageCount" />
+                    </div>
+                }
+            }
+            else if (_moduleType == "Embeddings")
+            {
+                <div class="form-group">
+                    <label>Dimensiones <span class="text-sm text-muted">(opcional, por defecto la maxima del modelo)</span></label>
+                    <input type="number" min="1" @bind="_embeddingDimensions" />
+                </div>
+            }
+            else if (_moduleType == "Audio" && _provider == "OpenAI")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Voz</label>
+                        <select @bind="_ttsVoice">
+                            <option value="alloy">Alloy</option>
+                            <option value="echo">Echo</option>
+                            <option value="fable">Fable</option>
+                            <option value="onyx">Onyx</option>
+                            <option value="nova">Nova</option>
+                            <option value="shimmer">Shimmer</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Velocidad <span class="text-sm text-muted">(0.25 - 4.0)</span></label>
+                        <input type="number" step="0.25" min="0.25" max="4.0" @bind="_ttsSpeed" />
+                    </div>
+                </div>
+            }
+            else if (_moduleType == "Transcription" && _provider == "OpenAI")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Idioma <span class="text-sm text-muted">(codigo ISO 639-1, opcional)</span></label>
+                        <input type="text" @bind="_transcriptionLang" placeholder="es, en, fr..." />
+                    </div>
+                    <div class="form-group">
+                        <label>Formato de respuesta</label>
+                        <select @bind="_transcriptionFormat">
+                            <option value="json">JSON</option>
+                            <option value="text">Texto plano</option>
+                            <option value="srt">SRT</option>
+                            <option value="vtt">VTT</option>
+                            <option value="verbose_json">JSON detallado</option>
+                        </select>
+                    </div>
+                </div>
+            }
+        </fieldset>
+
+        <button class="btn btn-primary mt-1" @onclick="Create" disabled="@_loading">Crear Modulo</button>
+    }
 </div>
 
 @if (_modules.Count > 0)
@@ -92,18 +227,227 @@ else if (!_loading)
 }
 
 @code {
+    // ── Data lists ──
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];
     private bool _loading;
     private string? _error;
 
+    // ── Form: basic ──
+    private string _provider = "";
+    private string _moduleType = "";
+    private string _model = "";
     private string _name = "";
     private string _desc = "";
-    private string _provider = "OpenAI";
-    private string _moduleType = "Text";
-    private string _model = "";
     private string _apiKeyId = "";
-    private string _config = "";
+
+    // ── Form: text config ──
+    private string _systemPrompt = "";
+    private double _temperature = 0.7;
+    private int _maxTokens = 4096;
+
+    // ── Form: image config (OpenAI) ──
+    private string _imageSize = "1024x1024";
+    private string _imageQuality = "standard";
+    private int _imageCount = 1;
+
+    // ── Form: embeddings ──
+    private int? _embeddingDimensions;
+
+    // ── Form: audio TTS ──
+    private string _ttsVoice = "alloy";
+    private double _ttsSpeed = 1.0;
+
+    // ── Form: transcription ──
+    private string _transcriptionLang = "";
+    private string _transcriptionFormat = "json";
+
+    // ── Model catalog ──
+    private record ModelInfo(string Id, string DisplayName, string Provider, string[] Types, string[] Capabilities, string Description, string? MaxContext = null);
+
+    private static readonly ModelInfo[] AllModels =
+    [
+        // ─── OpenAI: Chat / Text (GPT-5.x) ───
+        new("gpt-5.2",          "GPT-5.2",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Ultimo modelo flagship. Razonamiento avanzado multi-nivel.", "400K"),
+        new("gpt-5.1",          "GPT-5.1",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5.1 con vision y razonamiento.", "400K"),
+        new("gpt-5",            "GPT-5",             "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5 potente y versatil.", "400K"),
+        new("gpt-5-mini",       "GPT-5 Mini",        "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "GPT-5 version rapida y economica.", "400K"),
+        new("gpt-5-nano",       "GPT-5 Nano",        "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "GPT-5 ultra rapido. El mas barato con razonamiento.", "400K"),
+
+        // ─── OpenAI: Chat / Text (GPT-4.1) ───
+        new("gpt-4.1",          "GPT-4.1",           "OpenAI", ["Text"],        ["text","vision","streaming"],          "1M de contexto. Excelente para codigo e instrucciones.", "1M"),
+        new("gpt-4.1-mini",     "GPT-4.1 Mini",      "OpenAI", ["Text"],        ["text","vision","streaming"],          "GPT-4.1 version rapida. 1M contexto.", "1M"),
+        new("gpt-4.1-nano",     "GPT-4.1 Nano",      "OpenAI", ["Text"],        ["text","vision","streaming"],          "GPT-4.1 ultra rapido y economico.", "1M"),
+
+        // ─── OpenAI: Chat / Text (GPT-4o legacy) ───
+        new("gpt-4o",           "GPT-4o",            "OpenAI", ["Text"],        ["text","vision","streaming"],          "Modelo anterior. Texto + vision.", "128K"),
+        new("gpt-4o-mini",      "GPT-4o Mini",       "OpenAI", ["Text"],        ["text","vision","streaming"],          "Version economica de GPT-4o.", "128K"),
+
+        // ─── OpenAI: Reasoning (o-series) ───
+        new("o3",               "o3",                "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo de razonamiento avanzado.", "200K"),
+        new("o3-mini",          "o3 Mini",           "OpenAI", ["Text"],        ["text","reasoning","streaming"],       "Razonamiento rapido y economico.", "200K"),
+        new("o4-mini",          "o4 Mini",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Razonamiento con vision, version compacta.", "200K"),
+
+        // ─── OpenAI: Image Generation ───
+        new("gpt-image-1.5",    "GPT Image 1.5",     "OpenAI", ["Image"],       ["image-generation"],                  "Ultimo modelo de generacion de imagenes."),
+        new("gpt-image-1",      "GPT Image 1",       "OpenAI", ["Image"],       ["image-generation"],                  "Generacion de imagenes de alta calidad."),
+        new("dall-e-3",         "DALL-E 3",          "OpenAI", ["Image"],       ["image-generation"],                  "Generacion de imagenes con prompts detallados."),
+        new("dall-e-2",         "DALL-E 2",          "OpenAI", ["Image"],       ["image-generation","image-editing"],   "Soporta edicion e inpainting."),
+
+        // ─── OpenAI: Embeddings ───
+        new("text-embedding-3-large", "Embedding 3 Large",  "OpenAI", ["Embeddings"], ["embeddings"],                  "Embeddings de alta dimension (3072). Mayor precision.", "8K"),
+        new("text-embedding-3-small", "Embedding 3 Small",  "OpenAI", ["Embeddings"], ["embeddings"],                  "Embeddings compactos (1536). Rapido y economico.", "8K"),
+
+        // ─── OpenAI: Audio ───
+        new("gpt-4o-mini-tts",  "GPT-4o Mini TTS",   "OpenAI", ["Audio"],       ["text-to-speech"],                    "TTS expresivo y controlable. Ultima generacion."),
+        new("tts-1",            "TTS-1",             "OpenAI", ["Audio"],       ["text-to-speech"],                    "Text-to-Speech. Baja latencia."),
+        new("tts-1-hd",         "TTS-1 HD",          "OpenAI", ["Audio"],       ["text-to-speech"],                    "Text-to-Speech de alta calidad."),
+        new("gpt-4o-transcribe","GPT-4o Transcribe", "OpenAI", ["Transcription"],["speech-to-text"],                  "Transcripcion de alta precision."),
+        new("gpt-4o-mini-transcribe","GPT-4o Mini Transcribe","OpenAI",["Transcription"],["speech-to-text"],           "Transcripcion rapida y economica."),
+        new("whisper-1",        "Whisper",           "OpenAI", ["Transcription"],["speech-to-text"],                   "Transcripcion multilingue clasica."),
+
+        // ─── Anthropic: Chat / Text (Claude 4.6) ───
+        new("claude-opus-4-6",             "Claude Opus 4.6",     "Anthropic", ["Text"], ["text","vision","streaming"], "El mas capaz. Razonamiento adaptativo.", "200K"),
+        new("claude-sonnet-4-6",           "Claude Sonnet 4.6",   "Anthropic", ["Text"], ["text","vision","streaming"], "Equilibrio rendimiento/velocidad. Razonamiento adaptativo.", "200K"),
+
+        // ─── Anthropic: Chat / Text (Claude 4.5) ───
+        new("claude-opus-4-5-20251124",    "Claude Opus 4.5",     "Anthropic", ["Text"], ["text","vision","streaming"], "Generacion anterior flagship.", "200K"),
+        new("claude-sonnet-4-5-20250929",  "Claude Sonnet 4.5",   "Anthropic", ["Text"], ["text","vision","streaming"], "Generacion anterior. Buen balance.", "200K"),
+        new("claude-haiku-4-5-20251001",   "Claude Haiku 4.5",    "Anthropic", ["Text"], ["text","vision","streaming"], "Rapido y economico.", "200K"),
+
+        // ─── Anthropic: Chat / Text (Claude 4) ───
+        new("claude-opus-4-1-20250805",    "Claude Opus 4.1",     "Anthropic", ["Text"], ["text","vision","streaming"], "Muy capaz en tareas complejas.", "200K"),
+        new("claude-sonnet-4-20250514",    "Claude Sonnet 4",     "Anthropic", ["Text"], ["text","vision","streaming"], "Buen rendimiento general.", "200K"),
+
+        // ─── Anthropic: Chat / Text (Claude 3.5) ───
+        new("claude-3-5-haiku-20241022",   "Claude 3.5 Haiku",    "Anthropic", ["Text"], ["text","vision","streaming"], "Ultra rapido y economico.", "200K"),
+    ];
+
+    // ── Available types per provider ──
+    private record TypeOption(string Value, string Label);
+
+    private List<TypeOption> GetAvailableTypes()
+    {
+        var types = AllModels
+            .Where(m => m.Provider == _provider)
+            .SelectMany(m => m.Types)
+            .Distinct()
+            .Select(t => new TypeOption(t, t switch
+            {
+                "Text"          => "Texto / Chat",
+                "Image"         => "Generacion de imagen",
+                "Embeddings"    => "Embeddings",
+                "Audio"         => "Audio (TTS)",
+                "Transcription" => "Transcripcion (STT)",
+                _               => t
+            }))
+            .ToList();
+        return types;
+    }
+
+    private List<ModelInfo> GetAvailableModels()
+    {
+        return AllModels
+            .Where(m => m.Provider == _provider && m.Types.Contains(_moduleType))
+            .ToList();
+    }
+
+    private ModelInfo? GetSelectedModel()
+    {
+        if (string.IsNullOrEmpty(_model)) return null;
+        return AllModels.FirstOrDefault(m => m.Id == _model);
+    }
+
+    private bool IsGptImage() => _model.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase);
+
+    private string[] GetImageSizes()
+    {
+        return _model switch
+        {
+            "dall-e-3" or "gpt-image-1" or "gpt-image-1.5" => ["1024x1024", "1024x1792", "1792x1024"],
+            "dall-e-2" => ["256x256", "512x512", "1024x1024"],
+            _ => ["1024x1024"]
+        };
+    }
+
+    // ── Events ──
+
+    private void OnProviderChanged(ChangeEventArgs e)
+    {
+        _provider = e.Value?.ToString() ?? "";
+        _moduleType = "";
+        _model = "";
+        ResetConfig();
+    }
+
+    private void OnModuleTypeChanged(ChangeEventArgs e)
+    {
+        _moduleType = e.Value?.ToString() ?? "";
+        _model = "";
+        ResetConfig();
+    }
+
+    private void ResetConfig()
+    {
+        _systemPrompt = "";
+        _temperature = 0.7;
+        _maxTokens = 4096;
+        _imageSize = "1024x1024";
+        _imageQuality = "standard";
+        _imageCount = 1;
+        _embeddingDimensions = null;
+        _ttsVoice = "alloy";
+        _ttsSpeed = 1.0;
+        _transcriptionLang = "";
+        _transcriptionFormat = "json";
+    }
+
+    // ── Build config JSON ──
+    private string? BuildConfigJson()
+    {
+        var parts = new List<string>();
+
+        if (_moduleType == "Text")
+        {
+            if (!string.IsNullOrWhiteSpace(_systemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
+            if (_temperature != 0.7)
+                parts.Add($"\"temperature\":{_temperature}");
+            if (_maxTokens != 4096)
+                parts.Add($"\"maxTokens\":{_maxTokens}");
+        }
+        else if (_moduleType == "Image")
+        {
+            if (_imageSize != "1024x1024")
+                parts.Add($"\"size\":\"{_imageSize}\"");
+            if (_imageQuality != "standard")
+                parts.Add($"\"quality\":\"{_imageQuality}\"");
+            if (IsGptImage() && _imageCount != 1)
+                parts.Add($"\"n\":{_imageCount}");
+        }
+        else if (_moduleType == "Embeddings")
+        {
+            if (_embeddingDimensions.HasValue)
+                parts.Add($"\"dimensions\":{_embeddingDimensions.Value}");
+        }
+        else if (_moduleType == "Audio")
+        {
+            parts.Add($"\"voice\":\"{_ttsVoice}\"");
+            if (_ttsSpeed != 1.0)
+                parts.Add($"\"speed\":{_ttsSpeed}");
+        }
+        else if (_moduleType == "Transcription")
+        {
+            if (!string.IsNullOrWhiteSpace(_transcriptionLang))
+                parts.Add($"\"language\":\"{_transcriptionLang}\"");
+            if (_transcriptionFormat != "json")
+                parts.Add($"\"response_format\":\"{_transcriptionFormat}\"");
+        }
+
+        return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
+    }
+
+    // ── Lifecycle ──
 
     protected override async Task OnInitializedAsync()
     {
@@ -119,14 +463,25 @@ else if (!_loading)
 
     private async Task Create()
     {
-        _error = null; _loading = true;
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_provider)) { _error = "Selecciona un proveedor"; return; }
+        if (string.IsNullOrWhiteSpace(_moduleType)) { _error = "Selecciona un tipo de modulo"; return; }
+        if (string.IsNullOrWhiteSpace(_model)) { _error = "Selecciona un modelo"; return; }
+        if (string.IsNullOrWhiteSpace(_name)) { _error = "Indica un nombre para el modulo"; return; }
+
+        _loading = true;
         try
         {
             Guid? keyId = Guid.TryParse(_apiKeyId, out var id) ? id : null;
-            var req = new CreateAiModuleRequest(_name, _desc, _provider, _moduleType, _model, keyId,
-                string.IsNullOrWhiteSpace(_config) ? null : _config);
+            var config = BuildConfigJson();
+            var req = new CreateAiModuleRequest(_name, _desc, _provider, _moduleType, _model, keyId, config);
             var (ok, error) = await Api.CreateModuleAsync(req);
-            if (ok) { _name = ""; _desc = ""; _model = ""; _config = ""; _modules = await Api.GetModulesAsync(); }
+            if (ok)
+            {
+                _name = ""; _desc = ""; _model = ""; _apiKeyId = "";
+                ResetConfig();
+                _modules = await Api.GetModulesAsync();
+            }
             else _error = error;
         }
         catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }

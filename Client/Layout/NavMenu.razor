@@ -1,4 +1,6 @@
 @inject ApiClient Api
+@inject AuthStateService AuthState
+@implements IDisposable
 
 <nav class="sidebar">
     <div class="sidebar-brand">PixelAgents</div>
@@ -9,9 +11,9 @@
     <NavLink href="/projects">Proyectos</NavLink>
 
     <div class="auth-status">
-        @if (_user is not null)
+        @if (AuthState.IsAuthenticated)
         {
-            <div>@_user.Email</div>
+            <div>@AuthState.User!.Email</div>
         }
         else
         {
@@ -21,10 +23,22 @@
 </nav>
 
 @code {
-    private AuthResponse? _user;
-
     protected override async Task OnInitializedAsync()
     {
-        try { _user = await Api.GetMeAsync(); } catch { }
+        AuthState.OnChange += StateHasChanged;
+        if (!AuthState.IsAuthenticated)
+        {
+            try
+            {
+                var user = await Api.GetMeAsync();
+                if (user is not null) AuthState.SetUser(user);
+            }
+            catch { }
+        }
+    }
+
+    public void Dispose()
+    {
+        AuthState.OnChange -= StateHasChanged;
     }
 }
