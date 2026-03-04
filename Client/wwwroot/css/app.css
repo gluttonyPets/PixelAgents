@@ -275,6 +275,26 @@ tr:hover td {
     font-size: 0.9rem;
 }
 
+/* File preview */
+.file-item {
+    margin: 0.5rem 0;
+}
+
+.file-preview {
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+    display: block;
+}
+
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+}
+
 /* Loading */
 .loading {
     display: flex;

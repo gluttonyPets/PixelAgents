@@ -638,4 +638,28 @@ app.MapGet("/api/executions/{id}", async (
         exec.CreatedAt, exec.CompletedAt, steps));
 }).RequireAuthorization();
 
+// Download execution file
+app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
+    Guid executionId, Guid fileId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var exec = await db.ProjectExecutions
+        .FirstOrDefaultAsync(e => e.Id == executionId);
+    if (exec is null) return Results.NotFound();
+
+    var file = await db.ExecutionFiles
+        .FirstOrDefaultAsync(f => f.Id == fileId &&
+            f.StepExecution.ExecutionId == executionId);
+    if (file is null) return Results.NotFound();
+
+    var fullPath = Path.Combine(exec.WorkspacePath, file.FilePath);
+    if (!File.Exists(fullPath)) return Results.NotFound("Archivo no encontrado en disco");
+
+    var bytes = await File.ReadAllBytesAsync(fullPath);
+    return Results.File(bytes, file.ContentType, file.FileName);
+}).RequireAuthorization();
+
 app.Run();

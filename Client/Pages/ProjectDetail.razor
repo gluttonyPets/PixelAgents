@@ -158,7 +158,19 @@ else
                     <p class="text-sm text-muted mt-1">Archivos:</p>
                     @foreach (var f in step.Files)
                     {
-                        <div class="text-sm">@f.FileName (@f.ContentType, @(f.FileSize / 1024) KB)</div>
+                        var fileUrl = $"api/executions/{_result!.Id}/files/{f.Id}";
+                        <div class="file-item">
+                            @if (f.ContentType.StartsWith("image/"))
+                            {
+                                <img src="@fileUrl" alt="@f.FileName" class="file-preview" />
+                            }
+                            <div class="file-info">
+                                <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
+                                    Descargar @f.FileName
+                                </a>
+                                <span class="text-sm text-muted">(@f.ContentType, @(f.FileSize / 1024) KB)</span>
+                            </div>
+                        </div>
                     }
                 }
             </div>
