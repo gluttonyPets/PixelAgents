@@ -89,7 +89,12 @@ namespace Server.Services.Ai
                 };
             }
 
-            options.ResponseFormat = GeneratedImageFormat.Bytes;
+            // gpt-image models don't support response_format — only set for dall-e
+            var isGptImage = context.ModelName.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase);
+            if (!isGptImage)
+            {
+                options.ResponseFormat = GeneratedImageFormat.Bytes;
+            }
 
             var prompt = context.Input;
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
@@ -102,7 +107,21 @@ namespace Server.Services.Ai
 
             var result = await client.GenerateImageAsync(prompt, options);
 
-            var imageBytes = result.Value.ImageBytes.ToArray();
+            byte[] imageBytes;
+            if (result.Value.ImageBytes is not null && result.Value.ImageBytes.ToArray().Length > 0)
+            {
+                imageBytes = result.Value.ImageBytes.ToArray();
+            }
+            else if (!string.IsNullOrEmpty(result.Value.ImageUri?.ToString()))
+            {
+                // gpt-image models return a URL — download the image
+                using var httpClient = new HttpClient();
+                imageBytes = await httpClient.GetByteArrayAsync(result.Value.ImageUri);
+            }
+            else
+            {
+                return AiResult.Fail("No se recibieron datos de imagen del modelo");
+            }
 
             return AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
             {
