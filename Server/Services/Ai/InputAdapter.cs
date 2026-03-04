@@ -25,25 +25,46 @@ namespace Server.Services.Ai
             // Limpiar markdown
             var clean = StripMarkdown(text);
 
-            // Estrategia 1: buscar un bloque de prompt de imagen explícito
-            var markerMatch = Regex.Match(clean,
-                @"(?i)(?:image\s*prompt|imagen?\s*prompt|visual\s*description|prompt\s*para\s*(?:la\s*)?imagen)\s*[:]\s*(.+)",
-                RegexOptions.Singleline);
+            // Estrategia 1: buscar TODOS los prompts de imagen explícitos y combinarlos
+            var promptMatches = Regex.Matches(clean,
+                "(?i)(?:image\\s*prompt|imagen?\\s*prompt|visual\\s*description|prompt\\s*(?:de\\s*)?(?:ia|ai)(?:\\s*para\\s*imagen)?|prompt\\s*para\\s*(?:la\\s*)?imagen)\\s*[:]\\s*[\"\\u201C]?(.+?)(?:[\"\\u201D]?\\s*$|\\n)",
+                RegexOptions.Multiline);
 
-            if (markerMatch.Success)
+            if (promptMatches.Count > 0)
             {
-                var extracted = markerMatch.Groups[1].Value.Trim();
-                var endIdx = extracted.IndexOf("\n\n");
-                if (endIdx > 0)
-                    extracted = extracted[..endIdx].Trim();
-                if (extracted.Length > 0)
-                    return TruncateAtWord(extracted, softLimit);
+                var prompts = new List<string>();
+                foreach (Match m in promptMatches)
+                {
+                    var p = m.Groups[1].Value.Trim().Trim('"', '\u0022', '\u201C', '\u201D');
+                    if (p.Length > 10) // descartar fragmentos demasiado cortos
+                        prompts.Add(p);
+                }
+
+                if (prompts.Count > 0)
+                {
+                    // Si hay múltiples prompts, combinarlos como escena compuesta
+                    if (prompts.Count == 1)
+                        return TruncateAtWord(prompts[0], softLimit);
+
+                    var combined = $"A series of {prompts.Count} illustrations: " +
+                        string.Join("; ", prompts.Select((p, i) => $"{i + 1}) {p}"));
+                    return TruncateAtWord(combined, softLimit);
+                }
             }
 
-            // Estrategia 2: primer párrafo
-            var firstPara = clean.IndexOf("\n\n");
-            if (firstPara > 0 && firstPara <= softLimit)
-                return clean[..firstPara].Trim();
+            // Estrategia 2: buscar líneas que parezcan descripciones visuales
+            var visualLines = clean.Split('\n')
+                .Select(l => l.Trim())
+                .Where(l => l.Length > 20 &&
+                    Regex.IsMatch(l, @"(?i)(ilustraci[oó]n|imagen|visual|escena|dise[nñ]o|fondo|estilo|colores|icono)", RegexOptions.None))
+                .ToList();
+
+            if (visualLines.Count > 0)
+            {
+                var combined = string.Join(". ", visualLines);
+                if (combined.Length > 0)
+                    return TruncateAtWord(combined, softLimit);
+            }
 
             // Estrategia 3: primeras frases hasta el límite
             var sentences = clean.Split([". ", ".\n"], StringSplitOptions.None);
