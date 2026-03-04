@@ -67,30 +67,75 @@ namespace Server.Services.Ai
 
             var options = new ImageGenerationOptions();
 
+            var isGptImage = context.ModelName.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase);
+            var isDallE2 = context.ModelName.Equals("dall-e-2", StringComparison.OrdinalIgnoreCase);
+
+            // Size: each model family supports different sizes
             if (context.Configuration.TryGetValue("size", out var size) && size is string sizeStr)
             {
-                options.Size = sizeStr switch
+                if (isGptImage)
                 {
-                    "256x256" => GeneratedImageSize.W256xH256,
-                    "512x512" => GeneratedImageSize.W512xH512,
-                    "1024x1024" => GeneratedImageSize.W1024xH1024,
-                    "1792x1024" => GeneratedImageSize.W1792xH1024,
-                    "1024x1792" => GeneratedImageSize.W1024xH1792,
-                    _ => GeneratedImageSize.W1024xH1024
-                };
+                    // gpt-image: 1024x1024, 1536x1024, 1024x1536
+                    options.Size = sizeStr switch
+                    {
+                        "1024x1024" => GeneratedImageSize.W1024xH1024,
+                        "1536x1024" => new GeneratedImageSize(1536, 1024),
+                        "1024x1536" => new GeneratedImageSize(1024, 1536),
+                        _ => GeneratedImageSize.W1024xH1024
+                    };
+                }
+                else if (isDallE2)
+                {
+                    // dall-e-2: 256x256, 512x512, 1024x1024
+                    options.Size = sizeStr switch
+                    {
+                        "256x256" => GeneratedImageSize.W256xH256,
+                        "512x512" => GeneratedImageSize.W512xH512,
+                        "1024x1024" => GeneratedImageSize.W1024xH1024,
+                        _ => GeneratedImageSize.W1024xH1024
+                    };
+                }
+                else
+                {
+                    // dall-e-3: 1024x1024, 1792x1024, 1024x1792
+                    options.Size = sizeStr switch
+                    {
+                        "1024x1024" => GeneratedImageSize.W1024xH1024,
+                        "1792x1024" => GeneratedImageSize.W1792xH1024,
+                        "1024x1792" => GeneratedImageSize.W1024xH1792,
+                        _ => GeneratedImageSize.W1024xH1024
+                    };
+                }
             }
 
-            if (context.Configuration.TryGetValue("quality", out var quality) && quality is string q)
+            // Quality: dall-e-2 doesn't support quality; gpt-image uses different values
+            if (!isDallE2 && context.Configuration.TryGetValue("quality", out var quality) && quality is string q)
             {
-                options.Quality = q switch
+                if (isGptImage)
                 {
-                    "hd" => GeneratedImageQuality.High,
-                    _ => GeneratedImageQuality.Standard
-                };
+                    // gpt-image: low, medium, high, auto
+                    options.Quality = q switch
+                    {
+                        "low" => new GeneratedImageQuality("low"),
+                        "medium" => new GeneratedImageQuality("medium"),
+                        "high" => GeneratedImageQuality.High,
+                        "auto" => new GeneratedImageQuality("auto"),
+                        "hd" => GeneratedImageQuality.High,
+                        _ => GeneratedImageQuality.High
+                    };
+                }
+                else
+                {
+                    // dall-e-3: standard, hd
+                    options.Quality = q switch
+                    {
+                        "hd" => GeneratedImageQuality.High,
+                        _ => GeneratedImageQuality.Standard
+                    };
+                }
             }
 
             // gpt-image models don't support response_format — only set for dall-e
-            var isGptImage = context.ModelName.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase);
             if (!isGptImage)
             {
                 options.ResponseFormat = GeneratedImageFormat.Bytes;

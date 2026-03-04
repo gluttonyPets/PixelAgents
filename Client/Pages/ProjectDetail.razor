@@ -218,9 +218,9 @@ else
                                         <div class="image-grid mt-1">
                                             @foreach (var f in parsed.Files)
                                             {
-                                                var fileUrl = $"api/executions/{_result!.Id}/files/{f.FileId}";
+                                                var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
                                                 <div class="image-grid-item">
-                                                    <img src="@fileUrl" alt="@f.FileName" class="file-preview" />
+                                                    <img src="@fileUrl" alt="@f.FileName" class="file-preview" crossorigin="use-credentials" />
                                                     @if (f.RevisedPrompt is not null)
                                                     {
                                                         <p class="text-sm text-muted" style="font-style: italic; margin: 0.2rem 0;">@f.RevisedPrompt</p>
@@ -245,11 +245,11 @@ else
                                     {
                                         @foreach (var f in step.Files)
                                         {
-                                            var fileUrl = $"api/executions/{_result!.Id}/files/{f.Id}";
+                                            var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.Id}";
                                             <div class="file-item">
                                                 @if (f.ContentType.StartsWith("image/"))
                                                 {
-                                                    <img src="@fileUrl" alt="@f.FileName" class="file-preview" />
+                                                    <img src="@fileUrl" alt="@f.FileName" class="file-preview" crossorigin="use-credentials" />
                                                 }
                                                 <div class="file-info">
                                                     <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
@@ -366,10 +366,14 @@ else
     private HubConnection? _hubConnection;
     private ElementReference _logContainer;
 
+    // API base URL for file downloads (images, etc.)
+    private string _apiBase = "";
+
     private record LogEntry(string Level, string Message, int? StepOrder, string? StepName, DateTime Timestamp);
 
     protected override async Task OnInitializedAsync()
     {
+        _apiBase = (Config["ApiBaseUrl"] ?? "https://localhost:6951").TrimEnd('/');
         await LoadAll();
         await InitializeSignalR();
     }
