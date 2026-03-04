@@ -82,15 +82,19 @@ else if (!_loading)
     private async Task Create()
     {
         _error = null; _loading = true;
-        var (ok, error) = await Api.CreateApiKeyAsync(new CreateApiKeyRequest(_name, _provider, _key));
-        if (ok) { _name = ""; _key = ""; await Load(); }
-        else _error = error;
+        try
+        {
+            var (ok, error) = await Api.CreateApiKeyAsync(new CreateApiKeyRequest(_name, _provider, _key));
+            if (ok) { _name = ""; _key = ""; await Load(); }
+            else _error = error;
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
         _loading = false;
     }
 
     private async Task Delete(Guid id)
     {
-        await Api.DeleteApiKeyAsync(id);
-        await Load();
+        try { await Api.DeleteApiKeyAsync(id); await Load(); }
+        catch { }
     }
 }

@@ -120,18 +120,22 @@ else if (!_loading)
     private async Task Create()
     {
         _error = null; _loading = true;
-        Guid? keyId = Guid.TryParse(_apiKeyId, out var id) ? id : null;
-        var req = new CreateAiModuleRequest(_name, _desc, _provider, _moduleType, _model, keyId,
-            string.IsNullOrWhiteSpace(_config) ? null : _config);
-        var (ok, error) = await Api.CreateModuleAsync(req);
-        if (ok) { _name = ""; _desc = ""; _model = ""; _config = ""; _modules = await Api.GetModulesAsync(); }
-        else _error = error;
+        try
+        {
+            Guid? keyId = Guid.TryParse(_apiKeyId, out var id) ? id : null;
+            var req = new CreateAiModuleRequest(_name, _desc, _provider, _moduleType, _model, keyId,
+                string.IsNullOrWhiteSpace(_config) ? null : _config);
+            var (ok, error) = await Api.CreateModuleAsync(req);
+            if (ok) { _name = ""; _desc = ""; _model = ""; _config = ""; _modules = await Api.GetModulesAsync(); }
+            else _error = error;
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
         _loading = false;
     }
 
     private async Task Delete(Guid moduleId)
     {
-        await Api.DeleteModuleAsync(moduleId);
-        _modules = await Api.GetModulesAsync();
+        try { await Api.DeleteModuleAsync(moduleId); _modules = await Api.GetModulesAsync(); }
+        catch { }
     }
 }

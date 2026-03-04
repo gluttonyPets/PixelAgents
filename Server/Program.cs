@@ -28,7 +28,8 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(opt =>
 builder.Services.ConfigureApplicationCookie(opt =>
 {
     opt.Cookie.HttpOnly = true;
-    opt.Cookie.SameSite = SameSiteMode.Lax;
+    opt.Cookie.SameSite = SameSiteMode.None;
+    opt.Cookie.SecurePolicy = CookieSecurePolicy.Always;
     opt.Events.OnRedirectToLogin = ctx =>
     {
         ctx.Response.StatusCode = 401;
@@ -56,7 +57,11 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorClient", policy =>
     {
-        policy.WithOrigins("http://localhost:5100", "https://localhost:5101")
+        policy.SetIsOriginAllowed(origin =>
+              {
+                  var uri = new Uri(origin);
+                  return uri.Host == "localhost" || uri.Host == "127.0.0.1";
+              })
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -70,6 +75,8 @@ builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 app.UseCors("BlazorClient");
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseSwagger();
 app.UseSwaggerUI();
 

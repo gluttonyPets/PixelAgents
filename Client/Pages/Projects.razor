@@ -75,9 +75,13 @@ else if (!_loading)
     private async Task Create()
     {
         _error = null; _loading = true;
-        var (ok, error) = await Api.CreateProjectAsync(new CreateProjectRequest(_name, string.IsNullOrWhiteSpace(_desc) ? null : _desc));
-        if (ok) { _name = ""; _desc = ""; await Load(); }
-        else _error = error;
+        try
+        {
+            var (ok, error) = await Api.CreateProjectAsync(new CreateProjectRequest(_name, string.IsNullOrWhiteSpace(_desc) ? null : _desc));
+            if (ok) { _name = ""; _desc = ""; await Load(); }
+            else _error = error;
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
         _loading = false;
     }
 
@@ -85,7 +89,7 @@ else if (!_loading)
 
     private async Task Delete(Guid id)
     {
-        await Api.DeleteProjectAsync(id);
-        await Load();
+        try { await Api.DeleteProjectAsync(id); await Load(); }
+        catch { }
     }
 }

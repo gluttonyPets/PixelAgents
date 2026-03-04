@@ -81,18 +81,26 @@ else
     private async Task Register()
     {
         _regError = null; _regSuccess = false; _loading = true;
-        var (ok, error) = await Api.RegisterAsync(_regEmail, _regPassword);
-        if (ok) { _regSuccess = true; _loginEmail = _regEmail; }
-        else _regError = error;
+        try
+        {
+            var (ok, error) = await Api.RegisterAsync(_regEmail, _regPassword);
+            if (ok) { _regSuccess = true; _loginEmail = _regEmail; }
+            else _regError = error;
+        }
+        catch (Exception ex) { _regError = $"Error de conexion: {ex.Message}"; }
         _loading = false;
     }
 
     private async Task Login()
     {
         _loginError = null; _loading = true;
-        var (ok, user, error) = await Api.LoginAsync(_loginEmail, _loginPassword);
-        if (ok) { _user = user; Nav.NavigateTo("/apikeys"); }
-        else _loginError = error;
+        try
+        {
+            var (ok, user, error) = await Api.LoginAsync(_loginEmail, _loginPassword);
+            if (ok) { _user = user; Nav.NavigateTo("/apikeys"); }
+            else _loginError = error;
+        }
+        catch (Exception ex) { _loginError = $"Error de conexion: {ex.Message}"; }
         _loading = false;
     }
 
