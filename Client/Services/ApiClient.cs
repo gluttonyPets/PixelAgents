@@ -165,6 +165,21 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
     }
 
+    public async Task<(bool Ok, ExecutionDetailResponse? Result, string? Error)> RetryFromStepAsync(
+        Guid executionId, int stepOrder, string? comment)
+    {
+        var resp = await SendAsync(HttpMethod.Post,
+            $"/api/executions/{executionId}/retry-from-step",
+            new RetryFromStepRequest(stepOrder, comment));
+        if (!resp.IsSuccessStatusCode)
+        {
+            var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
+            return (false, null, body?.Error ?? resp.ReasonPhrase);
+        }
+        var result = await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
+        return (true, result, null);
+    }
+
     // ── Internal ──
 
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, object? body = null)

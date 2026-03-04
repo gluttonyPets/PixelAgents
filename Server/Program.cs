@@ -641,6 +641,47 @@ app.MapGet("/api/executions/{id}", async (
         exec.CreatedAt, exec.CompletedAt, steps));
 }).RequireAuthorization();
 
+// Retry execution from a specific step
+app.MapPost("/api/executions/{executionId}/retry-from-step", async (
+    Guid executionId, RetryFromStepRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IPipelineExecutor executor) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    try
+    {
+        var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, db);
+
+        var exec = await db.ProjectExecutions
+            .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .ThenInclude(s => s.Files)
+            .Include(e => e.StepExecutions)
+                .ThenInclude(s => s.ProjectModule)
+                    .ThenInclude(pm => pm.AiModule)
+            .FirstAsync(e => e.Id == execution.Id);
+
+        var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+            new StepExecutionResponse(s.Id, s.ProjectModuleId,
+                s.ProjectModule.AiModule.Name, s.StepOrder,
+                s.Status, s.InputData, s.OutputData, s.ErrorMessage,
+                s.CreatedAt, s.CompletedAt,
+                s.Files.Select(f => new ExecutionFileResponse(
+                    f.Id, f.FileName, f.ContentType, f.FilePath,
+                    f.Direction, f.FileSize, f.CreatedAt)).ToList()
+            )).ToList();
+
+        return Results.Ok(new ExecutionDetailResponse(
+            exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
+            exec.CreatedAt, exec.CompletedAt, steps));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
 // Download execution file
 app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     Guid executionId, Guid fileId, HttpContext ctx,

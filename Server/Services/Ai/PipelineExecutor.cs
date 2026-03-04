@@ -431,6 +431,408 @@ namespace Server.Services.Ai
             return config;
         }
 
+        public async Task<ProjectExecution> RetryFromStepAsync(
+            Guid executionId, int fromStepOrder, string? comment, UserDbContext db)
+        {
+            var execution = await db.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                    .ThenInclude(s => s.Files)
+                .Include(e => e.StepExecutions)
+                    .ThenInclude(s => s.ProjectModule)
+                        .ThenInclude(pm => pm.AiModule)
+                            .ThenInclude(m => m.ApiKey)
+                .FirstOrDefaultAsync(e => e.Id == executionId)
+                ?? throw new InvalidOperationException("Ejecucion no encontrada");
+
+            var project = await db.Projects
+                .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
+                    .ThenInclude(pm => pm.AiModule)
+                        .ThenInclude(m => m.ApiKey)
+                .FirstOrDefaultAsync(p => p.Id == execution.ProjectId)
+                ?? throw new InvalidOperationException("Proyecto no encontrado");
+
+            var workspacePath = execution.WorkspacePath;
+
+            // Collect previous outputs and inputs for context
+            var stepResults = new Dictionary<int, AiResult>();
+            var stepOutputs = new Dictionary<int, StepOutput>();
+            var stepModuleTypes = new Dictionary<int, string>();
+            var previousOutputsByStep = new Dictionary<int, string?>();
+            var previousInputsByStep = new Dictionary<int, string?>();
+
+            foreach (var oldStep in execution.StepExecutions.OrderBy(s => s.StepOrder))
+            {
+                previousOutputsByStep[oldStep.StepOrder] = oldStep.OutputData;
+                previousInputsByStep[oldStep.StepOrder] = oldStep.InputData;
+
+                if (oldStep.StepOrder < fromStepOrder)
+                {
+                    // Rebuild StepOutput for downstream steps
+                    stepModuleTypes[oldStep.StepOrder] = oldStep.ProjectModule.AiModule.ModuleType;
+                    if (oldStep.OutputData is not null)
+                    {
+                        try
+                        {
+                            var parsed = JsonSerializer.Deserialize<StepOutput>(oldStep.OutputData,
+                                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                            if (parsed is not null)
+                                stepOutputs[oldStep.StepOrder] = parsed;
+                        }
+                        catch { }
+                    }
+                    if (oldStep.ProjectModule.AiModule.ModuleType == "Text" && oldStep.OutputData is not null)
+                    {
+                        stepResults[oldStep.StepOrder] = AiResult.Ok(oldStep.OutputData);
+                    }
+                }
+            }
+
+            // Delete old step executions from retry point onwards
+            var stepsToRemove = execution.StepExecutions
+                .Where(s => s.StepOrder >= fromStepOrder).ToList();
+
+            foreach (var oldStep in stepsToRemove)
+            {
+                var stepDir = Path.Combine(workspacePath, $"step_{oldStep.StepOrder}");
+                if (Directory.Exists(stepDir))
+                    Directory.Delete(stepDir, recursive: true);
+
+                db.ExecutionFiles.RemoveRange(oldStep.Files);
+                db.StepExecutions.Remove(oldStep);
+            }
+
+            execution.Status = "Running";
+            execution.CompletedAt = null;
+            await db.SaveChangesAsync();
+
+            var projectId = execution.ProjectId;
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Reintentando desde paso {fromStepOrder}" +
+                (comment is not null ? $" con feedback: \"{comment}\"" : ""));
+
+            // Recover the original user input
+            string? originalUserInput = null;
+            if (previousInputsByStep.TryGetValue(1, out var step1Input) && step1Input is not null)
+            {
+                try
+                {
+                    var inputDoc = JsonSerializer.Deserialize<JsonElement>(step1Input);
+                    if (inputDoc.TryGetProperty("prompt", out var promptEl))
+                        originalUserInput = promptEl.GetString();
+                }
+                catch { }
+            }
+
+            // Re-execute from retry step onwards
+            foreach (var pm in project.ProjectModules.Where(pm => pm.StepOrder >= fromStepOrder))
+            {
+                var stepExecution = new StepExecution
+                {
+                    Id = Guid.NewGuid(),
+                    ExecutionId = executionId,
+                    ProjectModuleId = pm.Id,
+                    StepOrder = pm.StepOrder,
+                    Status = "Running",
+                    CreatedAt = DateTime.UtcNow,
+                };
+
+                db.StepExecutions.Add(stepExecution);
+                await db.SaveChangesAsync();
+
+                try
+                {
+                    var stepName = pm.StepName ?? pm.AiModule.Name;
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        pm.StepOrder, stepName);
+
+                    var apiKey = pm.AiModule.ApiKey?.EncryptedKey
+                        ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
+
+                    var provider = _registry.GetProvider(pm.AiModule.ProviderType)
+                        ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Proveedor '{pm.AiModule.ProviderType}' no disponible");
+
+                    var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+                    var inputs = ResolveInputs(pm, originalUserInput, stepResults, stepOutputs,
+                        pm.AiModule.ModuleType, pm.AiModule.ModelName);
+
+                    // For the retry step: enrich input with feedback + previous output
+                    if (pm.StepOrder == fromStepOrder && comment is not null)
+                    {
+                        var prevOutput = previousOutputsByStep.GetValueOrDefault(pm.StepOrder);
+                        inputs = EnrichInputsWithFeedback(inputs, comment, prevOutput, pm.AiModule.ModuleType);
+                    }
+
+                    stepExecution.InputData = inputs.Count == 1
+                        ? JsonSerializer.Serialize(new { prompt = inputs[0] })
+                        : JsonSerializer.Serialize(new { prompts = inputs, count = inputs.Count });
+
+                    if (pm.AiModule.ModuleType == "Text")
+                    {
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Enviando prompt al modelo de texto ({pm.AiModule.ModelName})...",
+                            pm.StepOrder, stepName);
+
+                        var context = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = inputs[0],
+                            ProjectContext = project.Context,
+                            Configuration = config,
+                        };
+
+                        var result = await provider.ExecuteAsync(context);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+
+                        if (!result.Success)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                $"Error en texto: {result.Error}", pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        var stepOutput = OutputSchemaHelper.ParseTextOutput(result.TextOutput ?? "", result.Metadata);
+                        stepOutputs[pm.StepOrder] = stepOutput;
+
+                        var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                        Directory.CreateDirectory(stepDir);
+                        await File.WriteAllTextAsync(Path.Combine(stepDir, "output.json"), result.TextOutput ?? "");
+
+                        var execFile = new ExecutionFile
+                        {
+                            Id = Guid.NewGuid(),
+                            StepExecutionId = stepExecution.Id,
+                            FileName = "output.json",
+                            ContentType = "application/json",
+                            FilePath = Path.Combine($"step_{pm.StepOrder}", "output.json"),
+                            Direction = "Output",
+                            FileSize = System.Text.Encoding.UTF8.GetByteCount(result.TextOutput ?? ""),
+                            CreatedAt = DateTime.UtcNow,
+                        };
+                        db.ExecutionFiles.Add(execFile);
+
+                        stepExecution.OutputData = JsonSerializer.Serialize(stepOutput);
+
+                        await _logger.LogAsync(projectId, executionId, "success",
+                            $"Texto regenerado correctamente", pm.StepOrder, stepName);
+                    }
+                    else if (pm.AiModule.ModuleType == "Image")
+                    {
+                        var outputFiles = new List<OutputFile>();
+
+                        for (var i = 0; i < inputs.Count; i++)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                inputs.Count > 1
+                                    ? $"Generando imagen {i + 1}/{inputs.Count}..."
+                                    : $"Generando imagen...",
+                                pm.StepOrder, stepName);
+
+                            var singleInput = inputs[i];
+                            var maxLen = InputAdapter.GetMaxPromptLength(pm.AiModule.ModelName);
+                            if (singleInput.Length > maxLen)
+                                singleInput = InputAdapter.TruncateAtWord(singleInput, maxLen);
+
+                            var context = new AiExecutionContext
+                            {
+                                ModuleType = pm.AiModule.ModuleType,
+                                ModelName = pm.AiModule.ModelName,
+                                ApiKey = apiKey,
+                                Input = singleInput,
+                                ProjectContext = project.Context,
+                                Configuration = config,
+                            };
+
+                            var result = await provider.ExecuteAsync(context);
+
+                            if (!result.Success)
+                            {
+                                await _logger.LogAsync(projectId, executionId, "error",
+                                    $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}",
+                                    pm.StepOrder, stepName);
+                                await FailStep(stepExecution, execution,
+                                    $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}", db);
+                                return execution;
+                            }
+
+                            if (result.FileOutput is not null)
+                            {
+                                var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                                Directory.CreateDirectory(stepDir);
+
+                                var ext = GetExtension(result.ContentType ?? "application/octet-stream");
+                                var fileName = inputs.Count > 1 ? $"output_{i + 1}{ext}" : $"output{ext}";
+                                var filePath = Path.Combine(stepDir, fileName);
+
+                                await File.WriteAllBytesAsync(filePath, result.FileOutput);
+
+                                var execFile = new ExecutionFile
+                                {
+                                    Id = Guid.NewGuid(),
+                                    StepExecutionId = stepExecution.Id,
+                                    FileName = fileName,
+                                    ContentType = result.ContentType ?? "application/octet-stream",
+                                    FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                    Direction = "Output",
+                                    FileSize = result.FileOutput.Length,
+                                    CreatedAt = DateTime.UtcNow,
+                                };
+                                db.ExecutionFiles.Add(execFile);
+
+                                outputFiles.Add(new OutputFile
+                                {
+                                    FileId = execFile.Id,
+                                    FileName = fileName,
+                                    ContentType = execFile.ContentType,
+                                    FileSize = execFile.FileSize,
+                                    RevisedPrompt = result.Metadata.TryGetValue("revisedPrompt", out var rp) ? rp?.ToString() : null
+                                });
+                            }
+
+                            stepResults[pm.StepOrder] = result;
+                        }
+
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+
+                        var imageOutput = OutputSchemaHelper.BuildImageOutput(outputFiles, pm.AiModule.ModelName);
+                        stepOutputs[pm.StepOrder] = imageOutput;
+                        stepExecution.OutputData = JsonSerializer.Serialize(imageOutput);
+
+                        await _logger.LogAsync(projectId, executionId, "success",
+                            $"{outputFiles.Count} imagen(es) regenerada(s) correctamente",
+                            pm.StepOrder, stepName);
+                    }
+                    else
+                    {
+                        var context = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = inputs[0],
+                            ProjectContext = project.Context,
+                            Configuration = config,
+                        };
+
+                        var result = await provider.ExecuteAsync(context);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+
+                        if (!result.Success)
+                        {
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        stepExecution.OutputData = JsonSerializer.Serialize(new
+                        {
+                            text = result.TextOutput,
+                            contentType = result.ContentType,
+                            metadata = result.Metadata
+                        });
+
+                        if (result.FileOutput is not null)
+                        {
+                            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            Directory.CreateDirectory(stepDir);
+                            var ext = GetExtension(result.ContentType ?? "application/octet-stream");
+                            var fileName = $"output{ext}";
+                            await File.WriteAllBytesAsync(Path.Combine(stepDir, fileName), result.FileOutput);
+
+                            db.ExecutionFiles.Add(new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(),
+                                StepExecutionId = stepExecution.Id,
+                                FileName = fileName,
+                                ContentType = result.ContentType ?? "application/octet-stream",
+                                FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                Direction = "Output",
+                                FileSize = result.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            });
+                        }
+                    }
+
+                    stepExecution.Status = "Completed";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    await _logger.LogAsync(projectId, executionId, "error",
+                        $"Error inesperado: {ex.Message}", pm.StepOrder, pm.StepName ?? pm.AiModule.Name);
+
+                    stepExecution.Status = "Failed";
+                    stepExecution.ErrorMessage = ex.Message;
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+
+                    execution.Status = "Failed";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
+                }
+            }
+
+            execution.Status = "Completed";
+            execution.CompletedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(projectId, executionId, "success", "Pipeline reintentado correctamente");
+
+            return execution;
+        }
+
+        /// <summary>
+        /// Enrich inputs with user feedback and previous output context.
+        /// Text: includes previous output + feedback instruction.
+        /// Image: appends feedback to the prompt.
+        /// </summary>
+        private static List<string> EnrichInputsWithFeedback(
+            List<string> originalInputs, string comment, string? previousOutputData, string moduleType)
+        {
+            if (moduleType == "Text")
+            {
+                string? previousContent = null;
+                if (previousOutputData is not null)
+                {
+                    try
+                    {
+                        var prevOutput = JsonSerializer.Deserialize<StepOutput>(previousOutputData,
+                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                        previousContent = prevOutput?.Content;
+                    }
+                    catch { previousContent = previousOutputData; }
+                }
+
+                string enriched;
+                if (previousContent is not null)
+                {
+                    enriched = $"[Tu respuesta anterior fue]:\n{previousContent}\n\n" +
+                               $"[Feedback del usuario]: {comment}\n\n" +
+                               $"Genera una nueva respuesta incorporando el feedback. Manten el mismo formato de salida JSON.";
+                }
+                else
+                {
+                    enriched = $"{originalInputs[0]}\n\n[Feedback adicional del usuario]: {comment}";
+                }
+
+                return [enriched];
+            }
+            else
+            {
+                // Image / other: append feedback to each prompt
+                return originalInputs
+                    .Select(input => $"{input}\n\nAjustes solicitados: {comment}")
+                    .ToList();
+            }
+        }
+
         private static string GetExtension(string contentType) => contentType switch
         {
             "image/png" => ".png",

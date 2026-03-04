@@ -143,7 +143,33 @@ else
                             <div class="step-header">
                                 <strong>Paso @step.StepOrder: @step.ModuleName</strong>
                                 <span class="badge @StatusBadge(step.Status)">@step.Status</span>
+                                @if (_result.Status == "Completed" && step.Status == "Completed" && !_executing)
+                                {
+                                    <button class="btn btn-sm" style="margin-left: auto; padding: 0.15rem 0.5rem; font-size: 0.75rem;"
+                                            @onclick="() => ToggleRetryPanel(step.StepOrder)">
+                                        @(_retryStepOrder == step.StepOrder ? "Cancelar" : "Reintentar desde aqui")
+                                    </button>
+                                }
                             </div>
+
+                            @if (_retryStepOrder == step.StepOrder)
+                            {
+                                <div class="retry-panel" style="background: var(--surface); border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.6rem; margin: 0.4rem 0;">
+                                    <div class="form-group" style="margin-bottom: 0.4rem;">
+                                        <label class="text-sm">Feedback / comentario (opcional)</label>
+                                        <textarea @bind="_retryComment" rows="2"
+                                                  placeholder="Ej: Hazlo mas corto, cambia el tono, añade mas detalles sobre..."
+                                                  style="font-size: 0.85rem;"></textarea>
+                                    </div>
+                                    @if (_retryError is not null)
+                                    {
+                                        <div class="alert alert-error" style="font-size: 0.8rem; padding: 0.3rem 0.5rem;">@_retryError</div>
+                                    }
+                                    <button class="btn btn-sm btn-success" @onclick="() => RetryFromStep(step.StepOrder)" disabled="@_executing">
+                                        Reintentar paso @step.StepOrder y siguientes
+                                    </button>
+                                </div>
+                            }
 
                             @if (step.ErrorMessage is not null)
                             {
@@ -361,6 +387,11 @@ else
     private string _userInput = "";
     private string? _execError;
 
+    // Retry from step
+    private int? _retryStepOrder;
+    private string _retryComment = "";
+    private string? _retryError;
+
     // Execution log
     private List<LogEntry> _logEntries = [];
     private HubConnection? _hubConnection;
@@ -476,6 +507,48 @@ else
         _logEntries.Clear();
         try { _result = await Api.GetExecutionDetailAsync(id); }
         catch { }
+    }
+
+    private void ToggleRetryPanel(int stepOrder)
+    {
+        if (_retryStepOrder == stepOrder)
+        {
+            _retryStepOrder = null;
+            _retryComment = "";
+            _retryError = null;
+        }
+        else
+        {
+            _retryStepOrder = stepOrder;
+            _retryComment = "";
+            _retryError = null;
+        }
+    }
+
+    private async Task RetryFromStep(int stepOrder)
+    {
+        if (_result is null) return;
+        _retryError = null;
+        _executing = true;
+        _logEntries.Clear();
+
+        try
+        {
+            var commentToSend = string.IsNullOrWhiteSpace(_retryComment) ? null : _retryComment;
+            var (ok, result, error) = await Api.RetryFromStepAsync(_result.Id, stepOrder, commentToSend);
+            if (ok)
+            {
+                _result = result;
+                _retryStepOrder = null;
+                _retryComment = "";
+            }
+            else
+            {
+                _retryError = error;
+            }
+        }
+        catch (Exception ex) { _retryError = $"Error de conexion: {ex.Message}"; }
+        _executing = false;
     }
 
     private void ClearLog()

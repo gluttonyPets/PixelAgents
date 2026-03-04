@@ -39,6 +39,7 @@ namespace Server.Models
 
     // ── Execution ──
     public record ExecuteProjectRequest(string? UserInput);
+    public record RetryFromStepRequest(int StepOrder, string? Comment);
     public record ExecutionResponse(
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
         DateTime CreatedAt, DateTime? CompletedAt);
