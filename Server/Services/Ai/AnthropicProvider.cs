@@ -44,14 +44,12 @@ namespace Server.Services.Ai
             };
 
             var systemParts = new List<string>();
+            systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
                 systemParts.Add(sp);
-            if (systemParts.Count > 0)
-            {
-                parameters.System = new List<SystemMessage> { new SystemMessage(string.Join("\n\n", systemParts)) };
-            }
+            parameters.System = new List<SystemMessage> { new SystemMessage(string.Join("\n\n", systemParts)) };
 
             if (context.Configuration.TryGetValue("temperature", out var temp))
                 parameters.Temperature = Convert.ToDecimal(temp);

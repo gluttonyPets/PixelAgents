@@ -33,12 +33,12 @@ namespace Server.Services.Ai
             var messages = new List<ChatMessage>();
 
             var systemParts = new List<string>();
+            systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
                 systemParts.Add(sp);
-            if (systemParts.Count > 0)
-                messages.Add(new SystemChatMessage(string.Join("\n\n", systemParts)));
+            messages.Add(new SystemChatMessage(string.Join("\n\n", systemParts)));
 
             messages.Add(new UserChatMessage(context.Input));
 

@@ -47,6 +47,7 @@ namespace Server.Services.Ai
             Directory.CreateDirectory(workspacePath);
 
             var stepResults = new Dictionary<int, AiResult>();
+            var stepOutputs = new Dictionary<int, StepOutput>();
             var stepModuleTypes = new Dictionary<int, string>();
 
             foreach (var pm in project.ProjectModules)
@@ -66,29 +67,6 @@ namespace Server.Services.Ai
 
                 try
                 {
-                    var input = ResolveInput(pm, userInput, stepResults);
-
-                    // Determine source module type for cross-type adaptation
-                    string? sourceModuleType = null;
-                    if (pm.InputMapping is not null)
-                    {
-                        var mapping = JsonSerializer.Deserialize<JsonElement>(pm.InputMapping);
-                        var src = mapping.GetProperty("source").GetString();
-                        if (src == "previous")
-                        {
-                            var prevOrder = stepModuleTypes.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
-                            if (stepModuleTypes.TryGetValue(prevOrder, out var prevType))
-                                sourceModuleType = prevType;
-                        }
-                        else if (src == "step" && mapping.TryGetProperty("stepOrder", out var so))
-                        {
-                            if (stepModuleTypes.TryGetValue(so.GetInt32(), out var srcType))
-                                sourceModuleType = srcType;
-                        }
-                    }
-
-                    input = InputAdapter.Adapt(input, sourceModuleType, pm.AiModule.ModuleType, pm.AiModule.ModelName);
-
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada para modulo '{pm.AiModule.Name}'");
 
@@ -97,89 +75,189 @@ namespace Server.Services.Ai
 
                     var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
 
-                    var context = new AiExecutionContext
+                    // Resolve inputs: check if previous step has multiple items
+                    var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
+
+                    stepExecution.InputData = inputs.Count == 1
+                        ? JsonSerializer.Serialize(new { prompt = inputs[0] })
+                        : JsonSerializer.Serialize(new { prompts = inputs, count = inputs.Count });
+
+                    if (pm.AiModule.ModuleType == "Text")
                     {
-                        ModuleType = pm.AiModule.ModuleType,
-                        ModelName = pm.AiModule.ModelName,
-                        ApiKey = apiKey,
-                        Input = input,
-                        ProjectContext = project.Context,
-                        Configuration = config,
-                    };
+                        // Text modules: single call, structured JSON output
+                        var context = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = inputs[0], // Text modules always get single input
+                            ProjectContext = project.Context,
+                            Configuration = config,
+                        };
 
-                    stepExecution.InputData = JsonSerializer.Serialize(new { prompt = input });
+                        var result = await provider.ExecuteAsync(context);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
 
-                    var result = await provider.ExecuteAsync(context);
-                    stepResults[pm.StepOrder] = result;
-                    stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        if (!result.Success)
+                        {
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
 
-                    if (!result.Success)
-                    {
-                        stepExecution.Status = "Failed";
-                        stepExecution.ErrorMessage = result.Error;
-                        stepExecution.CompletedAt = DateTime.UtcNow;
-                        await db.SaveChangesAsync();
+                        // Parse structured output
+                        var stepOutput = OutputSchemaHelper.ParseTextOutput(
+                            result.TextOutput ?? "", result.Metadata);
+                        stepOutputs[pm.StepOrder] = stepOutput;
 
-                        execution.Status = "Failed";
-                        execution.CompletedAt = DateTime.UtcNow;
-                        await db.SaveChangesAsync();
-                        return execution;
-                    }
-
-                    stepExecution.OutputData = JsonSerializer.Serialize(new
-                    {
-                        text = result.TextOutput,
-                        contentType = result.ContentType,
-                        metadata = result.Metadata
-                    });
-
-                    if (result.FileOutput is not null)
-                    {
+                        // Save text file
                         var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
                         Directory.CreateDirectory(stepDir);
-
-                        var ext = GetExtension(result.ContentType ?? "application/octet-stream");
-                        var fileName = $"output{ext}";
-                        var filePath = Path.Combine(stepDir, fileName);
-
-                        await File.WriteAllBytesAsync(filePath, result.FileOutput);
+                        await File.WriteAllTextAsync(Path.Combine(stepDir, "output.json"), result.TextOutput ?? "");
 
                         var execFile = new ExecutionFile
                         {
                             Id = Guid.NewGuid(),
                             StepExecutionId = stepExecution.Id,
-                            FileName = fileName,
-                            ContentType = result.ContentType ?? "application/octet-stream",
-                            FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                            FileName = "output.json",
+                            ContentType = "application/json",
+                            FilePath = Path.Combine($"step_{pm.StepOrder}", "output.json"),
                             Direction = "Output",
-                            FileSize = result.FileOutput.Length,
+                            FileSize = System.Text.Encoding.UTF8.GetByteCount(result.TextOutput ?? ""),
                             CreatedAt = DateTime.UtcNow,
                         };
-
                         db.ExecutionFiles.Add(execFile);
+
+                        stepExecution.OutputData = JsonSerializer.Serialize(stepOutput);
                     }
-
-                    if (result.TextOutput is not null)
+                    else if (pm.AiModule.ModuleType == "Image")
                     {
-                        var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
-                        Directory.CreateDirectory(stepDir);
+                        // Image modules: may execute multiple times if previous step had items
+                        var outputFiles = new List<OutputFile>();
 
-                        var textFile = Path.Combine(stepDir, "output.txt");
-                        await File.WriteAllTextAsync(textFile, result.TextOutput);
-
-                        var execFile = new ExecutionFile
+                        for (var i = 0; i < inputs.Count; i++)
                         {
-                            Id = Guid.NewGuid(),
-                            StepExecutionId = stepExecution.Id,
-                            FileName = "output.txt",
-                            ContentType = "text/plain",
-                            FilePath = Path.Combine($"step_{pm.StepOrder}", "output.txt"),
-                            Direction = "Output",
-                            FileSize = System.Text.Encoding.UTF8.GetByteCount(result.TextOutput),
-                            CreatedAt = DateTime.UtcNow,
+                            var singleInput = inputs[i];
+
+                            // Apply truncation safety
+                            var maxLen = InputAdapter.GetMaxPromptLength(pm.AiModule.ModelName);
+                            if (singleInput.Length > maxLen)
+                                singleInput = InputAdapter.TruncateAtWord(singleInput, maxLen);
+
+                            var context = new AiExecutionContext
+                            {
+                                ModuleType = pm.AiModule.ModuleType,
+                                ModelName = pm.AiModule.ModelName,
+                                ApiKey = apiKey,
+                                Input = singleInput,
+                                ProjectContext = project.Context,
+                                Configuration = config,
+                            };
+
+                            var result = await provider.ExecuteAsync(context);
+
+                            if (!result.Success)
+                            {
+                                await FailStep(stepExecution, execution,
+                                    $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}", db);
+                                return execution;
+                            }
+
+                            if (result.FileOutput is not null)
+                            {
+                                var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                                Directory.CreateDirectory(stepDir);
+
+                                var ext = GetExtension(result.ContentType ?? "application/octet-stream");
+                                var fileName = inputs.Count > 1 ? $"output_{i + 1}{ext}" : $"output{ext}";
+                                var filePath = Path.Combine(stepDir, fileName);
+
+                                await File.WriteAllBytesAsync(filePath, result.FileOutput);
+
+                                var execFile = new ExecutionFile
+                                {
+                                    Id = Guid.NewGuid(),
+                                    StepExecutionId = stepExecution.Id,
+                                    FileName = fileName,
+                                    ContentType = result.ContentType ?? "application/octet-stream",
+                                    FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                    Direction = "Output",
+                                    FileSize = result.FileOutput.Length,
+                                    CreatedAt = DateTime.UtcNow,
+                                };
+                                db.ExecutionFiles.Add(execFile);
+
+                                outputFiles.Add(new OutputFile
+                                {
+                                    FileId = execFile.Id,
+                                    FileName = fileName,
+                                    ContentType = execFile.ContentType,
+                                    FileSize = execFile.FileSize,
+                                    RevisedPrompt = result.Metadata.TryGetValue("revisedPrompt", out var rp) ? rp?.ToString() : null
+                                });
+                            }
+
+                            // Store last result for downstream steps
+                            stepResults[pm.StepOrder] = result;
+                        }
+
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+
+                        var imageOutput = OutputSchemaHelper.BuildImageOutput(outputFiles, pm.AiModule.ModelName);
+                        stepOutputs[pm.StepOrder] = imageOutput;
+                        stepExecution.OutputData = JsonSerializer.Serialize(imageOutput);
+                    }
+                    else
+                    {
+                        // Generic fallback for other module types (Audio, Transcription, etc.)
+                        var context = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = inputs[0],
+                            ProjectContext = project.Context,
+                            Configuration = config,
                         };
 
-                        db.ExecutionFiles.Add(execFile);
+                        var result = await provider.ExecuteAsync(context);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+
+                        if (!result.Success)
+                        {
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        // Legacy serialization for unsupported types
+                        stepExecution.OutputData = JsonSerializer.Serialize(new
+                        {
+                            text = result.TextOutput,
+                            contentType = result.ContentType,
+                            metadata = result.Metadata
+                        });
+
+                        if (result.FileOutput is not null)
+                        {
+                            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            Directory.CreateDirectory(stepDir);
+                            var ext = GetExtension(result.ContentType ?? "application/octet-stream");
+                            var fileName = $"output{ext}";
+                            await File.WriteAllBytesAsync(Path.Combine(stepDir, fileName), result.FileOutput);
+
+                            db.ExecutionFiles.Add(new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(),
+                                StepExecutionId = stepExecution.Id,
+                                FileName = fileName,
+                                ContentType = result.ContentType ?? "application/octet-stream",
+                                FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                Direction = "Output",
+                                FileSize = result.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            });
+                        }
                     }
 
                     stepExecution.Status = "Completed";
@@ -207,45 +285,80 @@ namespace Server.Services.Ai
             return execution;
         }
 
-        private static string ResolveInput(ProjectModule pm, string? userInput, Dictionary<int, AiResult> stepResults)
+        /// <summary>
+        /// Resolve inputs for a step. If the previous step produced multiple items
+        /// and this step consumes from it, return all items as separate inputs.
+        /// </summary>
+        private static List<string> ResolveInputs(
+            ProjectModule pm, string? userInput,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            string targetModuleType, string targetModelName)
         {
             if (pm.InputMapping is null)
-                return userInput ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: No hay input de usuario y no se definio InputMapping");
+            {
+                var raw = userInput ?? throw new InvalidOperationException(
+                    $"Paso {pm.StepOrder}: No hay input de usuario y no se definio InputMapping");
+                return [raw];
+            }
 
             var mapping = JsonSerializer.Deserialize<JsonElement>(pm.InputMapping);
-
             var source = mapping.GetProperty("source").GetString();
-            var field = mapping.TryGetProperty("field", out var f) ? f.GetString() : null;
 
             switch (source)
             {
                 case "user":
-                    return userInput ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: InputMapping requiere input de usuario pero no se proporciono");
+                    return [userInput ?? throw new InvalidOperationException(
+                        $"Paso {pm.StepOrder}: InputMapping requiere input de usuario pero no se proporciono")];
 
                 case "previous":
-                    var prevOrder = stepResults.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
-                    if (!stepResults.ContainsKey(prevOrder))
-                        throw new InvalidOperationException($"Paso {pm.StepOrder}: No hay paso anterior con resultado");
-                    return ExtractField(stepResults[prevOrder], field);
+                {
+                    var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
+                        .OrderByDescending(k => k).FirstOrDefault();
+
+                    // Check if previous step has structured items
+                    if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Items.Count > 0)
+                    {
+                        return prevOutput.Items.Select(item => item.Content).ToList();
+                    }
+
+                    // Fallback to raw text
+                    if (stepResults.TryGetValue(prevOrder, out var prevResult))
+                        return [prevResult.TextOutput ?? ""];
+
+                    throw new InvalidOperationException($"Paso {pm.StepOrder}: No hay paso anterior con resultado");
+                }
 
                 case "step":
+                {
                     var targetStep = mapping.GetProperty("stepOrder").GetInt32();
-                    if (!stepResults.TryGetValue(targetStep, out var targetResult))
-                        throw new InvalidOperationException($"Paso {pm.StepOrder}: Paso {targetStep} no tiene resultado disponible");
-                    return ExtractField(targetResult, field);
+
+                    if (stepOutputs.TryGetValue(targetStep, out var targetOutput) && targetOutput.Items.Count > 0)
+                    {
+                        return targetOutput.Items.Select(item => item.Content).ToList();
+                    }
+
+                    if (stepResults.TryGetValue(targetStep, out var targetResult))
+                        return [targetResult.TextOutput ?? ""];
+
+                    throw new InvalidOperationException($"Paso {pm.StepOrder}: Paso {targetStep} no tiene resultado disponible");
+                }
 
                 default:
-                    return userInput ?? "";
+                    return [userInput ?? ""];
             }
         }
 
-        private static string ExtractField(AiResult result, string? field)
+        private static async Task FailStep(StepExecution step, ProjectExecution execution, string error, UserDbContext db)
         {
-            return field switch
-            {
-                "text" or null => result.TextOutput ?? "",
-                _ => result.TextOutput ?? ""
-            };
+            step.Status = "Failed";
+            step.ErrorMessage = error;
+            step.CompletedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            execution.Status = "Failed";
+            execution.CompletedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
         }
 
         private static Dictionary<string, object> MergeConfiguration(string? moduleConfig, string? stepConfig)

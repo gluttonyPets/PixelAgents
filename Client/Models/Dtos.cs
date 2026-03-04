@@ -47,3 +47,29 @@ public record StepExecutionResponse(
 public record ExecutionFileResponse(
     Guid Id, string FileName, string ContentType, string FilePath,
     string Direction, long FileSize, DateTime CreatedAt);
+
+// ── Structured Output ──
+public class StepOutputDto
+{
+    public string? Type { get; set; }
+    public string? Content { get; set; }
+    public string? Summary { get; set; }
+    public List<OutputItemDto>? Items { get; set; }
+    public List<OutputFileDto>? Files { get; set; }
+    public Dictionary<string, object>? Metadata { get; set; }
+}
+
+public class OutputItemDto
+{
+    public string Content { get; set; } = "";
+    public string? Label { get; set; }
+}
+
+public class OutputFileDto
+{
+    public Guid FileId { get; set; }
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public long FileSize { get; set; }
+    public string? RevisedPrompt { get; set; }
+}
