@@ -47,6 +47,7 @@ namespace Server.Services.Ai
             Directory.CreateDirectory(workspacePath);
 
             var stepResults = new Dictionary<int, AiResult>();
+            var stepModuleTypes = new Dictionary<int, string>();
 
             foreach (var pm in project.ProjectModules)
             {
@@ -66,6 +67,28 @@ namespace Server.Services.Ai
                 try
                 {
                     var input = ResolveInput(pm, userInput, stepResults);
+
+                    // Determine source module type for cross-type adaptation
+                    string? sourceModuleType = null;
+                    if (pm.InputMapping is not null)
+                    {
+                        var mapping = JsonSerializer.Deserialize<JsonElement>(pm.InputMapping);
+                        var src = mapping.GetProperty("source").GetString();
+                        if (src == "previous")
+                        {
+                            var prevOrder = stepModuleTypes.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
+                            if (stepModuleTypes.TryGetValue(prevOrder, out var prevType))
+                                sourceModuleType = prevType;
+                        }
+                        else if (src == "step" && mapping.TryGetProperty("stepOrder", out var so))
+                        {
+                            if (stepModuleTypes.TryGetValue(so.GetInt32(), out var srcType))
+                                sourceModuleType = srcType;
+                        }
+                    }
+
+                    input = InputAdapter.Adapt(input, sourceModuleType, pm.AiModule.ModuleType, pm.AiModule.ModelName);
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada para modulo '{pm.AiModule.Name}'");
 
@@ -88,6 +111,7 @@ namespace Server.Services.Ai
 
                     var result = await provider.ExecuteAsync(context);
                     stepResults[pm.StepOrder] = result;
+                    stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
 
                     if (!result.Success)
                     {

@@ -95,6 +95,11 @@ namespace Server.Services.Ai
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
 
+            // Truncar al máximo del modelo como red de seguridad
+            var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
+            if (prompt.Length > maxLen)
+                prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
+
             var result = await client.GenerateImageAsync(prompt, options);
 
             var imageBytes = result.Value.ImageBytes.ToArray();
