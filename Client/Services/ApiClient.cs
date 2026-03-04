@@ -182,17 +182,46 @@ public class ApiClient
 
     // ── Internal ──
 
+    private const int MaxRetries = 2;
+
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string url, object? body = null)
     {
-        var request = new HttpRequestMessage(method, url);
-        request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
-
-        if (body is not null)
+        for (int attempt = 0; ; attempt++)
         {
-            request.Content = JsonContent.Create(body);
-        }
+            var request = new HttpRequestMessage(method, url);
+            request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
 
-        return await _http.SendAsync(request);
+            if (body is not null)
+            {
+                request.Content = JsonContent.Create(body);
+            }
+
+            try
+            {
+                return await _http.SendAsync(request);
+            }
+            catch (HttpRequestException) when (attempt < MaxRetries)
+            {
+                await Task.Delay(1000 * (attempt + 1));
+            }
+            catch (HttpRequestException)
+            {
+                throw new HttpRequestException(
+                    $"No se pudo conectar al servidor ({_http.BaseAddress}). " +
+                    "Verifica que el servidor este corriendo en el puerto correcto.");
+            }
+            catch (Exception ex) when (ex.Message.Contains("NetworkError") || ex.Message.Contains("fetch"))
+            {
+                if (attempt < MaxRetries)
+                {
+                    await Task.Delay(1000 * (attempt + 1));
+                    continue;
+                }
+                throw new HttpRequestException(
+                    $"Error de red al conectar con {_http.BaseAddress}. " +
+                    "Verifica que el servidor este corriendo y que el certificado HTTPS sea valido.");
+            }
+        }
     }
 
     private record ErrorBody(string? Error);
