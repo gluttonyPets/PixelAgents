@@ -6,6 +6,7 @@ namespace Server.Models
         public string ModelName { get; set; } = default!;
         public string ApiKey { get; set; } = default!;
         public string Input { get; set; } = default!;
+        public string? ProjectContext { get; set; }
         public Dictionary<string, object> Configuration { get; set; } = new();
         public List<byte[]>? InputFiles { get; set; }
     }

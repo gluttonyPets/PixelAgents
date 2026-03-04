@@ -32,8 +32,13 @@ namespace Server.Services.Ai
 
             var messages = new List<ChatMessage>();
 
+            var systemParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(context.ProjectContext))
+                systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
-                messages.Add(new SystemChatMessage(sp));
+                systemParts.Add(sp);
+            if (systemParts.Count > 0)
+                messages.Add(new SystemChatMessage(string.Join("\n\n", systemParts)));
 
             messages.Add(new UserChatMessage(context.Input));
 
@@ -86,7 +91,11 @@ namespace Server.Services.Ai
 
             options.ResponseFormat = GeneratedImageFormat.Bytes;
 
-            var result = await client.GenerateImageAsync(context.Input, options);
+            var prompt = context.Input;
+            if (!string.IsNullOrWhiteSpace(context.ProjectContext))
+                prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
+
+            var result = await client.GenerateImageAsync(prompt, options);
 
             var imageBytes = result.Value.ImageBytes.ToArray();
 

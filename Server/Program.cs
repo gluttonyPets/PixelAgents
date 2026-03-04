@@ -378,6 +378,7 @@ app.MapPost("/api/projects", async (
         Id = Guid.NewGuid(),
         Name = req.Name,
         Description = req.Description,
+        Context = req.Context,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
     };
@@ -386,7 +387,7 @@ app.MapPost("/api/projects", async (
     await db.SaveChangesAsync();
 
     return Results.Created($"/api/projects/{project.Id}",
-        new ProjectResponse(project.Id, project.Name, project.Description,
+        new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
             project.CreatedAt, project.UpdatedAt));
 }).RequireAuthorization();
 
@@ -398,7 +399,7 @@ app.MapGet("/api/projects", async (
 
     var projects = await db.Projects
         .OrderByDescending(p => p.CreatedAt)
-        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.CreatedAt, p.UpdatedAt))
+        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt))
         .ToListAsync();
 
     return Results.Ok(projects);
@@ -424,7 +425,7 @@ app.MapGet("/api/projects/{id}", async (
             pm.InputMapping, pm.Configuration, pm.IsActive)).ToList();
 
     return Results.Ok(new ProjectDetailResponse(
-        project.Id, project.Name, project.Description,
+        project.Id, project.Name, project.Description, project.Context,
         project.CreatedAt, project.UpdatedAt, modules));
 }).RequireAuthorization();
 
@@ -440,10 +441,11 @@ app.MapPut("/api/projects/{id}", async (
 
     project.Name = req.Name;
     project.Description = req.Description;
+    project.Context = req.Context;
     project.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
-    return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description,
+    return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
         project.CreatedAt, project.UpdatedAt));
 }).RequireAuthorization();
 

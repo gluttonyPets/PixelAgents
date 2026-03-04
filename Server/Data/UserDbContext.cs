@@ -53,6 +53,7 @@ namespace Server.Data
                 e.HasKey(x => x.Id);
                 e.Property(x => x.Name).IsRequired().HasMaxLength(200);
                 e.Property(x => x.Description).HasMaxLength(2000);
+                e.Property(x => x.Context).HasColumnType("text");
             });
 
             // ── ProjectModule ──

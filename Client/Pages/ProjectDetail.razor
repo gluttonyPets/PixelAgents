@@ -11,6 +11,17 @@ else
 {
     <p class="text-muted text-sm mb-1">@(_project.Description ?? "") | Creado: @_project.CreatedAt.ToString("yyyy-MM-dd HH:mm")</p>
 
+    <!-- Project Context -->
+    @if (!string.IsNullOrWhiteSpace(_project.Context))
+    {
+        <div class="card">
+            <div class="form-group">
+                <label>Contexto del proyecto <span class="text-sm text-muted">(se aplica a todos los modulos)</span></label>
+                <div class="output-block">@_project.Context</div>
+            </div>
+        </div>
+    }
+
     <!-- Pipeline Steps -->
     <h3>Pipeline</h3>
 

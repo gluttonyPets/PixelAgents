@@ -80,6 +80,7 @@ namespace Server.Services.Ai
                         ModelName = pm.AiModule.ModelName,
                         ApiKey = apiKey,
                         Input = input,
+                        ProjectContext = project.Context,
                         Configuration = config,
                     };
 

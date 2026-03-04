@@ -24,7 +24,19 @@ namespace Server.Services
             var opts = new DbContextOptionsBuilder<UserDbContext>()
                 .UseNpgsql(cs)
                 .Options;
-            return new UserDbContext(opts);
+            var ctx = new UserDbContext(opts);
+            ApplyPendingColumns(ctx);
+            return ctx;
+        }
+
+        private static void ApplyPendingColumns(UserDbContext ctx)
+        {
+            try
+            {
+                ctx.Database.ExecuteSqlRaw(
+                    "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"Context\" text");
+            }
+            catch { /* column already exists or table doesn't exist yet */ }
         }
     }
 }
