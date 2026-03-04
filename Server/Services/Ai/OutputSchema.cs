@@ -69,7 +69,9 @@ Reglas:
 - Si generas multiples elementos (slides, prompts de imagen, secciones, partes), pon cada uno como un objeto en ""items"" con su ""content"" y ""label"".
 - Si solo generas un texto unico sin partes, deja ""items"" como array vacio [].
 - ""metadata"" es para informacion extra relevante (caption, hashtags, tono, etc). Dejalo como {} si no aplica.
-- NO incluyas texto fuera del JSON. Solo el JSON.";
+- NO incluyas texto fuera del JSON. Solo el JSON.
+- NUNCA hagas preguntas al usuario. Si hay varias opciones posibles, elige la mejor opcion tu mismo y da directamente la respuesta final.
+- Se concreto y directo. No pidas aclaraciones, no ofrezcas alternativas, no preguntes preferencias. Decide y responde.";
 
         public static string GetTextOutputInstruction() => TextOutputInstruction;
 
