@@ -35,7 +35,6 @@ else
                     <th>Modulo</th>
                     <th>Tipo</th>
                     <th>Input</th>
-                    <th>Prompt del paso</th>
                     <th></th>
                 </tr>
             </thead>
@@ -48,7 +47,6 @@ else
                         <td>@pm.AiModuleName</td>
                         <td><span class="badge badge-warning">@pm.ModuleType</span></td>
                         <td class="text-sm">@FormatInputMapping(pm.InputMapping)</td>
-                        <td class="text-sm text-muted">@(ExtractPromptFromConfig(pm.Configuration) ?? "-")</td>
                         <td><button class="btn btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button></td>
                     </tr>
                 }
@@ -70,7 +68,7 @@ else
         <div class="form-row">
             <div class="form-group">
                 <label>Modulo</label>
-                <select value="@_stepModuleId" @onchange="OnModuleSelected">
+                <select @bind="_stepModuleId">
                     <option value="">-- Seleccionar --</option>
                     @foreach (var m in _modules)
                     {
@@ -97,53 +95,6 @@ else
                 </select>
             </div>
         </div>
-
-        @if (!string.IsNullOrEmpty(_stepModuleId))
-        {
-            var moduleType = GetSelectedModuleType();
-
-            <fieldset class="config-fieldset">
-                <legend>Configuracion del paso</legend>
-
-                @if (moduleType == "Text")
-                {
-                    <div class="form-group">
-                        <label>Prompt del paso <span class="text-sm text-muted">(sobreescribe el system prompt del modulo para este paso)</span></label>
-                        <textarea @bind="_stepPrompt" rows="3" placeholder="Ej: Actua como traductor profesional al ingles. Traduce el texto manteniendo el tono y estilo original."></textarea>
-                    </div>
-                }
-                else if (moduleType == "Image")
-                {
-                    <div class="form-group">
-                        <label>Instrucciones del paso <span class="text-sm text-muted">(contexto adicional para la generacion de imagen)</span></label>
-                        <textarea @bind="_stepPrompt" rows="3" placeholder="Ej: Genera una imagen en estilo cartoon con colores vivos. Incluye el logo de la marca en la esquina."></textarea>
-                    </div>
-                }
-                else if (moduleType == "Audio")
-                {
-                    <div class="form-group">
-                        <label>Instrucciones del paso <span class="text-sm text-muted">(indicaciones para la generacion de audio)</span></label>
-                        <textarea @bind="_stepPrompt" rows="2" placeholder="Ej: Usa un tono entusiasta y amigable."></textarea>
-                    </div>
-                }
-                else if (moduleType == "Transcription")
-                {
-                    <div class="form-group">
-                        <label>Instrucciones del paso <span class="text-sm text-muted">(indicaciones para la transcripcion)</span></label>
-                        <textarea @bind="_stepPrompt" rows="2" placeholder="Ej: Transcribe solo los dialogos, ignorando musica de fondo."></textarea>
-                    </div>
-                }
-                else if (moduleType == "Embeddings")
-                {
-                    <p class="text-sm text-muted">Los modulos de embeddings no requieren configuracion adicional por paso.</p>
-                }
-
-                @if (!string.IsNullOrWhiteSpace(_stepPrompt))
-                {
-                    <p class="text-sm text-muted">Este prompt se usara solo en este paso, sin modificar la configuracion base del modulo.</p>
-                }
-            </fieldset>
-        }
 
         <button class="btn btn-primary mt-1" @onclick="AddStep" disabled="@_loading">Agregar</button>
     </div>
@@ -262,7 +213,6 @@ else
     private int _stepOrder = 1;
     private string _stepName = "";
     private string _inputMapping = "{\"source\":\"user\"}";
-    private string _stepPrompt = "";
     private string? _stepError;
 
     // Execute
@@ -289,24 +239,6 @@ else
         _loading = false;
     }
 
-    private void OnModuleSelected(ChangeEventArgs e)
-    {
-        _stepModuleId = e.Value?.ToString() ?? "";
-        _stepPrompt = "";
-    }
-
-    private string? GetSelectedModuleType()
-    {
-        if (!Guid.TryParse(_stepModuleId, out var id)) return null;
-        return _modules.FirstOrDefault(m => m.Id == id)?.ModuleType;
-    }
-
-    private string? BuildStepConfig()
-    {
-        if (string.IsNullOrWhiteSpace(_stepPrompt)) return null;
-        return $"{{\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_stepPrompt)}}}";
-    }
-
     private static string FormatInputMapping(string? mapping)
     {
         if (string.IsNullOrEmpty(mapping)) return "usuario";
@@ -315,23 +247,6 @@ else
         if (mapping.Contains("\"previous\"")) return "paso anterior (texto)";
         if (mapping.Contains("\"step\"")) return "paso especifico";
         return mapping;
-    }
-
-    private static string? ExtractPromptFromConfig(string? config)
-    {
-        if (string.IsNullOrEmpty(config)) return null;
-        try
-        {
-            var doc = System.Text.Json.JsonDocument.Parse(config);
-            if (doc.RootElement.TryGetProperty("systemPrompt", out var sp))
-            {
-                var text = sp.GetString();
-                if (!string.IsNullOrEmpty(text))
-                    return text.Length > 60 ? text[..60] + "..." : text;
-            }
-        }
-        catch { }
-        return null;
     }
 
     private async Task AddStep()
@@ -345,10 +260,9 @@ else
         _loading = true;
         try
         {
-            var config = BuildStepConfig();
-            var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, config);
+            var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, null);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepPrompt = ""; _stepModuleId = ""; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
