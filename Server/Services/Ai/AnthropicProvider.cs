@@ -1,5 +1,4 @@
 using Anthropic.SDK;
-using Anthropic.SDK.Constants;
 using Anthropic.SDK.Messaging;
 using Server.Models;
 
@@ -30,28 +29,30 @@ namespace Server.Services.Ai
         {
             try
             {
-                // Minimal completion (max_tokens=1) to verify key + quota.
-                var client = new AnthropicClient(apiKey);
-                var parameters = new MessageParameters
-                {
-                    Messages = [new Message(RoleType.User, "hi")],
-                    Model = "claude-3-5-haiku-20241022",
-                    MaxTokens = 1,
-                    Stream = false,
-                };
-                await client.Messages.GetClaudeMessageAsync(parameters);
-                return (true, null);
+                // GET /v1/models?limit=1 — lightweight, validates key + credits.
+                // Anthropic is prepaid: if no credits, any API call is rejected.
+                using var http = new HttpClient();
+                http.DefaultRequestHeaders.Add("x-api-key", apiKey);
+                http.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+                var resp = await http.GetAsync("https://api.anthropic.com/v1/models?limit=1");
+
+                if (resp.IsSuccessStatusCode)
+                    return (true, null);
+
+                var body = await resp.Content.ReadAsStringAsync();
+
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    return (false, "API Key de Anthropic invalida o expirada");
+                if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                    return (false, "API Key de Anthropic sin permisos o cuenta deshabilitada");
+                if ((int)resp.StatusCode == 429)
+                    return (false, "Sin creditos disponibles en Anthropic — revisa tu plan y facturacion");
+
+                return (false, $"Error al validar Anthropic (HTTP {(int)resp.StatusCode}): {body}");
             }
             catch (Exception ex)
             {
-                var msg = ex.Message;
-                if (msg.Contains("401") || msg.Contains("authentication", StringComparison.OrdinalIgnoreCase)
-                    || msg.Contains("invalid x-api-key", StringComparison.OrdinalIgnoreCase))
-                    return (false, "API Key de Anthropic invalida o expirada");
-                if (msg.Contains("429") || msg.Contains("rate_limit", StringComparison.OrdinalIgnoreCase)
-                    || msg.Contains("credit", StringComparison.OrdinalIgnoreCase))
-                    return (false, "Sin creditos disponibles en Anthropic — revisa tu plan y facturacion");
-                return (false, $"Error al validar Anthropic: {msg}");
+                return (false, $"No se pudo conectar con Anthropic: {ex.Message}");
             }
         }
 
