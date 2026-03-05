@@ -50,6 +50,7 @@ builder.Services.AddSingleton<ITenantDbContextFactory, TenantDbContextFactory>()
 // --- AI Providers ---
 builder.Services.AddSingleton<IAiProvider, OpenAiProvider>();
 builder.Services.AddSingleton<IAiProvider, AnthropicProvider>();
+builder.Services.AddSingleton<IAiProvider, LeonardoProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
 builder.Services.AddSingleton<ExecutionCancellationService>();

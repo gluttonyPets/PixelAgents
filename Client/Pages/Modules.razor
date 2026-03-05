@@ -17,6 +17,7 @@
             <option value="">-- Seleccionar proveedor --</option>
             <option value="OpenAI">OpenAI</option>
             <option value="Anthropic">Anthropic</option>
+            <option value="LeonardoAI">Leonardo AI</option>
         </select>
     </div>
 
@@ -140,6 +141,41 @@
                         <input type="number" min="1" max="4" @bind="_imageCount" />
                     </div>
                 }
+            }
+            else if (_moduleType == "Image" && _provider == "LeonardoAI")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Ancho</label>
+                        <select @bind="_leoWidth">
+                            <option value="512">512</option>
+                            <option value="768">768</option>
+                            <option value="1024">1024</option>
+                            <option value="1360">1360</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Alto</label>
+                        <select @bind="_leoHeight">
+                            <option value="512">512</option>
+                            <option value="768">768</option>
+                            <option value="1024">1024</option>
+                            <option value="1360">1360</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Estilo</label>
+                    <select @bind="_leoPresetStyle">
+                        <option value="DYNAMIC">Dynamic</option>
+                        <option value="NONE">Ninguno</option>
+                        <option value="ANIME">Anime</option>
+                        <option value="CINEMATIC">Cinematico</option>
+                        <option value="PHOTOGRAPHY">Fotografia</option>
+                        <option value="ILLUSTRATION">Ilustracion</option>
+                        <option value="RAYTRACED">Raytraced</option>
+                    </select>
+                </div>
             }
             else if (_moduleType == "Embeddings")
             {
@@ -292,6 +328,41 @@
                                         </div>
                                     </div>
                                 }
+                                else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Ancho</label>
+                                            <select @bind="_editLeoWidth">
+                                                <option value="512">512</option>
+                                                <option value="768">768</option>
+                                                <option value="1024">1024</option>
+                                                <option value="1360">1360</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Alto</label>
+                                            <select @bind="_editLeoHeight">
+                                                <option value="512">512</option>
+                                                <option value="768">768</option>
+                                                <option value="1024">1024</option>
+                                                <option value="1360">1360</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Estilo</label>
+                                        <select @bind="_editLeoPresetStyle">
+                                            <option value="DYNAMIC">Dynamic</option>
+                                            <option value="NONE">Ninguno</option>
+                                            <option value="ANIME">Anime</option>
+                                            <option value="CINEMATIC">Cinematico</option>
+                                            <option value="PHOTOGRAPHY">Fotografia</option>
+                                            <option value="ILLUSTRATION">Ilustracion</option>
+                                            <option value="RAYTRACED">Raytraced</option>
+                                        </select>
+                                    </div>
+                                }
                                 else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
                                 {
                                     <div class="form-row">
@@ -363,6 +434,9 @@ else if (!_loading)
     private string _editImageQuality = "standard";
     private string _editTtsVoice = "alloy";
     private double _editTtsSpeed = 1.0;
+    private int _editLeoWidth = 1024;
+    private int _editLeoHeight = 1024;
+    private string _editLeoPresetStyle = "DYNAMIC";
 
     // ── Form: text config ──
     private string _systemPrompt = "";
@@ -376,6 +450,11 @@ else if (!_loading)
 
     // ── Form: embeddings ──
     private int? _embeddingDimensions;
+
+    // ── Form: Leonardo AI ──
+    private int _leoWidth = 1024;
+    private int _leoHeight = 1024;
+    private string _leoPresetStyle = "DYNAMIC";
 
     // ── Form: audio TTS ──
     private string _ttsVoice = "alloy";
@@ -444,6 +523,9 @@ else if (!_loading)
 
         // ─── Anthropic: Chat / Text (Claude 3.5) ───
         new("claude-3-5-haiku-20241022",   "Claude 3.5 Haiku",    "Anthropic", ["Text"], ["text","vision","streaming"], "Ultra rapido y economico.", "200K"),
+
+        // ─── Leonardo AI: Image Generation ───
+        new("leonardo-phoenix",              "Leonardo Phoenix",    "LeonardoAI", ["Image"], ["image-generation"], "Modelo flagship de Leonardo. Alta calidad y versatilidad."),
     ];
 
     // ── Available types per provider ──
@@ -519,6 +601,9 @@ else if (!_loading)
         _imageQuality = "standard";
         _imageCount = 1;
         _embeddingDimensions = null;
+        _leoWidth = 1024;
+        _leoHeight = 1024;
+        _leoPresetStyle = "DYNAMIC";
         _ttsVoice = "alloy";
         _ttsSpeed = 1.0;
         _transcriptionLang = "";
@@ -538,6 +623,15 @@ else if (!_loading)
                 parts.Add($"\"temperature\":{_temperature}");
             if (_maxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_maxTokens}");
+        }
+        else if (_moduleType == "Image" && _provider == "LeonardoAI")
+        {
+            if (_leoWidth != 1024)
+                parts.Add($"\"width\":{_leoWidth}");
+            if (_leoHeight != 1024)
+                parts.Add($"\"height\":{_leoHeight}");
+            if (_leoPresetStyle != "DYNAMIC")
+                parts.Add($"\"presetStyle\":\"{_leoPresetStyle}\"");
         }
         else if (_moduleType == "Image")
         {
@@ -664,6 +758,9 @@ else if (!_loading)
         _editImageQuality = "standard";
         _editTtsVoice = "alloy";
         _editTtsSpeed = 1.0;
+        _editLeoWidth = 1024;
+        _editLeoHeight = 1024;
+        _editLeoPresetStyle = "DYNAMIC";
 
         if (!string.IsNullOrWhiteSpace(module.Configuration))
         {
@@ -679,6 +776,9 @@ else if (!_loading)
                 if (root.TryGetProperty("quality", out var q)) _editImageQuality = q.GetString() ?? "standard";
                 if (root.TryGetProperty("voice", out var v)) _editTtsVoice = v.GetString() ?? "alloy";
                 if (root.TryGetProperty("speed", out var spd)) _editTtsSpeed = spd.GetDouble();
+                if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
+                if (root.TryGetProperty("height", out var lh)) _editLeoHeight = lh.GetInt32();
+                if (root.TryGetProperty("presetStyle", out var lps)) _editLeoPresetStyle = lps.GetString() ?? "DYNAMIC";
             }
             catch { }
         }
@@ -692,7 +792,7 @@ else if (!_loading)
 
         try
         {
-            var config = BuildEditConfigJson(module.ModuleType);
+            var config = BuildEditConfigJson(module.ModuleType, module.ProviderType);
             var (ok, error) = await Api.UpdateModuleConfigAsync(module.Id, module, config);
             if (ok)
             {
@@ -708,7 +808,7 @@ else if (!_loading)
         _editConfigSaving = false;
     }
 
-    private string? BuildEditConfigJson(string moduleType)
+    private string? BuildEditConfigJson(string moduleType, string providerType)
     {
         var parts = new List<string>();
 
@@ -720,6 +820,15 @@ else if (!_loading)
                 parts.Add($"\"temperature\":{_editTemperature}");
             if (_editMaxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_editMaxTokens}");
+        }
+        else if (moduleType == "Image" && providerType == "LeonardoAI")
+        {
+            if (_editLeoWidth != 1024)
+                parts.Add($"\"width\":{_editLeoWidth}");
+            if (_editLeoHeight != 1024)
+                parts.Add($"\"height\":{_editLeoHeight}");
+            if (_editLeoPresetStyle != "DYNAMIC")
+                parts.Add($"\"presetStyle\":\"{_editLeoPresetStyle}\"");
         }
         else if (moduleType == "Image")
         {
