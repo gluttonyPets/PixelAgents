@@ -380,6 +380,13 @@ tr:hover td {
 .log-info { color: var(--text-secondary); }
 .log-success { color: #22c55e; }
 .log-error { color: #ef4444; }
+
+.log-retry-btn {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.65rem;
+}
 .log-warning { color: #f59e0b; }
 
 /* File preview */
