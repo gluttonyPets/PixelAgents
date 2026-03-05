@@ -458,12 +458,12 @@ namespace Server.Services.Ai
                     // Check if previous step has structured items
                     if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Items.Count > 0)
                     {
-                        return prevOutput.Items.Select(item => item.Content).ToList();
+                        return prevOutput.Items.Select(item => InputAdapter.SanitizePlainText(item.Content)).ToList();
                     }
 
                     // Fallback to raw text
                     if (stepResults.TryGetValue(prevOrder, out var prevResult))
-                        return [prevResult.TextOutput ?? ""];
+                        return [InputAdapter.SanitizePlainText(prevResult.TextOutput ?? "")];
 
                     throw new InvalidOperationException($"Paso {pm.StepOrder}: No hay paso anterior con resultado");
                 }
@@ -474,11 +474,11 @@ namespace Server.Services.Ai
 
                     if (stepOutputs.TryGetValue(targetStep, out var targetOutput) && targetOutput.Items.Count > 0)
                     {
-                        return targetOutput.Items.Select(item => item.Content).ToList();
+                        return targetOutput.Items.Select(item => InputAdapter.SanitizePlainText(item.Content)).ToList();
                     }
 
                     if (stepResults.TryGetValue(targetStep, out var targetResult))
-                        return [targetResult.TextOutput ?? ""];
+                        return [InputAdapter.SanitizePlainText(targetResult.TextOutput ?? "")];
 
                     throw new InvalidOperationException($"Paso {pm.StepOrder}: Paso {targetStep} no tiene resultado disponible");
                 }

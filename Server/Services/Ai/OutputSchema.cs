@@ -71,7 +71,15 @@ Reglas:
 - ""metadata"" es para informacion extra relevante (caption, hashtags, tono, etc). Dejalo como {} si no aplica.
 - NO incluyas texto fuera del JSON. Solo el JSON.
 - NUNCA hagas preguntas al usuario. Si hay varias opciones posibles, elige la mejor opcion tu mismo y da directamente la respuesta final.
-- Se concreto y directo. No pidas aclaraciones, no ofrezcas alternativas, no preguntes preferencias. Decide y responde.";
+- Se concreto y directo. No pidas aclaraciones, no ofrezcas alternativas, no preguntes preferencias. Decide y responde.
+
+Reglas de formato (OBLIGATORIAS para todos los valores de texto):
+- NO uses emojis ni emoticonos de ningun tipo (ni unicode ni shortcodes).
+- NO uses formato markdown: nada de **, *, #, ##, ```, >, -, ni listas con viñetas.
+- NO uses saltos de linea (\n) dentro de los valores de texto. Escribe todo en una sola linea continua.
+- NO uses caracteres especiales decorativos: flechas, bullets, guiones largos, comillas tipograficas, simbolos como estrella, circulo, rombo, triangulo, flecha, etc.
+- Usa solo texto plano ASCII basico: letras, numeros, puntuacion normal (. , ; : ! ? ' "").
+- Si necesitas separar ideas, usa comas o puntos, nunca saltos de linea ni listas.";
 
         public static string GetTextOutputInstruction() => TextOutputInstruction;
 
