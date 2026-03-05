@@ -30,22 +30,28 @@ namespace Server.Services.Ai
         {
             try
             {
-                using var http = new HttpClient();
-                http.DefaultRequestHeaders.Add("x-api-key", apiKey);
-                http.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
-                var resp = await http.GetAsync("https://api.anthropic.com/v1/models");
-                if (resp.IsSuccessStatusCode)
-                    return (true, null);
-
-                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                    return (false, "API Key de Anthropic invalida o expirada");
-                if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-                    return (false, "Sin creditos o limite de uso alcanzado en Anthropic");
-                return (false, $"Error al validar API Key de Anthropic: {resp.StatusCode}");
+                // Minimal completion (max_tokens=1) to verify key + quota.
+                var client = new AnthropicClient(apiKey);
+                var parameters = new MessageParameters
+                {
+                    Messages = [new Message(RoleType.User, "hi")],
+                    Model = AnthropicModels.Claude35Haiku,
+                    MaxTokens = 1,
+                    Stream = false,
+                };
+                await client.Messages.GetClaudeMessageAsync(parameters);
+                return (true, null);
             }
             catch (Exception ex)
             {
-                return (false, $"No se pudo conectar con Anthropic: {ex.Message}");
+                var msg = ex.Message;
+                if (msg.Contains("401") || msg.Contains("authentication", StringComparison.OrdinalIgnoreCase)
+                    || msg.Contains("invalid x-api-key", StringComparison.OrdinalIgnoreCase))
+                    return (false, "API Key de Anthropic invalida o expirada");
+                if (msg.Contains("429") || msg.Contains("rate_limit", StringComparison.OrdinalIgnoreCase)
+                    || msg.Contains("credit", StringComparison.OrdinalIgnoreCase))
+                    return (false, "Sin creditos disponibles en Anthropic — revisa tu plan y facturacion");
+                return (false, $"Error al validar Anthropic: {msg}");
             }
         }
 

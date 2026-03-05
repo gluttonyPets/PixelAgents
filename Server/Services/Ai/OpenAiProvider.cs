@@ -65,23 +65,23 @@ namespace Server.Services.Ai
         {
             try
             {
-                using var http = new HttpClient();
-                http.DefaultRequestHeaders.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-                var resp = await http.GetAsync("https://api.openai.com/v1/models");
-                if (resp.IsSuccessStatusCode)
-                    return (true, null);
-
-                var body = await resp.Content.ReadAsStringAsync();
-                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                    return (false, "API Key de OpenAI invalida o expirada");
-                if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-                    return (false, "Sin creditos o limite de uso alcanzado en OpenAI");
-                return (false, $"Error al validar API Key de OpenAI: {resp.StatusCode}");
+                // Use a minimal chat completion (max_tokens=1) to verify the key has quota.
+                // GET /v1/models returns 200 even with insufficient_quota.
+                var client = new ChatClient(model: "gpt-4o-mini", apiKey: apiKey);
+                var options = new ChatCompletionOptions { MaxOutputTokenCount = 1 };
+                await client.CompleteChatAsync(
+                    [new UserChatMessage("hi")], options);
+                return (true, null);
             }
             catch (Exception ex)
             {
-                return (false, $"No se pudo conectar con OpenAI: {ex.Message}");
+                var msg = ex.Message;
+                if (msg.Contains("401") || msg.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase))
+                    return (false, "API Key de OpenAI invalida o expirada");
+                if (msg.Contains("insufficient_quota", StringComparison.OrdinalIgnoreCase)
+                    || msg.Contains("429"))
+                    return (false, "Sin creditos disponibles en OpenAI — revisa tu plan y facturacion");
+                return (false, $"Error al validar OpenAI: {msg}");
             }
         }
 
