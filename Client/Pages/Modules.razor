@@ -213,7 +213,16 @@
                     <td>@m.Name</td>
                     <td><span class="badge badge-info">@m.ProviderType</span></td>
                     <td><span class="badge badge-warning">@m.ModuleType</span></td>
-                    <td class="text-sm">@m.ModelName</td>
+                    <td>
+                        <select class="select-inline"
+                                value="@m.ModelName"
+                                @onchange="(e) => ChangeModel(m, e)">
+                            @foreach (var model in AllModels.Where(x => x.Provider == m.ProviderType && x.Types.Contains(m.ModuleType)))
+                            {
+                                <option value="@model.Id">@model.DisplayName</option>
+                            }
+                        </select>
+                    </td>
                     <td>
                         <select class="select-inline"
                                 value="@(m.ApiKeyId?.ToString() ?? "")"
@@ -496,6 +505,22 @@ else if (!_loading)
         }
         catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
         _loading = false;
+    }
+
+    private async Task ChangeModel(AiModuleResponse module, ChangeEventArgs e)
+    {
+        var newModel = e.Value?.ToString() ?? "";
+        if (string.IsNullOrEmpty(newModel) || newModel == module.ModelName) return;
+
+        try
+        {
+            var (ok, error) = await Api.UpdateModuleModelAsync(module.Id, module, newModel);
+            if (ok)
+                _modules = await Api.GetModulesAsync();
+            else
+                _error = error;
+        }
+        catch (Exception ex) { _error = $"Error al cambiar modelo: {ex.Message}"; }
     }
 
     private async Task ChangeApiKey(AiModuleResponse module, ChangeEventArgs e)

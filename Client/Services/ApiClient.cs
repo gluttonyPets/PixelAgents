@@ -103,6 +103,24 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    public async Task<(bool Ok, string? Error)> UpdateModuleModelAsync(Guid moduleId, AiModuleResponse current, string newModelName)
+    {
+        var body = new
+        {
+            current.Name,
+            current.Description,
+            current.ProviderType,
+            current.ModuleType,
+            ModelName = newModelName,
+            current.ApiKeyId,
+            current.Configuration,
+            current.IsEnabled
+        };
+        var resp = await SendAsync(HttpMethod.Put, $"/api/modules/{moduleId}", body);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     public async Task DeleteModuleAsync(Guid id)
     {
         await SendAsync(HttpMethod.Delete, $"/api/modules/{id}");
