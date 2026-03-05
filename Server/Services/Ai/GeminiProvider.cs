@@ -30,7 +30,7 @@ namespace Server.Services.Ai
         {
             try
             {
-                var client = new GenAIClient(apiKey: apiKey);
+                var client = new Client(apiKey: apiKey);
                 await client.Models.GenerateContentAsync(
                     model: "gemini-2.0-flash",
                     contents: "hi"
@@ -54,7 +54,7 @@ namespace Server.Services.Ai
 
         private async Task<AiResult> GenerateTextAsync(AiExecutionContext context)
         {
-            var client = new GenAIClient(apiKey: context.ApiKey);
+            var client = new Client(apiKey: context.ApiKey);
 
             var systemParts = new List<string>();
             systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
@@ -101,7 +101,7 @@ namespace Server.Services.Ai
 
         private async Task<AiResult> GenerateImageAsync(AiExecutionContext context)
         {
-            var client = new GenAIClient(apiKey: context.ApiKey);
+            var client = new Client(apiKey: context.ApiKey);
 
             var prompt = context.Input;
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
@@ -123,7 +123,7 @@ namespace Server.Services.Ai
             {
                 NumberOfImages = numberOfImages,
                 AspectRatio = aspectRatio,
-                PersonGeneration = PersonGeneration.ALLOW_ALL,
+                PersonGeneration = PersonGeneration.AllowAll,
             };
 
             var response = await client.Models.GenerateImagesAsync(
