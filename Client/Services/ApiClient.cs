@@ -19,8 +19,7 @@ public class ApiClient
     {
         var resp = await SendAsync(HttpMethod.Post, "/api/auth/register", new RegisterRequest(email, password));
         if (resp.IsSuccessStatusCode) return (true, null);
-        var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-        return (false, body?.Error ?? resp.ReasonPhrase);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task<(bool Ok, AuthResponse? User, string? Error)> LoginAsync(string email, string password)
@@ -57,8 +56,7 @@ public class ApiClient
     {
         var resp = await SendAsync(HttpMethod.Post, "/api/apikeys", req);
         if (resp.IsSuccessStatusCode) return (true, null);
-        var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-        return (false, body?.Error ?? resp.ReasonPhrase);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task DeleteApiKeyAsync(Guid id)
@@ -84,8 +82,7 @@ public class ApiClient
     {
         var resp = await SendAsync(HttpMethod.Post, "/api/modules", req);
         if (resp.IsSuccessStatusCode) return (true, null);
-        var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-        return (false, body?.Error ?? resp.ReasonPhrase);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task<(bool Ok, string? Error)> UpdateModuleApiKeyAsync(Guid moduleId, AiModuleResponse current, Guid? newApiKeyId)
@@ -103,8 +100,7 @@ public class ApiClient
         };
         var resp = await SendAsync(HttpMethod.Put, $"/api/modules/{moduleId}", body);
         if (resp.IsSuccessStatusCode) return (true, null);
-        var err = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-        return (false, err?.Error ?? resp.ReasonPhrase);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task DeleteModuleAsync(Guid id)
@@ -125,8 +121,7 @@ public class ApiClient
     {
         var resp = await SendAsync(HttpMethod.Post, "/api/projects", req);
         if (resp.IsSuccessStatusCode) return (true, null);
-        var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-        return (false, body?.Error ?? resp.ReasonPhrase);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task<ProjectDetailResponse?> GetProjectDetailAsync(Guid id)
@@ -147,16 +142,14 @@ public class ApiClient
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/modules", req);
         if (resp.IsSuccessStatusCode) return (true, null);
-        var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-        return (false, body?.Error ?? resp.ReasonPhrase);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task<(bool Ok, string? Error)> UpdateProjectModuleAsync(Guid projectId, Guid id, UpdateProjectModuleRequest req)
     {
         var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/modules/{id}", req);
         if (resp.IsSuccessStatusCode) return (true, null);
-        var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-        return (false, body?.Error ?? resp.ReasonPhrase);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task DeleteProjectModuleAsync(Guid projectId, Guid id)
@@ -171,8 +164,7 @@ public class ApiClient
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute", new ExecuteProjectRequest(userInput));
         if (!resp.IsSuccessStatusCode)
         {
-            var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-            return (false, null, body?.Error ?? resp.ReasonPhrase);
+            return (false, null, await ReadErrorAsync(resp));
         }
         var result = await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
         return (true, result, null);
@@ -200,8 +192,7 @@ public class ApiClient
             new RetryFromStepRequest(stepOrder, comment));
         if (!resp.IsSuccessStatusCode)
         {
-            var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
-            return (false, null, body?.Error ?? resp.ReasonPhrase);
+            return (false, null, await ReadErrorAsync(resp));
         }
         var result = await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
         return (true, result, null);
@@ -249,6 +240,21 @@ public class ApiClient
                     "Verifica que el servidor este corriendo y que el certificado HTTPS sea valido.");
             }
         }
+    }
+
+    private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp)
+    {
+        try
+        {
+            var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
+            if (body?.Error is not null) return body.Error;
+        }
+        catch
+        {
+            try { return await resp.Content.ReadAsStringAsync(); }
+            catch { }
+        }
+        return resp.ReasonPhrase;
     }
 
     private record ErrorBody(string? Error);
