@@ -541,14 +541,23 @@ app.MapPost("/api/projects/{projectId}/modules/swap", async (
     var pmB = await db.ProjectModules.FirstOrDefaultAsync(x => x.Id == req.ModuleIdB && x.ProjectId == projectId);
     if (pmA is null || pmB is null) return Results.NotFound();
 
-    // Use raw SQL to swap atomically and avoid unique constraint violation
+    // Swap via temp value to avoid unique constraint violation
+    var now = DateTime.UtcNow;
+    var tempOrder = -1;
+    var orderA = pmA.StepOrder;
+    var orderB = pmB.StepOrder;
+
+    await using var tx = await db.Database.BeginTransactionAsync();
+    // Step 1: Move A to temp
     await db.Database.ExecuteSqlInterpolatedAsync(
-        $@"UPDATE ""ProjectModules"" SET ""StepOrder"" = CASE
-            WHEN ""Id"" = {pmA.Id} THEN {pmB.StepOrder}
-            WHEN ""Id"" = {pmB.Id} THEN {pmA.StepOrder}
-           END,
-           ""UpdatedAt"" = {DateTime.UtcNow}
-           WHERE ""Id"" IN ({pmA.Id}, {pmB.Id})");
+        $@"UPDATE ""ProjectModules"" SET ""StepOrder"" = {tempOrder}, ""UpdatedAt"" = {now} WHERE ""Id"" = {pmA.Id}");
+    // Step 2: Move B to A's old position
+    await db.Database.ExecuteSqlInterpolatedAsync(
+        $@"UPDATE ""ProjectModules"" SET ""StepOrder"" = {orderA}, ""UpdatedAt"" = {now} WHERE ""Id"" = {pmB.Id}");
+    // Step 3: Move A to B's old position
+    await db.Database.ExecuteSqlInterpolatedAsync(
+        $@"UPDATE ""ProjectModules"" SET ""StepOrder"" = {orderB}, ""UpdatedAt"" = {now} WHERE ""Id"" = {pmA.Id}");
+    await tx.CommitAsync();
 
     return Results.Ok();
 }).RequireAuthorization();
