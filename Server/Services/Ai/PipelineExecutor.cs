@@ -150,6 +150,9 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "info",
                             $"Enviando prompt al modelo de texto ({pm.AiModule.ModelName})...",
                             pm.StepOrder, stepName);
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Prompt: {Truncate(inputs[0], 300)}",
+                            pm.StepOrder, stepName);
 
                         var context = new AiExecutionContext
                         {
@@ -217,6 +220,9 @@ namespace Server.Services.Ai
                                 inputs.Count > 1
                                     ? $"Generando imagen {i + 1}/{inputs.Count}..."
                                     : $"Generando imagen...",
+                                pm.StepOrder, stepName);
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Prompt: {Truncate(inputs[i], 300)}",
                                 pm.StepOrder, stepName);
 
                             var singleInput = inputs[i];
@@ -685,6 +691,9 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "info",
                             $"Enviando prompt al modelo de texto ({pm.AiModule.ModelName})...",
                             pm.StepOrder, stepName);
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Prompt: {Truncate(inputs[0], 300)}",
+                            pm.StepOrder, stepName);
 
                         var context = new AiExecutionContext
                         {
@@ -744,6 +753,9 @@ namespace Server.Services.Ai
                                 inputs.Count > 1
                                     ? $"Generando imagen {i + 1}/{inputs.Count}..."
                                     : $"Generando imagen...",
+                                pm.StepOrder, stepName);
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Prompt: {Truncate(inputs[i], 300)}",
                                 pm.StepOrder, stepName);
 
                             var singleInput = inputs[i];
@@ -967,6 +979,13 @@ namespace Server.Services.Ai
                     .Select(input => $"{input}\n\nAjustes solicitados: {comment}")
                     .ToList();
             }
+        }
+
+        private static string Truncate(string text, int maxLength)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
+                return text;
+            return text[..maxLength] + "...";
         }
 
         private static string GetExtension(string contentType) => contentType switch
