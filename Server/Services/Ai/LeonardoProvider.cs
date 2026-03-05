@@ -190,8 +190,9 @@ namespace Server.Services.Ai
 
                     var imageUrl = images[0].GetProperty("url").GetString()!;
 
-                    // Step 3: Download image
-                    var imgResp = await http.GetAsync(imageUrl);
+                    // Step 3: Download image (use a clean HttpClient without auth headers — CDN rejects them)
+                    using var dlClient = new HttpClient();
+                    var imgResp = await dlClient.GetAsync(imageUrl);
                     if (!imgResp.IsSuccessStatusCode)
                     {
                         return AiResult.Fail($"Leonardo AI: error descargando imagen (HTTP {(int)imgResp.StatusCode})");
