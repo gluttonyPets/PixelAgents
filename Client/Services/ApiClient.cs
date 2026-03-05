@@ -103,6 +103,24 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    public async Task<(bool Ok, string? Error)> UpdateModuleConfigAsync(Guid moduleId, AiModuleResponse current, string? newConfig)
+    {
+        var body = new
+        {
+            current.Name,
+            current.Description,
+            current.ProviderType,
+            current.ModuleType,
+            current.ModelName,
+            current.ApiKeyId,
+            Configuration = newConfig,
+            current.IsEnabled
+        };
+        var resp = await SendAsync(HttpMethod.Put, $"/api/modules/{moduleId}", body);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     public async Task<(bool Ok, string? Error)> UpdateModuleModelAsync(Guid moduleId, AiModuleResponse current, string newModelName)
     {
         var body = new

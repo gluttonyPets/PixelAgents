@@ -234,8 +234,99 @@
                             }
                         </select>
                     </td>
-                    <td><button class="btn btn-danger" @onclick="() => Delete(m.Id)">Eliminar</button></td>
+                    <td style="display: flex; gap: 0.25rem;">
+                        <button class="btn btn-sm" @onclick="() => ToggleEditConfig(m)">Configurar</button>
+                        <button class="btn btn-danger btn-sm" @onclick="() => Delete(m.Id)">Eliminar</button>
+                    </td>
                 </tr>
+                @if (_editingModuleId == m.Id)
+                {
+                    <tr>
+                        <td colspan="6">
+                            <div class="card" style="margin: 0.5rem 0;">
+                                @if (_editConfigError is not null)
+                                {
+                                    <div class="alert alert-error">@_editConfigError</div>
+                                }
+                                @if (_editConfigSuccess)
+                                {
+                                    <div class="alert alert-success">Configuracion guardada</div>
+                                }
+
+                                @if (m.ModuleType == "Text")
+                                {
+                                    <div class="form-group">
+                                        <label>System Prompt</label>
+                                        <textarea @bind="_editSystemPrompt" rows="4" placeholder="Ej: Eres un asistente experto en..."></textarea>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Temperatura <span class="text-sm text-muted">(0.0 - 2.0)</span></label>
+                                            <input type="number" step="0.1" min="0" max="2" @bind="_editTemperature" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Max Tokens</label>
+                                            <input type="number" min="1" max="200000" @bind="_editMaxTokens" />
+                                        </div>
+                                    </div>
+                                }
+                                else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Tamano</label>
+                                            <select @bind="_editImageSize">
+                                                <option value="1024x1024">1024x1024</option>
+                                                <option value="1024x1792">1024x1792</option>
+                                                <option value="1792x1024">1792x1024</option>
+                                                <option value="256x256">256x256</option>
+                                                <option value="512x512">512x512</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Calidad</label>
+                                            <select @bind="_editImageQuality">
+                                                <option value="standard">Standard</option>
+                                                <option value="hd">HD</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                }
+                                else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Voz</label>
+                                            <select @bind="_editTtsVoice">
+                                                <option value="alloy">Alloy</option>
+                                                <option value="echo">Echo</option>
+                                                <option value="fable">Fable</option>
+                                                <option value="onyx">Onyx</option>
+                                                <option value="nova">Nova</option>
+                                                <option value="shimmer">Shimmer</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Velocidad <span class="text-sm text-muted">(0.25 - 4.0)</span></label>
+                                            <input type="number" step="0.25" min="0.25" max="4.0" @bind="_editTtsSpeed" />
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
+                                }
+
+                                @if (m.ModuleType is "Text" or "Image" or "Audio")
+                                {
+                                    <button class="btn btn-primary btn-sm" @onclick="() => SaveConfig(m)" disabled="@_editConfigSaving">
+                                        @(_editConfigSaving ? "Guardando..." : "Guardar")
+                                    </button>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
             }
         </tbody>
     </table>
@@ -259,6 +350,19 @@ else if (!_loading)
     private string _name = "";
     private string _desc = "";
     private string _apiKeyId = "";
+
+    // ── Edit config state ──
+    private Guid? _editingModuleId;
+    private string? _editConfigError;
+    private bool _editConfigSuccess;
+    private bool _editConfigSaving;
+    private string _editSystemPrompt = "";
+    private double _editTemperature = 0.7;
+    private int _editMaxTokens = 4096;
+    private string _editImageSize = "1024x1024";
+    private string _editImageQuality = "standard";
+    private string _editTtsVoice = "alloy";
+    private double _editTtsSpeed = 1.0;
 
     // ── Form: text config ──
     private string _systemPrompt = "";
@@ -538,6 +642,100 @@ else if (!_loading)
                 _error = error;
         }
         catch (Exception ex) { _error = $"Error al cambiar API Key: {ex.Message}"; }
+    }
+
+    private void ToggleEditConfig(AiModuleResponse module)
+    {
+        if (_editingModuleId == module.Id)
+        {
+            _editingModuleId = null;
+            return;
+        }
+
+        _editingModuleId = module.Id;
+        _editConfigError = null;
+        _editConfigSuccess = false;
+
+        // Parse existing configuration
+        _editSystemPrompt = "";
+        _editTemperature = 0.7;
+        _editMaxTokens = 4096;
+        _editImageSize = "1024x1024";
+        _editImageQuality = "standard";
+        _editTtsVoice = "alloy";
+        _editTtsSpeed = 1.0;
+
+        if (!string.IsNullOrWhiteSpace(module.Configuration))
+        {
+            try
+            {
+                var doc = System.Text.Json.JsonDocument.Parse(module.Configuration);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("systemPrompt", out var sp)) _editSystemPrompt = sp.GetString() ?? "";
+                if (root.TryGetProperty("temperature", out var t)) _editTemperature = t.GetDouble();
+                if (root.TryGetProperty("maxTokens", out var mt)) _editMaxTokens = mt.GetInt32();
+                if (root.TryGetProperty("size", out var sz)) _editImageSize = sz.GetString() ?? "1024x1024";
+                if (root.TryGetProperty("quality", out var q)) _editImageQuality = q.GetString() ?? "standard";
+                if (root.TryGetProperty("voice", out var v)) _editTtsVoice = v.GetString() ?? "alloy";
+                if (root.TryGetProperty("speed", out var spd)) _editTtsSpeed = spd.GetDouble();
+            }
+            catch { }
+        }
+    }
+
+    private async Task SaveConfig(AiModuleResponse module)
+    {
+        _editConfigError = null;
+        _editConfigSuccess = false;
+        _editConfigSaving = true;
+
+        try
+        {
+            var config = BuildEditConfigJson(module.ModuleType);
+            var (ok, error) = await Api.UpdateModuleConfigAsync(module.Id, module, config);
+            if (ok)
+            {
+                _editConfigSuccess = true;
+                _modules = await Api.GetModulesAsync();
+            }
+            else
+            {
+                _editConfigError = error;
+            }
+        }
+        catch (Exception ex) { _editConfigError = $"Error: {ex.Message}"; }
+        _editConfigSaving = false;
+    }
+
+    private string? BuildEditConfigJson(string moduleType)
+    {
+        var parts = new List<string>();
+
+        if (moduleType == "Text")
+        {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
+            if (_editTemperature != 0.7)
+                parts.Add($"\"temperature\":{_editTemperature}");
+            if (_editMaxTokens != 4096)
+                parts.Add($"\"maxTokens\":{_editMaxTokens}");
+        }
+        else if (moduleType == "Image")
+        {
+            if (_editImageSize != "1024x1024")
+                parts.Add($"\"size\":\"{_editImageSize}\"");
+            if (_editImageQuality != "standard")
+                parts.Add($"\"quality\":\"{_editImageQuality}\"");
+        }
+        else if (moduleType == "Audio")
+        {
+            parts.Add($"\"voice\":\"{_editTtsVoice}\"");
+            if (_editTtsSpeed != 1.0)
+                parts.Add($"\"speed\":{_editTtsSpeed}");
+        }
+
+        return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
     }
 
     private async Task Delete(Guid moduleId)
