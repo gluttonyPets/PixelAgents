@@ -196,9 +196,11 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
-    public async Task DeleteProjectModuleAsync(Guid projectId, Guid id)
+    public async Task<(bool Ok, string? Error)> DeleteProjectModuleAsync(Guid projectId, Guid id)
     {
-        await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/modules/{id}");
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/modules/{id}");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
     }
 
     // ── Executions ──

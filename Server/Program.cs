@@ -575,8 +575,27 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
         .FirstOrDefaultAsync(x => x.Id == id && x.ProjectId == projectId);
     if (pm is null) return Results.NotFound();
 
+    // Remove related StepExecutions (and their files via cascade) to avoid FK Restrict violation
+    var stepExecutions = await db.StepExecutions
+        .Where(se => se.ProjectModuleId == id)
+        .ToListAsync();
+    if (stepExecutions.Count > 0)
+        db.StepExecutions.RemoveRange(stepExecutions);
+
+    var removedOrder = pm.StepOrder;
     db.ProjectModules.Remove(pm);
     await db.SaveChangesAsync();
+
+    // Renumber remaining steps so there are no gaps
+    var remaining = await db.ProjectModules
+        .Where(x => x.ProjectId == projectId && x.StepOrder > removedOrder)
+        .OrderBy(x => x.StepOrder)
+        .ToListAsync();
+    foreach (var r in remaining)
+        r.StepOrder--;
+    if (remaining.Count > 0)
+        await db.SaveChangesAsync();
+
     return Results.NoContent();
 }).RequireAuthorization();
 

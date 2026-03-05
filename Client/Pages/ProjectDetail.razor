@@ -604,8 +604,14 @@ else
 
     private async Task RemoveStep(Guid pmId)
     {
-        try { await Api.DeleteProjectModuleAsync(ProjectId, pmId); await LoadAll(); }
-        catch { }
+        _editError = null;
+        try
+        {
+            var (ok, error) = await Api.DeleteProjectModuleAsync(ProjectId, pmId);
+            if (ok) await LoadAll();
+            else _editError = error;
+        }
+        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
     }
 
     private async Task Execute()
