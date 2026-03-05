@@ -16,6 +16,7 @@ namespace Server.Services.Ai
                 "dall-e-3" => 4000,
                 var m when m.StartsWith("gpt-image") => 4000,
                 var m when m.StartsWith("leonardo-") => 1500,
+                var m when m.StartsWith("imagen-") => 4000,
                 _ => 4000
             };
         }

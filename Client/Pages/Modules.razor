@@ -17,6 +17,7 @@
             <option value="">-- Seleccionar proveedor --</option>
             <option value="OpenAI">OpenAI</option>
             <option value="Anthropic">Anthropic</option>
+            <option value="Google">Google (Gemini)</option>
             <option value="LeonardoAI">Leonardo AI</option>
         </select>
     </div>
@@ -177,6 +178,25 @@
                     </select>
                 </div>
             }
+            else if (_moduleType == "Image" && _provider == "Google")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Relacion de aspecto</label>
+                        <select @bind="_geminiAspectRatio">
+                            <option value="1:1">1:1 (Cuadrado)</option>
+                            <option value="16:9">16:9 (Paisaje)</option>
+                            <option value="9:16">9:16 (Retrato)</option>
+                            <option value="4:3">4:3 (Clasico)</option>
+                            <option value="3:4">3:4 (Retrato clasico)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+                        <input type="number" min="1" max="4" @bind="_geminiImageCount" />
+                    </div>
+                </div>
+            }
             else if (_moduleType == "Embeddings")
             {
                 <div class="form-group">
@@ -328,6 +348,25 @@
                                         </div>
                                     </div>
                                 }
+                                else if (m.ModuleType == "Image" && m.ProviderType == "Google")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Relacion de aspecto</label>
+                                            <select @bind="_editGeminiAspectRatio">
+                                                <option value="1:1">1:1 (Cuadrado)</option>
+                                                <option value="16:9">16:9 (Paisaje)</option>
+                                                <option value="9:16">9:16 (Retrato)</option>
+                                                <option value="4:3">4:3 (Clasico)</option>
+                                                <option value="3:4">3:4 (Retrato clasico)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+                                            <input type="number" min="1" max="4" @bind="_editGeminiImageCount" />
+                                        </div>
+                                    </div>
+                                }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
                                 {
                                     <div class="form-row">
@@ -456,6 +495,12 @@ else if (!_loading)
     private int _leoHeight = 1024;
     private string _leoPresetStyle = "DYNAMIC";
 
+    // ── Form: Google Imagen ──
+    private string _geminiAspectRatio = "1:1";
+    private int _geminiImageCount = 1;
+    private string _editGeminiAspectRatio = "1:1";
+    private int _editGeminiImageCount = 1;
+
     // ── Form: audio TTS ──
     private string _ttsVoice = "alloy";
     private double _ttsSpeed = 1.0;
@@ -523,6 +568,18 @@ else if (!_loading)
 
         // ─── Anthropic: Chat / Text (Claude 3.5) ───
         new("claude-3-5-haiku-20241022",   "Claude 3.5 Haiku",    "Anthropic", ["Text"], ["text","vision","streaming"], "Ultra rapido y economico.", "200K"),
+
+        // ─── Google: Chat / Text (Gemini 2.x) ───
+        new("gemini-2.5-flash",     "Gemini 2.5 Flash",     "Google", ["Text"], ["text","vision","streaming"], "Modelo rapido con razonamiento. Ultimo Gemini.", "1M"),
+        new("gemini-2.5-pro",       "Gemini 2.5 Pro",       "Google", ["Text"], ["text","vision","streaming"], "Modelo avanzado con razonamiento profundo.", "1M"),
+        new("gemini-2.0-flash",     "Gemini 2.0 Flash",     "Google", ["Text"], ["text","vision","streaming"], "Gemini 2.0 rapido y versatil.", "1M"),
+
+        // ─── Google: Chat / Text (Gemini 1.5) ───
+        new("gemini-1.5-pro",       "Gemini 1.5 Pro",       "Google", ["Text"], ["text","vision","streaming"], "Modelo Pro con 2M de contexto.", "2M"),
+        new("gemini-1.5-flash",     "Gemini 1.5 Flash",     "Google", ["Text"], ["text","vision","streaming"], "Modelo Flash rapido y economico.", "1M"),
+
+        // ─── Google: Image Generation (Imagen) ───
+        new("imagen-3.0-generate-002", "Imagen 3",          "Google", ["Image"], ["image-generation"], "Generacion de imagenes de alta calidad con Imagen 3."),
 
         // ─── Leonardo AI: Image Generation ───
         new("leonardo-phoenix",              "Leonardo Phoenix 1.0","LeonardoAI", ["Image"], ["image-generation"], "Modelo flagship de Leonardo. Alta calidad y versatilidad."),
@@ -607,6 +664,8 @@ else if (!_loading)
         _leoWidth = 1024;
         _leoHeight = 1024;
         _leoPresetStyle = "DYNAMIC";
+        _geminiAspectRatio = "1:1";
+        _geminiImageCount = 1;
         _ttsVoice = "alloy";
         _ttsSpeed = 1.0;
         _transcriptionLang = "";
@@ -626,6 +685,13 @@ else if (!_loading)
                 parts.Add($"\"temperature\":{_temperature}");
             if (_maxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_maxTokens}");
+        }
+        else if (_moduleType == "Image" && _provider == "Google")
+        {
+            if (_geminiAspectRatio != "1:1")
+                parts.Add($"\"aspectRatio\":\"{_geminiAspectRatio}\"");
+            if (_geminiImageCount != 1)
+                parts.Add($"\"numberOfImages\":{_geminiImageCount}");
         }
         else if (_moduleType == "Image" && _provider == "LeonardoAI")
         {
@@ -782,6 +848,8 @@ else if (!_loading)
                 if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
                 if (root.TryGetProperty("height", out var lh)) _editLeoHeight = lh.GetInt32();
                 if (root.TryGetProperty("presetStyle", out var lps)) _editLeoPresetStyle = lps.GetString() ?? "DYNAMIC";
+                if (root.TryGetProperty("aspectRatio", out var ar)) _editGeminiAspectRatio = ar.GetString() ?? "1:1";
+                if (root.TryGetProperty("numberOfImages", out var ni)) _editGeminiImageCount = ni.GetInt32();
             }
             catch { }
         }
@@ -823,6 +891,13 @@ else if (!_loading)
                 parts.Add($"\"temperature\":{_editTemperature}");
             if (_editMaxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_editMaxTokens}");
+        }
+        else if (moduleType == "Image" && providerType == "Google")
+        {
+            if (_editGeminiAspectRatio != "1:1")
+                parts.Add($"\"aspectRatio\":\"{_editGeminiAspectRatio}\"");
+            if (_editGeminiImageCount != 1)
+                parts.Add($"\"numberOfImages\":{_editGeminiImageCount}");
         }
         else if (moduleType == "Image" && providerType == "LeonardoAI")
         {
