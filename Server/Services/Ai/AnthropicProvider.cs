@@ -35,7 +35,7 @@ namespace Server.Services.Ai
                 var parameters = new MessageParameters
                 {
                     Messages = [new Message(RoleType.User, "hi")],
-                    Model = AnthropicModels.Claude35Haiku,
+                    Model = "claude-3-5-haiku-20241022",
                     MaxTokens = 1,
                     Stream = false,
                 };
