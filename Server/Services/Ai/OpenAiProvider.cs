@@ -61,6 +61,30 @@ namespace Server.Services.Ai
             });
         }
 
+        public async Task<(bool Valid, string? Error)> ValidateKeyAsync(string apiKey)
+        {
+            try
+            {
+                using var http = new HttpClient();
+                http.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                var resp = await http.GetAsync("https://api.openai.com/v1/models");
+                if (resp.IsSuccessStatusCode)
+                    return (true, null);
+
+                var body = await resp.Content.ReadAsStringAsync();
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    return (false, "API Key de OpenAI invalida o expirada");
+                if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    return (false, "Sin creditos o limite de uso alcanzado en OpenAI");
+                return (false, $"Error al validar API Key de OpenAI: {resp.StatusCode}");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"No se pudo conectar con OpenAI: {ex.Message}");
+            }
+        }
+
         private async Task<AiResult> GenerateImageAsync(AiExecutionContext context)
         {
             var client = new ImageClient(model: context.ModelName, apiKey: context.ApiKey);

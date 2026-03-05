@@ -32,6 +32,41 @@ namespace Server.Services.Ai
             if (!project.ProjectModules.Any())
                 throw new InvalidOperationException("El proyecto no tiene modulos asignados");
 
+            // ── Pre-flight: validate all API keys before starting ──
+            var validatedKeys = new HashSet<string>();
+            var errors = new List<string>();
+
+            foreach (var pm in project.ProjectModules)
+            {
+                var stepName = pm.StepName ?? pm.AiModule.Name;
+
+                if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
+                {
+                    errors.Add($"Paso {pm.StepOrder} ({stepName}): No tiene API Key configurada");
+                    continue;
+                }
+
+                var provider = _registry.GetProvider(pm.AiModule.ProviderType);
+                if (provider is null)
+                {
+                    errors.Add($"Paso {pm.StepOrder} ({stepName}): Proveedor '{pm.AiModule.ProviderType}' no disponible");
+                    continue;
+                }
+
+                // Only validate each unique key once per provider
+                var keySignature = $"{pm.AiModule.ProviderType}::{pm.AiModule.ApiKey.Id}";
+                if (!validatedKeys.Add(keySignature))
+                    continue;
+
+                var (valid, error) = await provider.ValidateKeyAsync(pm.AiModule.ApiKey.EncryptedKey);
+                if (!valid)
+                    errors.Add($"Paso {pm.StepOrder} ({stepName}): {error}");
+            }
+
+            if (errors.Count > 0)
+                throw new InvalidOperationException(
+                    "Validacion pre-ejecucion fallida:\n" + string.Join("\n", errors));
+
             var executionId = Guid.NewGuid();
             var workspacePath = Path.Combine("storage", tenantDbName, projectId.ToString(), executionId.ToString());
 
@@ -452,6 +487,41 @@ namespace Server.Services.Ai
                 ?? throw new InvalidOperationException("Proyecto no encontrado");
 
             var workspacePath = execution.WorkspacePath;
+
+            // ── Pre-flight: validate API keys for steps that will re-execute ──
+            var retryModules = project.ProjectModules.Where(pm => pm.StepOrder >= fromStepOrder).ToList();
+            var validatedKeys = new HashSet<string>();
+            var errors = new List<string>();
+
+            foreach (var pm in retryModules)
+            {
+                var stepName = pm.StepName ?? pm.AiModule.Name;
+
+                if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
+                {
+                    errors.Add($"Paso {pm.StepOrder} ({stepName}): No tiene API Key configurada");
+                    continue;
+                }
+
+                var provider = _registry.GetProvider(pm.AiModule.ProviderType);
+                if (provider is null)
+                {
+                    errors.Add($"Paso {pm.StepOrder} ({stepName}): Proveedor '{pm.AiModule.ProviderType}' no disponible");
+                    continue;
+                }
+
+                var keySignature = $"{pm.AiModule.ProviderType}::{pm.AiModule.ApiKey.Id}";
+                if (!validatedKeys.Add(keySignature))
+                    continue;
+
+                var (valid, error) = await provider.ValidateKeyAsync(pm.AiModule.ApiKey.EncryptedKey);
+                if (!valid)
+                    errors.Add($"Paso {pm.StepOrder} ({stepName}): {error}");
+            }
+
+            if (errors.Count > 0)
+                throw new InvalidOperationException(
+                    "Validacion pre-ejecucion fallida:\n" + string.Join("\n", errors));
 
             // Collect previous outputs and inputs for context
             var stepResults = new Dictionary<int, AiResult>();

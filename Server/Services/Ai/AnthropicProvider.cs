@@ -26,6 +26,29 @@ namespace Server.Services.Ai
             }
         }
 
+        public async Task<(bool Valid, string? Error)> ValidateKeyAsync(string apiKey)
+        {
+            try
+            {
+                using var http = new HttpClient();
+                http.DefaultRequestHeaders.Add("x-api-key", apiKey);
+                http.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
+                var resp = await http.GetAsync("https://api.anthropic.com/v1/models");
+                if (resp.IsSuccessStatusCode)
+                    return (true, null);
+
+                if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    return (false, "API Key de Anthropic invalida o expirada");
+                if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    return (false, "Sin creditos o limite de uso alcanzado en Anthropic");
+                return (false, $"Error al validar API Key de Anthropic: {resp.StatusCode}");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"No se pudo conectar con Anthropic: {ex.Message}");
+            }
+        }
+
         private async Task<AiResult> GenerateTextAsync(AiExecutionContext context)
         {
             var client = new AnthropicClient(context.ApiKey);

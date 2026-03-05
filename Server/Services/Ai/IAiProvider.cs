@@ -7,5 +7,6 @@ namespace Server.Services.Ai
         string ProviderType { get; }
         IEnumerable<string> SupportedModuleTypes { get; }
         Task<AiResult> ExecuteAsync(AiExecutionContext context);
+        Task<(bool Valid, string? Error)> ValidateKeyAsync(string apiKey);
     }
 }
