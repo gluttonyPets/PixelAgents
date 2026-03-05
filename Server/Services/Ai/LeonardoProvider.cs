@@ -15,7 +15,16 @@ namespace Server.Services.Ai
         // Mapping: friendly model ID → Leonardo API UUID
         private static readonly Dictionary<string, string> ModelIdMap = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["leonardo-phoenix"] = "de7d3faf-762f-48e0-b3b7-9d27a0e5b6f4",
+            ["leonardo-phoenix"] = "de7d3faf-762f-48e0-b3b7-9d0ac3a3fcf3",       // Phoenix 1.0
+            ["leonardo-phoenix-0.9"] = "6b645e3a-d64f-4341-a6d8-7a3690fbf042",   // Phoenix 0.9
+            ["leonardo-flux-dev"] = "b2614463-296c-462a-9586-aafdb8f00e36",       // Flux Dev
+            ["leonardo-flux-schnell"] = "1dd50843-d653-4516-a8e3-f0238ee453ff",   // Flux Schnell
+        };
+
+        // Models that require the contrast parameter
+        private static readonly HashSet<string> ContrastRequiredModels = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "leonardo-phoenix", "leonardo-phoenix-0.9", "leonardo-flux-dev", "leonardo-flux-schnell"
         };
 
         public async Task<AiResult> ExecuteAsync(AiExecutionContext context)
@@ -89,16 +98,33 @@ namespace Server.Services.Ai
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
 
+            // Read contrast (required for Phoenix/Flux models)
+            var contrast = 3.5;
+            if (context.Configuration.TryGetValue("contrast", out var c))
+                contrast = Convert.ToDouble(c);
+
             // Step 1: Submit generation request
-            var requestBody = new
-            {
-                prompt,
-                modelId = modelUuid,
-                width,
-                height,
-                num_images = 1,
-                presetStyle
-            };
+            object requestBody = ContrastRequiredModels.Contains(context.ModelName)
+                ? new Dictionary<string, object>
+                {
+                    ["prompt"] = prompt,
+                    ["modelId"] = modelUuid,
+                    ["width"] = width,
+                    ["height"] = height,
+                    ["num_images"] = 1,
+                    ["presetStyle"] = presetStyle,
+                    ["alchemy"] = true,
+                    ["contrast"] = contrast
+                }
+                : new Dictionary<string, object>
+                {
+                    ["prompt"] = prompt,
+                    ["modelId"] = modelUuid,
+                    ["width"] = width,
+                    ["height"] = height,
+                    ["num_images"] = 1,
+                    ["presetStyle"] = presetStyle
+                };
 
             var json = JsonSerializer.Serialize(requestBody);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
