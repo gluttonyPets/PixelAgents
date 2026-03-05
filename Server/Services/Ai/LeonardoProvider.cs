@@ -27,6 +27,12 @@ namespace Server.Services.Ai
             "leonardo-phoenix", "leonardo-phoenix-0.9", "leonardo-flux-dev", "leonardo-flux-schnell"
         };
 
+        // Models that do NOT support presetStyle
+        private static readonly HashSet<string> NoPresetStyleModels = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "leonardo-phoenix", "leonardo-phoenix-0.9", "leonardo-flux-dev", "leonardo-flux-schnell"
+        };
+
         public async Task<AiResult> ExecuteAsync(AiExecutionContext context)
         {
             try
@@ -104,31 +110,37 @@ namespace Server.Services.Ai
                 contrast = Convert.ToDouble(c);
 
             // Step 1: Submit generation request
-            object requestBody = ContrastRequiredModels.Contains(context.ModelName)
-                ? new Dictionary<string, object>
-                {
-                    ["prompt"] = prompt,
-                    ["modelId"] = modelUuid,
-                    ["width"] = width,
-                    ["height"] = height,
-                    ["num_images"] = 1,
-                    ["presetStyle"] = presetStyle,
-                    ["alchemy"] = true,
-                    ["contrast"] = contrast
-                }
-                : new Dictionary<string, object>
-                {
-                    ["prompt"] = prompt,
-                    ["modelId"] = modelUuid,
-                    ["width"] = width,
-                    ["height"] = height,
-                    ["num_images"] = 1,
-                    ["presetStyle"] = presetStyle
-                };
+            var body = new Dictionary<string, object>
+            {
+                ["prompt"] = prompt,
+                ["modelId"] = modelUuid,
+                ["width"] = width,
+                ["height"] = height,
+                ["num_images"] = 1,
+            };
 
-            var json = JsonSerializer.Serialize(requestBody);
+            // presetStyle is not supported by Phoenix/Flux models
+            if (!NoPresetStyleModels.Contains(context.ModelName))
+                body["presetStyle"] = presetStyle;
+
+            if (ContrastRequiredModels.Contains(context.ModelName))
+            {
+                body["alchemy"] = true;
+                body["contrast"] = contrast;
+            }
+
+            var json = JsonSerializer.Serialize(body);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var submitResp = await http.PostAsync($"{BaseUrl}/generations", content);
+
+            HttpResponseMessage submitResp;
+            try
+            {
+                submitResp = await http.PostAsync($"{BaseUrl}/generations", content);
+            }
+            catch (HttpRequestException ex)
+            {
+                return AiResult.Fail($"Leonardo AI: error de conexion al enviar solicitud: {ex.Message}");
+            }
 
             if (!submitResp.IsSuccessStatusCode)
             {
@@ -179,7 +191,12 @@ namespace Server.Services.Ai
                     var imageUrl = images[0].GetProperty("url").GetString()!;
 
                     // Step 3: Download image
-                    var imageBytes = await http.GetByteArrayAsync(imageUrl);
+                    var imgResp = await http.GetAsync(imageUrl);
+                    if (!imgResp.IsSuccessStatusCode)
+                    {
+                        return AiResult.Fail($"Leonardo AI: error descargando imagen (HTTP {(int)imgResp.StatusCode})");
+                    }
+                    var imageBytes = await imgResp.Content.ReadAsByteArrayAsync();
 
                     return AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
                     {
