@@ -209,6 +209,7 @@ namespace Server.Services.Ai
                     {
                         // Image modules: may execute multiple times if previous step had items
                         var outputFiles = new List<OutputFile>();
+                        string? imageError = null;
 
                         for (var i = 0; i < inputs.Count; i++)
                         {
@@ -239,12 +240,10 @@ namespace Server.Services.Ai
 
                             if (!result.Success)
                             {
+                                imageError = $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}";
                                 await _logger.LogAsync(projectId, executionId, "error",
-                                    $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}",
-                                    pm.StepOrder, stepName);
-                                await FailStep(stepExecution, execution,
-                                    $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}", db);
-                                return execution;
+                                    imageError, pm.StepOrder, stepName);
+                                break;
                             }
 
                             if (result.FileOutput is not null)
@@ -287,9 +286,20 @@ namespace Server.Services.Ai
 
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
 
+                        // Always save partial results so successfully generated images are visible
                         var imageOutput = OutputSchemaHelper.BuildImageOutput(outputFiles, pm.AiModule.ModelName);
                         stepOutputs[pm.StepOrder] = imageOutput;
                         stepExecution.OutputData = JsonSerializer.Serialize(imageOutput);
+                        await db.SaveChangesAsync();
+
+                        if (imageError is not null)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "warning",
+                                $"{outputFiles.Count} imagen(es) generada(s) antes del error",
+                                pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, imageError, db);
+                            return execution;
+                        }
 
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"{outputFiles.Count} imagen(es) generada(s) correctamente",
@@ -726,6 +736,7 @@ namespace Server.Services.Ai
                     else if (pm.AiModule.ModuleType == "Image")
                     {
                         var outputFiles = new List<OutputFile>();
+                        string? imageError = null;
 
                         for (var i = 0; i < inputs.Count; i++)
                         {
@@ -754,12 +765,10 @@ namespace Server.Services.Ai
 
                             if (!result.Success)
                             {
+                                imageError = $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}";
                                 await _logger.LogAsync(projectId, executionId, "error",
-                                    $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}",
-                                    pm.StepOrder, stepName);
-                                await FailStep(stepExecution, execution,
-                                    $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}", db);
-                                return execution;
+                                    imageError, pm.StepOrder, stepName);
+                                break;
                             }
 
                             if (result.FileOutput is not null)
@@ -801,9 +810,20 @@ namespace Server.Services.Ai
 
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
 
+                        // Always save partial results so successfully generated images are visible
                         var imageOutput = OutputSchemaHelper.BuildImageOutput(outputFiles, pm.AiModule.ModelName);
                         stepOutputs[pm.StepOrder] = imageOutput;
                         stepExecution.OutputData = JsonSerializer.Serialize(imageOutput);
+                        await db.SaveChangesAsync();
+
+                        if (imageError is not null)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "warning",
+                                $"{outputFiles.Count} imagen(es) generada(s) antes del error",
+                                pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, imageError, db);
+                            return execution;
+                        }
 
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"{outputFiles.Count} imagen(es) regenerada(s) correctamente",
