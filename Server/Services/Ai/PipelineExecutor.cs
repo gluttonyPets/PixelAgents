@@ -18,7 +18,7 @@ namespace Server.Services.Ai
         }
 
         public async Task<ProjectExecution> ExecuteAsync(
-            Guid projectId, string? userInput, UserDbContext db, string tenantDbName)
+            Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
             var project = await db.Projects
                 .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
@@ -93,6 +93,15 @@ namespace Server.Services.Ai
 
             foreach (var pm in project.ProjectModules)
             {
+                if (ct.IsCancellationRequested)
+                {
+                    await _logger.LogAsync(projectId, executionId, "warning", "Pipeline cancelado por el usuario");
+                    execution.Status = "Cancelled";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
+                }
+
                 var stepExecution = new StepExecution
                 {
                     Id = Guid.NewGuid(),
@@ -343,6 +352,20 @@ namespace Server.Services.Ai
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                 }
+                catch (OperationCanceledException)
+                {
+                    await _logger.LogAsync(projectId, executionId, "warning",
+                        "Pipeline cancelado por el usuario", pm.StepOrder, pm.StepName ?? pm.AiModule.Name);
+
+                    stepExecution.Status = "Cancelled";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+
+                    execution.Status = "Cancelled";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
+                }
                 catch (Exception ex)
                 {
                     await _logger.LogAsync(projectId, executionId, "error",
@@ -467,7 +490,7 @@ namespace Server.Services.Ai
         }
 
         public async Task<ProjectExecution> RetryFromStepAsync(
-            Guid executionId, int fromStepOrder, string? comment, UserDbContext db)
+            Guid executionId, int fromStepOrder, string? comment, UserDbContext db, CancellationToken ct = default)
         {
             var execution = await db.ProjectExecutions
                 .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
@@ -596,6 +619,15 @@ namespace Server.Services.Ai
             // Re-execute from retry step onwards
             foreach (var pm in project.ProjectModules.Where(pm => pm.StepOrder >= fromStepOrder))
             {
+                if (ct.IsCancellationRequested)
+                {
+                    await _logger.LogAsync(projectId, executionId, "warning", "Pipeline cancelado por el usuario");
+                    execution.Status = "Cancelled";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
+                }
+
                 var stepExecution = new StepExecution
                 {
                     Id = Guid.NewGuid(),
@@ -831,6 +863,20 @@ namespace Server.Services.Ai
                     stepExecution.Status = "Completed";
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                }
+                catch (OperationCanceledException)
+                {
+                    await _logger.LogAsync(projectId, executionId, "warning",
+                        "Pipeline cancelado por el usuario", pm.StepOrder, pm.StepName ?? pm.AiModule.Name);
+
+                    stepExecution.Status = "Cancelled";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+
+                    execution.Status = "Cancelled";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
                 }
                 catch (Exception ex)
                 {

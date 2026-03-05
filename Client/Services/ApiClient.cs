@@ -224,6 +224,12 @@ public class ApiClient
         return (true, result, null);
     }
 
+    public async Task<bool> CancelExecutionAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/cancel");
+        return resp.IsSuccessStatusCode;
+    }
+
     // ── Internal ──
 
     private const int MaxRetries = 2;

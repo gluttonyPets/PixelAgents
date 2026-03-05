@@ -165,17 +165,23 @@ else
             <label>Entrada del usuario</label>
             <textarea @bind="_userInput" rows="3" placeholder="Escribe tu prompt aqui..."></textarea>
         </div>
-        <button class="btn btn-success" @onclick="Execute" disabled="@_executing">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="btn btn-success" @onclick="Execute" disabled="@_executing">
+                @if (_executing)
+                {
+                    <span class="spinner"></span>
+                    <span>Ejecutando...</span>
+                }
+                else
+                {
+                    <span>Ejecutar</span>
+                }
+            </button>
             @if (_executing)
             {
-                <span class="spinner"></span>
-                <span>Ejecutando...</span>
+                <button class="btn btn-danger" @onclick="CancelExecution">Cancelar</button>
             }
-            else
-            {
-                <span>Ejecutar</span>
-            }
-        </button>
+        </div>
     </div>
 
     <!-- Execution Result + Log Panel -->
@@ -617,6 +623,11 @@ else
         _executing = false;
     }
 
+    private async Task CancelExecution()
+    {
+        await Api.CancelExecutionAsync(ProjectId);
+    }
+
     private async Task LoadExecution(Guid id)
     {
         _logEntries.Clear();
@@ -690,6 +701,7 @@ else
         "Completed" => "badge-success",
         "Failed" => "badge-danger",
         "Running" => "badge-warning",
+        "Cancelled" => "badge-warning",
         _ => "badge-info"
     };
 

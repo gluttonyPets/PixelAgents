@@ -52,6 +52,7 @@ builder.Services.AddSingleton<IAiProvider, OpenAiProvider>();
 builder.Services.AddSingleton<IAiProvider, AnthropicProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
+builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
 builder.Services.AddSignalR();
 
@@ -583,7 +584,7 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
 app.MapPost("/api/projects/{projectId}/execute", async (
     Guid projectId, ExecuteProjectRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    IPipelineExecutor executor) =>
+    IPipelineExecutor executor, ExecutionCancellationService cancellation) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -592,9 +593,11 @@ app.MapPost("/api/projects/{projectId}/execute", async (
     var claims = await um.GetClaimsAsync(user!);
     var tenantDbName = claims.First(c => c.Type == "db_name").Value;
 
+    var ct = cancellation.Register(projectId);
+
     try
     {
-        var execution = await executor.ExecuteAsync(projectId, req.UserInput, db, tenantDbName);
+        var execution = await executor.ExecuteAsync(projectId, req.UserInput, db, tenantDbName, ct);
 
         var exec = await db.ProjectExecutions
             .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
@@ -614,12 +617,15 @@ app.MapPost("/api/projects/{projectId}/execute", async (
                     f.Direction, f.FileSize, f.CreatedAt)).ToList()
             )).ToList();
 
+        cancellation.Remove(projectId);
+
         return Results.Ok(new ExecutionDetailResponse(
             exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
             exec.CreatedAt, exec.CompletedAt, steps));
     }
     catch (Exception ex)
     {
+        cancellation.Remove(projectId);
         return Results.BadRequest(new { error = ex.Message });
     }
 }).RequireAuthorization();
@@ -677,14 +683,17 @@ app.MapGet("/api/executions/{id}", async (
 app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     Guid executionId, RetryFromStepRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    IPipelineExecutor executor) =>
+    IPipelineExecutor executor, ExecutionCancellationService cancellation) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
     try
     {
-        var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, db);
+        var projectId = await db.ProjectExecutions.Where(e => e.Id == executionId).Select(e => e.ProjectId).FirstAsync();
+        var ct = cancellation.Register(projectId);
+        var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, db, ct);
+        cancellation.Remove(projectId);
 
         var exec = await db.ProjectExecutions
             .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
@@ -712,6 +721,14 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     {
         return Results.BadRequest(new { error = ex.Message });
     }
+}).RequireAuthorization();
+
+// Cancel a running pipeline execution
+app.MapPost("/api/projects/{projectId}/cancel", (
+    Guid projectId, ExecutionCancellationService cancellation) =>
+{
+    var cancelled = cancellation.Cancel(projectId);
+    return Results.Ok(new { cancelled });
 }).RequireAuthorization();
 
 // Download execution file
