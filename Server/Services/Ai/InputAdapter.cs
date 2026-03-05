@@ -12,11 +12,11 @@ namespace Server.Services.Ai
         {
             return modelName.ToLowerInvariant() switch
             {
-                "dall-e-2" => 900,
-                "dall-e-3" => 3900,
-                var m when m.StartsWith("gpt-image") => 3900,
-                var m when m.StartsWith("leonardo-") => 1000,
-                _ => 3900
+                "dall-e-2" => 1000,
+                "dall-e-3" => 4000,
+                var m when m.StartsWith("gpt-image") => 4000,
+                var m when m.StartsWith("leonardo-") => 1500,
+                _ => 4000
             };
         }
 
