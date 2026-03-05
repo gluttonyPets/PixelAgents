@@ -381,6 +381,17 @@ tr:hover td {
 .log-success { color: #22c55e; }
 .log-error { color: #ef4444; }
 
+.step-rule-row td {
+    padding: 0.15rem 0.5rem;
+    border-top: none;
+}
+
+.step-rule-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 .log-retry-btn {
     flex-shrink: 0;
     margin-left: auto;

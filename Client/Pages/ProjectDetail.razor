@@ -50,8 +50,10 @@ else
             </thead>
             <tbody>
                 @{ var sorted = _project.Modules.OrderBy(m => m.StepOrder).ToList(); }
-                @foreach (var pm in sorted)
+                @for (var si = 0; si < sorted.Count; si++)
                 {
+                    var pm = sorted[si];
+                    var nextPm = si + 1 < sorted.Count ? sorted[si + 1] : null;
                     var isEditing = _editingPmId == pm.Id;
                     <tr>
                         <td>@pm.StepOrder</td>
@@ -104,6 +106,15 @@ else
                             </div>
                         </td>
                     </tr>
+                    @if (pm.ModuleType == "Text" && nextPm is not null)
+                    {
+                        var maxLen = GetMaxPromptLength(nextPm.ModelName);
+                        <tr class="step-rule-row">
+                            <td colspan="7">
+                                <span class="step-rule-hint">Los items generados en este paso se limitaran a <strong>@maxLen caracteres</strong> (modelo siguiente: @nextPm.ModelName)</span>
+                            </td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>
@@ -531,6 +542,15 @@ else
         if (mapping.Contains("\"step\"")) return "paso especifico";
         return mapping;
     }
+
+    private static int GetMaxPromptLength(string modelName) => modelName.ToLowerInvariant() switch
+    {
+        "dall-e-2" => 1000,
+        "dall-e-3" => 4000,
+        var m when m.StartsWith("gpt-image") => 4000,
+        var m when m.StartsWith("leonardo-") => 1500,
+        _ => 4000
+    };
 
     private async Task AddStep()
     {

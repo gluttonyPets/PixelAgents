@@ -30,7 +30,7 @@ public record ProjectDetailResponse(
 public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration);
 public record UpdateProjectModuleRequest(int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
 public record ProjectModuleResponse(
-    Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType,
+    Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
     int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
 
 // ── Execution ──

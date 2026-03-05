@@ -91,8 +91,13 @@ namespace Server.Services.Ai
             var stepOutputs = new Dictionary<int, StepOutput>();
             var stepModuleTypes = new Dictionary<int, string>();
 
-            foreach (var pm in project.ProjectModules)
+            var allModules = project.ProjectModules.ToList();
+
+            for (var mi = 0; mi < allModules.Count; mi++)
             {
+                var pm = allModules[mi];
+                var nextModule = mi + 1 < allModules.Count ? allModules[mi + 1] : null;
+
                 if (ct.IsCancellationRequested)
                 {
                     await _logger.LogAsync(projectId, executionId, "warning", "Pipeline cancelado por el usuario");
@@ -129,6 +134,17 @@ namespace Server.Services.Ai
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Proveedor '{pm.AiModule.ProviderType}' no disponible");
 
                     var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+                    // If this is a Text step and the next step consumes its output, inject prompt length rule
+                    if (pm.AiModule.ModuleType == "Text" && nextModule is not null)
+                    {
+                        var nextMaxLen = InputAdapter.GetMaxPromptLength(nextModule.AiModule.ModelName);
+                        var rule = $"\n\nREGLA DE LONGITUD: El siguiente paso usa el modelo {nextModule.AiModule.ModelName} ({nextModule.AiModule.ModuleType}) que acepta maximo {nextMaxLen} caracteres por prompt. Cada elemento en \"items\" DEBE tener un \"content\" de maximo {nextMaxLen} caracteres.";
+                        if (config.TryGetValue("systemPrompt", out var existing) && existing is string s)
+                            config["systemPrompt"] = s + rule;
+                        else
+                            config["systemPrompt"] = rule;
+                    }
 
                     // Resolve inputs: check if previous step has multiple items
                     var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
@@ -633,8 +649,14 @@ namespace Server.Services.Ai
             }
 
             // Re-execute from retry step onwards
-            foreach (var pm in project.ProjectModules.Where(pm => pm.StepOrder >= fromStepOrder))
+            var retryModulesList = project.ProjectModules
+                .Where(pm => pm.StepOrder >= fromStepOrder).ToList();
+
+            for (var mi = 0; mi < retryModulesList.Count; mi++)
             {
+                var pm = retryModulesList[mi];
+                var nextModule = mi + 1 < retryModulesList.Count ? retryModulesList[mi + 1] : null;
+
                 if (ct.IsCancellationRequested)
                 {
                     await _logger.LogAsync(projectId, executionId, "warning", "Pipeline cancelado por el usuario");
@@ -671,6 +693,17 @@ namespace Server.Services.Ai
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Proveedor '{pm.AiModule.ProviderType}' no disponible");
 
                     var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+                    // If this is a Text step and the next step consumes its output, inject prompt length rule
+                    if (pm.AiModule.ModuleType == "Text" && nextModule is not null)
+                    {
+                        var nextMaxLen = InputAdapter.GetMaxPromptLength(nextModule.AiModule.ModelName);
+                        var rule = $"\n\nREGLA DE LONGITUD: El siguiente paso usa el modelo {nextModule.AiModule.ModelName} ({nextModule.AiModule.ModuleType}) que acepta maximo {nextMaxLen} caracteres por prompt. Cada elemento en \"items\" DEBE tener un \"content\" de maximo {nextMaxLen} caracteres.";
+                        if (config.TryGetValue("systemPrompt", out var existing) && existing is string s)
+                            config["systemPrompt"] = s + rule;
+                        else
+                            config["systemPrompt"] = rule;
+                    }
 
                     var inputs = ResolveInputs(pm, originalUserInput, stepResults, stepOutputs,
                         pm.AiModule.ModuleType, pm.AiModule.ModelName);

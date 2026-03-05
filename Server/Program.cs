@@ -426,7 +426,7 @@ app.MapGet("/api/projects/{id}", async (
 
     var modules = project.ProjectModules.Select(pm =>
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
-            pm.AiModule.ModuleType, pm.StepOrder, pm.StepName,
+            pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
             pm.InputMapping, pm.Configuration, pm.IsActive)).ToList();
 
     return Results.Ok(new ProjectDetailResponse(
@@ -503,7 +503,7 @@ app.MapPost("/api/projects/{projectId}/modules", async (
 
     return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
-            module.ModuleType, pm.StepOrder, pm.StepName,
+            module.ModuleType, module.ModelName, pm.StepOrder, pm.StepName,
             pm.InputMapping, pm.Configuration, pm.IsActive));
 }).RequireAuthorization();
 
@@ -528,7 +528,7 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
 
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
-        pm.AiModule.ModuleType, pm.StepOrder, pm.StepName,
+        pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
         pm.InputMapping, pm.Configuration, pm.IsActive));
 }).RequireAuthorization();
 
