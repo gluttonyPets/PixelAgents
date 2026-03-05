@@ -530,6 +530,29 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
         pm.InputMapping, pm.Configuration, pm.IsActive));
 }).RequireAuthorization();
 
+app.MapPost("/api/projects/{projectId}/modules/swap", async (
+    Guid projectId, SwapStepOrderRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var pmA = await db.ProjectModules.FirstOrDefaultAsync(x => x.Id == req.ModuleIdA && x.ProjectId == projectId);
+    var pmB = await db.ProjectModules.FirstOrDefaultAsync(x => x.Id == req.ModuleIdB && x.ProjectId == projectId);
+    if (pmA is null || pmB is null) return Results.NotFound();
+
+    // Use raw SQL to swap atomically and avoid unique constraint violation
+    await db.Database.ExecuteSqlInterpolatedAsync(
+        $@"UPDATE ""ProjectModules"" SET ""StepOrder"" = CASE
+            WHEN ""Id"" = {pmA.Id} THEN {pmB.StepOrder}
+            WHEN ""Id"" = {pmB.Id} THEN {pmA.StepOrder}
+           END,
+           ""UpdatedAt"" = {DateTime.UtcNow}
+           WHERE ""Id"" IN ({pmA.Id}, {pmB.Id})");
+
+    return Results.Ok();
+}).RequireAuthorization();
+
 app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
     Guid projectId, Guid id, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>

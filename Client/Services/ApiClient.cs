@@ -152,6 +152,14 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    public async Task<(bool Ok, string? Error)> SwapStepOrderAsync(Guid projectId, Guid moduleIdA, Guid moduleIdB)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/modules/swap",
+            new { ModuleIdA = moduleIdA, ModuleIdB = moduleIdB });
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     public async Task DeleteProjectModuleAsync(Guid projectId, Guid id)
     {
         await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/modules/{id}");

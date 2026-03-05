@@ -589,14 +589,8 @@ else
 
         try
         {
-            // Swap step orders
-            var req1 = new UpdateProjectModuleRequest(other.StepOrder, target.StepName, target.InputMapping, target.Configuration, target.IsActive);
-            var req2 = new UpdateProjectModuleRequest(target.StepOrder, other.StepName, other.InputMapping, other.Configuration, other.IsActive);
-
-            var (ok1, err1) = await Api.UpdateProjectModuleAsync(ProjectId, target.Id, req1);
-            var (ok2, err2) = await Api.UpdateProjectModuleAsync(ProjectId, other.Id, req2);
-
-            if (!ok1 || !ok2) _editError = err1 ?? err2;
+            var (ok, error) = await Api.SwapStepOrderAsync(ProjectId, target.Id, other.Id);
+            if (!ok) _editError = error;
             await LoadAll();
         }
         catch (Exception ex) { _editError = $"Error: {ex.Message}"; }

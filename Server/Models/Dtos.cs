@@ -33,6 +33,7 @@ namespace Server.Models
     // ── ProjectModule ──
     public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration);
     public record UpdateProjectModuleRequest(int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
+    public record SwapStepOrderRequest(Guid ModuleIdA, Guid ModuleIdB);
     public record ProjectModuleResponse(
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType,
         int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
