@@ -133,7 +133,8 @@ input:focus, select:focus, textarea:focus {
     border-color: var(--accent);
 }
 
-select.select-inline {
+select.select-inline,
+input.input-inline {
     width: auto;
     min-width: 140px;
     padding: 0.3rem 0.5rem;

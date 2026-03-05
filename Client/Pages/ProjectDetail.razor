@@ -29,6 +29,11 @@ else
     <!-- Pipeline Steps -->
     <h3>Pipeline</h3>
 
+    @if (_editError is not null)
+    {
+        <div class="alert alert-error">@_editError</div>
+    }
+
     @if (_project.Modules.Count > 0)
     {
         <table>
@@ -39,19 +44,65 @@ else
                     <th>Modulo</th>
                     <th>Tipo</th>
                     <th>Input</th>
+                    <th>Orden</th>
                     <th></th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var pm in _project.Modules.OrderBy(m => m.StepOrder))
+                @{ var sorted = _project.Modules.OrderBy(m => m.StepOrder).ToList(); }
+                @foreach (var pm in sorted)
                 {
+                    var isEditing = _editingPmId == pm.Id;
                     <tr>
                         <td>@pm.StepOrder</td>
-                        <td>@(pm.StepName ?? "-")</td>
+                        <td>
+                            @if (isEditing)
+                            {
+                                <input type="text" class="input-inline" @bind="_editStepName" placeholder="Nombre del paso" />
+                            }
+                            else
+                            {
+                                @(pm.StepName ?? "-")
+                            }
+                        </td>
                         <td>@pm.AiModuleName</td>
                         <td><span class="badge badge-warning">@pm.ModuleType</span></td>
-                        <td class="text-sm">@FormatInputMapping(pm.InputMapping)</td>
-                        <td><button class="btn btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button></td>
+                        <td>
+                            @if (isEditing)
+                            {
+                                <select class="select-inline" @bind="_editInputMapping">
+                                    <option value='{"source":"user"}'>Entrada del usuario</option>
+                                    <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
+                                    <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
+                                </select>
+                            }
+                            else
+                            {
+                                <span class="text-sm">@FormatInputMapping(pm.InputMapping)</span>
+                            }
+                        </td>
+                        <td>
+                            <div style="display:flex; gap:0.2rem;">
+                                <button class="btn btn-sm" @onclick="() => MoveStep(pm, -1)"
+                                        disabled="@(pm.StepOrder <= 1)" title="Subir">▲</button>
+                                <button class="btn btn-sm" @onclick="() => MoveStep(pm, 1)"
+                                        disabled="@(pm.StepOrder >= sorted.Count)" title="Bajar">▼</button>
+                            </div>
+                        </td>
+                        <td>
+                            <div style="display:flex; gap:0.3rem;">
+                                @if (isEditing)
+                                {
+                                    <button class="btn btn-sm btn-success" @onclick="SaveEdit">Guardar</button>
+                                    <button class="btn btn-sm" @onclick="CancelEdit">Cancelar</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
+                                }
+                                <button class="btn btn-sm btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
+                            </div>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -383,6 +434,12 @@ else
     private string _inputMapping = "{\"source\":\"user\"}";
     private string? _stepError;
 
+    // Edit step
+    private Guid? _editingPmId;
+    private string _editStepName = "";
+    private string _editInputMapping = "";
+    private string? _editError;
+
     // Execute
     private string _userInput = "";
     private string? _execError;
@@ -479,6 +536,70 @@ else
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
         _loading = false;
+    }
+
+    private void StartEdit(ProjectModuleResponse pm)
+    {
+        _editingPmId = pm.Id;
+        _editStepName = pm.StepName ?? "";
+        _editInputMapping = pm.InputMapping ?? "{\"source\":\"user\"}";
+        _editError = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingPmId = null;
+        _editError = null;
+    }
+
+    private async Task SaveEdit()
+    {
+        if (_editingPmId is null || _project is null) return;
+        _editError = null;
+
+        var pm = _project.Modules.FirstOrDefault(m => m.Id == _editingPmId);
+        if (pm is null) return;
+
+        try
+        {
+            var req = new UpdateProjectModuleRequest(
+                pm.StepOrder,
+                string.IsNullOrWhiteSpace(_editStepName) ? null : _editStepName,
+                _editInputMapping,
+                pm.Configuration,
+                pm.IsActive);
+            var (ok, error) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
+            if (ok) { _editingPmId = null; await LoadAll(); }
+            else _editError = error;
+        }
+        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
+    }
+
+    private async Task MoveStep(ProjectModuleResponse target, int direction)
+    {
+        if (_project is null) return;
+        _editError = null;
+
+        var sorted = _project.Modules.OrderBy(m => m.StepOrder).ToList();
+        var idx = sorted.FindIndex(m => m.Id == target.Id);
+        var swapIdx = idx + direction;
+        if (swapIdx < 0 || swapIdx >= sorted.Count) return;
+
+        var other = sorted[swapIdx];
+
+        try
+        {
+            // Swap step orders
+            var req1 = new UpdateProjectModuleRequest(other.StepOrder, target.StepName, target.InputMapping, target.Configuration, target.IsActive);
+            var req2 = new UpdateProjectModuleRequest(target.StepOrder, other.StepName, other.InputMapping, other.Configuration, other.IsActive);
+
+            var (ok1, err1) = await Api.UpdateProjectModuleAsync(ProjectId, target.Id, req1);
+            var (ok2, err2) = await Api.UpdateProjectModuleAsync(ProjectId, other.Id, req2);
+
+            if (!ok1 || !ok2) _editError = err1 ?? err2;
+            await LoadAll();
+        }
+        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
     }
 
     private async Task RemoveStep(Guid pmId)

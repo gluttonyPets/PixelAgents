@@ -151,6 +151,14 @@ public class ApiClient
         return (false, body?.Error ?? resp.ReasonPhrase);
     }
 
+    public async Task<(bool Ok, string? Error)> UpdateProjectModuleAsync(Guid projectId, Guid id, UpdateProjectModuleRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/modules/{id}", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        var body = await resp.Content.ReadFromJsonAsync<ErrorBody>();
+        return (false, body?.Error ?? resp.ReasonPhrase);
+    }
+
     public async Task DeleteProjectModuleAsync(Guid projectId, Guid id)
     {
         await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/modules/{id}");
