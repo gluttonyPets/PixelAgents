@@ -133,7 +133,7 @@ namespace Server.Services.Ai
             {
                 if (part.InlineData is not null && part.InlineData.MimeType?.StartsWith("image/") == true)
                 {
-                    var imageBytes = Convert.FromBase64String(part.InlineData.Data);
+                    var imageBytes = part.InlineData.Data;
                     return AiResult.OkFile(imageBytes, part.InlineData.MimeType, new Dictionary<string, object>
                     {
                         ["model"] = context.ModelName,
