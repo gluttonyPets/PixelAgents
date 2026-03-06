@@ -111,42 +111,38 @@ namespace Server.Services.Ai
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
-            var aspectRatio = "1:1";
-            if (context.Configuration.TryGetValue("aspectRatio", out var ar) && ar is string arStr)
-                aspectRatio = arStr;
-
-            var numberOfImages = 1;
-            if (context.Configuration.TryGetValue("numberOfImages", out var ni))
-                numberOfImages = Convert.ToInt32(ni);
-
-            var config = new GenerateImagesConfig
+            var config = new GenerateContentConfig
             {
-                NumberOfImages = numberOfImages,
-                AspectRatio = aspectRatio,
-                PersonGeneration = PersonGeneration.AllowAll,
+                ResponseModalities = ["IMAGE", "TEXT"],
             };
 
-            var response = await client.Models.GenerateImagesAsync(
+            var response = await client.Models.GenerateContentAsync(
                 model: context.ModelName,
-                prompt: prompt,
+                contents: prompt,
                 config: config
             );
 
-            if (response.GeneratedImages is null || response.GeneratedImages.Count == 0)
-                return AiResult.Fail("Google Imagen no devolvio imagenes");
+            if (response.Candidates is null || response.Candidates.Count == 0)
+                return AiResult.Fail("Google Gemini no devolvio respuesta para la imagen");
 
-            var imageData = response.GeneratedImages[0];
+            var parts = response.Candidates[0].Content?.Parts;
+            if (parts is null)
+                return AiResult.Fail("Google Gemini no devolvio partes en la respuesta");
 
-            if (imageData.Image?.ImageBytes is null || imageData.Image.ImageBytes.Length == 0)
-                return AiResult.Fail("Google Imagen no devolvio datos de imagen");
-
-            var imageBytes = imageData.Image.ImageBytes;
-
-            return AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
+            foreach (var part in parts)
             {
-                ["model"] = context.ModelName,
-                ["revisedPrompt"] = ""
-            });
+                if (part.InlineData is not null && part.InlineData.MimeType?.StartsWith("image/") == true)
+                {
+                    var imageBytes = Convert.FromBase64String(part.InlineData.Data);
+                    return AiResult.OkFile(imageBytes, part.InlineData.MimeType, new Dictionary<string, object>
+                    {
+                        ["model"] = context.ModelName,
+                        ["revisedPrompt"] = ""
+                    });
+                }
+            }
+
+            return AiResult.Fail("Google Gemini no devolvio datos de imagen en la respuesta");
         }
     }
 }
