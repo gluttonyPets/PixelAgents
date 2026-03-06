@@ -116,33 +116,58 @@ namespace Server.Services.Ai
                 ResponseModalities = ["IMAGE", "TEXT"],
             };
 
-            var response = await client.Models.GenerateContentAsync(
-                model: context.ModelName,
-                contents: prompt,
-                config: config
-            );
-
-            if (response.Candidates is null || response.Candidates.Count == 0)
-                return AiResult.Fail("Google Gemini no devolvio respuesta para la imagen");
-
-            var parts = response.Candidates[0].Content?.Parts;
-            if (parts is null)
-                return AiResult.Fail("Google Gemini no devolvio partes en la respuesta");
-
-            foreach (var part in parts)
+            const int maxRetries = 2;
+            for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                if (part.InlineData is not null && part.InlineData.MimeType?.StartsWith("image/") == true)
+                var response = await client.Models.GenerateContentAsync(
+                    model: context.ModelName,
+                    contents: prompt,
+                    config: config
+                );
+
+                if (response.Candidates is null || response.Candidates.Count == 0)
                 {
-                    var imageBytes = part.InlineData.Data;
-                    return AiResult.OkFile(imageBytes, part.InlineData.MimeType, new Dictionary<string, object>
-                    {
-                        ["model"] = context.ModelName,
-                        ["revisedPrompt"] = ""
-                    });
+                    if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
+                    return AiResult.Fail("Google Gemini no devolvio respuesta para la imagen");
                 }
+
+                var parts = response.Candidates[0].Content?.Parts;
+                if (parts is null)
+                {
+                    if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
+                    return AiResult.Fail("Google Gemini no devolvio partes en la respuesta");
+                }
+
+                foreach (var part in parts)
+                {
+                    if (part.InlineData is not null && part.InlineData.MimeType?.StartsWith("image/") == true)
+                    {
+                        var imageBytes = part.InlineData.Data;
+                        return AiResult.OkFile(imageBytes, part.InlineData.MimeType, new Dictionary<string, object>
+                        {
+                            ["model"] = context.ModelName,
+                            ["revisedPrompt"] = ""
+                        });
+                    }
+                }
+
+                // No image found — collect text reason and retry
+                var textReason = string.Join(" ", parts
+                    .Where(p => !string.IsNullOrEmpty(p.Text))
+                    .Select(p => p.Text));
+
+                if (attempt < maxRetries)
+                {
+                    await Task.Delay(1000 * (attempt + 1));
+                    continue;
+                }
+
+                return AiResult.Fail(string.IsNullOrWhiteSpace(textReason)
+                    ? "Google Gemini no devolvio imagen tras varios intentos"
+                    : $"Google Gemini no genero imagen: {textReason}");
             }
 
-            return AiResult.Fail("Google Gemini no devolvio datos de imagen en la respuesta");
+            return AiResult.Fail("Google Gemini no devolvio imagen tras varios intentos");
         }
     }
 }
