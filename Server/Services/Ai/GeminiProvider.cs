@@ -32,7 +32,7 @@ namespace Server.Services.Ai
             {
                 var client = new Client(apiKey: apiKey);
                 await client.Models.GenerateContentAsync(
-                    model: "gemini-2.0-flash",
+                    model: "gemini-2.5-flash",
                     contents: "hi"
                 );
 
