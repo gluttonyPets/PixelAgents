@@ -35,6 +35,12 @@ namespace Server.Services
             {
                 ctx.Database.ExecuteSqlRaw(
                     "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"Context\" text");
+                ctx.Database.ExecuteSqlRaw(
+                    "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"WhatsAppConfig\" text");
+                ctx.Database.ExecuteSqlRaw(
+                    "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtStepOrder\" integer");
+                ctx.Database.ExecuteSqlRaw(
+                    "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text");
             }
             catch { /* column already exists or table doesn't exist yet */ }
         }

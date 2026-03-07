@@ -95,6 +95,25 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
     db.Database.EnsureCreated();
+
+    // Apply pending schema changes for existing core DBs
+    try
+    {
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""WhatsAppCorrelations"" (
+                ""Id"" uuid NOT NULL PRIMARY KEY,
+                ""ExecutionId"" uuid NOT NULL,
+                ""TenantDbName"" varchar(200) NOT NULL,
+                ""RecipientNumber"" varchar(50) NOT NULL,
+                ""StepOrder"" integer NOT NULL,
+                ""CreatedAt"" timestamp with time zone NOT NULL,
+                ""IsResolved"" boolean NOT NULL DEFAULT false
+            )");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_WhatsAppCorrelations_RecipientNumber_IsResolved""
+            ON ""WhatsAppCorrelations"" (""RecipientNumber"", ""IsResolved"")");
+    }
+    catch { }
 }
 
 // ==================== Helper: resolve tenant DB ====================
