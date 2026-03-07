@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Server.Services.WhatsApp
 {
@@ -22,6 +23,20 @@ namespace Server.Services.WhatsApp
             _http = http;
         }
 
+        /// <summary>Strips +, spaces, dashes from phone number so it's digits only.</summary>
+        private static string NormalizePhone(string phone) =>
+            Regex.Replace(phone, @"[^\d]", "");
+
+        private static async Task EnsureSuccessAsync(HttpResponseMessage response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException(
+                    $"WhatsApp API error {(int)response.StatusCode}: {body}");
+            }
+        }
+
         public async Task SendTextMessageAsync(WhatsAppConfig config, string text)
         {
             var url = $"{GraphApiBase}/{config.PhoneNumberId}/messages";
@@ -29,7 +44,7 @@ namespace Server.Services.WhatsApp
             var payload = new
             {
                 messaging_product = "whatsapp",
-                to = config.RecipientNumber,
+                to = NormalizePhone(config.RecipientNumber),
                 type = "text",
                 text = new { body = text }
             };
@@ -41,7 +56,7 @@ namespace Server.Services.WhatsApp
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken);
 
             var response = await _http.SendAsync(request);
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessAsync(response);
         }
 
         public async Task<string> UploadMediaAsync(WhatsAppConfig config, byte[] fileBytes, string contentType, string fileName)
@@ -60,7 +75,7 @@ namespace Server.Services.WhatsApp
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken);
 
             var response = await _http.SendAsync(request);
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessAsync(response);
 
             var json = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(json);
@@ -78,7 +93,7 @@ namespace Server.Services.WhatsApp
             var payload = new
             {
                 messaging_product = "whatsapp",
-                to = config.RecipientNumber,
+                to = NormalizePhone(config.RecipientNumber),
                 type = "image",
                 image = imageObj
             };
@@ -90,7 +105,7 @@ namespace Server.Services.WhatsApp
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken);
 
             var response = await _http.SendAsync(request);
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessAsync(response);
         }
 
         public static (bool Valid, string? Challenge) VerifyWebhook(
