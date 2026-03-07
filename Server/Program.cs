@@ -729,11 +729,15 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
+    var user = await um.GetUserAsync(ctx.User);
+    var userClaims = await um.GetClaimsAsync(user!);
+    var tenantDbName = userClaims.First(c => c.Type == "db_name").Value;
+
     try
     {
         var projectId = await db.ProjectExecutions.Where(e => e.Id == executionId).Select(e => e.ProjectId).FirstAsync();
         var ct = cancellation.Register(projectId);
-        var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, db, ct);
+        var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, db, tenantDbName, ct);
         cancellation.Remove(projectId);
 
         var exec = await db.ProjectExecutions

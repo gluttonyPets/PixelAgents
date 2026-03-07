@@ -23,6 +23,10 @@ namespace Server.Services.Ai
             _coreDb = coreDb;
         }
 
+        private static bool IsInteractionStep(AiModule module) =>
+            module.ModuleType == "Interaction" ||
+            (module.ProviderType == "System" && module.ModelName == "whatsapp");
+
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
@@ -47,7 +51,7 @@ namespace Server.Services.Ai
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
                 // Interaction steps don't need API key validation
-                if (pm.AiModule.ModuleType == "Interaction")
+                if (IsInteractionStep(pm.AiModule))
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -138,7 +142,7 @@ namespace Server.Services.Ai
                         pm.StepOrder, stepName);
 
                     // ── Interaction step: pause pipeline, send WhatsApp message ──
-                    if (pm.AiModule.ModuleType == "Interaction")
+                    if (IsInteractionStep(pm.AiModule))
                     {
                         await HandleInteractionStepAsync(
                             project, execution, stepExecution, pm, userInput,
@@ -712,7 +716,7 @@ namespace Server.Services.Ai
                         pm.StepOrder, stepName);
 
                     // Handle another interaction step
-                    if (pm.AiModule.ModuleType == "Interaction")
+                    if (IsInteractionStep(pm.AiModule))
                     {
                         await HandleInteractionStepAsync(
                             project, execution, stepExecution, pm, pauseState.UserInput,
@@ -933,7 +937,7 @@ namespace Server.Services.Ai
         }
 
         public async Task<ProjectExecution> RetryFromStepAsync(
-            Guid executionId, int fromStepOrder, string? comment, UserDbContext db, CancellationToken ct = default)
+            Guid executionId, int fromStepOrder, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
             var execution = await db.ProjectExecutions
                 .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
@@ -963,7 +967,7 @@ namespace Server.Services.Ai
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (pm.AiModule.ModuleType == "Interaction")
+                if (IsInteractionStep(pm.AiModule))
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -1099,6 +1103,15 @@ namespace Server.Services.Ai
                     await _logger.LogAsync(projectId, executionId, "info",
                         $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
                         pm.StepOrder, stepName);
+
+                    // Handle interaction step during retry
+                    if (IsInteractionStep(pm.AiModule))
+                    {
+                        await HandleInteractionStepAsync(
+                            project, execution, stepExecution, pm, originalUserInput,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        return execution;
+                    }
 
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
