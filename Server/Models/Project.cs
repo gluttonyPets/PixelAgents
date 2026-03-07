@@ -6,6 +6,7 @@ namespace Server.Models
         public string Name { get; set; } = default!;
         public string? Description { get; set; }
         public string? Context { get; set; }
+        public string? WhatsAppConfig { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 

@@ -294,6 +294,22 @@ public class ApiClient
         }
     }
 
+    // ── WhatsApp Config ──
+
+    public async Task<WhatsAppConfigDto?> GetWhatsAppConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/whatsapp-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<WhatsAppConfigDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SaveWhatsAppConfigAsync(Guid projectId, WhatsAppConfigDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/whatsapp-config", dto);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp)
     {
         try

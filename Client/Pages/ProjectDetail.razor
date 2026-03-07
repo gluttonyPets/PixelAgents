@@ -26,6 +26,45 @@ else
         </div>
     }
 
+    <!-- WhatsApp Config -->
+    <details class="card" style="margin-bottom: 1rem;">
+        <summary style="cursor: pointer; font-weight: bold;">Configuracion WhatsApp (Interaccion)</summary>
+        <div style="padding-top: 0.5rem;">
+            @if (_waError is not null)
+            {
+                <div class="alert alert-error">@_waError</div>
+            }
+            @if (_waSuccess)
+            {
+                <div class="alert alert-success">Configuracion guardada correctamente</div>
+            }
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Phone Number ID</label>
+                    <input type="text" @bind="_waPhoneNumberId" placeholder="Ej: 123456789012345" />
+                </div>
+                <div class="form-group">
+                    <label>Numero destinatario</label>
+                    <input type="text" @bind="_waRecipientNumber" placeholder="Ej: 34612345678" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Access Token</label>
+                <input type="password" @bind="_waAccessToken" placeholder="EAABx..." />
+            </div>
+            <div class="form-group">
+                <label>Webhook Verify Token</label>
+                <input type="text" @bind="_waVerifyToken" placeholder="Token de verificacion para el webhook" />
+            </div>
+            <p class="text-sm text-muted">
+                Webhook URL: <code>https://tu-servidor/api/webhooks/whatsapp</code> — Configuralo en Meta for Developers.
+            </p>
+            <button class="btn btn-primary" @onclick="SaveWhatsAppConfig" disabled="@_waSaving">
+                @(_waSaving ? "Guardando..." : "Guardar configuracion")
+            </button>
+        </div>
+    </details>
+
     <!-- Pipeline Steps -->
     <h3>Pipeline</h3>
 
@@ -164,6 +203,16 @@ else
                 </select>
             </div>
         </div>
+
+        @{ var selectedModule = _modules.FirstOrDefault(m => m.Id.ToString() == _stepModuleId); }
+        @if (selectedModule?.ModuleType == "Interaction")
+        {
+            <div class="form-group">
+                <label>Mensaje WhatsApp <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior, {step_number} para el numero de paso)</span></label>
+                <textarea @bind="_interactionTemplate" rows="3"
+                    placeholder="Resultado del paso anterior: {previous_output}. Te parece correcto? Responde SI para continuar o escribe tu feedback."></textarea>
+            </div>
+        }
 
         <button class="btn btn-primary mt-1" @onclick="AddStep" disabled="@_loading">Agregar</button>
     </div>
@@ -462,6 +511,9 @@ else
     private string _inputMapping = "{\"source\":\"user\"}";
     private string? _stepError;
 
+    // Interaction step
+    private string _interactionTemplate = "";
+
     // Edit step
     private Guid? _editingPmId;
     private string _editStepName = "";
@@ -476,6 +528,15 @@ else
     private int? _retryStepOrder;
     private string _retryComment = "";
     private string? _retryError;
+
+    // WhatsApp config
+    private string _waPhoneNumberId = "";
+    private string _waAccessToken = "";
+    private string _waRecipientNumber = "";
+    private string _waVerifyToken = "";
+    private string? _waError;
+    private bool _waSuccess;
+    private bool _waSaving;
 
     // Execution log
     private List<LogEntry> _logEntries = [];
@@ -531,9 +592,40 @@ else
             _executions = await Api.GetExecutionsAsync(ProjectId);
             if (_project is not null)
                 _stepOrder = _project.Modules.Count + 1;
+
+            // Load WhatsApp config
+            var waConfig = await Api.GetWhatsAppConfigAsync(ProjectId);
+            if (waConfig is not null)
+            {
+                _waPhoneNumberId = waConfig.PhoneNumberId;
+                _waAccessToken = waConfig.AccessToken;
+                _waRecipientNumber = waConfig.RecipientNumber;
+                _waVerifyToken = waConfig.WebhookVerifyToken;
+            }
         }
         catch { }
         _loading = false;
+    }
+
+    private async Task SaveWhatsAppConfig()
+    {
+        _waError = null;
+        _waSuccess = false;
+        _waSaving = true;
+        try
+        {
+            var dto = new WhatsAppConfigDto(_waPhoneNumberId, _waAccessToken, _waRecipientNumber, _waVerifyToken);
+            var (ok, error) = await Api.SaveWhatsAppConfigAsync(ProjectId, dto);
+            if (ok)
+            {
+                _waSuccess = true;
+                _modules = await Api.GetModulesAsync(); // Refresh to pick up sentinel module
+            }
+            else
+                _waError = error;
+        }
+        catch (Exception ex) { _waError = ex.Message; }
+        _waSaving = false;
     }
 
     private static string FormatInputMapping(string? mapping)
@@ -567,7 +659,14 @@ else
         _loading = true;
         try
         {
-            var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, null);
+            // Build config for interaction steps
+            string? stepConfig = null;
+            var mod = _modules.FirstOrDefault(m => m.Id == moduleId);
+            if (mod?.ModuleType == "Interaction" && !string.IsNullOrWhiteSpace(_interactionTemplate))
+            {
+                stepConfig = JsonSerializer.Serialize(new { messageTemplate = _interactionTemplate });
+            }
+            var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
             if (ok) { _stepName = ""; _stepModuleId = ""; await LoadAll(); }
             else _stepError = error;
@@ -756,6 +855,7 @@ else
         "Completed" => "badge-success",
         "Failed" => "badge-danger",
         "Running" => "badge-warning",
+        "WaitingForInput" => "badge-info",
         "Cancelled" => "badge-warning",
         _ => "badge-info"
     };

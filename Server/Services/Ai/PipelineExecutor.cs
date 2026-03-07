@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Server.Data;
 using Server.Hubs;
 using Server.Models;
+using Server.Services.WhatsApp;
 
 namespace Server.Services.Ai
 {
@@ -10,11 +11,16 @@ namespace Server.Services.Ai
     {
         private readonly IAiProviderRegistry _registry;
         private readonly IExecutionLogger _logger;
+        private readonly WhatsAppService _whatsApp;
+        private readonly CoreDbContext _coreDb;
 
-        public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger)
+        public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
+            WhatsAppService whatsApp, CoreDbContext coreDb)
         {
             _registry = registry;
             _logger = logger;
+            _whatsApp = whatsApp;
+            _coreDb = coreDb;
         }
 
         public async Task<ProjectExecution> ExecuteAsync(
@@ -39,6 +45,10 @@ namespace Server.Services.Ai
             foreach (var pm in project.ProjectModules)
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
+
+                // Interaction steps don't need API key validation
+                if (pm.AiModule.ModuleType == "Interaction")
+                    continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
                 {
@@ -126,6 +136,15 @@ namespace Server.Services.Ai
                     await _logger.LogAsync(projectId, executionId, "info",
                         $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
                         pm.StepOrder, stepName);
+
+                    // ── Interaction step: pause pipeline, send WhatsApp message ──
+                    if (pm.AiModule.ModuleType == "Interaction")
+                    {
+                        await HandleInteractionStepAsync(
+                            project, execution, stepExecution, pm, userInput,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        return execution;
+                    }
 
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada para modulo '{pm.AiModule.Name}'");
@@ -488,6 +507,398 @@ namespace Server.Services.Ai
             }
         }
 
+        // ── Interaction step handler ──
+        private async Task HandleInteractionStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm, string? userInput,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            UserDbContext db, string tenantDbName)
+        {
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+
+            // 1. Parse WhatsApp config from project
+            if (string.IsNullOrWhiteSpace(project.WhatsAppConfig))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de WhatsApp");
+
+            var waConfig = JsonSerializer.Deserialize<WhatsAppConfig>(project.WhatsAppConfig)
+                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion WhatsApp invalida");
+
+            // 2. Build message from template + previous output
+            var stepConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+            var messageTemplate = "{previous_output}";
+            if (stepConfig.TryGetValue("messageTemplate", out var tmpl) && tmpl is JsonElement tmplEl)
+                messageTemplate = tmplEl.GetString() ?? messageTemplate;
+            else if (tmpl is string tmplStr)
+                messageTemplate = tmplStr;
+
+            var previousText = "";
+            var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
+            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput))
+                previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
+            else if (stepResults.TryGetValue(prevOrder, out var prevResult))
+                previousText = prevResult.TextOutput ?? "";
+
+            var message = messageTemplate
+                .Replace("{previous_output}", previousText)
+                .Replace("{step_number}", pm.StepOrder.ToString());
+
+            // 3. Send text message
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                $"Enviando mensaje a WhatsApp...", pm.StepOrder, stepName);
+
+            await _whatsApp.SendTextMessageAsync(waConfig, message);
+
+            // 4. Send images from previous step if available
+            var prevStepExec = await db.StepExecutions
+                .Include(s => s.Files)
+                .FirstOrDefaultAsync(s => s.ExecutionId == execution.Id && s.StepOrder == prevOrder);
+
+            if (prevStepExec?.Files is not null)
+            {
+                foreach (var file in prevStepExec.Files.Where(f => f.ContentType.StartsWith("image/")))
+                {
+                    var filePath = Path.Combine(execution.WorkspacePath, file.FilePath);
+                    if (!System.IO.File.Exists(filePath)) continue;
+
+                    var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+                    var mediaId = await _whatsApp.UploadMediaAsync(waConfig, fileBytes, file.ContentType, file.FileName);
+                    await _whatsApp.SendImageMessageAsync(waConfig, mediaId);
+                }
+
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"Imagenes del paso anterior enviadas a WhatsApp", pm.StepOrder, stepName);
+            }
+
+            // 5. Serialize pause state
+            var pauseState = new PausedPipelineState
+            {
+                UserInput = userInput,
+                StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value)),
+                StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+            };
+
+            execution.PausedAtStepOrder = pm.StepOrder;
+            execution.PausedStepData = JsonSerializer.Serialize(pauseState);
+            execution.Status = "WaitingForInput";
+
+            stepExecution.Status = "WaitingForInput";
+            stepExecution.InputData = JsonSerializer.Serialize(new { message });
+            await db.SaveChangesAsync();
+
+            // 6. Create correlation for webhook resolution
+            _coreDb.WhatsAppCorrelations.Add(new WhatsAppCorrelation
+            {
+                Id = Guid.NewGuid(),
+                ExecutionId = execution.Id,
+                TenantDbName = tenantDbName,
+                RecipientNumber = waConfig.RecipientNumber,
+                StepOrder = pm.StepOrder,
+                CreatedAt = DateTime.UtcNow,
+                IsResolved = false,
+            });
+            await _coreDb.SaveChangesAsync();
+
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                "Esperando respuesta de WhatsApp...", pm.StepOrder, stepName);
+        }
+
+        public async Task<ProjectExecution> ResumeFromInteractionAsync(
+            Guid executionId, string responseText, UserDbContext db, string tenantDbName, CancellationToken ct = default)
+        {
+            var execution = await db.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .FirstOrDefaultAsync(e => e.Id == executionId && e.Status == "WaitingForInput")
+                ?? throw new InvalidOperationException("Ejecucion no encontrada o no esta esperando input");
+
+            var project = await db.Projects
+                .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
+                    .ThenInclude(pm => pm.AiModule)
+                        .ThenInclude(m => m.ApiKey)
+                .FirstOrDefaultAsync(p => p.Id == execution.ProjectId)
+                ?? throw new InvalidOperationException("Proyecto no encontrado");
+
+            var pausedStep = execution.PausedAtStepOrder
+                ?? throw new InvalidOperationException("No hay paso pausado registrado");
+
+            // Deserialize pause state
+            var pauseState = JsonSerializer.Deserialize<PausedPipelineState>(execution.PausedStepData ?? "{}")
+                ?? throw new InvalidOperationException("Estado de pausa invalido");
+
+            var stepOutputs = new Dictionary<int, StepOutput>();
+            foreach (var kv in pauseState.StepOutputs)
+            {
+                if (int.TryParse(kv.Key, out var stepOrder))
+                    stepOutputs[stepOrder] = JsonSerializer.Deserialize<StepOutput>(kv.Value) ?? new StepOutput();
+            }
+
+            var stepModuleTypes = new Dictionary<int, string>();
+            foreach (var kv in pauseState.StepModuleTypes)
+            {
+                if (int.TryParse(kv.Key, out var stepOrder))
+                    stepModuleTypes[stepOrder] = kv.Value;
+            }
+
+            var stepResults = new Dictionary<int, AiResult>();
+
+            // Complete the interaction step with the WhatsApp response
+            var interactionStepExec = execution.StepExecutions.FirstOrDefault(s => s.StepOrder == pausedStep);
+            if (interactionStepExec is not null)
+            {
+                var interactionOutput = new StepOutput
+                {
+                    Type = "text",
+                    Content = responseText,
+                    Summary = "Respuesta de WhatsApp",
+                    Items = [new OutputItem { Content = responseText, Label = "respuesta" }]
+                };
+
+                interactionStepExec.Status = "Completed";
+                interactionStepExec.OutputData = JsonSerializer.Serialize(interactionOutput);
+                interactionStepExec.CompletedAt = DateTime.UtcNow;
+
+                stepOutputs[pausedStep] = interactionOutput;
+                stepModuleTypes[pausedStep] = "Interaction";
+                stepResults[pausedStep] = AiResult.Ok(responseText, new Dictionary<string, object>());
+            }
+
+            // Clear pause state
+            execution.PausedAtStepOrder = null;
+            execution.PausedStepData = null;
+            execution.Status = "Running";
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                $"Respuesta recibida de WhatsApp: \"{responseText}\". Reanudando pipeline...");
+
+            // Continue execution from the step after the paused one
+            var allModules = project.ProjectModules.ToList();
+            var workspacePath = execution.WorkspacePath;
+
+            for (var mi = 0; mi < allModules.Count; mi++)
+            {
+                var pm = allModules[mi];
+                if (pm.StepOrder <= pausedStep) continue;
+
+                var nextModule = mi + 1 < allModules.Count ? allModules[mi + 1] : null;
+
+                if (ct.IsCancellationRequested)
+                {
+                    execution.Status = "Cancelled";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
+                }
+
+                var stepExecution = new StepExecution
+                {
+                    Id = Guid.NewGuid(),
+                    ExecutionId = execution.Id,
+                    ProjectModuleId = pm.Id,
+                    StepOrder = pm.StepOrder,
+                    Status = "Running",
+                    CreatedAt = DateTime.UtcNow,
+                };
+
+                db.StepExecutions.Add(stepExecution);
+                await db.SaveChangesAsync();
+
+                try
+                {
+                    var stepName = pm.StepName ?? pm.AiModule.Name;
+                    await _logger.LogAsync(project.Id, execution.Id, "info",
+                        $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        pm.StepOrder, stepName);
+
+                    // Handle another interaction step
+                    if (pm.AiModule.ModuleType == "Interaction")
+                    {
+                        await HandleInteractionStepAsync(
+                            project, execution, stepExecution, pm, pauseState.UserInput,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        return execution;
+                    }
+
+                    var apiKey = pm.AiModule.ApiKey?.EncryptedKey
+                        ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
+
+                    var provider = _registry.GetProvider(pm.AiModule.ProviderType)
+                        ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Proveedor no disponible");
+
+                    var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+                    if (pm.AiModule.ModuleType == "Text" && nextModule is not null)
+                    {
+                        var nextMaxLen = InputAdapter.GetMaxPromptLength(nextModule.AiModule.ModelName);
+                        var rule = $"\n\nREGLA DE LONGITUD: El siguiente paso usa el modelo {nextModule.AiModule.ModelName} ({nextModule.AiModule.ModuleType}) que acepta maximo {nextMaxLen} caracteres por prompt. Cada elemento en \"items\" DEBE tener un \"content\" de maximo {nextMaxLen} caracteres.";
+                        if (config.TryGetValue("systemPrompt", out var existing) && existing is string s)
+                            config["systemPrompt"] = s + rule;
+                        else
+                            config["systemPrompt"] = rule;
+                    }
+
+                    var inputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
+
+                    if (pm.AiModule.ModuleType == "Text")
+                    {
+                        var context = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = inputs[0],
+                            ProjectContext = project.Context,
+                            Configuration = config,
+                        };
+
+                        var result = await provider.ExecuteAsync(context);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+
+                        if (!result.Success)
+                        {
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        var stepOutput = OutputSchemaHelper.ParseTextOutput(result.TextOutput ?? "", result.Metadata);
+                        stepOutputs[pm.StepOrder] = stepOutput;
+
+                        var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                        Directory.CreateDirectory(stepDir);
+                        await File.WriteAllTextAsync(Path.Combine(stepDir, "output.json"), result.TextOutput ?? "");
+
+                        db.ExecutionFiles.Add(new ExecutionFile
+                        {
+                            Id = Guid.NewGuid(),
+                            StepExecutionId = stepExecution.Id,
+                            FileName = "output.json",
+                            ContentType = "application/json",
+                            FilePath = Path.Combine($"step_{pm.StepOrder}", "output.json"),
+                            Direction = "Output",
+                            FileSize = System.Text.Encoding.UTF8.GetByteCount(result.TextOutput ?? ""),
+                            CreatedAt = DateTime.UtcNow,
+                        });
+
+                        stepExecution.OutputData = JsonSerializer.Serialize(stepOutput);
+
+                        await _logger.LogAsync(project.Id, execution.Id, "success",
+                            $"Texto generado correctamente", pm.StepOrder, stepName);
+                    }
+                    else if (pm.AiModule.ModuleType == "Image")
+                    {
+                        var outputFiles = new List<OutputFile>();
+                        string? imageError = null;
+
+                        for (var i = 0; i < inputs.Count; i++)
+                        {
+                            await _logger.LogAsync(project.Id, execution.Id, "info",
+                                inputs.Count > 1 ? $"Generando imagen {i + 1}/{inputs.Count}..." : $"Generando imagen...",
+                                pm.StepOrder, stepName);
+
+                            var singleInput = inputs[i];
+                            var maxLen = InputAdapter.GetMaxPromptLength(pm.AiModule.ModelName);
+                            if (singleInput.Length > maxLen)
+                                singleInput = InputAdapter.TruncateAtWord(singleInput, maxLen);
+
+                            var context = new AiExecutionContext
+                            {
+                                ModuleType = pm.AiModule.ModuleType,
+                                ModelName = pm.AiModule.ModelName,
+                                ApiKey = apiKey,
+                                Input = singleInput,
+                                ProjectContext = project.Context,
+                                Configuration = config,
+                            };
+
+                            var result = await provider.ExecuteAsync(context);
+
+                            if (!result.Success)
+                            {
+                                imageError = $"Error en imagen {i + 1}/{inputs.Count}: {result.Error}";
+                                break;
+                            }
+
+                            if (result.FileOutput is not null)
+                            {
+                                var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                                Directory.CreateDirectory(stepDir);
+                                var ext = GetExtension(result.ContentType ?? "application/octet-stream");
+                                var fileName = inputs.Count > 1 ? $"output_{i + 1}{ext}" : $"output{ext}";
+                                await File.WriteAllBytesAsync(Path.Combine(stepDir, fileName), result.FileOutput);
+
+                                db.ExecutionFiles.Add(new ExecutionFile
+                                {
+                                    Id = Guid.NewGuid(),
+                                    StepExecutionId = stepExecution.Id,
+                                    FileName = fileName,
+                                    ContentType = result.ContentType ?? "application/octet-stream",
+                                    FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                    Direction = "Output",
+                                    FileSize = result.FileOutput.Length,
+                                    CreatedAt = DateTime.UtcNow,
+                                });
+
+                                outputFiles.Add(new OutputFile
+                                {
+                                    FileId = Guid.NewGuid(),
+                                    FileName = fileName,
+                                    ContentType = result.ContentType ?? "application/octet-stream",
+                                    FileSize = result.FileOutput.Length,
+                                });
+                            }
+
+                            stepResults[pm.StepOrder] = result;
+                        }
+
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        var imageOutput = OutputSchemaHelper.BuildImageOutput(outputFiles, pm.AiModule.ModelName);
+                        stepOutputs[pm.StepOrder] = imageOutput;
+                        stepExecution.OutputData = JsonSerializer.Serialize(imageOutput);
+                        await db.SaveChangesAsync();
+
+                        if (imageError is not null)
+                        {
+                            await FailStep(stepExecution, execution, imageError, db);
+                            return execution;
+                        }
+
+                        await _logger.LogAsync(project.Id, execution.Id, "success",
+                            $"{outputFiles.Count} imagen(es) generada(s) correctamente", pm.StepOrder, stepName);
+                    }
+
+                    stepExecution.Status = "Completed";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    stepExecution.Status = "Failed";
+                    stepExecution.ErrorMessage = ex.Message;
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    execution.Status = "Failed";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
+                }
+            }
+
+            execution.Status = "Completed";
+            execution.CompletedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+            await _logger.LogAsync(project.Id, execution.Id, "success", "Pipeline completado correctamente");
+            return execution;
+        }
+
+        // Serializable pause state
+        private class PausedPipelineState
+        {
+            public string? UserInput { get; set; }
+            public Dictionary<string, string> StepOutputs { get; set; } = new();
+            public Dictionary<string, string> StepModuleTypes { get; set; } = new();
+        }
+
         private static async Task FailStep(StepExecution step, ProjectExecution execution, string error, UserDbContext db)
         {
             step.Status = "Failed";
@@ -551,6 +962,9 @@ namespace Server.Services.Ai
             foreach (var pm in retryModules)
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
+
+                if (pm.AiModule.ModuleType == "Interaction")
+                    continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
                 {

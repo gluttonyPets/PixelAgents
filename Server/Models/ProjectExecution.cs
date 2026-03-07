@@ -8,6 +8,8 @@ namespace Server.Models
         public string WorkspacePath { get; set; } = default!;
         public DateTime CreatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
+        public int? PausedAtStepOrder { get; set; }
+        public string? PausedStepData { get; set; }
 
         public Project Project { get; set; } = null!;
         public ICollection<StepExecution> StepExecutions { get; set; } = new List<StepExecution>();

@@ -53,6 +53,7 @@ builder.Services.AddSingleton<IAiProvider, AnthropicProvider>();
 builder.Services.AddSingleton<IAiProvider, LeonardoProvider>();
 builder.Services.AddSingleton<IAiProvider, GeminiProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
+builder.Services.AddHttpClient<Server.Services.WhatsApp.WhatsAppService>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
 builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
@@ -775,6 +776,117 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     var bytes = await File.ReadAllBytesAsync(fullPath);
     return Results.File(bytes, file.ContentType, file.FileName);
 }).RequireAuthorization();
+
+// ==================== WhatsApp Config Endpoints ====================
+
+app.MapGet("/api/projects/{projectId:guid}/whatsapp-config", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(project.WhatsAppConfig))
+        return Results.Ok(new WhatsAppConfigDto("", "", "", ""));
+
+    var config = System.Text.Json.JsonSerializer.Deserialize<WhatsAppConfigDto>(project.WhatsAppConfig);
+    return Results.Ok(config);
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/whatsapp-config", async (
+    Guid projectId, WhatsAppConfigDto dto, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    project.WhatsAppConfig = System.Text.Json.JsonSerializer.Serialize(dto);
+    project.UpdatedAt = DateTime.UtcNow;
+
+    // Ensure the Interaction sentinel module exists
+    var hasInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction");
+    if (!hasInteraction)
+    {
+        db.AiModules.Add(new AiModule
+        {
+            Id = Guid.NewGuid(),
+            Name = "WhatsApp Interaction",
+            Description = "Pausa el pipeline y envia un mensaje a WhatsApp para obtener feedback del usuario.",
+            ProviderType = "System",
+            ModuleType = "Interaction",
+            ModelName = "whatsapp",
+            IsEnabled = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { message = "Configuracion WhatsApp guardada" });
+}).RequireAuthorization();
+
+// ==================== WhatsApp Webhook Endpoints ====================
+
+app.MapGet("/api/webhooks/whatsapp", (HttpContext ctx) =>
+{
+    var hubMode = ctx.Request.Query["hub.mode"].FirstOrDefault();
+    var hubToken = ctx.Request.Query["hub.verify_token"].FirstOrDefault();
+    var hubChallenge = ctx.Request.Query["hub.challenge"].FirstOrDefault();
+
+    // Find verify token from any project with WhatsApp config
+    // For simplicity, we accept any valid verify token from any tenant
+    var verifyToken = builder.Configuration["WhatsApp:WebhookVerifyToken"] ?? "pixelagents-webhook-verify";
+
+    var (valid, challenge) = Server.Services.WhatsApp.WhatsAppService.VerifyWebhook(verifyToken, hubMode, hubToken, hubChallenge);
+    return valid ? Results.Text(challenge!) : Results.StatusCode(403);
+});
+
+app.MapPost("/api/webhooks/whatsapp", async (
+    HttpContext ctx, CoreDbContext coreDb, ITenantDbContextFactory factory, IPipelineExecutor executor) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = await reader.ReadToEndAsync();
+
+    System.Text.Json.JsonElement json;
+    try { json = System.Text.Json.JsonDocument.Parse(body).RootElement; }
+    catch { return Results.Ok(); }
+
+    var (text, senderPhone) = Server.Services.WhatsApp.WhatsAppService.ParseIncomingMessage(json);
+
+    if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(senderPhone))
+        return Results.Ok(); // Not a text message or status update — acknowledge
+
+    // Find pending correlation
+    var correlation = await coreDb.WhatsAppCorrelations
+        .Where(c => !c.IsResolved && c.RecipientNumber == senderPhone)
+        .OrderByDescending(c => c.CreatedAt)
+        .FirstOrDefaultAsync();
+
+    if (correlation is null)
+        return Results.Ok(); // No pending interaction for this sender
+
+    // Resolve tenant and resume pipeline
+    await using var db = factory.Create(correlation.TenantDbName);
+
+    try
+    {
+        await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
+        correlation.IsResolved = true;
+        await coreDb.SaveChangesAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error resuming pipeline: {ex.Message}");
+    }
+
+    return Results.Ok();
+});
 
 app.MapHub<ExecutionHub>("/hubs/execution");
 

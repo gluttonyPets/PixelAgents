@@ -54,6 +54,7 @@ namespace Server.Data
                 e.Property(x => x.Name).IsRequired().HasMaxLength(200);
                 e.Property(x => x.Description).HasMaxLength(2000);
                 e.Property(x => x.Context).HasColumnType("text");
+                e.Property(x => x.WhatsAppConfig).HasColumnType("text");
             });
 
             // ── ProjectModule ──
@@ -91,6 +92,7 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
 
                 e.HasIndex(x => x.ProjectId);
+                e.Property(x => x.PausedStepData).HasColumnType("text");
             });
 
             // ── StepExecution ──

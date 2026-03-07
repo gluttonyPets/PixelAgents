@@ -51,6 +51,10 @@ public record ExecutionFileResponse(
     Guid Id, string FileName, string ContentType, string FilePath,
     string Direction, long FileSize, DateTime CreatedAt);
 
+// ── WhatsApp ──
+public record WhatsAppConfigDto(string PhoneNumberId, string AccessToken,
+    string RecipientNumber, string WebhookVerifyToken);
+
 // ── Structured Output ──
 public class StepOutputDto
 {
