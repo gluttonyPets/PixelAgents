@@ -55,6 +55,9 @@ public record ExecutionFileResponse(
 public record WhatsAppConfigDto(string PhoneNumberId, string AccessToken,
     string RecipientNumber, string WebhookVerifyToken);
 
+// ── Telegram ──
+public record TelegramConfigDto(string BotToken, string ChatId);
+
 // ── Structured Output ──
 public class StepOutputDto
 {

@@ -54,6 +54,7 @@ builder.Services.AddSingleton<IAiProvider, LeonardoProvider>();
 builder.Services.AddSingleton<IAiProvider, GeminiProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddHttpClient<Server.Services.WhatsApp.WhatsAppService>();
+builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
 builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
@@ -112,6 +113,20 @@ using (var scope = app.Services.CreateScope())
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_WhatsAppCorrelations_RecipientNumber_IsResolved""
             ON ""WhatsAppCorrelations"" (""RecipientNumber"", ""IsResolved"")");
+
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""TelegramCorrelations"" (
+                ""Id"" uuid NOT NULL PRIMARY KEY,
+                ""ExecutionId"" uuid NOT NULL,
+                ""TenantDbName"" varchar(200) NOT NULL,
+                ""ChatId"" varchar(50) NOT NULL,
+                ""StepOrder"" integer NOT NULL,
+                ""CreatedAt"" timestamp with time zone NOT NULL,
+                ""IsResolved"" boolean NOT NULL DEFAULT false
+            )");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TelegramCorrelations_ChatId_IsResolved""
+            ON ""TelegramCorrelations"" (""ChatId"", ""IsResolved"")");
     }
     catch { }
 }
@@ -906,6 +921,123 @@ app.MapPost("/api/webhooks/whatsapp", async (
     catch (Exception ex)
     {
         Console.WriteLine($"Error resuming pipeline: {ex.Message}");
+    }
+
+    return Results.Ok();
+});
+
+// ==================== Telegram Config Endpoints ====================
+
+app.MapGet("/api/projects/{projectId:guid}/telegram-config", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(project.TelegramConfig))
+        return Results.Ok(new TelegramConfigDto("", ""));
+
+    var config = System.Text.Json.JsonSerializer.Deserialize<TelegramConfigDto>(project.TelegramConfig);
+    return Results.Ok(config);
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/telegram-config", async (
+    Guid projectId, TelegramConfigDto dto, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.Telegram.TelegramService telegram) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    project.TelegramConfig = System.Text.Json.JsonSerializer.Serialize(dto);
+    project.UpdatedAt = DateTime.UtcNow;
+
+    // Ensure the Interaction sentinel module exists
+    var hasInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction");
+    if (!hasInteraction)
+    {
+        db.AiModules.Add(new AiModule
+        {
+            Id = Guid.NewGuid(),
+            Name = "Telegram Interaction",
+            Description = "Pausa el pipeline y envia un mensaje a Telegram para obtener feedback del usuario.",
+            ProviderType = "System",
+            ModuleType = "Interaction",
+            ModelName = "telegram",
+            IsEnabled = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+    }
+
+    await db.SaveChangesAsync();
+
+    // Register webhook with Telegram
+    if (!string.IsNullOrWhiteSpace(dto.BotToken))
+    {
+        try
+        {
+            var baseUrl = builder.Configuration["Telegram:WebhookBaseUrl"]
+                ?? builder.Configuration["BaseUrl"]
+                ?? "";
+            if (!string.IsNullOrWhiteSpace(baseUrl))
+            {
+                var webhookUrl = $"{baseUrl.TrimEnd('/')}/api/webhooks/telegram";
+                await telegram.SetWebhookAsync(dto.BotToken, webhookUrl);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Could not set Telegram webhook: {ex.Message}");
+        }
+    }
+
+    return Results.Ok(new { message = "Configuracion Telegram guardada" });
+}).RequireAuthorization();
+
+// ==================== Telegram Webhook Endpoint ====================
+
+app.MapPost("/api/webhooks/telegram", async (
+    HttpContext ctx, CoreDbContext coreDb, ITenantDbContextFactory factory, IPipelineExecutor executor) =>
+{
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = await reader.ReadToEndAsync();
+
+    System.Text.Json.JsonElement json;
+    try { json = System.Text.Json.JsonDocument.Parse(body).RootElement; }
+    catch { return Results.Ok(); }
+
+    var (text, chatId) = Server.Services.Telegram.TelegramService.ParseIncomingMessage(json);
+
+    if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(chatId))
+        return Results.Ok();
+
+    // Find pending correlation
+    var correlation = await coreDb.TelegramCorrelations
+        .Where(c => !c.IsResolved && c.ChatId == chatId)
+        .OrderByDescending(c => c.CreatedAt)
+        .FirstOrDefaultAsync();
+
+    if (correlation is null)
+        return Results.Ok();
+
+    await using var db = factory.Create(correlation.TenantDbName);
+
+    try
+    {
+        await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
+        correlation.IsResolved = true;
+        await coreDb.SaveChangesAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error resuming pipeline from Telegram: {ex.Message}");
     }
 
     return Results.Ok();

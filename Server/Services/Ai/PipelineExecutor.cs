@@ -4,6 +4,7 @@ using Server.Data;
 using Server.Hubs;
 using Server.Models;
 using Server.Services.WhatsApp;
+using Server.Services.Telegram;
 
 namespace Server.Services.Ai
 {
@@ -12,20 +13,22 @@ namespace Server.Services.Ai
         private readonly IAiProviderRegistry _registry;
         private readonly IExecutionLogger _logger;
         private readonly WhatsAppService _whatsApp;
+        private readonly TelegramService _telegram;
         private readonly CoreDbContext _coreDb;
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
-            WhatsAppService whatsApp, CoreDbContext coreDb)
+            WhatsAppService whatsApp, TelegramService telegram, CoreDbContext coreDb)
         {
             _registry = registry;
             _logger = logger;
             _whatsApp = whatsApp;
+            _telegram = telegram;
             _coreDb = coreDb;
         }
 
         private static bool IsInteractionStep(AiModule module) =>
             module.ModuleType == "Interaction" ||
-            (module.ProviderType == "System" && module.ModelName == "whatsapp");
+            (module.ProviderType == "System" && (module.ModelName == "whatsapp" || module.ModelName == "telegram"));
 
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
@@ -511,7 +514,7 @@ namespace Server.Services.Ai
             }
         }
 
-        // ── Interaction step handler ──
+        // ── Interaction step handler (supports Telegram and WhatsApp) ──
         private async Task HandleInteractionStepAsync(
             Project project, ProjectExecution execution, StepExecution stepExecution,
             ProjectModule pm, string? userInput,
@@ -522,12 +525,22 @@ namespace Server.Services.Ai
         {
             var stepName = pm.StepName ?? pm.AiModule.Name;
 
-            // 1. Parse WhatsApp config from project
-            if (string.IsNullOrWhiteSpace(project.WhatsAppConfig))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de WhatsApp");
+            // 1. Determine messaging channel: prefer Telegram, fall back to WhatsApp
+            var useTelegram = !string.IsNullOrWhiteSpace(project.TelegramConfig);
+            var useWhatsApp = !useTelegram && !string.IsNullOrWhiteSpace(project.WhatsAppConfig);
 
-            var waConfig = JsonSerializer.Deserialize<WhatsAppConfig>(project.WhatsAppConfig)
-                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion WhatsApp invalida");
+            if (!useTelegram && !useWhatsApp)
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de mensajeria (Telegram o WhatsApp)");
+
+            TelegramConfig? tgConfig = null;
+            WhatsAppConfig? waConfig = null;
+
+            if (useTelegram)
+                tgConfig = JsonSerializer.Deserialize<TelegramConfig>(project.TelegramConfig!)
+                    ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion Telegram invalida");
+            else
+                waConfig = JsonSerializer.Deserialize<WhatsAppConfig>(project.WhatsAppConfig!)
+                    ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion WhatsApp invalida");
 
             // 2. Build message from template + previous output
             var stepConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
@@ -548,11 +561,16 @@ namespace Server.Services.Ai
                 .Replace("{previous_output}", previousText)
                 .Replace("{step_number}", pm.StepOrder.ToString());
 
+            var channelName = useTelegram ? "Telegram" : "WhatsApp";
+
             // 3. Send text message
             await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Enviando mensaje a WhatsApp...", pm.StepOrder, stepName);
+                $"Enviando mensaje a {channelName}...", pm.StepOrder, stepName);
 
-            await _whatsApp.SendTextMessageAsync(waConfig, message);
+            if (useTelegram)
+                await _telegram.SendTextMessageAsync(tgConfig!, message);
+            else
+                await _whatsApp.SendTextMessageAsync(waConfig!, message);
 
             // 4. Send images from previous step if available
             var prevStepExec = await db.StepExecutions
@@ -567,12 +585,18 @@ namespace Server.Services.Ai
                     if (!System.IO.File.Exists(filePath)) continue;
 
                     var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
-                    var mediaId = await _whatsApp.UploadMediaAsync(waConfig, fileBytes, file.ContentType, file.FileName);
-                    await _whatsApp.SendImageMessageAsync(waConfig, mediaId);
+
+                    if (useTelegram)
+                        await _telegram.SendPhotoAsync(tgConfig!, fileBytes, file.FileName);
+                    else
+                    {
+                        var mediaId = await _whatsApp.UploadMediaAsync(waConfig!, fileBytes, file.ContentType, file.FileName);
+                        await _whatsApp.SendImageMessageAsync(waConfig!, mediaId);
+                    }
                 }
 
                 await _logger.LogAsync(project.Id, execution.Id, "info",
-                    $"Imagenes del paso anterior enviadas a WhatsApp", pm.StepOrder, stepName);
+                    $"Imagenes del paso anterior enviadas a {channelName}", pm.StepOrder, stepName);
             }
 
             // 5. Serialize pause state
@@ -592,20 +616,36 @@ namespace Server.Services.Ai
             await db.SaveChangesAsync();
 
             // 6. Create correlation for webhook resolution
-            _coreDb.WhatsAppCorrelations.Add(new WhatsAppCorrelation
+            if (useTelegram)
             {
-                Id = Guid.NewGuid(),
-                ExecutionId = execution.Id,
-                TenantDbName = tenantDbName,
-                RecipientNumber = waConfig.RecipientNumber,
-                StepOrder = pm.StepOrder,
-                CreatedAt = DateTime.UtcNow,
-                IsResolved = false,
-            });
+                _coreDb.TelegramCorrelations.Add(new TelegramCorrelation
+                {
+                    Id = Guid.NewGuid(),
+                    ExecutionId = execution.Id,
+                    TenantDbName = tenantDbName,
+                    ChatId = tgConfig!.ChatId,
+                    StepOrder = pm.StepOrder,
+                    CreatedAt = DateTime.UtcNow,
+                    IsResolved = false,
+                });
+            }
+            else
+            {
+                _coreDb.WhatsAppCorrelations.Add(new WhatsAppCorrelation
+                {
+                    Id = Guid.NewGuid(),
+                    ExecutionId = execution.Id,
+                    TenantDbName = tenantDbName,
+                    RecipientNumber = waConfig!.RecipientNumber,
+                    StepOrder = pm.StepOrder,
+                    CreatedAt = DateTime.UtcNow,
+                    IsResolved = false,
+                });
+            }
             await _coreDb.SaveChangesAsync();
 
             await _logger.LogAsync(project.Id, execution.Id, "info",
-                "Esperando respuesta de WhatsApp...", pm.StepOrder, stepName);
+                $"Esperando respuesta de {channelName}...", pm.StepOrder, stepName);
         }
 
         public async Task<ProjectExecution> ResumeFromInteractionAsync(

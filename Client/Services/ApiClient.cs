@@ -310,6 +310,22 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Telegram Config ──
+
+    public async Task<TelegramConfigDto?> GetTelegramConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/telegram-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<TelegramConfigDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SaveTelegramConfigAsync(Guid projectId, TelegramConfigDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/telegram-config", dto);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp)
     {
         try

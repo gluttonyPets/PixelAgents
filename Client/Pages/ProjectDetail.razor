@@ -26,9 +26,42 @@ else
         </div>
     }
 
-    <!-- WhatsApp Config -->
+    <!-- Telegram Config -->
     <details class="card" style="margin-bottom: 1rem;">
-        <summary style="cursor: pointer; font-weight: bold;">Configuracion WhatsApp (Interaccion)</summary>
+        <summary style="cursor: pointer; font-weight: bold;">Configuracion Telegram (Interaccion)</summary>
+        <div style="padding-top: 0.5rem;">
+            @if (_tgError is not null)
+            {
+                <div class="alert alert-error">@_tgError</div>
+            }
+            @if (_tgSuccess)
+            {
+                <div class="alert alert-success">Configuracion Telegram guardada correctamente</div>
+            }
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Bot Token</label>
+                    <input type="password" @bind="_tgBotToken" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" />
+                </div>
+                <div class="form-group">
+                    <label>Chat ID</label>
+                    <input type="text" @bind="_tgChatId" placeholder="Ej: 123456789" />
+                </div>
+            </div>
+            <p class="text-sm text-muted">
+                1. Habla con <strong>@@BotFather</strong> en Telegram → <code>/newbot</code> → copia el token.<br/>
+                2. Envia un mensaje al bot y visita <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> para obtener tu Chat ID.<br/>
+                3. Webhook URL: <code>https://tu-servidor/api/webhooks/telegram</code> — se configura automaticamente al guardar.
+            </p>
+            <button class="btn btn-primary" @onclick="SaveTelegramConfig" disabled="@_tgSaving">
+                @(_tgSaving ? "Guardando..." : "Guardar configuracion")
+            </button>
+        </div>
+    </details>
+
+    <!-- WhatsApp Config (legacy) -->
+    <details class="card" style="margin-bottom: 1rem;">
+        <summary style="cursor: pointer; font-weight: bold;">Configuracion WhatsApp (alternativa)</summary>
         <div style="padding-top: 0.5rem;">
             @if (_waError is not null)
             {
@@ -208,7 +241,7 @@ else
         @if (selectedModule?.ModuleType == "Interaction")
         {
             <div class="form-group">
-                <label>Mensaje WhatsApp <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior, {step_number} para el numero de paso)</span></label>
+                <label>Mensaje de interaccion <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior, {step_number} para el numero de paso)</span></label>
                 <textarea @bind="_interactionTemplate" rows="3"
                     placeholder="Resultado del paso anterior: {previous_output}. Te parece correcto? Responde SI para continuar o escribe tu feedback."></textarea>
             </div>
@@ -529,6 +562,13 @@ else
     private string _retryComment = "";
     private string? _retryError;
 
+    // Telegram config
+    private string _tgBotToken = "";
+    private string _tgChatId = "";
+    private string? _tgError;
+    private bool _tgSuccess;
+    private bool _tgSaving;
+
     // WhatsApp config
     private string _waPhoneNumberId = "";
     private string _waAccessToken = "";
@@ -593,6 +633,14 @@ else
             if (_project is not null)
                 _stepOrder = _project.Modules.Count + 1;
 
+            // Load Telegram config
+            var tgConfig = await Api.GetTelegramConfigAsync(ProjectId);
+            if (tgConfig is not null)
+            {
+                _tgBotToken = tgConfig.BotToken;
+                _tgChatId = tgConfig.ChatId;
+            }
+
             // Load WhatsApp config
             var waConfig = await Api.GetWhatsAppConfigAsync(ProjectId);
             if (waConfig is not null)
@@ -605,6 +653,27 @@ else
         }
         catch { }
         _loading = false;
+    }
+
+    private async Task SaveTelegramConfig()
+    {
+        _tgError = null;
+        _tgSuccess = false;
+        _tgSaving = true;
+        try
+        {
+            var dto = new TelegramConfigDto(_tgBotToken, _tgChatId);
+            var (ok, error) = await Api.SaveTelegramConfigAsync(ProjectId, dto);
+            if (ok)
+            {
+                _tgSuccess = true;
+                _modules = await Api.GetModulesAsync();
+            }
+            else
+                _tgError = error;
+        }
+        catch (Exception ex) { _tgError = ex.Message; }
+        _tgSaving = false;
     }
 
     private async Task SaveWhatsAppConfig()

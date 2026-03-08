@@ -59,4 +59,7 @@ namespace Server.Models
     // ── WhatsApp ──
     public record WhatsAppConfigDto(string PhoneNumberId, string AccessToken,
         string RecipientNumber, string WebhookVerifyToken);
+
+    // ── Telegram ──
+    public record TelegramConfigDto(string BotToken, string ChatId);
 }
