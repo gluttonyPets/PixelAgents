@@ -144,13 +144,14 @@ namespace Server.Services.Ai
                         $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
                         pm.StepOrder, stepName);
 
-                    // ── Interaction step: pause pipeline, send WhatsApp message ──
+                    // ── Interaction step: send message, optionally pause pipeline ──
                     if (IsInteractionStep(pm.AiModule))
                     {
-                        await HandleInteractionStepAsync(
+                        var shouldPause = await HandleInteractionStepAsync(
                             project, execution, stepExecution, pm, userInput,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                        return execution;
+                        if (shouldPause) return execution;
+                        continue; // fire-and-forget: move to next step
                     }
 
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
@@ -515,7 +516,8 @@ namespace Server.Services.Ai
         }
 
         // ── Interaction step handler (supports Telegram and WhatsApp) ──
-        private async Task HandleInteractionStepAsync(
+        // Returns true if the pipeline should pause (waiting for response), false if it should continue.
+        private async Task<bool> HandleInteractionStepAsync(
             Project project, ProjectExecution execution, StepExecution stepExecution,
             ProjectModule pm, string? userInput,
             Dictionary<int, AiResult> stepResults,
@@ -563,43 +565,111 @@ namespace Server.Services.Ai
 
             var channelName = useTelegram ? "Telegram" : "WhatsApp";
 
-            // 3. Send text message
-            await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Enviando mensaje a {channelName}...", pm.StepOrder, stepName);
+            // 2b. Read interaction config: messageType, waitForResponse, responseOptions
+            var messageType = "combined"; // default: text + images
+            var waitForResponse = true;   // default: wait for user response
+            var responseOptions = new List<string>();
 
-            if (useTelegram)
-                await _telegram.SendTextMessageAsync(tgConfig!, message);
-            else
-                await _whatsApp.SendTextMessageAsync(waConfig!, message);
-
-            // 4. Send images from previous step if available
-            var prevStepExec = await db.StepExecutions
-                .Include(s => s.Files)
-                .FirstOrDefaultAsync(s => s.ExecutionId == execution.Id && s.StepOrder == prevOrder);
-
-            if (prevStepExec?.Files is not null)
+            if (stepConfig.TryGetValue("messageType", out var mtVal))
             {
-                foreach (var file in prevStepExec.Files.Where(f => f.ContentType.StartsWith("image/")))
+                var mt = mtVal is JsonElement mtEl ? mtEl.GetString() : mtVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(mt))
+                    messageType = mt;
+            }
+            if (stepConfig.TryGetValue("waitForResponse", out var wfrVal))
+            {
+                if (wfrVal is JsonElement wfrEl)
+                    waitForResponse = wfrEl.ValueKind == JsonValueKind.True;
+                else if (wfrVal is bool wfrBool)
+                    waitForResponse = wfrBool;
+            }
+            if (stepConfig.TryGetValue("responseOptions", out var roVal) && roVal is JsonElement roEl && roEl.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in roEl.EnumerateArray())
                 {
-                    var filePath = Path.Combine(execution.WorkspacePath, file.FilePath);
-                    if (!System.IO.File.Exists(filePath)) continue;
-
-                    var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
-
-                    if (useTelegram)
-                        await _telegram.SendPhotoAsync(tgConfig!, fileBytes, file.FileName);
-                    else
-                    {
-                        var mediaId = await _whatsApp.UploadMediaAsync(waConfig!, fileBytes, file.ContentType, file.FileName);
-                        await _whatsApp.SendImageMessageAsync(waConfig!, mediaId);
-                    }
+                    var optText = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(optText))
+                        responseOptions.Add(optText);
                 }
-
-                await _logger.LogAsync(project.Id, execution.Id, "info",
-                    $"Imagenes del paso anterior enviadas a {channelName}", pm.StepOrder, stepName);
             }
 
-            // 5. Serialize pause state
+            // 3. Send messages based on messageType
+            var sendText = messageType is "text" or "combined";
+            var sendImages = messageType is "image" or "combined";
+
+            if (sendText)
+            {
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"Enviando mensaje a {channelName}...", pm.StepOrder, stepName);
+
+                if (useTelegram)
+                {
+                    if (waitForResponse && responseOptions.Count > 0)
+                        await _telegram.SendTextMessageWithOptionsAsync(tgConfig!, message, responseOptions);
+                    else
+                        await _telegram.SendTextMessageAsync(tgConfig!, message);
+                }
+                else
+                    await _whatsApp.SendTextMessageAsync(waConfig!, message);
+            }
+
+            // 4. Send images from previous step if configured
+            if (sendImages)
+            {
+                var prevStepExec = await db.StepExecutions
+                    .Include(s => s.Files)
+                    .FirstOrDefaultAsync(s => s.ExecutionId == execution.Id && s.StepOrder == prevOrder);
+
+                if (prevStepExec?.Files is not null)
+                {
+                    foreach (var file in prevStepExec.Files.Where(f => f.ContentType.StartsWith("image/")))
+                    {
+                        var filePath = Path.Combine(execution.WorkspacePath, file.FilePath);
+                        if (!System.IO.File.Exists(filePath)) continue;
+
+                        var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+
+                        if (useTelegram)
+                            await _telegram.SendPhotoAsync(tgConfig!, fileBytes, file.FileName);
+                        else
+                        {
+                            var mediaId = await _whatsApp.UploadMediaAsync(waConfig!, fileBytes, file.ContentType, file.FileName);
+                            await _whatsApp.SendImageMessageAsync(waConfig!, mediaId);
+                        }
+                    }
+
+                    await _logger.LogAsync(project.Id, execution.Id, "info",
+                        $"Imagenes del paso anterior enviadas a {channelName}", pm.StepOrder, stepName);
+                }
+            }
+
+            // 5. If not waiting for response, complete step immediately and continue pipeline
+            if (!waitForResponse)
+            {
+                var fireAndForgetOutput = new StepOutput
+                {
+                    Type = "text",
+                    Content = message,
+                    Summary = $"Mensaje enviado a {channelName} (sin esperar respuesta)",
+                    Items = [new OutputItem { Content = message, Label = "mensaje enviado" }]
+                };
+
+                stepExecution.Status = "Completed";
+                stepExecution.OutputData = JsonSerializer.Serialize(fireAndForgetOutput);
+                stepExecution.CompletedAt = DateTime.UtcNow;
+                stepExecution.InputData = JsonSerializer.Serialize(new { message });
+                await db.SaveChangesAsync();
+
+                stepOutputs[pm.StepOrder] = fireAndForgetOutput;
+                stepModuleTypes[pm.StepOrder] = "Interaction";
+                stepResults[pm.StepOrder] = AiResult.Ok(message, new Dictionary<string, object>());
+
+                await _logger.LogAsync(project.Id, execution.Id, "success",
+                    $"Mensaje enviado a {channelName} (sin esperar respuesta)", pm.StepOrder, stepName);
+                return false; // continue with next steps in the pipeline
+            }
+
+            // 6. Serialize pause state (waiting for response)
             var pauseState = new PausedPipelineState
             {
                 UserInput = userInput,
@@ -615,7 +685,7 @@ namespace Server.Services.Ai
             stepExecution.InputData = JsonSerializer.Serialize(new { message });
             await db.SaveChangesAsync();
 
-            // 6. Create correlation for webhook resolution
+            // 7. Create correlation for webhook resolution
             if (useTelegram)
             {
                 _coreDb.TelegramCorrelations.Add(new TelegramCorrelation
@@ -646,6 +716,7 @@ namespace Server.Services.Ai
 
             await _logger.LogAsync(project.Id, execution.Id, "info",
                 $"Esperando respuesta de {channelName}...", pm.StepOrder, stepName);
+            return true; // pipeline paused, waiting for user response
         }
 
         public async Task<ProjectExecution> ResumeFromInteractionAsync(
@@ -686,7 +757,12 @@ namespace Server.Services.Ai
 
             var stepResults = new Dictionary<int, AiResult>();
 
-            // Complete the interaction step with the WhatsApp response
+            // Determine the channel name from the paused step's module
+            var pausedModule = project.ProjectModules.FirstOrDefault(pm => pm.StepOrder == pausedStep);
+            var channelLabel = pausedModule?.AiModule.ModelName == "telegram" ? "Telegram"
+                : pausedModule?.AiModule.ModelName == "whatsapp" ? "WhatsApp" : "Mensajeria";
+
+            // Complete the interaction step with the response
             var interactionStepExec = execution.StepExecutions.FirstOrDefault(s => s.StepOrder == pausedStep);
             if (interactionStepExec is not null)
             {
@@ -694,7 +770,7 @@ namespace Server.Services.Ai
                 {
                     Type = "text",
                     Content = responseText,
-                    Summary = "Respuesta de WhatsApp",
+                    Summary = $"Respuesta de {channelLabel}",
                     Items = [new OutputItem { Content = responseText, Label = "respuesta" }]
                 };
 
@@ -714,7 +790,7 @@ namespace Server.Services.Ai
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Respuesta recibida de WhatsApp: \"{responseText}\". Reanudando pipeline...");
+                $"Respuesta recibida de {channelLabel}: \"{responseText}\". Reanudando pipeline...");
 
             // Continue execution from the step after the paused one
             var allModules = project.ProjectModules.ToList();
@@ -758,10 +834,11 @@ namespace Server.Services.Ai
                     // Handle another interaction step
                     if (IsInteractionStep(pm.AiModule))
                     {
-                        await HandleInteractionStepAsync(
+                        var shouldPause = await HandleInteractionStepAsync(
                             project, execution, stepExecution, pm, pauseState.UserInput,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                        return execution;
+                        if (shouldPause) return execution;
+                        continue;
                     }
 
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
@@ -1147,10 +1224,11 @@ namespace Server.Services.Ai
                     // Handle interaction step during retry
                     if (IsInteractionStep(pm.AiModule))
                     {
-                        await HandleInteractionStepAsync(
+                        var shouldPause = await HandleInteractionStepAsync(
                             project, execution, stepExecution, pm, originalUserInput,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                        return execution;
+                        if (shouldPause) return execution;
+                        continue;
                     }
 
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey

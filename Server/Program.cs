@@ -1004,7 +1004,8 @@ app.MapPut("/api/projects/{projectId:guid}/telegram-config", async (
 // ==================== Telegram Webhook Endpoint ====================
 
 app.MapPost("/api/webhooks/telegram", async (
-    HttpContext ctx, CoreDbContext coreDb, ITenantDbContextFactory factory, IPipelineExecutor executor) =>
+    HttpContext ctx, CoreDbContext coreDb, ITenantDbContextFactory factory,
+    IPipelineExecutor executor, Server.Services.Telegram.TelegramService telegram) =>
 {
     using var reader = new StreamReader(ctx.Request.Body);
     var body = await reader.ReadToEndAsync();
@@ -1013,7 +1014,7 @@ app.MapPost("/api/webhooks/telegram", async (
     try { json = System.Text.Json.JsonDocument.Parse(body).RootElement; }
     catch { return Results.Ok(); }
 
-    var (text, chatId) = Server.Services.Telegram.TelegramService.ParseIncomingMessage(json);
+    var (text, chatId, callbackQueryId) = Server.Services.Telegram.TelegramService.ParseIncomingUpdate(json);
 
     if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(chatId))
         return Results.Ok();
@@ -1031,6 +1032,26 @@ app.MapPost("/api/webhooks/telegram", async (
 
     try
     {
+        // Answer callback query (removes loading state from button) if this was a button press
+        if (!string.IsNullOrWhiteSpace(callbackQueryId))
+        {
+            // Look up the bot token from the project's Telegram config
+            var execution = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
+            if (execution is not null)
+            {
+                var project = await db.Projects.FindAsync(execution.ProjectId);
+                if (project?.TelegramConfig is not null)
+                {
+                    var tgConfig = System.Text.Json.JsonSerializer.Deserialize<Server.Services.Telegram.TelegramConfig>(project.TelegramConfig);
+                    if (tgConfig is not null)
+                    {
+                        try { await telegram.AnswerCallbackQueryAsync(tgConfig.BotToken, callbackQueryId); }
+                        catch { /* non-critical */ }
+                    }
+                }
+            }
+        }
+
         await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
         correlation.IsResolved = true;
         await coreDb.SaveChangesAsync();

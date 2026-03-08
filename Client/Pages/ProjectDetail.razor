@@ -245,6 +245,31 @@ else
                 <textarea @bind="_interactionTemplate" rows="3"
                     placeholder="Resultado del paso anterior: {previous_output}. Te parece correcto? Responde SI para continuar o escribe tu feedback."></textarea>
             </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Tipo de mensaje</label>
+                    <select @bind="_interactionMessageType">
+                        <option value="combined">Texto + Imagenes</option>
+                        <option value="text">Solo texto</option>
+                        <option value="image">Solo imagenes</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Esperar respuesta del usuario</label>
+                    <select @bind="_interactionWaitForResponse">
+                        <option value="true">Si - pausar pipeline hasta recibir respuesta</option>
+                        <option value="false">No - enviar y continuar (fire & forget)</option>
+                    </select>
+                </div>
+            </div>
+            @if (_interactionWaitForResponse == "true")
+            {
+                <div class="form-group">
+                    <label>Opciones de respuesta <span class="text-sm text-muted">(una por linea, dejar vacio para respuesta libre)</span></label>
+                    <textarea @bind="_interactionOptions" rows="3"
+                        placeholder="Aprobar&#10;Rechazar&#10;Necesita cambios"></textarea>
+                </div>
+            }
         }
 
         <button class="btn btn-primary mt-1" @onclick="AddStep" disabled="@_loading">Agregar</button>
@@ -546,6 +571,9 @@ else
 
     // Interaction step
     private string _interactionTemplate = "";
+    private string _interactionMessageType = "combined";
+    private string _interactionWaitForResponse = "true";
+    private string _interactionOptions = "";
 
     // Edit step
     private Guid? _editingPmId;
@@ -731,13 +759,24 @@ else
             // Build config for interaction steps
             string? stepConfig = null;
             var mod = _modules.FirstOrDefault(m => m.Id == moduleId);
-            if (mod?.ModuleType == "Interaction" && !string.IsNullOrWhiteSpace(_interactionTemplate))
+            if (mod?.ModuleType == "Interaction")
             {
-                stepConfig = JsonSerializer.Serialize(new { messageTemplate = _interactionTemplate });
+                var options = _interactionOptions
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(o => !string.IsNullOrWhiteSpace(o))
+                    .ToList();
+
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    messageTemplate = string.IsNullOrWhiteSpace(_interactionTemplate) ? "{previous_output}" : _interactionTemplate,
+                    messageType = _interactionMessageType,
+                    waitForResponse = _interactionWaitForResponse == "true",
+                    responseOptions = options
+                });
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _interactionOptions = ""; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
