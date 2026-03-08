@@ -9,5 +9,9 @@ namespace Server.Models
         public int StepOrder { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsResolved { get; set; }
+        /// <summary>
+        /// Tracks the correlation state: "waiting" (default), "awaiting_restart" (waiting for restart clarification text).
+        /// </summary>
+        public string State { get; set; } = "waiting";
     }
 }

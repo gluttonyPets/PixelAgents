@@ -122,11 +122,15 @@ using (var scope = app.Services.CreateScope())
                 ""ChatId"" varchar(50) NOT NULL,
                 ""StepOrder"" integer NOT NULL,
                 ""CreatedAt"" timestamp with time zone NOT NULL,
-                ""IsResolved"" boolean NOT NULL DEFAULT false
+                ""IsResolved"" boolean NOT NULL DEFAULT false,
+                ""State"" varchar(50) NOT NULL DEFAULT 'waiting'
             )");
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_TelegramCorrelations_ChatId_IsResolved""
             ON ""TelegramCorrelations"" (""ChatId"", ""IsResolved"")");
+        // Migration: add State column for existing tables
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""State"" varchar(50) NOT NULL DEFAULT 'waiting'");
     }
     catch { }
 }
@@ -1030,28 +1034,121 @@ app.MapPost("/api/webhooks/telegram", async (
 
     await using var db = factory.Create(correlation.TenantDbName);
 
+    // Helper: resolve TelegramConfig for this correlation
+    async Task<Server.Services.Telegram.TelegramConfig?> GetTgConfigAsync()
+    {
+        var exec = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
+        if (exec is null) return null;
+        var proj = await db.Projects.FindAsync(exec.ProjectId);
+        if (proj?.TelegramConfig is null) return null;
+        return System.Text.Json.JsonSerializer.Deserialize<Server.Services.Telegram.TelegramConfig>(proj.TelegramConfig);
+    }
+
     try
     {
-        // Answer callback query (removes loading state from button) if this was a button press
+        // Answer callback query (removes loading spinner from button)
         if (!string.IsNullOrWhiteSpace(callbackQueryId))
         {
-            // Look up the bot token from the project's Telegram config
-            var execution = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
-            if (execution is not null)
+            var tgConfig = await GetTgConfigAsync();
+            if (tgConfig is not null)
             {
-                var project = await db.Projects.FindAsync(execution.ProjectId);
-                if (project?.TelegramConfig is not null)
-                {
-                    var tgConfig = System.Text.Json.JsonSerializer.Deserialize<Server.Services.Telegram.TelegramConfig>(project.TelegramConfig);
-                    if (tgConfig is not null)
-                    {
-                        try { await telegram.AnswerCallbackQueryAsync(tgConfig.BotToken, callbackQueryId); }
-                        catch { /* non-critical */ }
-                    }
-                }
+                try { await telegram.AnswerCallbackQueryAsync(tgConfig.BotToken, callbackQueryId); }
+                catch { /* non-critical */ }
             }
         }
 
+        // ── State: awaiting_restart → user is sending clarification text for restart ──
+        if (correlation.State == "awaiting_restart")
+        {
+            var clarification = text.Trim().ToLowerInvariant() == "ok" ? null : text.Trim();
+
+            // Recover original user input from PausedStepData before aborting
+            var execForRestart = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
+            var originalInput = "";
+            Guid? projectIdForRestart = execForRestart?.ProjectId;
+
+            if (execForRestart?.PausedStepData is not null)
+            {
+                try
+                {
+                    var pauseDoc = System.Text.Json.JsonDocument.Parse(execForRestart.PausedStepData);
+                    if (pauseDoc.RootElement.TryGetProperty("UserInput", out var uiProp))
+                        originalInput = uiProp.GetString() ?? "";
+                }
+                catch { }
+            }
+
+            // Abort current execution
+            await executor.AbortFromInteractionAsync(correlation.ExecutionId, db, correlation.TenantDbName);
+
+            if (projectIdForRestart is not null)
+            {
+                var restartInput = string.IsNullOrWhiteSpace(clarification)
+                    ? originalInput
+                    : $"{originalInput}\n\nAclaracion del usuario: {clarification}";
+
+                // Re-execute from step 1
+                await executor.ExecuteAsync(projectIdForRestart.Value, restartInput, db, correlation.TenantDbName);
+
+                // Notify user
+                var tgConfig = await GetTgConfigAsync();
+                if (tgConfig is not null)
+                {
+                    var restartMsg = string.IsNullOrWhiteSpace(clarification)
+                        ? "🔄 Pipeline reiniciado."
+                        : $"🔄 Pipeline reiniciado con aclaracion: \"{clarification}\"";
+                    try { await telegram.SendTextMessageAsync(tgConfig, restartMsg); }
+                    catch { /* non-critical */ }
+                }
+            }
+
+            correlation.IsResolved = true;
+            await coreDb.SaveChangesAsync();
+            return Results.Ok();
+        }
+
+        // ── State: waiting → process pipeline control buttons ──
+        // callback_data values: "continue", "abort", "restart"
+        // Also handle free-text fallback for WhatsApp or non-button responses
+
+        // "abort"
+        if (text == "abort" || text.Contains("Abortar"))
+        {
+            await executor.AbortFromInteractionAsync(correlation.ExecutionId, db, correlation.TenantDbName);
+            correlation.IsResolved = true;
+            await coreDb.SaveChangesAsync();
+
+            var tgConfig = await GetTgConfigAsync();
+            if (tgConfig is not null)
+            {
+                try { await telegram.SendTextMessageAsync(tgConfig, "❌ Pipeline abortado."); }
+                catch { /* non-critical */ }
+            }
+
+            return Results.Ok();
+        }
+
+        // "restart"
+        if (text == "restart" || text.Contains("Reiniciar"))
+        {
+            correlation.State = "awaiting_restart";
+            await coreDb.SaveChangesAsync();
+
+            var tgConfig = await GetTgConfigAsync();
+            if (tgConfig is not null)
+            {
+                try
+                {
+                    await telegram.SendTextMessageAsync(tgConfig,
+                        "🔄 Escribe una aclaracion para reiniciar el pipeline, o envia \"ok\" para reiniciar sin cambios.");
+                }
+                catch { /* non-critical */ }
+            }
+
+            return Results.Ok();
+        }
+
+        // "✅ Finalizar" or "▶️ Continuar con: ..." → resume pipeline
         await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
         correlation.IsResolved = true;
         await coreDb.SaveChangesAsync();

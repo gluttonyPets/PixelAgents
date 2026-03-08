@@ -45,16 +45,16 @@ namespace Server.Services.Telegram
         }
 
         /// <summary>
-        /// Sends a text message with inline keyboard buttons (options for the user to select).
-        /// Each option becomes a button row. callback_data = option text.
+        /// Sends a text message with inline keyboard buttons.
+        /// Each (label, callbackData) becomes a button row.
         /// </summary>
-        public async Task SendTextMessageWithOptionsAsync(TelegramConfig config, string text, List<string> options)
+        public async Task SendTextMessageWithOptionsAsync(TelegramConfig config, string text, List<(string Label, string CallbackData)> options)
         {
             var url = $"{ApiBase}/bot{config.BotToken}/sendMessage";
 
             var inlineKeyboard = options.Select(opt => new[]
             {
-                new { text = opt, callback_data = opt }
+                new { text = opt.Label, callback_data = opt.CallbackData }
             }).ToArray();
 
             var payload = new

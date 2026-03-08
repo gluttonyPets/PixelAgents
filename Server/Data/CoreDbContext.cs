@@ -28,6 +28,7 @@ namespace Server.Data
                 e.HasKey(x => x.Id);
                 e.Property(x => x.TenantDbName).IsRequired().HasMaxLength(200);
                 e.Property(x => x.ChatId).IsRequired().HasMaxLength(50);
+                e.Property(x => x.State).IsRequired().HasMaxLength(50).HasDefaultValue("waiting");
                 e.HasIndex(x => new { x.ChatId, x.IsResolved });
             });
         }

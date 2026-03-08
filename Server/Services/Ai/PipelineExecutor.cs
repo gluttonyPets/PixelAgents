@@ -565,10 +565,9 @@ namespace Server.Services.Ai
 
             var channelName = useTelegram ? "Telegram" : "WhatsApp";
 
-            // 2b. Read interaction config: messageType, waitForResponse, responseOptions
+            // 2b. Read interaction config: messageType, waitForResponse
             var messageType = "combined"; // default: text + images
             var waitForResponse = true;   // default: wait for user response
-            var responseOptions = new List<string>();
 
             if (stepConfig.TryGetValue("messageType", out var mtVal))
             {
@@ -583,15 +582,6 @@ namespace Server.Services.Ai
                 else if (wfrVal is bool wfrBool)
                     waitForResponse = wfrBool;
             }
-            if (stepConfig.TryGetValue("responseOptions", out var roVal) && roVal is JsonElement roEl && roEl.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in roEl.EnumerateArray())
-                {
-                    var optText = item.GetString();
-                    if (!string.IsNullOrWhiteSpace(optText))
-                        responseOptions.Add(optText);
-                }
-            }
 
             // 3. Send messages based on messageType
             var sendText = messageType is "text" or "combined";
@@ -602,13 +592,33 @@ namespace Server.Services.Ai
                 await _logger.LogAsync(project.Id, execution.Id, "info",
                     $"Enviando mensaje a {channelName}...", pm.StepOrder, stepName);
 
-                if (useTelegram)
+                if (useTelegram && waitForResponse)
                 {
-                    if (waitForResponse && responseOptions.Count > 0)
-                        await _telegram.SendTextMessageWithOptionsAsync(tgConfig!, message, responseOptions);
-                    else
-                        await _telegram.SendTextMessageAsync(tgConfig!, message);
+                    // Build pipeline control buttons
+                    var allModules = project.ProjectModules.OrderBy(p => p.StepOrder).ToList();
+                    var currentIdx = allModules.FindIndex(p => p.Id == pm.Id);
+                    var nextPm = currentIdx + 1 < allModules.Count ? allModules[currentIdx + 1] : null;
+                    var isLastStep = nextPm is null;
+
+                    var nextStepName = nextPm?.StepName ?? nextPm?.AiModule.Name ?? "";
+                    if (nextStepName.Length > 40)
+                        nextStepName = nextStepName[..37] + "...";
+
+                    var continueLabel = isLastStep
+                        ? "✅ Finalizar"
+                        : $"▶️ Continuar con: {nextStepName}";
+
+                    var controlOptions = new List<(string Label, string CallbackData)>
+                    {
+                        (continueLabel, "continue"),
+                        ("❌ Abortar", "abort"),
+                        ("🔄 Reiniciar", "restart")
+                    };
+
+                    await _telegram.SendTextMessageWithOptionsAsync(tgConfig!, message, controlOptions);
                 }
+                else if (useTelegram)
+                    await _telegram.SendTextMessageAsync(tgConfig!, message);
                 else
                     await _whatsApp.SendTextMessageAsync(waConfig!, message);
             }
@@ -1051,6 +1061,36 @@ namespace Server.Services.Ai
             }
 
             return config;
+        }
+
+        public async Task<ProjectExecution> AbortFromInteractionAsync(
+            Guid executionId, UserDbContext db, string tenantDbName)
+        {
+            var execution = await db.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .FirstOrDefaultAsync(e => e.Id == executionId && e.Status == "WaitingForInput")
+                ?? throw new InvalidOperationException("Ejecucion no encontrada o no esta esperando input");
+
+            var pausedStep = execution.PausedAtStepOrder;
+
+            // Mark the waiting step as cancelled
+            var waitingStepExec = execution.StepExecutions.FirstOrDefault(s => s.StepOrder == pausedStep);
+            if (waitingStepExec is not null)
+            {
+                waitingStepExec.Status = "Cancelled";
+                waitingStepExec.CompletedAt = DateTime.UtcNow;
+            }
+
+            execution.Status = "Cancelled";
+            execution.CompletedAt = DateTime.UtcNow;
+            execution.PausedAtStepOrder = null;
+            execution.PausedStepData = null;
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(execution.ProjectId, execution.Id, "warning",
+                "Pipeline abortado por el usuario desde Telegram");
+
+            return execution;
         }
 
         public async Task<ProjectExecution> RetryFromStepAsync(

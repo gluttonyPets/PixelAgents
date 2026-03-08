@@ -264,11 +264,12 @@ else
             </div>
             @if (_interactionWaitForResponse == "true")
             {
-                <div class="form-group">
-                    <label>Opciones de respuesta <span class="text-sm text-muted">(una por linea, dejar vacio para respuesta libre)</span></label>
-                    <textarea @bind="_interactionOptions" rows="3"
-                        placeholder="Aprobar&#10;Rechazar&#10;Necesita cambios"></textarea>
-                </div>
+                <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                    El usuario recibira botones automaticos en Telegram:
+                    <strong>▶️ Continuar</strong> (con descripcion del siguiente paso),
+                    <strong>❌ Abortar</strong>, y
+                    <strong>🔄 Reiniciar</strong> (con aclaracion opcional).
+                </p>
             }
         }
 
@@ -573,7 +574,6 @@ else
     private string _interactionTemplate = "";
     private string _interactionMessageType = "combined";
     private string _interactionWaitForResponse = "true";
-    private string _interactionOptions = "";
 
     // Edit step
     private Guid? _editingPmId;
@@ -761,22 +761,16 @@ else
             var mod = _modules.FirstOrDefault(m => m.Id == moduleId);
             if (mod?.ModuleType == "Interaction")
             {
-                var options = _interactionOptions
-                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                    .Where(o => !string.IsNullOrWhiteSpace(o))
-                    .ToList();
-
                 stepConfig = JsonSerializer.Serialize(new
                 {
                     messageTemplate = string.IsNullOrWhiteSpace(_interactionTemplate) ? "{previous_output}" : _interactionTemplate,
                     messageType = _interactionMessageType,
-                    waitForResponse = _interactionWaitForResponse == "true",
-                    responseOptions = options
+                    waitForResponse = _interactionWaitForResponse == "true"
                 });
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _interactionOptions = ""; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
