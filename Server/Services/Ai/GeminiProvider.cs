@@ -103,11 +103,14 @@ namespace Server.Services.Ai
         {
             var client = new Client(apiKey: context.ApiKey);
 
+            // Force image-capable model — most Gemini models don't support ResponseModalities=IMAGE
+            var imageModel = "gemini-2.0-flash-exp-image-generation";
+
             var prompt = context.Input;
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
 
-            var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
+            var maxLen = InputAdapter.GetMaxPromptLength(imageModel);
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
@@ -120,7 +123,7 @@ namespace Server.Services.Ai
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
                 var response = await client.Models.GenerateContentAsync(
-                    model: context.ModelName,
+                    model: imageModel,
                     contents: prompt,
                     config: config
                 );
@@ -145,7 +148,7 @@ namespace Server.Services.Ai
                         var imageBytes = part.InlineData.Data;
                         return AiResult.OkFile(imageBytes, part.InlineData.MimeType, new Dictionary<string, object>
                         {
-                            ["model"] = context.ModelName,
+                            ["model"] = imageModel,
                             ["revisedPrompt"] = ""
                         });
                     }
