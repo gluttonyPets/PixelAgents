@@ -846,9 +846,9 @@ app.MapPut("/api/projects/{projectId:guid}/whatsapp-config", async (
     project.WhatsAppConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
 
-    // Ensure the Interaction sentinel module exists
-    var hasInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction");
-    if (!hasInteraction)
+    // Ensure the WhatsApp Interaction sentinel module exists
+    var hasWhatsAppInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction" && m.ModelName == "whatsapp");
+    if (!hasWhatsAppInteraction)
     {
         db.AiModules.Add(new AiModule
         {
@@ -958,9 +958,9 @@ app.MapPut("/api/projects/{projectId:guid}/telegram-config", async (
     project.TelegramConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
 
-    // Ensure the Interaction sentinel module exists
-    var hasInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction");
-    if (!hasInteraction)
+    // Ensure the Telegram Interaction sentinel module exists
+    var hasTelegramInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction" && m.ModelName == "telegram");
+    if (!hasTelegramInteraction)
     {
         db.AiModules.Add(new AiModule
         {
