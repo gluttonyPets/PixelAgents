@@ -987,14 +987,21 @@ app.MapPut("/api/projects/{projectId:guid}/telegram-config", async (
     {
         try
         {
+            // Try configured base URL first, then auto-detect from the incoming request
             var baseUrl = builder.Configuration["Telegram:WebhookBaseUrl"]
                 ?? builder.Configuration["BaseUrl"]
                 ?? "";
-            if (!string.IsNullOrWhiteSpace(baseUrl))
+
+            if (string.IsNullOrWhiteSpace(baseUrl))
             {
-                var webhookUrl = $"{baseUrl.TrimEnd('/')}/api/webhooks/telegram";
-                await telegram.SetWebhookAsync(dto.BotToken, webhookUrl);
+                // Auto-detect: use the scheme + host from the current request
+                var req = ctx.Request;
+                baseUrl = $"{req.Scheme}://{req.Host}";
             }
+
+            var webhookUrl = $"{baseUrl.TrimEnd('/')}/api/webhooks/telegram";
+            Console.WriteLine($"[Telegram] Registering webhook: {webhookUrl}");
+            await telegram.SetWebhookAsync(dto.BotToken, webhookUrl);
         }
         catch (Exception ex)
         {
@@ -1020,17 +1027,34 @@ app.MapPost("/api/webhooks/telegram", async (
 
     var (text, chatId, callbackQueryId) = Server.Services.Telegram.TelegramService.ParseIncomingUpdate(json);
 
-    if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(chatId))
-        return Results.Ok();
+    Console.WriteLine($"[TG-Webhook] Parsed update — text={text}, chatId={chatId}, callbackQueryId={callbackQueryId}");
 
-    // Find pending correlation
+    if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(chatId))
+    {
+        Console.WriteLine("[TG-Webhook] Ignored: text or chatId is empty");
+        return Results.Ok();
+    }
+
+    // Find pending correlation — normalize chatId to match stored format
+    var normalizedChatId = chatId.Trim();
+
     var correlation = await coreDb.TelegramCorrelations
-        .Where(c => !c.IsResolved && c.ChatId == chatId)
+        .Where(c => !c.IsResolved && c.ChatId == normalizedChatId)
         .OrderByDescending(c => c.CreatedAt)
         .FirstOrDefaultAsync();
 
     if (correlation is null)
+    {
+        // Log all pending correlations for debugging
+        var pending = await coreDb.TelegramCorrelations
+            .Where(c => !c.IsResolved)
+            .Select(c => new { c.ChatId, c.ExecutionId, c.CreatedAt })
+            .ToListAsync();
+        Console.WriteLine($"[TG-Webhook] No correlation found for chatId={normalizedChatId}. Pending correlations: {System.Text.Json.JsonSerializer.Serialize(pending)}");
         return Results.Ok();
+    }
+
+    Console.WriteLine($"[TG-Webhook] Matched correlation {correlation.Id} for execution {correlation.ExecutionId}");
 
     await using var db = factory.Create(correlation.TenantDbName);
 
