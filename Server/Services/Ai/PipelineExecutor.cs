@@ -528,8 +528,19 @@ namespace Server.Services.Ai
             var stepName = pm.StepName ?? pm.AiModule.Name;
 
             // 1. Determine messaging channel: prefer Telegram, fall back to WhatsApp
-            var useTelegram = !string.IsNullOrWhiteSpace(project.TelegramConfig);
-            var useWhatsApp = !useTelegram && !string.IsNullOrWhiteSpace(project.WhatsAppConfig);
+            // Check that config is not just an empty DTO (e.g. {"BotToken":"","ChatId":""})
+            var useTelegram = false;
+            if (!string.IsNullOrWhiteSpace(project.TelegramConfig))
+            {
+                var tgCheck = JsonSerializer.Deserialize<TelegramConfig>(project.TelegramConfig);
+                useTelegram = tgCheck is not null && !string.IsNullOrWhiteSpace(tgCheck.BotToken);
+            }
+            var useWhatsApp = false;
+            if (!useTelegram && !string.IsNullOrWhiteSpace(project.WhatsAppConfig))
+            {
+                var waCheck = JsonSerializer.Deserialize<WhatsAppConfig>(project.WhatsAppConfig);
+                useWhatsApp = waCheck is not null && !string.IsNullOrWhiteSpace(waCheck.AccessToken);
+            }
 
             if (!useTelegram && !useWhatsApp)
                 throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de mensajeria (Telegram o WhatsApp)");
