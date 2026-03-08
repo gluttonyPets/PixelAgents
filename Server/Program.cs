@@ -1006,10 +1006,40 @@ app.MapPut("/api/projects/{projectId:guid}/telegram-config", async (
         catch (Exception ex)
         {
             Console.WriteLine($"Warning: Could not set Telegram webhook: {ex.Message}");
+            return Results.Ok(new { message = "Configuracion guardada, pero no se pudo registrar el webhook de Telegram.", webhookError = ex.Message });
         }
     }
 
-    return Results.Ok(new { message = "Configuracion Telegram guardada" });
+    return Results.Ok(new { message = "Configuracion Telegram guardada y webhook registrado." });
+}).RequireAuthorization();
+
+// Telegram webhook diagnostic endpoint
+app.MapGet("/api/projects/{projectId:guid}/telegram-webhook-info", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.Telegram.TelegramService telegram) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(project.TelegramConfig))
+        return Results.Ok(new { error = "No hay configuracion de Telegram" });
+
+    var config = System.Text.Json.JsonSerializer.Deserialize<TelegramConfigDto>(project.TelegramConfig);
+    if (config is null || string.IsNullOrWhiteSpace(config.BotToken))
+        return Results.Ok(new { error = "BotToken vacio" });
+
+    try
+    {
+        var info = await telegram.GetWebhookInfoAsync(config.BotToken);
+        return Results.Ok(new { webhookInfo = info });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { error = ex.Message });
+    }
 }).RequireAuthorization();
 
 // ==================== Telegram Webhook Endpoint ====================

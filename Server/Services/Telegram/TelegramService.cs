@@ -113,6 +113,18 @@ namespace Server.Services.Telegram
         }
 
         /// <summary>
+        /// Retrieves the current webhook info from Telegram.
+        /// </summary>
+        public async Task<JsonElement> GetWebhookInfoAsync(string botToken)
+        {
+            var url = $"{ApiBase}/bot{botToken}/getWebhookInfo";
+            var response = await _http.GetAsync(url);
+            await EnsureSuccessAsync(response);
+            var body = await response.Content.ReadAsStringAsync();
+            return JsonDocument.Parse(body).RootElement;
+        }
+
+        /// <summary>
         /// Parses an incoming Telegram update. Handles both regular messages and callback_query (button presses).
         /// Returns (Text, ChatId, CallbackQueryId). CallbackQueryId is non-null for button presses.
         /// </summary>
