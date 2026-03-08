@@ -103,8 +103,8 @@ namespace Server.Services.Ai
         {
             var client = new Client(apiKey: context.ApiKey);
 
-            // Force image-capable model — most Gemini models don't support ResponseModalities=IMAGE
-            var imageModel = "gemini-2.0-flash-exp-image-generation";
+            // Use the model selected by the user in the module configuration
+            var imageModel = context.ModelName;
 
             var prompt = context.Input;
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
