@@ -113,6 +113,16 @@ namespace Server.Services.Telegram
         }
 
         /// <summary>
+        /// Removes the webhook so Telegram allows getUpdates (long polling).
+        /// </summary>
+        public async Task DeleteWebhookAsync(string botToken)
+        {
+            var url = $"{ApiBase}/bot{botToken}/deleteWebhook";
+            var response = await _http.PostAsync(url, null);
+            await EnsureSuccessAsync(response);
+        }
+
+        /// <summary>
         /// Retrieves the current webhook info from Telegram.
         /// </summary>
         public async Task<JsonElement> GetWebhookInfoAsync(string botToken)
