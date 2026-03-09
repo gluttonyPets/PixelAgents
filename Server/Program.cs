@@ -29,8 +29,10 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(opt =>
 builder.Services.ConfigureApplicationCookie(opt =>
 {
     opt.Cookie.HttpOnly = true;
-    opt.Cookie.SameSite = SameSiteMode.None;
-    opt.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    // SameSite=None requires Secure (HTTPS). Use Lax for same-origin behind reverse proxy.
+    var isProduction = builder.Environment.IsProduction();
+    opt.Cookie.SameSite = isProduction ? SameSiteMode.Lax : SameSiteMode.None;
+    opt.Cookie.SecurePolicy = isProduction ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
     opt.Events.OnRedirectToLogin = ctx =>
     {
         ctx.Response.StatusCode = 401;
@@ -70,7 +72,13 @@ builder.Services.AddCors(options =>
         policy.SetIsOriginAllowed(origin =>
               {
                   var uri = new Uri(origin);
-                  return uri.Host == "localhost" || uri.Host == "127.0.0.1";
+                  if (uri.Host == "localhost" || uri.Host == "127.0.0.1")
+                      return true;
+                  // In production, allow the configured origin (e.g. "http://123.45.67.89")
+                  var allowed = builder.Configuration["AllowedOrigin"] ?? "";
+                  if (!string.IsNullOrWhiteSpace(allowed))
+                      return origin.TrimEnd('/').Equals(allowed.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+                  return false;
               })
               .AllowAnyHeader()
               .AllowAnyMethod()

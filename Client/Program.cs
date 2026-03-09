@@ -7,11 +7,16 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:6951";
+var apiBaseUrl = builder.Configuration["ApiBaseUrl"];
+
+// If no ApiBaseUrl configured (or empty), use the current browser origin
+var baseUri = string.IsNullOrWhiteSpace(apiBaseUrl)
+    ? new Uri(builder.HostEnvironment.BaseAddress)
+    : new Uri(apiBaseUrl);
 
 builder.Services.AddScoped(sp => new HttpClient
 {
-    BaseAddress = new Uri(apiBaseUrl)
+    BaseAddress = baseUri
 });
 
 builder.Services.AddScoped<ApiClient>();
