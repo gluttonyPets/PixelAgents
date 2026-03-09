@@ -618,14 +618,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _apiBase = (Config["ApiBaseUrl"] ?? "https://localhost:6951").TrimEnd('/');
+        _apiBase = (Config["ApiBaseUrl"] ?? "http://localhost:5000").TrimEnd('/');
         await LoadAll();
         await InitializeSignalR();
     }
 
     private async Task InitializeSignalR()
     {
-        var apiBase = (Config["ApiBaseUrl"] ?? "https://localhost:6951").TrimEnd('/');
+        var apiBase = (Config["ApiBaseUrl"] ?? "http://localhost:5000").TrimEnd('/');
         var hubUrl = apiBase + "/hubs/execution";
 
         _hubConnection = new HubConnectionBuilder()
