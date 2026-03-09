@@ -9,7 +9,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${PG_PORT:-5433}:5432"
 
   pixelagents:
     build: .
@@ -17,14 +17,14 @@ services:
     depends_on:
       - postgres
     ports:
-      - "80:80"
+      - "${APP_PORT:-8080}:80"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       # Database (matches appsettings.Production.json placeholders)
       ConnectionStrings__Core: "Host=postgres;Port=5432;Database=pixelagents_core;Username=postgres;Password=${POSTGRES_PASSWORD:-changeme_secure_password}"
       ConnectionStrings__TenantTemplate: "Host=postgres;Port=5432;Database={db};Username=postgres;Password=${POSTGRES_PASSWORD:-changeme_secure_password}"
       # CORS - set to your public IP
-      AllowedOrigin: "http://${PUBLIC_IP:-localhost}"
+      AllowedOrigin: "http://${PUBLIC_IP:-localhost}:${APP_PORT:-8080}"
       # Telegram polling mode (no WebhookBaseUrl = polling automatically)
       # If you later get a domain with HTTPS, uncomment:
       # Telegram__WebhookBaseUrl: "https://yourdomain.com"
