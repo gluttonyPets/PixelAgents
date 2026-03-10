@@ -71,6 +71,7 @@ namespace Server.Services.Instagram
                     createPost(input: {{
                         text: ""{escapedText}"",
                         channelId: ""{config.ChannelId}"",
+                        subprofile: post,
                         schedulingType: automatic,
                         mode: customScheduled,
                         dueAt: ""{dueAt}""
