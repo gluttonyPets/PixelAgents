@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Server.Data;
 using Server.Hubs;
 using Server.Models;
@@ -17,9 +18,11 @@ namespace Server.Services.Ai
         private readonly TelegramService _telegram;
         private readonly BufferService _buffer;
         private readonly CoreDbContext _coreDb;
+        private readonly IConfiguration _configuration;
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
-            WhatsAppService whatsApp, TelegramService telegram, BufferService buffer, CoreDbContext coreDb)
+            WhatsAppService whatsApp, TelegramService telegram, BufferService buffer,
+            CoreDbContext coreDb, IConfiguration configuration)
         {
             _registry = registry;
             _logger = logger;
@@ -27,6 +30,7 @@ namespace Server.Services.Ai
             _telegram = telegram;
             _buffer = buffer;
             _coreDb = coreDb;
+            _configuration = configuration;
         }
 
         private static bool IsInteractionStep(AiModule module) =>
@@ -565,14 +569,6 @@ namespace Server.Services.Ai
                     captionTemplate = cap;
             }
 
-            var schedulingType = "automatic";
-            if (stepConfig.TryGetValue("schedulingType", out var stVal))
-            {
-                var st = stVal is JsonElement stEl ? stEl.GetString() : stVal?.ToString();
-                if (!string.IsNullOrWhiteSpace(st))
-                    schedulingType = st;
-            }
-
             var previousText = "";
             var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
             if (stepOutputs.TryGetValue(prevOrder, out var prevOutput))
@@ -595,11 +591,13 @@ namespace Server.Services.Ai
 
             if (prevStepExec?.Files is not null)
             {
+                var serverBaseUrl = (_configuration["BaseUrl"] ?? "").TrimEnd('/');
+
                 foreach (var file in prevStepExec.Files.Where(f =>
                     f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
                 {
-                    // Buffer needs public URLs — build them from the server's file-serving endpoint
-                    var publicUrl = $"/api/executions/{executionId}/files/{file.Id}";
+                    // Buffer needs absolute public URLs
+                    var publicUrl = $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
                     mediaUrls.Add(publicUrl);
                 }
             }
@@ -608,7 +606,7 @@ namespace Server.Services.Ai
             try
             {
                 var postId = await _buffer.PublishAsync(
-                    bufferConfig, caption, mediaUrls.Count > 0 ? mediaUrls : null, schedulingType);
+                    bufferConfig, caption, mediaUrls.Count > 0 ? mediaUrls : null);
 
                 var publishOutput = new StepOutput
                 {
@@ -623,7 +621,6 @@ namespace Server.Services.Ai
                 stepExecution.InputData = JsonSerializer.Serialize(new
                 {
                     caption,
-                    schedulingType,
                     mediaCount = mediaUrls.Count,
                     bufferPostId = postId
                 });

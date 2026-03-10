@@ -313,17 +313,10 @@ else
                 <textarea @bind="_publishCaption" rows="3"
                     placeholder="{previous_output}"></textarea>
             </div>
-            <div class="form-group">
-                <label>Programacion</label>
-                <select @bind="_publishSchedulingType">
-                    <option value="automatic">Automatica (Buffer elige mejor hora)</option>
-                    <option value="now">Publicar ahora</option>
-                </select>
-            </div>
             <p class="text-sm text-muted" style="margin-top: 0.3rem;">
                 Las imagenes/videos del paso anterior se adjuntan automaticamente.
                 Buffer publica en el canal configurado (Instagram, Twitter, LinkedIn, etc.).
-                Plan gratuito: 10 posts programados por canal.
+                Programacion automatica (Buffer elige la mejor hora). Plan gratuito: 10 posts por canal.
             </p>
         }
 
@@ -631,7 +624,6 @@ else
 
     // Publish step (Buffer)
     private string _publishCaption = "";
-    private string _publishSchedulingType = "automatic";
 
     // Edit step
     private Guid? _editingPmId;
@@ -866,13 +858,12 @@ else
             {
                 stepConfig = JsonSerializer.Serialize(new
                 {
-                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption,
-                    schedulingType = _publishSchedulingType
+                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption
                 });
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _publishCaption = ""; _publishSchedulingType = "automatic"; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _publishCaption = ""; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }

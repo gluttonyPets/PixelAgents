@@ -19,19 +19,87 @@ namespace Server.Services.Instagram
             _http = http;
         }
 
-        private static async Task<JsonElement> SendGraphQLAsync(HttpClient http, string apiKey, string query, object? variables = null)
+        private static async Task EnsureGraphQLSuccessAsync(string json)
         {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("errors", out var errors) &&
+                errors.GetArrayLength() > 0)
+            {
+                var messages = new List<string>();
+                foreach (var err in errors.EnumerateArray())
+                {
+                    if (err.TryGetProperty("message", out var msg))
+                        messages.Add(msg.GetString() ?? "Unknown error");
+                }
+                throw new HttpRequestException(
+                    $"Buffer GraphQL error: {string.Join("; ", messages)}");
+            }
+        }
+
+        /// <summary>
+        /// Creates and schedules a post on Buffer using inline GraphQL (no variables).
+        /// Buffer's schema uses enums without quotes for schedulingType and mode.
+        /// </summary>
+        public async Task<string> PublishAsync(
+            BufferConfig config,
+            string text,
+            List<string>? mediaUrls = null)
+        {
+            // Escape text for GraphQL string literal
+            var escapedText = text
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\n", "\\n")
+                .Replace("\r", "\\r");
+
+            var dueAt = DateTime.UtcNow.AddMinutes(2).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+            // Build assets block if media provided
+            var assetsBlock = "";
+            if (mediaUrls is not null && mediaUrls.Count > 0)
+            {
+                var imageEntries = mediaUrls.Select(url =>
+                {
+                    var escapedUrl = url.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    return $"{{ url: \"{escapedUrl}\" }}";
+                });
+                assetsBlock = $", assets: {{ images: [{string.Join(", ", imageEntries)}] }}";
+            }
+
+            var mutation = $@"
+                mutation {{
+                    createPost(input: {{
+                        text: ""{escapedText}"",
+                        channelId: ""{config.ChannelId}"",
+                        schedulingType: automatic,
+                        mode: customSchedule,
+                        dueAt: ""{dueAt}""
+                        {assetsBlock}
+                    }}) {{
+                        ... on PostActionSuccess {{
+                            post {{
+                                id
+                                text
+                                assets {{
+                                    id
+                                    mimeType
+                                }}
+                            }}
+                        }}
+                        ... on MutationError {{
+                            message
+                        }}
+                    }}
+                }}";
+
             var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
-            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+            request.Headers.Add("Authorization", $"Bearer {config.ApiKey}");
 
-            var body = new Dictionary<string, object?> { ["query"] = query };
-            if (variables is not null)
-                body["variables"] = variables;
-
+            var body = new Dictionary<string, object> { ["query"] = mutation };
             request.Content = new StringContent(
                 JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
 
-            var response = await http.SendAsync(request);
+            var response = await _http.SendAsync(request);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -41,113 +109,59 @@ namespace Server.Services.Instagram
             }
 
             var json = await response.Content.ReadAsStringAsync();
+            await EnsureGraphQLSuccessAsync(json);
+
             using var doc = JsonDocument.Parse(json);
+            var result = doc.RootElement.GetProperty("data").GetProperty("createPost");
 
-            // Check for GraphQL errors
-            if (doc.RootElement.TryGetProperty("errors", out var errors) &&
-                errors.GetArrayLength() > 0)
-            {
-                var firstError = errors[0].GetProperty("message").GetString();
-                throw new HttpRequestException($"Buffer GraphQL error: {firstError}");
-            }
-
-            return doc.RootElement.GetProperty("data").Clone();
-        }
-
-        /// <summary>
-        /// Creates and schedules a post on Buffer.
-        /// </summary>
-        public async Task<string> PublishAsync(
-            BufferConfig config,
-            string text,
-            List<string>? mediaUrls = null,
-            string schedulingType = "automatic")
-        {
-            // Build the mutation with media if provided
-            string mutation;
-            object variables;
-
-            if (mediaUrls is not null && mediaUrls.Count > 0)
-            {
-                mutation = @"
-                    mutation CreatePost($input: CreatePostInput!) {
-                        createPost(input: $input) {
-                            ... on PostActionSuccess {
-                                post { id text }
-                            }
-                            ... on MutationError {
-                                message
-                            }
-                        }
-                    }";
-
-                variables = new
-                {
-                    input = new
-                    {
-                        text,
-                        channelIds = new[] { config.ChannelId },
-                        schedulingType,
-                        assets = mediaUrls.Select(url => new { url, type = "image" }).ToArray()
-                    }
-                };
-            }
-            else
-            {
-                mutation = @"
-                    mutation CreatePost($input: CreatePostInput!) {
-                        createPost(input: $input) {
-                            ... on PostActionSuccess {
-                                post { id text }
-                            }
-                            ... on MutationError {
-                                message
-                            }
-                        }
-                    }";
-
-                variables = new
-                {
-                    input = new
-                    {
-                        text,
-                        channelIds = new[] { config.ChannelId },
-                        schedulingType
-                    }
-                };
-            }
-
-            var data = await SendGraphQLAsync(_http, config.ApiKey, mutation, variables);
-            var result = data.GetProperty("createPost");
-
-            // Check for mutation-level error
+            // Check for mutation-level error (MutationError)
             if (result.TryGetProperty("message", out var errMsg))
                 throw new HttpRequestException($"Buffer error: {errMsg.GetString()}");
 
-            var postId = result.GetProperty("post").GetProperty("id").GetString();
-            return postId ?? "published";
+            if (result.TryGetProperty("post", out var post) &&
+                post.TryGetProperty("id", out var idProp))
+                return idProp.GetString() ?? "published";
+
+            return "published";
         }
 
         /// <summary>
         /// Lists connected channels (profiles) from Buffer account.
-        /// Useful for finding the channelId for config.
         /// </summary>
         public async Task<List<BufferChannel>> GetChannelsAsync(string apiKey)
         {
-            var query = @"
-                query GetChannels {
+            var mutation = @"
+                query {
                     channels {
                         id
                         name
                         service
-                        avatar
                     }
                 }";
 
-            var data = await SendGraphQLAsync(_http, apiKey, query);
+            var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
+            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+
+            var body = new Dictionary<string, object> { ["query"] = mutation };
+            request.Content = new StringContent(
+                JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+            var response = await _http.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException(
+                    $"Buffer API error {(int)response.StatusCode}: {errorBody}");
+            }
+
+            var json = await response.Content.ReadAsStringAsync();
+            await EnsureGraphQLSuccessAsync(json);
+
+            using var doc = JsonDocument.Parse(json);
             var channels = new List<BufferChannel>();
 
-            if (data.TryGetProperty("channels", out var arr))
+            if (doc.RootElement.GetProperty("data").TryGetProperty("channels", out var arr))
             {
                 foreach (var ch in arr.EnumerateArray())
                 {
