@@ -72,7 +72,7 @@ namespace Server.Services.Instagram
                         text: ""{escapedText}"",
                         channelId: ""{config.ChannelId}"",
                         schedulingType: automatic,
-                        mode: customSchedule,
+                        mode: customScheduled,
                         dueAt: ""{dueAt}""
                         {assetsBlock}
                     }}) {{
