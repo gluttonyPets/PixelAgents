@@ -59,9 +59,9 @@ else
         </div>
     </details>
 
-    <!-- Instagram (Metricool) Config -->
+    <!-- Buffer Config (Publish) -->
     <details class="card" style="margin-bottom: 1rem;">
-        <summary style="cursor: pointer; font-weight: bold;">Configuracion Instagram (Metricool)</summary>
+        <summary style="cursor: pointer; font-weight: bold;">Configuracion Buffer (Publicacion)</summary>
         <div style="padding-top: 0.5rem;">
             @if (_igError is not null)
             {
@@ -69,32 +69,22 @@ else
             }
             @if (_igSuccess)
             {
-                <div class="alert alert-success">Configuracion Instagram guardada correctamente</div>
+                <div class="alert alert-success">Configuracion Buffer guardada correctamente</div>
             }
             <div class="form-row">
                 <div class="form-group">
-                    <label>User Token (API)</label>
-                    <input type="password" @bind="_igUserToken" placeholder="Token de Metricool API" />
+                    <label>API Key</label>
+                    <input type="password" @bind="_igApiKey" placeholder="Token de Buffer API" />
                 </div>
                 <div class="form-group">
-                    <label>User ID</label>
-                    <input type="text" @bind="_igUserId" placeholder="Ej: 1234567" />
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Blog ID (Brand)</label>
-                    <input type="text" @bind="_igBlogId" placeholder="Ej: 7654321" />
-                </div>
-                <div class="form-group">
-                    <label>Timezone</label>
-                    <input type="text" @bind="_igTimezone" placeholder="Europe/Madrid" />
+                    <label>Channel ID</label>
+                    <input type="text" @bind="_igChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
                 </div>
             </div>
             <p class="text-sm text-muted">
-                1. Ve a <strong>Metricool</strong> → Configuracion de cuenta → API → copia tu token.<br/>
-                2. El <strong>User ID</strong> y <strong>Blog ID</strong> se encuentran en la URL de tu cuenta Metricool.<br/>
-                3. Requiere plan <strong>Advanced</strong> o superior. Limite: 50 posts/dia en Instagram.
+                1. Ve a <strong>buffer.com</strong> → Cuenta → API Settings → genera tu API Key.<br/>
+                2. El <strong>Channel ID</strong> se obtiene consultando tus canales conectados via la API.<br/>
+                3. Plan gratuito: 3 canales, 10 posts programados por canal. Soporta Instagram, Twitter, LinkedIn, etc.
             </p>
             <button class="btn btn-primary" @onclick="SaveInstagramConfig" disabled="@_igSaving">
                 @(_igSaving ? "Guardando..." : "Guardar configuracion")
@@ -323,26 +313,17 @@ else
                 <textarea @bind="_publishCaption" rows="3"
                     placeholder="{previous_output}"></textarea>
             </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Tipo de publicacion</label>
-                    <select @bind="_publishPostType">
-                        <option value="post">Post (Feed)</option>
-                        <option value="reel">Reel (Video)</option>
-                        <option value="story">Story (24h)</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Esperar confirmacion</label>
-                    <select @bind="_publishWaitConfirmation">
-                        <option value="false">No - publicar y continuar</option>
-                        <option value="true">Si - esperar confirmacion de Metricool</option>
-                    </select>
-                </div>
+            <div class="form-group">
+                <label>Programacion</label>
+                <select @bind="_publishSchedulingType">
+                    <option value="automatic">Automatica (Buffer elige mejor hora)</option>
+                    <option value="now">Publicar ahora</option>
+                </select>
             </div>
             <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                Las imagenes/videos del paso anterior se suben automaticamente a Metricool.
-                Todos los videos se publican como Reels. Limite: 50 posts/dia.
+                Las imagenes/videos del paso anterior se adjuntan automaticamente.
+                Buffer publica en el canal configurado (Instagram, Twitter, LinkedIn, etc.).
+                Plan gratuito: 10 posts programados por canal.
             </p>
         }
 
@@ -648,10 +629,9 @@ else
     private string _interactionMessageType = "combined";
     private string _interactionWaitForResponse = "true";
 
-    // Publish step (Instagram)
+    // Publish step (Buffer)
     private string _publishCaption = "";
-    private string _publishPostType = "post";
-    private string _publishWaitConfirmation = "false";
+    private string _publishSchedulingType = "automatic";
 
     // Edit step
     private Guid? _editingPmId;
@@ -675,11 +655,9 @@ else
     private bool _tgSuccess;
     private bool _tgSaving;
 
-    // Instagram (Metricool) config
-    private string _igUserToken = "";
-    private string _igUserId = "";
-    private string _igBlogId = "";
-    private string _igTimezone = "Europe/Madrid";
+    // Buffer config
+    private string _igApiKey = "";
+    private string _igChannelId = "";
     private string? _igError;
     private bool _igSuccess;
     private bool _igSaving;
@@ -756,14 +734,12 @@ else
                 _tgChatId = tgConfig.ChatId;
             }
 
-            // Load Instagram (Metricool) config
+            // Load Buffer config
             var igConfig = await Api.GetInstagramConfigAsync(ProjectId);
             if (igConfig is not null)
             {
-                _igUserToken = igConfig.UserToken;
-                _igUserId = igConfig.UserId;
-                _igBlogId = igConfig.BlogId;
-                _igTimezone = string.IsNullOrWhiteSpace(igConfig.Timezone) ? "Europe/Madrid" : igConfig.Timezone;
+                _igApiKey = igConfig.ApiKey;
+                _igChannelId = igConfig.ChannelId;
             }
 
             // Load WhatsApp config
@@ -808,7 +784,7 @@ else
         _igSaving = true;
         try
         {
-            var dto = new MetricoolConfigDto(_igUserToken, _igUserId, _igBlogId, _igTimezone);
+            var dto = new BufferConfigDto(_igApiKey, _igChannelId);
             var (ok, error) = await Api.SaveInstagramConfigAsync(ProjectId, dto);
             if (ok)
             {
@@ -891,13 +867,12 @@ else
                 stepConfig = JsonSerializer.Serialize(new
                 {
                     caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption,
-                    postType = _publishPostType,
-                    waitForConfirmation = _publishWaitConfirmation == "true"
+                    schedulingType = _publishSchedulingType
                 });
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _publishCaption = ""; _publishPostType = "post"; _publishWaitConfirmation = "false"; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _publishCaption = ""; _publishSchedulingType = "automatic"; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }

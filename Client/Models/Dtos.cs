@@ -58,8 +58,8 @@ public record WhatsAppConfigDto(string PhoneNumberId, string AccessToken,
 // ── Telegram ──
 public record TelegramConfigDto(string BotToken, string ChatId);
 
-// ── Instagram (Metricool) ──
-public record MetricoolConfigDto(string UserToken, string UserId, string BlogId, string Timezone);
+// ── Instagram (Buffer) ──
+public record BufferConfigDto(string ApiKey, string ChannelId);
 
 // ── Structured Output ──
 public class StepOutputDto

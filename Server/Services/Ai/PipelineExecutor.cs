@@ -15,17 +15,17 @@ namespace Server.Services.Ai
         private readonly IExecutionLogger _logger;
         private readonly WhatsAppService _whatsApp;
         private readonly TelegramService _telegram;
-        private readonly MetricoolService _metricool;
+        private readonly BufferService _buffer;
         private readonly CoreDbContext _coreDb;
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
-            WhatsAppService whatsApp, TelegramService telegram, MetricoolService metricool, CoreDbContext coreDb)
+            WhatsAppService whatsApp, TelegramService telegram, BufferService buffer, CoreDbContext coreDb)
         {
             _registry = registry;
             _logger = logger;
             _whatsApp = whatsApp;
             _telegram = telegram;
-            _metricool = metricool;
+            _buffer = buffer;
             _coreDb = coreDb;
         }
 
@@ -161,7 +161,7 @@ namespace Server.Services.Ai
                         continue; // fire-and-forget: move to next step
                     }
 
-                    // ── Publish step: publish content to Instagram via Metricool ──
+                    // ── Publish step: publish content via Buffer ──
                     if (IsPublishStep(pm.AiModule))
                     {
                         await HandlePublishStepAsync(
@@ -531,7 +531,7 @@ namespace Server.Services.Ai
             }
         }
 
-        // ── Publish step handler (Instagram via Metricool) ──
+        // ── Publish step handler (via Buffer) ──
         private async Task HandlePublishStepAsync(
             Project project, ProjectExecution execution, StepExecution stepExecution,
             ProjectModule pm,
@@ -545,32 +545,16 @@ namespace Server.Services.Ai
             var executionId = execution.Id;
 
             if (string.IsNullOrWhiteSpace(project.InstagramConfig))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Instagram (Metricool)");
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Buffer");
 
-            var metricoolConfig = JsonSerializer.Deserialize<MetricoolConfig>(project.InstagramConfig)
-                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Instagram invalida");
+            var bufferConfig = JsonSerializer.Deserialize<BufferConfig>(project.InstagramConfig)
+                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Buffer invalida");
 
-            if (string.IsNullOrWhiteSpace(metricoolConfig.UserToken))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: Token de Metricool no configurado");
+            if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: API Key de Buffer no configurada");
 
             // Read publish config from step configuration
             var stepConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
-            var postType = "post"; // default: feed post
-            if (stepConfig.TryGetValue("postType", out var ptVal))
-            {
-                var pt = ptVal is JsonElement ptEl ? ptEl.GetString() : ptVal?.ToString();
-                if (!string.IsNullOrWhiteSpace(pt))
-                    postType = pt;
-            }
-
-            var waitForConfirmation = false;
-            if (stepConfig.TryGetValue("waitForConfirmation", out var wfcVal))
-            {
-                if (wfcVal is JsonElement wfcEl)
-                    waitForConfirmation = wfcEl.ValueKind == JsonValueKind.True;
-                else if (wfcVal is bool wfcBool)
-                    waitForConfirmation = wfcBool;
-            }
 
             // Build caption from template + previous output
             var captionTemplate = "{previous_output}";
@@ -579,6 +563,14 @@ namespace Server.Services.Ai
                 var cap = capVal is JsonElement capEl ? capEl.GetString() : capVal?.ToString();
                 if (!string.IsNullOrWhiteSpace(cap))
                     captionTemplate = cap;
+            }
+
+            var schedulingType = "automatic";
+            if (stepConfig.TryGetValue("schedulingType", out var stVal))
+            {
+                var st = stVal is JsonElement stEl ? stEl.GetString() : stVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(st))
+                    schedulingType = st;
             }
 
             var previousText = "";
@@ -593,9 +585,9 @@ namespace Server.Services.Ai
                 .Replace("{step_number}", pm.StepOrder.ToString());
 
             await _logger.LogAsync(projectId, executionId, "info",
-                $"Publicando en Instagram ({postType})...", pm.StepOrder, stepName);
+                $"Publicando via Buffer...", pm.StepOrder, stepName);
 
-            // Collect media files from previous step
+            // Collect media URLs from previous step output (images hosted on server)
             var mediaUrls = new List<string>();
             var prevStepExec = await db.StepExecutions
                 .Include(s => s.Files)
@@ -606,40 +598,24 @@ namespace Server.Services.Ai
                 foreach (var file in prevStepExec.Files.Where(f =>
                     f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
                 {
-                    var filePath = Path.Combine(execution.WorkspacePath, file.FilePath);
-                    if (!File.Exists(filePath)) continue;
-
-                    var fileBytes = await File.ReadAllBytesAsync(filePath);
-
-                    try
-                    {
-                        var normalizedUrl = await _metricool.UploadAndNormalizeAsync(
-                            metricoolConfig, fileBytes, file.ContentType, file.FileName);
-                        mediaUrls.Add(normalizedUrl);
-
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Media '{file.FileName}' subida a Metricool", pm.StepOrder, stepName);
-                    }
-                    catch (Exception ex)
-                    {
-                        await _logger.LogAsync(projectId, executionId, "warning",
-                            $"Error subiendo media '{file.FileName}': {ex.Message}", pm.StepOrder, stepName);
-                    }
+                    // Buffer needs public URLs — build them from the server's file-serving endpoint
+                    var publicUrl = $"/api/executions/{executionId}/files/{file.Id}";
+                    mediaUrls.Add(publicUrl);
                 }
             }
 
-            // Publish via Metricool
+            // Publish via Buffer
             try
             {
-                var response = await _metricool.PublishAsync(
-                    metricoolConfig, caption, mediaUrls.Count > 0 ? mediaUrls : null, postType);
+                var postId = await _buffer.PublishAsync(
+                    bufferConfig, caption, mediaUrls.Count > 0 ? mediaUrls : null, schedulingType);
 
                 var publishOutput = new StepOutput
                 {
                     Type = "text",
                     Content = caption,
-                    Summary = $"Publicado en Instagram ({postType}) - {mediaUrls.Count} archivo(s)",
-                    Items = [new OutputItem { Content = caption, Label = $"instagram {postType}" }]
+                    Summary = $"Publicado via Buffer - {mediaUrls.Count} archivo(s)",
+                    Items = [new OutputItem { Content = caption, Label = "buffer publish" }]
                 };
 
                 stepExecution.Status = "Completed";
@@ -647,9 +623,9 @@ namespace Server.Services.Ai
                 stepExecution.InputData = JsonSerializer.Serialize(new
                 {
                     caption,
-                    postType,
+                    schedulingType,
                     mediaCount = mediaUrls.Count,
-                    metricoolResponse = response
+                    bufferPostId = postId
                 });
                 stepExecution.CompletedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
@@ -658,19 +634,19 @@ namespace Server.Services.Ai
                 stepModuleTypes[pm.StepOrder] = "Publish";
                 stepResults[pm.StepOrder] = AiResult.Ok(caption, new Dictionary<string, object>
                 {
-                    ["postType"] = postType,
+                    ["bufferPostId"] = postId,
                     ["mediaCount"] = mediaUrls.Count
                 });
 
                 await _logger.LogAsync(projectId, executionId, "success",
-                    $"Publicado en Instagram ({postType}) con {mediaUrls.Count} archivo(s)",
+                    $"Publicado via Buffer (post {postId}) con {mediaUrls.Count} archivo(s)",
                     pm.StepOrder, stepName);
             }
             catch (Exception ex)
             {
                 await _logger.LogAsync(projectId, executionId, "error",
-                    $"Error publicando en Instagram: {ex.Message}", pm.StepOrder, stepName);
-                await FailStep(stepExecution, execution, $"Error Metricool: {ex.Message}", db);
+                    $"Error publicando via Buffer: {ex.Message}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
                 throw;
             }
         }

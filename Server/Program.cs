@@ -57,7 +57,7 @@ builder.Services.AddSingleton<IAiProvider, GeminiProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddHttpClient<Server.Services.WhatsApp.WhatsAppService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
-builder.Services.AddHttpClient<Server.Services.Instagram.MetricoolService>();
+builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
@@ -1053,7 +1053,7 @@ app.MapGet("/api/projects/{projectId:guid}/telegram-webhook-info", async (
     }
 }).RequireAuthorization();
 
-// ==================== Instagram (Metricool) Config Endpoints ====================
+// ==================== Instagram (Buffer) Config Endpoints ====================
 
 app.MapGet("/api/projects/{projectId:guid}/instagram-config", async (
     Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
@@ -1065,14 +1065,14 @@ app.MapGet("/api/projects/{projectId:guid}/instagram-config", async (
     if (project is null) return Results.NotFound();
 
     if (string.IsNullOrWhiteSpace(project.InstagramConfig))
-        return Results.Ok(new MetricoolConfigDto("", "", "", "Europe/Madrid"));
+        return Results.Ok(new BufferConfigDto("", ""));
 
-    var config = System.Text.Json.JsonSerializer.Deserialize<MetricoolConfigDto>(project.InstagramConfig);
+    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.InstagramConfig);
     return Results.Ok(config);
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
-    Guid projectId, MetricoolConfigDto dto, HttpContext ctx,
+    Guid projectId, BufferConfigDto dto, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
@@ -1084,15 +1084,15 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
     project.InstagramConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
 
-    // Ensure the Instagram Publish sentinel module exists
-    var hasInstagramPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "instagram");
-    if (!hasInstagramPublish)
+    // Ensure the Buffer Publish sentinel module exists
+    var hasBufferPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "instagram");
+    if (!hasBufferPublish)
     {
         db.AiModules.Add(new AiModule
         {
             Id = Guid.NewGuid(),
-            Name = "Instagram Publish",
-            Description = "Publica contenido en Instagram (posts, stories, reels) via Metricool.",
+            Name = "Buffer Publish",
+            Description = "Publica contenido en redes sociales (Instagram, Twitter, etc.) via Buffer.",
             ProviderType = "System",
             ModuleType = "Publish",
             ModelName = "instagram",
@@ -1103,7 +1103,7 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
     }
 
     await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Configuracion Instagram (Metricool) guardada" });
+    return Results.Ok(new { message = "Configuracion Buffer guardada" });
 }).RequireAuthorization();
 
 // ==================== Telegram Webhook Endpoint ====================
