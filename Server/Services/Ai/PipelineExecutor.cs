@@ -65,7 +65,8 @@ namespace Server.Services.Ai
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
                 // Interaction and Publish steps don't need API key validation
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule))
+                // Also skip modules without ApiKeyId (e.g. system modules) — they have their own validation
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -1277,7 +1278,7 @@ namespace Server.Services.Ai
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (IsInteractionStep(pm.AiModule))
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
