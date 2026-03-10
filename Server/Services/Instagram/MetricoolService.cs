@@ -71,7 +71,6 @@ namespace Server.Services.Instagram
                     createPost(input: {{
                         text: ""{escapedText}"",
                         channelId: ""{config.ChannelId}"",
-                        subprofile: post,
                         schedulingType: automatic,
                         mode: customScheduled,
                         dueAt: ""{dueAt}""
@@ -176,6 +175,43 @@ namespace Server.Services.Instagram
             }
 
             return channels;
+        }
+
+        /// <summary>
+        /// Introspects the CreatePostInput type to discover all available fields.
+        /// Use this to find the correct field name for Instagram post type.
+        /// </summary>
+        public async Task<string> IntrospectCreatePostInputAsync(string apiKey)
+        {
+            var query = @"
+                query {
+                    __type(name: ""CreatePostInput"") {
+                        name
+                        inputFields {
+                            name
+                            type {
+                                name
+                                kind
+                                enumValues { name }
+                                ofType {
+                                    name
+                                    kind
+                                    enumValues { name }
+                                }
+                            }
+                        }
+                    }
+                }";
+
+            var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
+            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+
+            var body = new Dictionary<string, object> { ["query"] = query };
+            request.Content = new StringContent(
+                JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+            var response = await _http.SendAsync(request);
+            return await response.Content.ReadAsStringAsync();
         }
     }
 

@@ -1106,6 +1106,26 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
     return Results.Ok(new { message = "Configuracion Buffer guardada" });
 }).RequireAuthorization();
 
+// Temporary introspection endpoint to discover CreatePostInput fields
+app.MapGet("/api/buffer/introspect", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.Instagram.BufferService buffer) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    // Find first project with Instagram config to get the API key
+    var project = await db.Projects.FirstOrDefaultAsync(p => p.InstagramConfig != null && p.InstagramConfig != "");
+    if (project is null) return Results.NotFound("No project with Instagram config found");
+
+    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.InstagramConfig!);
+    if (config is null || string.IsNullOrWhiteSpace(config.ApiKey))
+        return Results.BadRequest("No Buffer API key configured");
+
+    var result = await buffer.IntrospectCreatePostInputAsync(config.ApiKey);
+    return Results.Content(result, "application/json");
+}).RequireAuthorization();
+
 // ==================== Telegram Webhook Endpoint ====================
 
 app.MapPost("/api/webhooks/telegram", async (
