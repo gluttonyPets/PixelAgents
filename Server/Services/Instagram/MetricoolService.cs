@@ -43,7 +43,7 @@ namespace Server.Services.Instagram
         public async Task<string> PublishAsync(
             BufferConfig config,
             string text,
-            List<string>? mediaUrls = null,
+            List<ClassifiedMedia>? media = null,
             string publishType = "post")
         {
             // Escape text for GraphQL string literal
@@ -55,16 +55,32 @@ namespace Server.Services.Instagram
 
             var dueAt = DateTime.UtcNow.AddMinutes(2).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
-            // Build assets block if media provided
+            // Build assets block if media provided, separating images from videos
             var assetsBlock = "";
-            if (mediaUrls is not null && mediaUrls.Count > 0)
+            if (media is not null && media.Count > 0)
             {
-                var imageEntries = mediaUrls.Select(url =>
+                var images = media.Where(m => m.Kind == MediaKind.Image).ToList();
+                var videos = media.Where(m => m.Kind == MediaKind.Video).ToList();
+                var parts = new List<string>();
+
+                if (images.Count > 0)
                 {
-                    var escapedUrl = url.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                    return $"{{ url: \"{escapedUrl}\" }}";
-                });
-                assetsBlock = $", assets: {{ images: [{string.Join(", ", imageEntries)}] }}";
+                    var imageEntries = images.Select(m =>
+                    {
+                        var escapedUrl = m.Url.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                        return $"{{ url: \"{escapedUrl}\" }}";
+                    });
+                    parts.Add($"images: [{string.Join(", ", imageEntries)}]");
+                }
+
+                if (videos.Count > 0)
+                {
+                    var escapedUrl = videos[0].Url.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    parts.Add($"video: {{ url: \"{escapedUrl}\" }}");
+                }
+
+                if (parts.Count > 0)
+                    assetsBlock = $", assets: {{ {string.Join(", ", parts)} }}";
             }
 
             // Validate publishType to prevent injection
@@ -190,5 +206,13 @@ namespace Server.Services.Instagram
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
         public string Service { get; set; } = "";
+    }
+
+    public enum MediaKind { Image, Video }
+
+    public class ClassifiedMedia
+    {
+        public string Url { get; set; } = "";
+        public MediaKind Kind { get; set; }
     }
 }

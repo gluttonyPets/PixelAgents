@@ -584,8 +584,8 @@ namespace Server.Services.Ai
             await _logger.LogAsync(projectId, executionId, "info",
                 $"Publicando via Buffer...", pm.StepOrder, stepName);
 
-            // Collect media URLs from previous step output (images hosted on server)
-            var mediaUrls = new List<string>();
+            // Collect and classify media from previous step output
+            var classifiedMedia = new List<ClassifiedMedia>();
             var prevStepExec = await db.StepExecutions
                 .Include(s => s.Files)
                 .FirstOrDefaultAsync(s => s.ExecutionId == executionId && s.StepOrder == prevOrder);
@@ -597,11 +597,14 @@ namespace Server.Services.Ai
                 foreach (var file in prevStepExec.Files.Where(f =>
                     f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
                 {
-                    // Buffer needs absolute public URLs
                     var publicUrl = $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
-                    mediaUrls.Add(publicUrl);
+                    var kind = file.ContentType.StartsWith("video/") ? MediaKind.Video : MediaKind.Image;
+                    classifiedMedia.Add(new ClassifiedMedia { Url = publicUrl, Kind = kind });
                 }
             }
+
+            var hasImages = classifiedMedia.Any(m => m.Kind == MediaKind.Image);
+            var hasVideos = classifiedMedia.Any(m => m.Kind == MediaKind.Video);
 
             // Read publish type from step configuration (post/reel/story)
             var publishType = "post";
@@ -612,17 +615,27 @@ namespace Server.Services.Ai
                     publishType = pt;
             }
 
+            // Auto-adjust publishType based on actual media type
+            var originalPublishType = publishType;
+            if (hasImages && !hasVideos && publishType == "reel")
+            {
+                publishType = "post";
+                await _logger.LogAsync(projectId, executionId, "warning",
+                    $"publishType cambiado de 'reel' a 'post' porque solo hay imagenes (reel requiere video)",
+                    pm.StepOrder, stepName);
+            }
+
             // Publish via Buffer
             try
             {
                 var postId = await _buffer.PublishAsync(
-                    bufferConfig, caption, mediaUrls.Count > 0 ? mediaUrls : null, publishType);
+                    bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType);
 
                 var publishOutput = new StepOutput
                 {
                     Type = "text",
                     Content = caption,
-                    Summary = $"Publicado via Buffer - {mediaUrls.Count} archivo(s)",
+                    Summary = $"Publicado via Buffer - {classifiedMedia.Count} archivo(s)",
                     Items = [new OutputItem { Content = caption, Label = "buffer publish" }]
                 };
 
@@ -631,7 +644,11 @@ namespace Server.Services.Ai
                 stepExecution.InputData = JsonSerializer.Serialize(new
                 {
                     caption,
-                    mediaCount = mediaUrls.Count,
+                    mediaCount = classifiedMedia.Count,
+                    imageCount = classifiedMedia.Count(m => m.Kind == MediaKind.Image),
+                    videoCount = classifiedMedia.Count(m => m.Kind == MediaKind.Video),
+                    originalPublishType,
+                    effectivePublishType = publishType,
                     bufferPostId = postId
                 });
                 stepExecution.CompletedAt = DateTime.UtcNow;
@@ -642,11 +659,11 @@ namespace Server.Services.Ai
                 stepResults[pm.StepOrder] = AiResult.Ok(caption, new Dictionary<string, object>
                 {
                     ["bufferPostId"] = postId,
-                    ["mediaCount"] = mediaUrls.Count
+                    ["mediaCount"] = classifiedMedia.Count
                 });
 
                 await _logger.LogAsync(projectId, executionId, "success",
-                    $"Publicado via Buffer (post {postId}) con {mediaUrls.Count} archivo(s)",
+                    $"Publicado via Buffer (post {postId}) con {classifiedMedia.Count} archivo(s)",
                     pm.StepOrder, stepName);
             }
             catch (Exception ex)
