@@ -603,11 +603,20 @@ namespace Server.Services.Ai
                 }
             }
 
+            // Read publish type from step configuration (post/reel/story)
+            var publishType = "post";
+            if (stepConfig.TryGetValue("publishType", out var ptVal))
+            {
+                var pt = ptVal is JsonElement ptEl ? ptEl.GetString() : ptVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(pt))
+                    publishType = pt;
+            }
+
             // Publish via Buffer
             try
             {
                 var postId = await _buffer.PublishAsync(
-                    bufferConfig, caption, mediaUrls.Count > 0 ? mediaUrls : null);
+                    bufferConfig, caption, mediaUrls.Count > 0 ? mediaUrls : null, publishType);
 
                 var publishOutput = new StepOutput
                 {

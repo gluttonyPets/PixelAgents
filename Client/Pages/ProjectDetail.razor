@@ -309,6 +309,14 @@ else
         @if (selectedModule?.ModuleType == "Publish")
         {
             <div class="form-group">
+                <label>Tipo de publicacion</label>
+                <select @bind="_publishType">
+                    <option value="post">Post</option>
+                    <option value="reel">Reel</option>
+                    <option value="story">Story</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
                 <textarea @bind="_publishCaption" rows="3"
                     placeholder="{previous_output}"></textarea>
@@ -439,6 +447,10 @@ else
                                     @if (parsed.Metadata is not null)
                                     {
                                         <div class="step-meta mt-1">
+                                            @if (parsed.Metadata.TryGetValue("publishType", out var pubType))
+                                            {
+                                                <span class="badge badge-info">@pubType.ToString().ToUpper()</span>
+                                            }
                                             @if (parsed.Metadata.TryGetValue("caption", out var caption))
                                             {
                                                 <span class="badge badge-info">Caption: @caption</span>
@@ -624,6 +636,7 @@ else
 
     // Publish step (Buffer)
     private string _publishCaption = "";
+    private string _publishType = "post";
 
     // Edit step
     private Guid? _editingPmId;
@@ -858,12 +871,13 @@ else
             {
                 stepConfig = JsonSerializer.Serialize(new
                 {
-                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption
+                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption,
+                    publishType = _publishType
                 });
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _publishCaption = ""; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _publishCaption = ""; _publishType = "post"; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
