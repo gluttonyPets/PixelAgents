@@ -59,6 +59,49 @@ else
         </div>
     </details>
 
+    <!-- Instagram (Metricool) Config -->
+    <details class="card" style="margin-bottom: 1rem;">
+        <summary style="cursor: pointer; font-weight: bold;">Configuracion Instagram (Metricool)</summary>
+        <div style="padding-top: 0.5rem;">
+            @if (_igError is not null)
+            {
+                <div class="alert alert-error">@_igError</div>
+            }
+            @if (_igSuccess)
+            {
+                <div class="alert alert-success">Configuracion Instagram guardada correctamente</div>
+            }
+            <div class="form-row">
+                <div class="form-group">
+                    <label>User Token (API)</label>
+                    <input type="password" @bind="_igUserToken" placeholder="Token de Metricool API" />
+                </div>
+                <div class="form-group">
+                    <label>User ID</label>
+                    <input type="text" @bind="_igUserId" placeholder="Ej: 1234567" />
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Blog ID (Brand)</label>
+                    <input type="text" @bind="_igBlogId" placeholder="Ej: 7654321" />
+                </div>
+                <div class="form-group">
+                    <label>Timezone</label>
+                    <input type="text" @bind="_igTimezone" placeholder="Europe/Madrid" />
+                </div>
+            </div>
+            <p class="text-sm text-muted">
+                1. Ve a <strong>Metricool</strong> → Configuracion de cuenta → API → copia tu token.<br/>
+                2. El <strong>User ID</strong> y <strong>Blog ID</strong> se encuentran en la URL de tu cuenta Metricool.<br/>
+                3. Requiere plan <strong>Advanced</strong> o superior. Limite: 50 posts/dia en Instagram.
+            </p>
+            <button class="btn btn-primary" @onclick="SaveInstagramConfig" disabled="@_igSaving">
+                @(_igSaving ? "Guardando..." : "Guardar configuracion")
+            </button>
+        </div>
+    </details>
+
     <!-- WhatsApp Config (legacy) -->
     <details class="card" style="margin-bottom: 1rem;">
         <summary style="cursor: pointer; font-weight: bold;">Configuracion WhatsApp (alternativa)</summary>
@@ -271,6 +314,36 @@ else
                     <strong>🔄 Reiniciar</strong> (con aclaracion opcional).
                 </p>
             }
+        }
+
+        @if (selectedModule?.ModuleType == "Publish")
+        {
+            <div class="form-group">
+                <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
+                <textarea @bind="_publishCaption" rows="3"
+                    placeholder="{previous_output}"></textarea>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Tipo de publicacion</label>
+                    <select @bind="_publishPostType">
+                        <option value="post">Post (Feed)</option>
+                        <option value="reel">Reel (Video)</option>
+                        <option value="story">Story (24h)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Esperar confirmacion</label>
+                    <select @bind="_publishWaitConfirmation">
+                        <option value="false">No - publicar y continuar</option>
+                        <option value="true">Si - esperar confirmacion de Metricool</option>
+                    </select>
+                </div>
+            </div>
+            <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                Las imagenes/videos del paso anterior se suben automaticamente a Metricool.
+                Todos los videos se publican como Reels. Limite: 50 posts/dia.
+            </p>
         }
 
         <button class="btn btn-primary mt-1" @onclick="AddStep" disabled="@_loading">Agregar</button>
@@ -575,6 +648,11 @@ else
     private string _interactionMessageType = "combined";
     private string _interactionWaitForResponse = "true";
 
+    // Publish step (Instagram)
+    private string _publishCaption = "";
+    private string _publishPostType = "post";
+    private string _publishWaitConfirmation = "false";
+
     // Edit step
     private Guid? _editingPmId;
     private string _editStepName = "";
@@ -596,6 +674,15 @@ else
     private string? _tgError;
     private bool _tgSuccess;
     private bool _tgSaving;
+
+    // Instagram (Metricool) config
+    private string _igUserToken = "";
+    private string _igUserId = "";
+    private string _igBlogId = "";
+    private string _igTimezone = "Europe/Madrid";
+    private string? _igError;
+    private bool _igSuccess;
+    private bool _igSaving;
 
     // WhatsApp config
     private string _waPhoneNumberId = "";
@@ -669,6 +756,16 @@ else
                 _tgChatId = tgConfig.ChatId;
             }
 
+            // Load Instagram (Metricool) config
+            var igConfig = await Api.GetInstagramConfigAsync(ProjectId);
+            if (igConfig is not null)
+            {
+                _igUserToken = igConfig.UserToken;
+                _igUserId = igConfig.UserId;
+                _igBlogId = igConfig.BlogId;
+                _igTimezone = string.IsNullOrWhiteSpace(igConfig.Timezone) ? "Europe/Madrid" : igConfig.Timezone;
+            }
+
             // Load WhatsApp config
             var waConfig = await Api.GetWhatsAppConfigAsync(ProjectId);
             if (waConfig is not null)
@@ -702,6 +799,27 @@ else
         }
         catch (Exception ex) { _tgError = ex.Message; }
         _tgSaving = false;
+    }
+
+    private async Task SaveInstagramConfig()
+    {
+        _igError = null;
+        _igSuccess = false;
+        _igSaving = true;
+        try
+        {
+            var dto = new MetricoolConfigDto(_igUserToken, _igUserId, _igBlogId, _igTimezone);
+            var (ok, error) = await Api.SaveInstagramConfigAsync(ProjectId, dto);
+            if (ok)
+            {
+                _igSuccess = true;
+                _modules = await Api.GetModulesAsync();
+            }
+            else
+                _igError = error;
+        }
+        catch (Exception ex) { _igError = ex.Message; }
+        _igSaving = false;
     }
 
     private async Task SaveWhatsAppConfig()
@@ -768,9 +886,18 @@ else
                     waitForResponse = _interactionWaitForResponse == "true"
                 });
             }
+            if (mod?.ModuleType == "Publish")
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption,
+                    postType = _publishPostType,
+                    waitForConfirmation = _publishWaitConfirmation == "true"
+                });
+            }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _publishCaption = ""; _publishPostType = "post"; _publishWaitConfirmation = "false"; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }

@@ -5,6 +5,7 @@ using Server.Hubs;
 using Server.Models;
 using Server.Services.WhatsApp;
 using Server.Services.Telegram;
+using Server.Services.Instagram;
 
 namespace Server.Services.Ai
 {
@@ -14,21 +15,27 @@ namespace Server.Services.Ai
         private readonly IExecutionLogger _logger;
         private readonly WhatsAppService _whatsApp;
         private readonly TelegramService _telegram;
+        private readonly MetricoolService _metricool;
         private readonly CoreDbContext _coreDb;
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
-            WhatsAppService whatsApp, TelegramService telegram, CoreDbContext coreDb)
+            WhatsAppService whatsApp, TelegramService telegram, MetricoolService metricool, CoreDbContext coreDb)
         {
             _registry = registry;
             _logger = logger;
             _whatsApp = whatsApp;
             _telegram = telegram;
+            _metricool = metricool;
             _coreDb = coreDb;
         }
 
         private static bool IsInteractionStep(AiModule module) =>
             module.ModuleType == "Interaction" ||
             (module.ProviderType == "System" && (module.ModelName == "whatsapp" || module.ModelName == "telegram"));
+
+        private static bool IsPublishStep(AiModule module) =>
+            module.ModuleType == "Publish" ||
+            (module.ProviderType == "System" && module.ModelName == "instagram");
 
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
@@ -53,8 +60,8 @@ namespace Server.Services.Ai
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                // Interaction steps don't need API key validation
-                if (IsInteractionStep(pm.AiModule))
+                // Interaction and Publish steps don't need API key validation
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule))
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -152,6 +159,15 @@ namespace Server.Services.Ai
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         if (shouldPause) return execution;
                         continue; // fire-and-forget: move to next step
+                    }
+
+                    // ── Publish step: publish content to Instagram via Metricool ──
+                    if (IsPublishStep(pm.AiModule))
+                    {
+                        await HandlePublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db);
+                        continue;
                     }
 
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
@@ -515,6 +531,150 @@ namespace Server.Services.Ai
             }
         }
 
+        // ── Publish step handler (Instagram via Metricool) ──
+        private async Task HandlePublishStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            UserDbContext db)
+        {
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+            var projectId = project.Id;
+            var executionId = execution.Id;
+
+            if (string.IsNullOrWhiteSpace(project.InstagramConfig))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Instagram (Metricool)");
+
+            var metricoolConfig = JsonSerializer.Deserialize<MetricoolConfig>(project.InstagramConfig)
+                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Instagram invalida");
+
+            if (string.IsNullOrWhiteSpace(metricoolConfig.UserToken))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: Token de Metricool no configurado");
+
+            // Read publish config from step configuration
+            var stepConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+            var postType = "post"; // default: feed post
+            if (stepConfig.TryGetValue("postType", out var ptVal))
+            {
+                var pt = ptVal is JsonElement ptEl ? ptEl.GetString() : ptVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(pt))
+                    postType = pt;
+            }
+
+            var waitForConfirmation = false;
+            if (stepConfig.TryGetValue("waitForConfirmation", out var wfcVal))
+            {
+                if (wfcVal is JsonElement wfcEl)
+                    waitForConfirmation = wfcEl.ValueKind == JsonValueKind.True;
+                else if (wfcVal is bool wfcBool)
+                    waitForConfirmation = wfcBool;
+            }
+
+            // Build caption from template + previous output
+            var captionTemplate = "{previous_output}";
+            if (stepConfig.TryGetValue("caption", out var capVal))
+            {
+                var cap = capVal is JsonElement capEl ? capEl.GetString() : capVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(cap))
+                    captionTemplate = cap;
+            }
+
+            var previousText = "";
+            var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
+            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput))
+                previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
+            else if (stepResults.TryGetValue(prevOrder, out var prevResult))
+                previousText = prevResult.TextOutput ?? "";
+
+            var caption = captionTemplate
+                .Replace("{previous_output}", previousText)
+                .Replace("{step_number}", pm.StepOrder.ToString());
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Publicando en Instagram ({postType})...", pm.StepOrder, stepName);
+
+            // Collect media files from previous step
+            var mediaUrls = new List<string>();
+            var prevStepExec = await db.StepExecutions
+                .Include(s => s.Files)
+                .FirstOrDefaultAsync(s => s.ExecutionId == executionId && s.StepOrder == prevOrder);
+
+            if (prevStepExec?.Files is not null)
+            {
+                foreach (var file in prevStepExec.Files.Where(f =>
+                    f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
+                {
+                    var filePath = Path.Combine(execution.WorkspacePath, file.FilePath);
+                    if (!File.Exists(filePath)) continue;
+
+                    var fileBytes = await File.ReadAllBytesAsync(filePath);
+
+                    try
+                    {
+                        var normalizedUrl = await _metricool.UploadAndNormalizeAsync(
+                            metricoolConfig, fileBytes, file.ContentType, file.FileName);
+                        mediaUrls.Add(normalizedUrl);
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Media '{file.FileName}' subida a Metricool", pm.StepOrder, stepName);
+                    }
+                    catch (Exception ex)
+                    {
+                        await _logger.LogAsync(projectId, executionId, "warning",
+                            $"Error subiendo media '{file.FileName}': {ex.Message}", pm.StepOrder, stepName);
+                    }
+                }
+            }
+
+            // Publish via Metricool
+            try
+            {
+                var response = await _metricool.PublishAsync(
+                    metricoolConfig, caption, mediaUrls.Count > 0 ? mediaUrls : null, postType);
+
+                var publishOutput = new StepOutput
+                {
+                    Type = "text",
+                    Content = caption,
+                    Summary = $"Publicado en Instagram ({postType}) - {mediaUrls.Count} archivo(s)",
+                    Items = [new OutputItem { Content = caption, Label = $"instagram {postType}" }]
+                };
+
+                stepExecution.Status = "Completed";
+                stepExecution.OutputData = JsonSerializer.Serialize(publishOutput);
+                stepExecution.InputData = JsonSerializer.Serialize(new
+                {
+                    caption,
+                    postType,
+                    mediaCount = mediaUrls.Count,
+                    metricoolResponse = response
+                });
+                stepExecution.CompletedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+
+                stepOutputs[pm.StepOrder] = publishOutput;
+                stepModuleTypes[pm.StepOrder] = "Publish";
+                stepResults[pm.StepOrder] = AiResult.Ok(caption, new Dictionary<string, object>
+                {
+                    ["postType"] = postType,
+                    ["mediaCount"] = mediaUrls.Count
+                });
+
+                await _logger.LogAsync(projectId, executionId, "success",
+                    $"Publicado en Instagram ({postType}) con {mediaUrls.Count} archivo(s)",
+                    pm.StepOrder, stepName);
+            }
+            catch (Exception ex)
+            {
+                await _logger.LogAsync(projectId, executionId, "error",
+                    $"Error publicando en Instagram: {ex.Message}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, $"Error Metricool: {ex.Message}", db);
+                throw;
+            }
+        }
+
         // ── Interaction step handler (supports Telegram and WhatsApp) ──
         // Returns true if the pipeline should pause (waiting for response), false if it should continue.
         private async Task<bool> HandleInteractionStepAsync(
@@ -859,6 +1019,15 @@ namespace Server.Services.Ai
                             project, execution, stepExecution, pm, pauseState.UserInput,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         if (shouldPause) return execution;
+                        continue;
+                    }
+
+                    // Handle publish step
+                    if (IsPublishStep(pm.AiModule))
+                    {
+                        await HandlePublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db);
                         continue;
                     }
 
@@ -1279,6 +1448,15 @@ namespace Server.Services.Ai
                             project, execution, stepExecution, pm, originalUserInput,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         if (shouldPause) return execution;
+                        continue;
+                    }
+
+                    // Handle publish step during retry
+                    if (IsPublishStep(pm.AiModule))
+                    {
+                        await HandlePublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db);
                         continue;
                     }
 

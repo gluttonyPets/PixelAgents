@@ -326,6 +326,22 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Instagram (Metricool) Config ──
+
+    public async Task<MetricoolConfigDto?> GetInstagramConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/instagram-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<MetricoolConfigDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SaveInstagramConfigAsync(Guid projectId, MetricoolConfigDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/instagram-config", dto);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp)
     {
         try

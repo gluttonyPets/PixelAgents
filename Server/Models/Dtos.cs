@@ -62,4 +62,7 @@ namespace Server.Models
 
     // ── Telegram ──
     public record TelegramConfigDto(string BotToken, string ChatId);
+
+    // ── Instagram (Metricool) ──
+    public record MetricoolConfigDto(string UserToken, string UserId, string BlogId, string Timezone);
 }
