@@ -8,6 +8,9 @@ namespace Server.Services.Ai
         [JsonPropertyName("type")]
         public string Type { get; set; } = default!;
 
+        [JsonPropertyName("title")]
+        public string? Title { get; set; }
+
         [JsonPropertyName("content")]
         public string? Content { get; set; }
 
@@ -55,6 +58,7 @@ namespace Server.Services.Ai
     {
         private const string TextOutputInstruction = @"IMPORTANTE: Debes responder SIEMPRE en JSON valido con esta estructura exacta (sin texto adicional fuera del JSON):
 {
+  ""title"": ""titulo corto y atractivo para publicacion"",
   ""content"": ""tu respuesta completa aqui"",
   ""summary"": ""resumen de 1-2 frases"",
   ""items"": [
@@ -64,6 +68,7 @@ namespace Server.Services.Ai
 }
 
 Reglas:
+- ""title"" es obligatorio: crea un titulo corto, atractivo y descriptivo (maximo 100 caracteres). Este titulo se usara como descripcion de la publicacion en redes sociales.
 - ""content"" es obligatorio: pon aqui tu respuesta principal completa.
 - ""summary"" es obligatorio: resumen breve del contenido.
 - Si generas multiples elementos (slides, prompts de imagen, secciones, partes), pon cada uno como un objeto en ""items"" con su ""content"" y ""label"".

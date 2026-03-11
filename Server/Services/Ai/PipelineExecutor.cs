@@ -577,6 +577,7 @@ namespace Server.Services.Ai
 
             // For caption, skip Interaction steps (their output is just the user's response, e.g. "continue")
             var previousText = "";
+            string? previousTitle = null;
             var candidateOrders = stepOutputs.Keys
                 .Where(k => k < pm.StepOrder)
                 .OrderByDescending(k => k)
@@ -591,12 +592,29 @@ namespace Server.Services.Ai
                 if (stepOutputs.TryGetValue(co, out var prevOutput))
                 {
                     previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
+                    if (!string.IsNullOrWhiteSpace(prevOutput.Title))
+                        previousTitle ??= prevOutput.Title;
                     break;
                 }
                 if (stepResults.TryGetValue(co, out var prevResult))
                 {
                     previousText = prevResult.TextOutput ?? "";
                     break;
+                }
+            }
+
+            // If no title found yet, search all previous non-Interaction steps for a title
+            if (previousTitle is null)
+            {
+                foreach (var co in candidateOrders)
+                {
+                    if (stepModuleTypes.TryGetValue(co, out var mt) && mt == "Interaction")
+                        continue;
+                    if (stepOutputs.TryGetValue(co, out var so) && !string.IsNullOrWhiteSpace(so.Title))
+                    {
+                        previousTitle = so.Title;
+                        break;
+                    }
                 }
             }
 
@@ -610,9 +628,12 @@ namespace Server.Services.Ai
                     previousText = fbResult.TextOutput ?? "";
             }
 
-            var caption = captionTemplate
-                .Replace("{previous_output}", previousText)
-                .Replace("{step_number}", pm.StepOrder.ToString());
+            // Use the AI-generated title as caption if available, otherwise fall back to template
+            var caption = !string.IsNullOrWhiteSpace(previousTitle) && captionTemplate == "{previous_output}"
+                ? previousTitle
+                : captionTemplate
+                    .Replace("{previous_output}", previousText)
+                    .Replace("{step_number}", pm.StepOrder.ToString());
 
             await _logger.LogAsync(projectId, executionId, "info",
                 $"Publicando via Buffer...", pm.StepOrder, stepName);
