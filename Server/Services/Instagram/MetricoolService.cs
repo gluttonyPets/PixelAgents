@@ -102,6 +102,7 @@ namespace Server.Services.Instagram
                             post {{
                                 id
                                 text
+                                dueAt
                                 assets {{
                                     id
                                     mimeType
@@ -156,7 +157,11 @@ namespace Server.Services.Instagram
 
             if (result.TryGetProperty("post", out var post) &&
                 post.TryGetProperty("id", out var idProp))
+            {
                 baseResult.PostId = idProp.GetString() ?? "published";
+                if (post.TryGetProperty("dueAt", out var dueAtProp))
+                    baseResult.DueAt = dueAtProp.GetString();
+            }
             else
                 baseResult.PostId = "published";
 
@@ -235,6 +240,7 @@ namespace Server.Services.Instagram
     public class BufferPublishResult
     {
         public string PostId { get; set; } = "";
+        public string? DueAt { get; set; }
         public string RequestBody { get; set; } = "";
         public string ResponseBody { get; set; } = "";
         public int StatusCode { get; set; }

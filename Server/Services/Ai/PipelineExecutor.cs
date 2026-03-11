@@ -665,19 +665,41 @@ namespace Server.Services.Ai
                 throw;
             }
 
+            // Build plain-text output with status and schedule
+            string outputText;
+            string scheduleLine = "";
+            if (bufferResult.IsSuccess)
+            {
+                if (!string.IsNullOrEmpty(bufferResult.DueAt) &&
+                    DateTime.TryParse(bufferResult.DueAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dueDate))
+                {
+                    scheduleLine = $"Programado para: {dueDate:dd/MM/yyyy HH:mm} UTC";
+                }
+                else
+                {
+                    scheduleLine = "Programado (horario pendiente de confirmacion)";
+                }
+                outputText = $"Publicacion exitosa\nPost ID: {bufferResult.PostId}\n{scheduleLine}";
+            }
+            else
+            {
+                outputText = $"Error en publicacion: {bufferResult.Error}";
+            }
+
             var publishOutput = new StepOutput
             {
                 Type = "text",
-                Content = caption,
+                Content = outputText,
                 Summary = bufferResult.IsSuccess
-                    ? $"Publicado via Buffer - {classifiedMedia.Count} archivo(s)"
+                    ? $"Publicado via Buffer - {scheduleLine}"
                     : $"Error Buffer: {bufferResult.Error}",
-                Items = [new OutputItem { Content = caption, Label = "buffer publish" }],
+                Items = [new OutputItem { Content = outputText, Label = "buffer publish" }],
                 Metadata = new Dictionary<string, object>
                 {
                     ["publishType"] = publishType,
                     ["caption"] = caption,
                     ["bufferPostId"] = bufferResult.PostId,
+                    ["bufferDueAt"] = bufferResult.DueAt ?? "",
                     ["bufferRequest"] = bufferResult.RequestBody,
                     ["bufferResponse"] = bufferResult.ResponseBody,
                     ["bufferStatusCode"] = bufferResult.StatusCode
@@ -704,14 +726,15 @@ namespace Server.Services.Ai
 
                 stepOutputs[pm.StepOrder] = publishOutput;
                 stepModuleTypes[pm.StepOrder] = "Publish";
-                stepResults[pm.StepOrder] = AiResult.Ok(caption, new Dictionary<string, object>
+                stepResults[pm.StepOrder] = AiResult.Ok(outputText, new Dictionary<string, object>
                 {
                     ["bufferPostId"] = bufferResult.PostId,
+                    ["bufferDueAt"] = bufferResult.DueAt ?? "",
                     ["mediaCount"] = classifiedMedia.Count
                 });
 
                 await _logger.LogAsync(projectId, executionId, "success",
-                    $"Publicado via Buffer (post {bufferResult.PostId}) con {classifiedMedia.Count} archivo(s)",
+                    $"Publicado via Buffer (post {bufferResult.PostId}) - {scheduleLine}",
                     pm.StepOrder, stepName);
             }
             else
