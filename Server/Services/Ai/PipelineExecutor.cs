@@ -616,7 +616,7 @@ namespace Server.Services.Ai
                     f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
                 {
                     var publicUrl = tenantDbName is not null
-                        ? $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}"
+                        ? $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}/{file.FileName}"
                         : $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
                     var kind = file.ContentType.StartsWith("video/") ? MediaKind.Video : MediaKind.Image;
                     classifiedMedia.Add(new ClassifiedMedia { Url = publicUrl, Kind = kind });

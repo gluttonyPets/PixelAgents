@@ -831,8 +831,8 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
 }).RequireAuthorization();
 
 // Public file endpoint for external services (e.g., Buffer) that cannot authenticate
-app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}", async (
-    string tenant, Guid executionId, Guid fileId, ITenantDbContextFactory factory) =>
+app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async (
+    string tenant, Guid executionId, Guid fileId, string fileName, ITenantDbContextFactory factory) =>
 {
     UserDbContext db;
     try { db = factory.Create(tenant); }
