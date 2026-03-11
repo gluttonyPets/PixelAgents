@@ -30,9 +30,6 @@ services:
       # Telegram polling mode (no WebhookBaseUrl = polling automatically)
       # If you later get a domain with HTTPS, uncomment:
       # Telegram__WebhookBaseUrl: "https://yourdomain.com"
-      # Imgur Client-ID for uploading images when server is not publicly accessible
-      # Register at https://api.imgur.com/oauth2/addclient (Anonymous usage, no OAuth needed)
-      Imgur__ClientId: "${IMGUR_CLIENT_ID:-}"
 
 volumes:
   pgdata:
