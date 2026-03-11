@@ -123,34 +123,44 @@ namespace Server.Services.Instagram
 
             var response = await _http.SendAsync(request);
             var json = await response.Content.ReadAsStringAsync();
+            var baseResult = new BufferPublishResult
+            {
+                RequestBody = requestBody,
+                ResponseBody = json,
+                StatusCode = (int)response.StatusCode
+            };
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new HttpRequestException(
-                    $"Buffer API error {(int)response.StatusCode}: {json}");
+                baseResult.Error = $"Buffer API error {(int)response.StatusCode}: {json}";
+                return baseResult;
             }
 
-            await EnsureGraphQLSuccessAsync(json);
+            // Check for GraphQL-level errors
+            try { await EnsureGraphQLSuccessAsync(json); }
+            catch (HttpRequestException ex)
+            {
+                baseResult.Error = ex.Message;
+                return baseResult;
+            }
 
             using var doc = JsonDocument.Parse(json);
             var result = doc.RootElement.GetProperty("data").GetProperty("createPost");
 
             // Check for mutation-level error (MutationError)
             if (result.TryGetProperty("message", out var errMsg))
-                throw new HttpRequestException($"Buffer error: {errMsg.GetString()}");
+            {
+                baseResult.Error = $"Buffer error: {errMsg.GetString()}";
+                return baseResult;
+            }
 
-            var postId = "published";
             if (result.TryGetProperty("post", out var post) &&
                 post.TryGetProperty("id", out var idProp))
-                postId = idProp.GetString() ?? "published";
+                baseResult.PostId = idProp.GetString() ?? "published";
+            else
+                baseResult.PostId = "published";
 
-            return new BufferPublishResult
-            {
-                PostId = postId,
-                RequestBody = requestBody,
-                ResponseBody = json,
-                StatusCode = (int)response.StatusCode
-            };
+            return baseResult;
         }
 
         /// <summary>
@@ -228,5 +238,7 @@ namespace Server.Services.Instagram
         public string RequestBody { get; set; } = "";
         public string ResponseBody { get; set; } = "";
         public int StatusCode { get; set; }
+        public string? Error { get; set; }
+        public bool IsSuccess => Error is null;
     }
 }

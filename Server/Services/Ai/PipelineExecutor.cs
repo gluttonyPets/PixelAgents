@@ -629,40 +629,54 @@ namespace Server.Services.Ai
             }
 
             // Publish via Buffer
+            BufferPublishResult bufferResult;
             try
             {
-                var bufferResult = await _buffer.PublishAsync(
+                bufferResult = await _buffer.PublishAsync(
                     bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType);
+            }
+            catch (Exception ex)
+            {
+                await _logger.LogAsync(projectId, executionId, "error",
+                    $"Error publicando via Buffer: {ex.Message}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
+                throw;
+            }
 
-                var publishOutput = new StepOutput
+            var publishOutput = new StepOutput
+            {
+                Type = "text",
+                Content = caption,
+                Summary = bufferResult.IsSuccess
+                    ? $"Publicado via Buffer - {classifiedMedia.Count} archivo(s)"
+                    : $"Error Buffer: {bufferResult.Error}",
+                Items = [new OutputItem { Content = caption, Label = "buffer publish" }],
+                Metadata = new Dictionary<string, object>
                 {
-                    Type = "text",
-                    Content = caption,
-                    Summary = $"Publicado via Buffer - {classifiedMedia.Count} archivo(s)",
-                    Items = [new OutputItem { Content = caption, Label = "buffer publish" }],
-                    Metadata = new Dictionary<string, object>
-                    {
-                        ["publishType"] = publishType,
-                        ["caption"] = caption,
-                        ["bufferPostId"] = bufferResult.PostId,
-                        ["bufferRequest"] = bufferResult.RequestBody,
-                        ["bufferResponse"] = bufferResult.ResponseBody,
-                        ["bufferStatusCode"] = bufferResult.StatusCode
-                    }
-                };
+                    ["publishType"] = publishType,
+                    ["caption"] = caption,
+                    ["bufferPostId"] = bufferResult.PostId,
+                    ["bufferRequest"] = bufferResult.RequestBody,
+                    ["bufferResponse"] = bufferResult.ResponseBody,
+                    ["bufferStatusCode"] = bufferResult.StatusCode
+                }
+            };
 
+            stepExecution.OutputData = JsonSerializer.Serialize(publishOutput);
+            stepExecution.InputData = JsonSerializer.Serialize(new
+            {
+                caption,
+                mediaCount = classifiedMedia.Count,
+                imageCount = classifiedMedia.Count(m => m.Kind == MediaKind.Image),
+                videoCount = classifiedMedia.Count(m => m.Kind == MediaKind.Video),
+                originalPublishType,
+                effectivePublishType = publishType,
+                bufferPostId = bufferResult.PostId
+            });
+
+            if (bufferResult.IsSuccess)
+            {
                 stepExecution.Status = "Completed";
-                stepExecution.OutputData = JsonSerializer.Serialize(publishOutput);
-                stepExecution.InputData = JsonSerializer.Serialize(new
-                {
-                    caption,
-                    mediaCount = classifiedMedia.Count,
-                    imageCount = classifiedMedia.Count(m => m.Kind == MediaKind.Image),
-                    videoCount = classifiedMedia.Count(m => m.Kind == MediaKind.Video),
-                    originalPublishType,
-                    effectivePublishType = publishType,
-                    bufferPostId = bufferResult.PostId
-                });
                 stepExecution.CompletedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
 
@@ -678,12 +692,12 @@ namespace Server.Services.Ai
                     $"Publicado via Buffer (post {bufferResult.PostId}) con {classifiedMedia.Count} archivo(s)",
                     pm.StepOrder, stepName);
             }
-            catch (Exception ex)
+            else
             {
                 await _logger.LogAsync(projectId, executionId, "error",
-                    $"Error publicando via Buffer: {ex.Message}", pm.StepOrder, stepName);
-                await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
-                throw;
+                    $"Error publicando via Buffer: {bufferResult.Error}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, $"Error Buffer: {bufferResult.Error}", db);
+                throw new InvalidOperationException(bufferResult.Error);
             }
         }
 
