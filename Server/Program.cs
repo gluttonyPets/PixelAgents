@@ -830,6 +830,33 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     return Results.File(bytes, file.ContentType, file.FileName);
 }).RequireAuthorization();
 
+// Public file endpoint for external services (e.g., Buffer) that cannot authenticate
+app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}", async (
+    string tenant, Guid executionId, Guid fileId, ITenantDbContextFactory factory) =>
+{
+    UserDbContext db;
+    try { db = factory.Create(tenant); }
+    catch { return Results.NotFound(); }
+
+    await using (db)
+    {
+        var exec = await db.ProjectExecutions
+            .FirstOrDefaultAsync(e => e.Id == executionId);
+        if (exec is null) return Results.NotFound();
+
+        var file = await db.ExecutionFiles
+            .FirstOrDefaultAsync(f => f.Id == fileId &&
+                f.StepExecution.ExecutionId == executionId);
+        if (file is null) return Results.NotFound();
+
+        var fullPath = Path.Combine(exec.WorkspacePath, file.FilePath);
+        if (!File.Exists(fullPath)) return Results.NotFound();
+
+        var bytes = await File.ReadAllBytesAsync(fullPath);
+        return Results.File(bytes, file.ContentType, file.FileName);
+    }
+});
+
 // ==================== WhatsApp Config Endpoints ====================
 
 app.MapGet("/api/projects/{projectId:guid}/whatsapp-config", async (

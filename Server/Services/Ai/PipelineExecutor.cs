@@ -171,7 +171,7 @@ namespace Server.Services.Ai
                     {
                         await HandlePublishStepAsync(
                             project, execution, stepExecution, pm,
-                            stepResults, stepOutputs, stepModuleTypes, db);
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
 
@@ -543,7 +543,8 @@ namespace Server.Services.Ai
             Dictionary<int, AiResult> stepResults,
             Dictionary<int, StepOutput> stepOutputs,
             Dictionary<int, string> stepModuleTypes,
-            UserDbContext db)
+            UserDbContext db,
+            string? tenantDbName = null)
         {
             var stepName = pm.StepName ?? pm.AiModule.Name;
             var projectId = project.Id;
@@ -597,7 +598,9 @@ namespace Server.Services.Ai
                 foreach (var file in prevStepExec.Files.Where(f =>
                     f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
                 {
-                    var publicUrl = $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
+                    var publicUrl = tenantDbName is not null
+                        ? $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}"
+                        : $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
                     var kind = file.ContentType.StartsWith("video/") ? MediaKind.Video : MediaKind.Image;
                     classifiedMedia.Add(new ClassifiedMedia { Url = publicUrl, Kind = kind });
                 }
@@ -1027,7 +1030,7 @@ namespace Server.Services.Ai
                     {
                         await HandlePublishStepAsync(
                             project, execution, stepExecution, pm,
-                            stepResults, stepOutputs, stepModuleTypes, db);
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
 
@@ -1456,7 +1459,7 @@ namespace Server.Services.Ai
                     {
                         await HandlePublishStepAsync(
                             project, execution, stepExecution, pm,
-                            stepResults, stepOutputs, stepModuleTypes, db);
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
 
