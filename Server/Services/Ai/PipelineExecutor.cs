@@ -593,7 +593,9 @@ namespace Server.Services.Ai
 
             if (prevStepExec?.Files is not null)
             {
-                var serverBaseUrl = (_configuration["BaseUrl"] ?? "").TrimEnd('/');
+                var serverBaseUrl = (_configuration["BaseUrl"]
+                    ?? _configuration["AllowedOrigin"]
+                    ?? "").TrimEnd('/');
 
                 foreach (var file in prevStepExec.Files.Where(f =>
                     f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
