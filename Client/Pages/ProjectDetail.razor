@@ -306,6 +306,27 @@ else
             }
         }
 
+        @if (selectedModule?.ModuleType == "Text")
+        {
+            <div class="form-group" style="margin-top: 0.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" @bind="_isImagePrompt" />
+                    Este paso genera prompts para imagenes
+                </label>
+            </div>
+            @if (_isImagePrompt)
+            {
+                <div class="form-group">
+                    <label>Numero de imagenes a generar</label>
+                    <input type="number" @bind="_imageCount" min="1" max="20" style="max-width: 100px;" />
+                    <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                        Se forzara al modelo a devolver exactamente @_imageCount item(s) en la respuesta,
+                        cada uno sera un prompt para el paso de generacion de imagenes.
+                    </p>
+                </div>
+            }
+        }
+
         @if (selectedModule?.ModuleType == "Publish")
         {
             <div class="form-group">
@@ -659,6 +680,9 @@ else
     private string _interactionWaitForResponse = "true";
 
     // Publish step (Buffer)
+    private bool _isImagePrompt = false;
+    private int _imageCount = 1;
+
     private string _publishCaption = "";
     private string _publishType = "post";
 
@@ -897,6 +921,14 @@ else
                     waitForResponse = _interactionWaitForResponse == "true"
                 });
             }
+            if (mod?.ModuleType == "Text" && _isImagePrompt)
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    isImagePrompt = true,
+                    imageCount = _imageCount
+                });
+            }
             if (mod?.ModuleType == "Publish")
             {
                 stepConfig = JsonSerializer.Serialize(new
@@ -907,7 +939,7 @@ else
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _publishCaption = ""; _publishType = "post"; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _publishCaption = ""; _publishType = "post"; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }

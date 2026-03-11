@@ -194,6 +194,10 @@ namespace Server.Services.Ai
                             config["systemPrompt"] = rule;
                     }
 
+                    // Inject image count rule if configured
+                    if (pm.AiModule.ModuleType == "Text")
+                        InjectImageCountRule(config);
+
                     // Resolve inputs: check if previous step has multiple items
                     var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
 
@@ -1120,6 +1124,10 @@ namespace Server.Services.Ai
                             config["systemPrompt"] = rule;
                     }
 
+                    // Inject image count rule if configured
+                    if (pm.AiModule.ModuleType == "Text")
+                        InjectImageCountRule(config);
+
                     var inputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
 
                     if (pm.AiModule.ModuleType == "Text")
@@ -1312,6 +1320,34 @@ namespace Server.Services.Ai
             }
 
             return config;
+        }
+
+        /// <summary>
+        /// If the Text step is configured as an image prompt generator, injects a rule
+        /// forcing the model to return exactly N items in the output.
+        /// </summary>
+        private static void InjectImageCountRule(Dictionary<string, object> config)
+        {
+            if (!config.TryGetValue("isImagePrompt", out var ipVal))
+                return;
+
+            var isImgPrompt = ipVal is JsonElement jpIp ? jpIp.GetBoolean() : ipVal is bool b && b;
+            if (!isImgPrompt)
+                return;
+
+            var imgCount = 1;
+            if (config.TryGetValue("imageCount", out var icVal))
+                imgCount = icVal is JsonElement jpIc ? jpIc.GetInt32() : Convert.ToInt32(icVal);
+
+            var imgRule = $"\n\nREGLA DE IMAGENES: Este prompt genera descripciones para imagenes. " +
+                $"DEBES devolver EXACTAMENTE {imgCount} elemento(s) en el array \"items\". " +
+                $"Cada item debe ser un prompt descriptivo independiente para generar una imagen. " +
+                $"No generes mas ni menos de {imgCount}. Esto es obligatorio.";
+
+            if (config.TryGetValue("systemPrompt", out var existingSp) && existingSp is string sp)
+                config["systemPrompt"] = sp + imgRule;
+            else
+                config["systemPrompt"] = imgRule;
         }
 
         public async Task<ProjectExecution> AbortFromInteractionAsync(
@@ -1549,6 +1585,10 @@ namespace Server.Services.Ai
                         else
                             config["systemPrompt"] = rule;
                     }
+
+                    // Inject image count rule if configured
+                    if (pm.AiModule.ModuleType == "Text")
+                        InjectImageCountRule(config);
 
                     var inputs = ResolveInputs(pm, originalUserInput, stepResults, stepOutputs,
                         pm.AiModule.ModuleType, pm.AiModule.ModelName);
