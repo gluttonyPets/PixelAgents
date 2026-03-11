@@ -92,7 +92,7 @@ namespace Server.Services.Instagram
                     createPost(input: {{
                         text: ""{escapedText}"",
                         channelId: ""{config.ChannelId}"",
-                        metadata: {{ instagram: {{ type: {igType} }} }},
+                        metadata: {{ instagram: {{ type: {igType}, shouldShareToFeed: true }} }},
                         schedulingType: automatic,
                         mode: customScheduled,
                         dueAt: ""{dueAt}""
