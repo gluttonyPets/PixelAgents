@@ -575,12 +575,40 @@ namespace Server.Services.Ai
                     captionTemplate = cap;
             }
 
+            // For caption, skip Interaction steps (their output is just the user's response, e.g. "continue")
             var previousText = "";
-            var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
-            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput))
-                previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
-            else if (stepResults.TryGetValue(prevOrder, out var prevResult))
-                previousText = prevResult.TextOutput ?? "";
+            var candidateOrders = stepOutputs.Keys
+                .Where(k => k < pm.StepOrder)
+                .OrderByDescending(k => k)
+                .ToList();
+
+            foreach (var co in candidateOrders)
+            {
+                if (stepModuleTypes.TryGetValue(co, out var prevModType) &&
+                    prevModType == "Interaction")
+                    continue;
+
+                if (stepOutputs.TryGetValue(co, out var prevOutput))
+                {
+                    previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
+                    break;
+                }
+                if (stepResults.TryGetValue(co, out var prevResult))
+                {
+                    previousText = prevResult.TextOutput ?? "";
+                    break;
+                }
+            }
+
+            // Fallback: if all previous steps were Interaction, use the most recent one
+            if (string.IsNullOrEmpty(previousText) && candidateOrders.Count > 0)
+            {
+                var fallbackOrder = candidateOrders[0];
+                if (stepOutputs.TryGetValue(fallbackOrder, out var fbOutput))
+                    previousText = fbOutput.Content ?? string.Join("\n", fbOutput.Items.Select(i => i.Content));
+                else if (stepResults.TryGetValue(fallbackOrder, out var fbResult))
+                    previousText = fbResult.TextOutput ?? "";
+            }
 
             var caption = captionTemplate
                 .Replace("{previous_output}", previousText)
@@ -589,11 +617,16 @@ namespace Server.Services.Ai
             await _logger.LogAsync(projectId, executionId, "info",
                 $"Publicando via Buffer...", pm.StepOrder, stepName);
 
-            // Collect and classify media from previous step output
+            // Collect and classify media from the nearest non-Interaction previous step
             var classifiedMedia = new List<ClassifiedMedia>();
+            var mediaStepOrder = candidateOrders.FirstOrDefault(co =>
+                !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
+            if (mediaStepOrder == 0 && candidateOrders.Count > 0)
+                mediaStepOrder = candidateOrders[0]; // fallback
+
             var prevStepExec = await db.StepExecutions
                 .Include(s => s.Files)
-                .FirstOrDefaultAsync(s => s.ExecutionId == executionId && s.StepOrder == prevOrder);
+                .FirstOrDefaultAsync(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder);
 
             if (prevStepExec?.Files is not null)
             {
