@@ -9,6 +9,55 @@ namespace Server.Services.Instagram
         public string ChannelId { get; set; } = default!;
     }
 
+    /// <summary>
+    /// Uploads images to Imgur anonymously so they get a public URL
+    /// that external services (like Buffer) can access.
+    /// </summary>
+    public class ImgurUploader
+    {
+        private readonly HttpClient _http;
+        private const string UploadUrl = "https://api.imgur.com/3/image";
+        // Imgur anonymous Client-ID (register at https://api.imgur.com/oauth2/addclient)
+        private readonly string _clientId;
+
+        public ImgurUploader(HttpClient http, string clientId)
+        {
+            _http = http;
+            _clientId = clientId;
+        }
+
+        /// <summary>
+        /// Uploads an image from a local file path and returns the public URL.
+        /// </summary>
+        public async Task<string> UploadAsync(string filePath)
+        {
+            var bytes = await File.ReadAllBytesAsync(filePath);
+            var base64 = Convert.ToBase64String(bytes);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, UploadUrl);
+            request.Headers.Add("Authorization", $"Client-ID {_clientId}");
+
+            var form = new MultipartFormDataContent();
+            form.Add(new StringContent(base64), "image");
+            form.Add(new StringContent("base64"), "type");
+            request.Content = form;
+
+            var response = await _http.SendAsync(request);
+            var json = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException($"Imgur upload failed ({(int)response.StatusCode}): {json}");
+
+            using var doc = JsonDocument.Parse(json);
+            var link = doc.RootElement
+                .GetProperty("data")
+                .GetProperty("link")
+                .GetString();
+
+            return link ?? throw new InvalidOperationException("Imgur returned no link");
+        }
+    }
+
     public class BufferService
     {
         private readonly HttpClient _http;
@@ -18,6 +67,9 @@ namespace Server.Services.Instagram
         {
             _http = http;
         }
+
+        /// <summary>Exposes the HttpClient for reuse by ImgurUploader.</summary>
+        public HttpClient GetHttpClient() => _http;
 
         private static async Task EnsureGraphQLSuccessAsync(string json)
         {

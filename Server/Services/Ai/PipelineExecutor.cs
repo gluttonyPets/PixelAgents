@@ -597,13 +597,63 @@ namespace Server.Services.Ai
                     ?? _configuration["AllowedOrigin"]
                     ?? "").TrimEnd('/');
 
+                // Determine if URL is publicly accessible (not localhost/private)
+                var isPublicUrl = !string.IsNullOrEmpty(serverBaseUrl)
+                    && !serverBaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+                    && !serverBaseUrl.Contains("127.0.0.1")
+                    && !serverBaseUrl.Contains("0.0.0.0");
+
+                // If not public, use Imgur to upload images so Buffer can access them
+                var imgurClientId = _configuration["Imgur:ClientId"];
+                var useImgur = !isPublicUrl && !string.IsNullOrWhiteSpace(imgurClientId);
+                ImgurUploader? imgur = null;
+                if (useImgur)
+                {
+                    imgur = new ImgurUploader(_buffer.GetHttpClient(), imgurClientId!);
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        "URL local detectada, subiendo imagenes a Imgur...", pm.StepOrder, stepName);
+                }
+
+                // Pre-fetch workspace path if we'll need it for Imgur uploads
+                string? workspacePath = null;
+                if (imgur is not null)
+                {
+                    var exec = await db.ProjectExecutions.FirstAsync(e => e.Id == executionId);
+                    workspacePath = exec.WorkspacePath;
+                }
+
                 foreach (var file in prevStepExec.Files.Where(f =>
                     f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
                 {
-                    var publicUrl = tenantDbName is not null
-                        ? $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}"
-                        : $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
                     var kind = file.ContentType.StartsWith("video/") ? MediaKind.Video : MediaKind.Image;
+                    string publicUrl;
+
+                    if (imgur is not null && kind == MediaKind.Image)
+                    {
+                        // Upload to Imgur for a publicly accessible URL
+                        var fullPath = Path.Combine(workspacePath!, file.FilePath);
+                        try
+                        {
+                            publicUrl = await imgur.UploadAsync(fullPath);
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Imagen subida a Imgur: {publicUrl}", pm.StepOrder, stepName);
+                        }
+                        catch (Exception ex)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "warning",
+                                $"Error subiendo a Imgur: {ex.Message}. Usando URL local como fallback.", pm.StepOrder, stepName);
+                            publicUrl = tenantDbName is not null
+                                ? $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}"
+                                : $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
+                        }
+                    }
+                    else
+                    {
+                        publicUrl = tenantDbName is not null
+                            ? $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}"
+                            : $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
+                    }
+
                     classifiedMedia.Add(new ClassifiedMedia { Url = publicUrl, Kind = kind });
                 }
             }
