@@ -692,7 +692,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 
         return Results.Ok(new ExecutionDetailResponse(
             exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, steps));
+            exec.CreatedAt, exec.CompletedAt, exec.UserInput, steps));
     }
     catch (Exception ex)
     {
@@ -712,7 +712,7 @@ app.MapGet("/api/projects/{projectId}/executions", async (
         .Where(e => e.ProjectId == projectId)
         .OrderByDescending(e => e.CreatedAt)
         .Select(e => new ExecutionResponse(e.Id, e.ProjectId, e.Status,
-            e.WorkspacePath, e.CreatedAt, e.CompletedAt))
+            e.WorkspacePath, e.CreatedAt, e.CompletedAt, e.UserInput))
         .ToListAsync();
 
     return Results.Ok(executions);
@@ -747,7 +747,7 @@ app.MapGet("/api/executions/{id}", async (
 
     return Results.Ok(new ExecutionDetailResponse(
         exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-        exec.CreatedAt, exec.CompletedAt, steps));
+        exec.CreatedAt, exec.CompletedAt, exec.UserInput, steps));
 }).RequireAuthorization();
 
 // Retry execution from a specific step
@@ -790,7 +790,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
 
         return Results.Ok(new ExecutionDetailResponse(
             exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, steps));
+            exec.CreatedAt, exec.CompletedAt, exec.UserInput, steps));
     }
     catch (Exception ex)
     {

@@ -95,6 +95,7 @@ namespace Server.Data
 
                 e.HasIndex(x => x.ProjectId);
                 e.Property(x => x.PausedStepData).HasColumnType("text");
+                e.Property(x => x.UserInput).HasColumnType("text");
             });
 
             // ── StepExecution ──

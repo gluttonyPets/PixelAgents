@@ -106,6 +106,7 @@ namespace Server.Services.Ai
                 Status = "Running",
                 WorkspacePath = workspacePath,
                 CreatedAt = DateTime.UtcNow,
+                UserInput = userInput,
             };
 
             db.ProjectExecutions.Add(execution);

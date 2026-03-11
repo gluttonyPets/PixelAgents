@@ -45,6 +45,8 @@ namespace Server.Services
                     "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtStepOrder\" integer");
                 ctx.Database.ExecuteSqlRaw(
                     "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text");
+                ctx.Database.ExecuteSqlRaw(
+                    "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"UserInput\" text");
             }
             catch { /* column already exists or table doesn't exist yet */ }
         }

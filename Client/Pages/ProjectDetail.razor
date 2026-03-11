@@ -392,6 +392,14 @@ else
                 {
                     <h3>Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span></h3>
 
+                    @if (!string.IsNullOrWhiteSpace(_result.UserInput))
+                    {
+                        <div class="card" style="margin-bottom: 0.8rem; padding: 0.6rem 0.8rem;">
+                            <label class="text-sm text-muted" style="margin-bottom: 0.2rem;">Prompt inicial</label>
+                            <div class="output-block" style="white-space: pre-wrap;">@_result.UserInput</div>
+                        </div>
+                    }
+
                     @foreach (var step in _result.Steps.OrderBy(s => s.StepOrder))
                     {
                         <div class="step-card">
@@ -613,6 +621,7 @@ else
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Prompt</th>
                     <th>Status</th>
                     <th>Fecha</th>
                     <th></th>
@@ -623,6 +632,9 @@ else
                 {
                     <tr>
                         <td class="text-sm">@e.Id.ToString()[..8]...</td>
+                        <td class="text-sm" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            @(e.UserInput is not null ? (e.UserInput.Length > 80 ? e.UserInput[..80] + "..." : e.UserInput) : "-")
+                        </td>
                         <td><span class="badge @StatusBadge(e.Status)">@e.Status</span></td>
                         <td class="text-sm text-muted">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
                         <td><button class="btn btn-sm btn-primary" @onclick="() => LoadExecution(e.Id)">Ver</button></td>

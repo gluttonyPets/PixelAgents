@@ -43,10 +43,10 @@ namespace Server.Models
     public record RetryFromStepRequest(int StepOrder, string? Comment);
     public record ExecutionResponse(
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
-        DateTime CreatedAt, DateTime? CompletedAt);
+        DateTime CreatedAt, DateTime? CompletedAt, string? UserInput);
     public record ExecutionDetailResponse(
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
-        DateTime CreatedAt, DateTime? CompletedAt,
+        DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
         List<StepExecutionResponse> Steps);
     public record StepExecutionResponse(
         Guid Id, Guid ProjectModuleId, string ModuleName, int StepOrder,
