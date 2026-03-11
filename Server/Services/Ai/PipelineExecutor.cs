@@ -612,12 +612,17 @@ namespace Server.Services.Ai
                         pm.StepOrder, stepName);
                 }
 
+                if (tenantDbName is null)
+                {
+                    await _logger.LogAsync(projectId, executionId, "error",
+                        "No se puede publicar con imagenes sin tenant. Buffer necesita una URL publica.",
+                        pm.StepOrder, stepName);
+                }
+
                 foreach (var file in prevStepExec.Files.Where(f =>
                     f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
                 {
-                    var publicUrl = tenantDbName is not null
-                        ? $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}/{file.FileName}"
-                        : $"{serverBaseUrl}/api/executions/{executionId}/files/{file.Id}";
+                    var publicUrl = $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}/{file.FileName}";
                     var kind = file.ContentType.StartsWith("video/") ? MediaKind.Video : MediaKind.Image;
                     classifiedMedia.Add(new ClassifiedMedia { Url = publicUrl, Kind = kind });
                 }
