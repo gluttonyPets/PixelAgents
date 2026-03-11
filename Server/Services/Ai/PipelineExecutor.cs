@@ -631,7 +631,7 @@ namespace Server.Services.Ai
             // Publish via Buffer
             try
             {
-                var postId = await _buffer.PublishAsync(
+                var bufferResult = await _buffer.PublishAsync(
                     bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType);
 
                 var publishOutput = new StepOutput
@@ -639,7 +639,16 @@ namespace Server.Services.Ai
                     Type = "text",
                     Content = caption,
                     Summary = $"Publicado via Buffer - {classifiedMedia.Count} archivo(s)",
-                    Items = [new OutputItem { Content = caption, Label = "buffer publish" }]
+                    Items = [new OutputItem { Content = caption, Label = "buffer publish" }],
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["publishType"] = publishType,
+                        ["caption"] = caption,
+                        ["bufferPostId"] = bufferResult.PostId,
+                        ["bufferRequest"] = bufferResult.RequestBody,
+                        ["bufferResponse"] = bufferResult.ResponseBody,
+                        ["bufferStatusCode"] = bufferResult.StatusCode
+                    }
                 };
 
                 stepExecution.Status = "Completed";
@@ -652,7 +661,7 @@ namespace Server.Services.Ai
                     videoCount = classifiedMedia.Count(m => m.Kind == MediaKind.Video),
                     originalPublishType,
                     effectivePublishType = publishType,
-                    bufferPostId = postId
+                    bufferPostId = bufferResult.PostId
                 });
                 stepExecution.CompletedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
@@ -661,12 +670,12 @@ namespace Server.Services.Ai
                 stepModuleTypes[pm.StepOrder] = "Publish";
                 stepResults[pm.StepOrder] = AiResult.Ok(caption, new Dictionary<string, object>
                 {
-                    ["bufferPostId"] = postId,
+                    ["bufferPostId"] = bufferResult.PostId,
                     ["mediaCount"] = classifiedMedia.Count
                 });
 
                 await _logger.LogAsync(projectId, executionId, "success",
-                    $"Publicado via Buffer (post {postId}) con {classifiedMedia.Count} archivo(s)",
+                    $"Publicado via Buffer (post {bufferResult.PostId}) con {classifiedMedia.Count} archivo(s)",
                     pm.StepOrder, stepName);
             }
             catch (Exception ex)

@@ -40,7 +40,7 @@ namespace Server.Services.Instagram
         /// Creates and schedules a post on Buffer using inline GraphQL (no variables).
         /// Buffer's schema uses enums without quotes for schedulingType and mode.
         /// </summary>
-        public async Task<string> PublishAsync(
+        public async Task<BufferPublishResult> PublishAsync(
             BufferConfig config,
             string text,
             List<ClassifiedMedia>? media = null,
@@ -118,19 +118,18 @@ namespace Server.Services.Instagram
             request.Headers.Add("Authorization", $"Bearer {config.ApiKey}");
 
             var body = new Dictionary<string, object> { ["query"] = mutation };
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var requestBody = JsonSerializer.Serialize(body);
+            request.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
             var response = await _http.SendAsync(request);
+            var json = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
             {
-                var errorBody = await response.Content.ReadAsStringAsync();
                 throw new HttpRequestException(
-                    $"Buffer API error {(int)response.StatusCode}: {errorBody}");
+                    $"Buffer API error {(int)response.StatusCode}: {json}");
             }
 
-            var json = await response.Content.ReadAsStringAsync();
             await EnsureGraphQLSuccessAsync(json);
 
             using var doc = JsonDocument.Parse(json);
@@ -140,11 +139,18 @@ namespace Server.Services.Instagram
             if (result.TryGetProperty("message", out var errMsg))
                 throw new HttpRequestException($"Buffer error: {errMsg.GetString()}");
 
+            var postId = "published";
             if (result.TryGetProperty("post", out var post) &&
                 post.TryGetProperty("id", out var idProp))
-                return idProp.GetString() ?? "published";
+                postId = idProp.GetString() ?? "published";
 
-            return "published";
+            return new BufferPublishResult
+            {
+                PostId = postId,
+                RequestBody = requestBody,
+                ResponseBody = json,
+                StatusCode = (int)response.StatusCode
+            };
         }
 
         /// <summary>
@@ -214,5 +220,13 @@ namespace Server.Services.Instagram
     {
         public string Url { get; set; } = "";
         public MediaKind Kind { get; set; }
+    }
+
+    public class BufferPublishResult
+    {
+        public string PostId { get; set; } = "";
+        public string RequestBody { get; set; } = "";
+        public string ResponseBody { get; set; } = "";
+        public int StatusCode { get; set; }
     }
 }

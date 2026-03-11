@@ -455,6 +455,11 @@ else
                                             {
                                                 <span class="badge badge-info">Caption: @caption</span>
                                             }
+                                            @if (parsed.Metadata.ContainsKey("bufferRequest"))
+                                            {
+                                                <button class="btn btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem; margin-left: 0.3rem;"
+                                                        @onclick="() => ShowBufferDebug(parsed)">Ver API</button>
+                                            }
                                             @if (parsed.Metadata.TryGetValue("model", out var model))
                                             {
                                                 <span class="badge badge-warning">@model</span>
@@ -611,6 +616,25 @@ else
     }
 }
 
+@if (_showBufferDebug)
+{
+    <div class="modal-overlay" @onclick="() => _showBufferDebug = false">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <strong>Buffer API Debug</strong>
+                <span class="badge @(_bufferDebugStatus == 200 ? "badge-success" : "badge-danger")">@_bufferDebugStatus</span>
+                <button class="btn btn-sm" style="margin-left: auto; padding: 0.1rem 0.4rem;" @onclick="() => _showBufferDebug = false">X</button>
+            </div>
+            <div class="modal-body">
+                <h4>Request</h4>
+                <pre class="debug-pre">@_bufferDebugRequest</pre>
+                <h4>Response</h4>
+                <pre class="debug-pre">@_bufferDebugResponse</pre>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public Guid ProjectId { get; set; }
 
@@ -666,6 +690,12 @@ else
     private string? _igError;
     private bool _igSuccess;
     private bool _igSaving;
+
+    // Buffer API debug modal
+    private bool _showBufferDebug;
+    private string? _bufferDebugRequest;
+    private string? _bufferDebugResponse;
+    private int? _bufferDebugStatus;
 
     // WhatsApp config
     private string _waPhoneNumberId = "";
@@ -1043,6 +1073,39 @@ else
     private void ClearLog()
     {
         _logEntries.Clear();
+    }
+
+    private void ShowBufferDebug(StepOutputDto parsed)
+    {
+        _bufferDebugRequest = null;
+        _bufferDebugResponse = null;
+        _bufferDebugStatus = null;
+
+        if (parsed.Metadata is not null)
+        {
+            if (parsed.Metadata.TryGetValue("bufferRequest", out var req))
+                _bufferDebugRequest = FormatJson(req?.ToString());
+            if (parsed.Metadata.TryGetValue("bufferResponse", out var resp))
+                _bufferDebugResponse = FormatJson(resp?.ToString());
+            if (parsed.Metadata.TryGetValue("bufferStatusCode", out var sc))
+            {
+                if (sc is JsonElement je && je.TryGetInt32(out var code))
+                    _bufferDebugStatus = code;
+            }
+        }
+
+        _showBufferDebug = true;
+    }
+
+    private static string? FormatJson(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return raw;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return raw; }
     }
 
     private static StepOutputDto? TryParseOutput(string? json)
