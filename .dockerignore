@@ -3,5 +3,5 @@
 **/.vs/
 **/.vscode/
 **/node_modules/
-.git/logs/
+.git/
 *.md

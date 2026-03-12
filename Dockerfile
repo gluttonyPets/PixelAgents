@@ -2,14 +2,13 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-server
 WORKDIR /src
 
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+ARG GIT_COMMIT=unknown
 
-COPY .git/ .git/
 COPY Server/Server.csproj Server/
 RUN dotnet restore Server/Server.csproj
 
 COPY Server/ Server/
-RUN dotnet publish Server/Server.csproj -c Release -o /app/server
+RUN dotnet publish Server/Server.csproj -c Release -o /app/server -p:GitCommitHash=${GIT_COMMIT}
 
 # ── Stage 2: Build Client (Blazor WASM) ──
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-client

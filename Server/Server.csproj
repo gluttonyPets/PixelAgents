@@ -17,7 +17,8 @@
   </ItemGroup>
 
   <Target Name="SetGitInfo" BeforeTargets="CoreCompile">
-    <Exec Command="git rev-parse --short HEAD" ConsoleToMsBuild="true" IgnoreExitCode="true">
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMsBuild="true" IgnoreExitCode="true"
+          Condition="'$(GitCommitHash)' == ''">
       <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitHash" />
     </Exec>
     <PropertyGroup>
