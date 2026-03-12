@@ -1,24 +1,8 @@
 @inherits LayoutComponentBase
-@inject Client.Services.ApiClient Api
 
 <div class="app-layout">
     <NavMenu />
     <div class="main-content">
-        <div class="top-bar">
-            @if (_buildInfo is not null)
-            {
-                <span class="build-info">@_buildInfo.BuildDate | @_buildInfo.CommitHash</span>
-            }
-        </div>
         @Body
     </div>
 </div>
-
-@code {
-    private Client.Models.BuildInfoResponse? _buildInfo;
-
-    protected override async Task OnInitializedAsync()
-    {
-        try { _buildInfo = await Api.GetBuildInfoAsync(); } catch { }
-    }
-}
