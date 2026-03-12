@@ -3,6 +3,5 @@
 **/.vs/
 **/.vscode/
 **/node_modules/
-.git/objects/pack/
 .git/logs/
 *.md
