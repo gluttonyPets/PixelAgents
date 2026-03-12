@@ -8,7 +8,8 @@ COPY Server/Server.csproj Server/
 RUN dotnet restore Server/Server.csproj
 
 COPY Server/ Server/
-RUN dotnet publish Server/Server.csproj -c Release -o /app/server -p:GitCommitHash=${GIT_COMMIT}
+RUN echo "{\"commitHash\":\"${GIT_COMMIT}\",\"buildDate\":\"$(date -u '+%Y-%m-%d %H:%M:%S UTC')\"}" > Server/build-info.json
+RUN dotnet publish Server/Server.csproj -c Release -o /app/server
 
 # ── Stage 2: Build Client (Blazor WASM) ──
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-client

@@ -1154,12 +1154,13 @@ app.MapHub<ExecutionHub>("/hubs/execution");
 // ── Build info ──
 app.MapGet("/api/build-info", () =>
 {
-    var asm = System.Reflection.Assembly.GetExecutingAssembly();
-    var attrs = asm.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false)
-        .Cast<System.Reflection.AssemblyMetadataAttribute>();
-    var commitHash = attrs.FirstOrDefault(a => a.Key == "GitCommitHash")?.Value ?? "unknown";
-    var buildDate = attrs.FirstOrDefault(a => a.Key == "BuildDate")?.Value ?? "unknown";
-    return Results.Ok(new { commitHash, buildDate });
+    var path = Path.Combine(AppContext.BaseDirectory, "build-info.json");
+    if (File.Exists(path))
+    {
+        var json = File.ReadAllText(path);
+        return Results.Content(json, "application/json");
+    }
+    return Results.Ok(new { commitHash = "unknown", buildDate = "unknown" });
 });
 
 app.Run();
