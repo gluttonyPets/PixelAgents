@@ -1,5 +1,8 @@
 namespace Client.Models;
 
+// ── Build Info ──
+public record BuildInfoResponse(string CommitHash, string BuildDate);
+
 // ── Auth ──
 public record RegisterRequest(string Email, string Password);
 public record LoginRequest(string Email, string Password, bool RememberMe = false);

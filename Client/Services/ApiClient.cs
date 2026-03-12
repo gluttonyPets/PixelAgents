@@ -250,6 +250,15 @@ public class ApiClient
         return resp.IsSuccessStatusCode;
     }
 
+    // ── Build Info ──
+
+    public async Task<BuildInfoResponse?> GetBuildInfoAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/build-info");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<BuildInfoResponse>();
+    }
+
     // ── Internal ──
 
     private const int MaxRetries = 2;

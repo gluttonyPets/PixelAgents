@@ -1151,4 +1151,15 @@ app.MapPost("/api/webhooks/telegram", async (
 
 app.MapHub<ExecutionHub>("/hubs/execution");
 
+// ── Build info ──
+app.MapGet("/api/build-info", () =>
+{
+    var asm = System.Reflection.Assembly.GetExecutingAssembly();
+    var commitHash = asm.GetCustomAttributes<System.Reflection.AssemblyMetadataAttribute>()
+        .FirstOrDefault(a => a.Key == "GitCommitHash")?.Value ?? "unknown";
+    var buildDate = asm.GetCustomAttributes<System.Reflection.AssemblyMetadataAttribute>()
+        .FirstOrDefault(a => a.Key == "BuildDate")?.Value ?? "unknown";
+    return Results.Ok(new { commitHash, buildDate });
+});
+
 app.Run();
