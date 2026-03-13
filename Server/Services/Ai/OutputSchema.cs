@@ -84,7 +84,13 @@ Reglas de formato (OBLIGATORIAS para todos los valores de texto):
 - NO uses saltos de linea (\n) dentro de los valores de texto. Escribe todo en una sola linea continua.
 - NO uses caracteres especiales decorativos: flechas, bullets, guiones largos, comillas tipograficas, simbolos como estrella, circulo, rombo, triangulo, flecha, etc.
 - Usa solo texto plano ASCII basico: letras, numeros, puntuacion normal (. , ; : ! ? ' "").
-- Si necesitas separar ideas, usa comas o puntos, nunca saltos de linea ni listas.";
+- Si necesitas separar ideas, usa comas o puntos, nunca saltos de linea ni listas.
+
+Reglas de contenido (OBLIGATORIAS):
+- NUNCA menciones marcas, empresas, productos, servicios o nombres comerciales de ningun tipo. Esto incluye marcas de tecnologia, redes sociales, ropa, alimentacion, automocion, software, hardware, o cualquier otro sector.
+- Si necesitas referirte a un concepto asociado a una marca, usa una descripcion generica. Por ejemplo: en vez de ""Instagram"" di ""redes sociales"", en vez de ""iPhone"" di ""telefono movil"", en vez de ""Photoshop"" di ""editor de imagenes"".
+- Esta regla aplica a todos los campos: title, content, summary, items y metadata.
+- No uses nombres de marcas ni siquiera como referencia, comparacion, ejemplo o metafora.";
 
         public static string GetTextOutputInstruction() => TextOutputInstruction;
 
