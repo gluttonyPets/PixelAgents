@@ -117,7 +117,7 @@ namespace Server.Services.Ai
                 prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
 
             // Prepend instruction to ensure Gemini generates an image, not text
-            prompt = $"Generate an image based on this description: {prompt}";
+            prompt = $"{InputAdapter.GetVisualMediaRule()}\n\nGenerate an image based on this description: {prompt}";
 
             var maxLen = InputAdapter.GetMaxPromptLength(imageModel);
             if (prompt.Length > maxLen)
@@ -201,10 +201,11 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("personGeneration", out var pg) && pg is string pgStr)
                 personGeneration = pgStr;
 
-            // Build instance object
+            // Build instance object — prepend spelling rule for any rendered text
+            var videoPrompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.Input}";
             var instance = new Dictionary<string, object>
             {
-                ["prompt"] = context.Input
+                ["prompt"] = videoPrompt
             };
 
             // If an input image is provided (image-to-video), add it

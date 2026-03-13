@@ -165,9 +165,9 @@ namespace Server.Services.Ai
                 options.ResponseFormat = GeneratedImageFormat.Bytes;
             }
 
-            var prompt = context.Input;
+            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.Input}";
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
+                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{context.Input}";
 
             // Truncar al máximo del modelo como red de seguridad
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
