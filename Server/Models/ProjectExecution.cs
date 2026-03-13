@@ -11,6 +11,7 @@ namespace Server.Models
         public int? PausedAtStepOrder { get; set; }
         public string? PausedStepData { get; set; }
         public string? UserInput { get; set; }
+        public decimal TotalEstimatedCost { get; set; }
 
         public Project Project { get; set; } = null!;
         public ICollection<StepExecution> StepExecutions { get; set; } = new List<StepExecution>();

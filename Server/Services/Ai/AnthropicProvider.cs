@@ -90,12 +90,21 @@ namespace Server.Services.Ai
 
             var text = response.Message.ToString();
 
-            return AiResult.Ok(text, new Dictionary<string, object>
+            var inputTokens = response.Usage.InputTokens;
+            var outputTokens = response.Usage.OutputTokens;
+
+            return new AiResult
             {
-                ["model"] = context.ModelName,
-                ["inputTokens"] = response.Usage.InputTokens,
-                ["outputTokens"] = response.Usage.OutputTokens,
-            });
+                Success = true,
+                TextOutput = text,
+                EstimatedCost = PricingCatalog.EstimateTextCost(context.ModelName, inputTokens, outputTokens),
+                Metadata = new Dictionary<string, object>
+                {
+                    ["model"] = context.ModelName,
+                    ["inputTokens"] = inputTokens,
+                    ["outputTokens"] = outputTokens,
+                }
+            };
         }
     }
 }

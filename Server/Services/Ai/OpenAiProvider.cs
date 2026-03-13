@@ -53,12 +53,21 @@ namespace Server.Services.Ai
 
             var text = completion.Value.Content[0].Text;
 
-            return AiResult.Ok(text, new Dictionary<string, object>
+            var inputTokens = completion.Value.Usage.InputTokenCount;
+            var outputTokens = completion.Value.Usage.OutputTokenCount;
+
+            return new AiResult
             {
-                ["model"] = context.ModelName,
-                ["inputTokens"] = completion.Value.Usage.InputTokenCount,
-                ["outputTokens"] = completion.Value.Usage.OutputTokenCount,
-            });
+                Success = true,
+                TextOutput = text,
+                EstimatedCost = PricingCatalog.EstimateTextCost(context.ModelName, inputTokens, outputTokens),
+                Metadata = new Dictionary<string, object>
+                {
+                    ["model"] = context.ModelName,
+                    ["inputTokens"] = inputTokens,
+                    ["outputTokens"] = outputTokens,
+                }
+            };
         }
 
         public async Task<(bool Valid, string? Error)> ValidateKeyAsync(string apiKey)
@@ -192,11 +201,13 @@ namespace Server.Services.Ai
                 return AiResult.Fail("No se recibieron datos de imagen del modelo");
             }
 
-            return AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
+            var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
             {
                 ["model"] = context.ModelName,
                 ["revisedPrompt"] = result.Value.RevisedPrompt ?? ""
             });
+            imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName, context.Configuration);
+            return imgResult;
         }
     }
 }

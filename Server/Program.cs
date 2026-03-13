@@ -682,7 +682,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
             new StepExecutionResponse(s.Id, s.ProjectModuleId,
                 s.ProjectModule.AiModule.Name, s.StepOrder,
                 s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                s.CreatedAt, s.CompletedAt,
+                s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                 s.Files.Select(f => new ExecutionFileResponse(
                     f.Id, f.FileName, f.ContentType, f.FilePath,
                     f.Direction, f.FileSize, f.CreatedAt)).ToList()
@@ -692,7 +692,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 
         return Results.Ok(new ExecutionDetailResponse(
             exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, exec.UserInput, steps));
+            exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
     }
     catch (Exception ex)
     {
@@ -712,7 +712,7 @@ app.MapGet("/api/projects/{projectId}/executions", async (
         .Where(e => e.ProjectId == projectId)
         .OrderByDescending(e => e.CreatedAt)
         .Select(e => new ExecutionResponse(e.Id, e.ProjectId, e.Status,
-            e.WorkspacePath, e.CreatedAt, e.CompletedAt, e.UserInput))
+            e.WorkspacePath, e.CreatedAt, e.CompletedAt, e.UserInput, e.TotalEstimatedCost))
         .ToListAsync();
 
     return Results.Ok(executions);
@@ -799,7 +799,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
             new StepExecutionResponse(s.Id, s.ProjectModuleId,
                 s.ProjectModule.AiModule.Name, s.StepOrder,
                 s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                s.CreatedAt, s.CompletedAt,
+                s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                 s.Files.Select(f => new ExecutionFileResponse(
                     f.Id, f.FileName, f.ContentType, f.FilePath,
                     f.Direction, f.FileSize, f.CreatedAt)).ToList()
@@ -807,7 +807,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
 
         return Results.Ok(new ExecutionDetailResponse(
             exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, exec.UserInput, steps));
+            exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
     }
     catch (Exception ex)
     {

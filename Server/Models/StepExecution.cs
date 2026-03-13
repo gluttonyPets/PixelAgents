@@ -12,6 +12,7 @@ namespace Server.Models
         public string? ErrorMessage { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
+        public decimal EstimatedCost { get; set; }
 
         public ProjectExecution Execution { get; set; } = null!;
         public ProjectModule ProjectModule { get; set; } = null!;

@@ -19,6 +19,8 @@ namespace Server.Models
         public string? ContentType { get; set; }
         public Dictionary<string, object> Metadata { get; set; } = new();
         public string? Error { get; set; }
+        /// <summary>Estimated cost in USD for this execution.</summary>
+        public decimal EstimatedCost { get; set; }
 
         public static AiResult Ok(string text, Dictionary<string, object>? metadata = null) => new()
         {

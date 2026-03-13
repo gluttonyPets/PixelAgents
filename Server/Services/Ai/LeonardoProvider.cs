@@ -199,11 +199,13 @@ namespace Server.Services.Ai
                     }
                     var imageBytes = await imgResp.Content.ReadAsByteArrayAsync();
 
-                    return AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
+                    var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
                     {
                         ["model"] = context.ModelName,
                         ["revisedPrompt"] = ""
                     });
+                    imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName);
+                    return imgResult;
                 }
 
                 if (status == "FAILED")

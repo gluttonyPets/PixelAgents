@@ -428,7 +428,15 @@ else
             <div class="execution-results">
                 @if (_result is not null)
                 {
-                    <h3>Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span></h3>
+                    <h3>
+                        Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span>
+                        @if (_result.TotalEstimatedCost > 0)
+                        {
+                            <span class="badge" style="background: var(--surface); color: var(--text); margin-left: 0.5rem; font-weight: normal; font-size: 0.75rem;">
+                                ~$@_result.TotalEstimatedCost.ToString("F4") USD
+                            </span>
+                        }
+                    </h3>
 
                     @if (!string.IsNullOrWhiteSpace(_result.UserInput))
                     {
@@ -444,6 +452,10 @@ else
                             <div class="step-header">
                                 <strong>Paso @step.StepOrder: @step.ModuleName</strong>
                                 <span class="badge @StatusBadge(step.Status)">@step.Status</span>
+                                @if (step.EstimatedCost > 0)
+                                {
+                                    <span class="text-sm text-muted" style="margin-left: 0.4rem;">~$@step.EstimatedCost.ToString("F4")</span>
+                                }
                                 @if (!_executing && (_result.Status == "Completed" || _result.Status == "Failed")
                                     && (step.Status == "Completed" || step.Status == "Failed"))
                                 {

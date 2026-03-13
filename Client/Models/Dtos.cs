@@ -41,15 +41,18 @@ public record ExecuteProjectRequest(string? UserInput);
 public record RetryFromStepRequest(int StepOrder, string? Comment);
 public record ExecutionResponse(
     Guid Id, Guid ProjectId, string Status, string WorkspacePath,
-    DateTime CreatedAt, DateTime? CompletedAt, string? UserInput);
+    DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
+    decimal TotalEstimatedCost);
 public record ExecutionDetailResponse(
     Guid Id, Guid ProjectId, string Status, string WorkspacePath,
     DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
+    decimal TotalEstimatedCost,
     List<StepExecutionResponse> Steps);
 public record StepExecutionResponse(
     Guid Id, Guid ProjectModuleId, string ModuleName, int StepOrder,
     string Status, string? InputData, string? OutputData, string? ErrorMessage,
-    DateTime CreatedAt, DateTime? CompletedAt, List<ExecutionFileResponse> Files);
+    DateTime CreatedAt, DateTime? CompletedAt, decimal EstimatedCost,
+    List<ExecutionFileResponse> Files);
 public record ExecutionFileResponse(
     Guid Id, string FileName, string ContentType, string FilePath,
     string Direction, long FileSize, DateTime CreatedAt);

@@ -243,6 +243,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -319,6 +320,7 @@ namespace Server.Services.Ai
                             };
 
                             var result = await provider.ExecuteAsync(context);
+                            stepExecution.EstimatedCost += result.EstimatedCost;
 
                             if (!result.Success)
                             {
@@ -487,6 +489,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(videoContext);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -555,6 +558,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -629,6 +633,9 @@ namespace Server.Services.Ai
 
             execution.Status = "Completed";
             execution.CompletedAt = DateTime.UtcNow;
+            execution.TotalEstimatedCost = await db.StepExecutions
+                .Where(s => s.ExecutionId == execution.Id)
+                .SumAsync(s => s.EstimatedCost);
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(projectId, executionId, "success", "Pipeline completado correctamente");
@@ -1361,6 +1368,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -1419,6 +1427,7 @@ namespace Server.Services.Ai
                             };
 
                             var result = await provider.ExecuteAsync(context);
+                            stepExecution.EstimatedCost += result.EstimatedCost;
 
                             if (!result.Success)
                             {
@@ -1492,6 +1501,9 @@ namespace Server.Services.Ai
 
             execution.Status = "Completed";
             execution.CompletedAt = DateTime.UtcNow;
+            execution.TotalEstimatedCost = await db.StepExecutions
+                .Where(s => s.ExecutionId == execution.Id)
+                .SumAsync(s => s.EstimatedCost);
             await db.SaveChangesAsync();
             await _logger.LogAsync(project.Id, execution.Id, "success", "Pipeline completado correctamente");
             return execution;
@@ -1844,6 +1856,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -1910,6 +1923,7 @@ namespace Server.Services.Ai
                             };
 
                             var result = await provider.ExecuteAsync(context);
+                            stepExecution.EstimatedCost += result.EstimatedCost;
 
                             if (!result.Success)
                             {
@@ -1992,6 +2006,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -2065,6 +2080,9 @@ namespace Server.Services.Ai
 
             execution.Status = "Completed";
             execution.CompletedAt = DateTime.UtcNow;
+            execution.TotalEstimatedCost = await db.StepExecutions
+                .Where(s => s.ExecutionId == execution.Id)
+                .SumAsync(s => s.EstimatedCost);
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(projectId, executionId, "success", "Pipeline reintentado correctamente");

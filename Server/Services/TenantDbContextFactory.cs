@@ -60,6 +60,10 @@ namespace Server.Services
                 ctx.Database.ExecuteSqlRaw(@"
                     CREATE INDEX IF NOT EXISTS ""IX_ExecutionLogs_ExecutionId""
                     ON ""ExecutionLogs"" (""ExecutionId"")");
+                ctx.Database.ExecuteSqlRaw(
+                    "ALTER TABLE \"StepExecutions\" ADD COLUMN IF NOT EXISTS \"EstimatedCost\" numeric NOT NULL DEFAULT 0");
+                ctx.Database.ExecuteSqlRaw(
+                    "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"TotalEstimatedCost\" numeric NOT NULL DEFAULT 0");
             }
             catch { /* column already exists or table doesn't exist yet */ }
         }

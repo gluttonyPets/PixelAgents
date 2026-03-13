@@ -91,18 +91,21 @@ namespace Server.Services.Ai
             var text = response.Candidates?[0].Content?.Parts?[0].Text
                 ?? throw new InvalidOperationException("Gemini no devolvio texto en la respuesta");
 
-            var metadata = new Dictionary<string, object>
+            var inputTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
+            var outputTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
+
+            return new AiResult
             {
-                ["model"] = context.ModelName
+                Success = true,
+                TextOutput = text,
+                EstimatedCost = PricingCatalog.EstimateTextCost(context.ModelName, inputTokens, outputTokens),
+                Metadata = new Dictionary<string, object>
+                {
+                    ["model"] = context.ModelName,
+                    ["inputTokens"] = inputTokens,
+                    ["outputTokens"] = outputTokens,
+                }
             };
-
-            if (response.UsageMetadata is not null)
-            {
-                metadata["inputTokens"] = response.UsageMetadata.PromptTokenCount ?? 0;
-                metadata["outputTokens"] = response.UsageMetadata.CandidatesTokenCount ?? 0;
-            }
-
-            return AiResult.Ok(text, metadata);
         }
 
         private async Task<AiResult> GenerateImageAsync(AiExecutionContext context)
@@ -155,11 +158,13 @@ namespace Server.Services.Ai
                     if (part.InlineData is not null && part.InlineData.MimeType?.StartsWith("image/") == true)
                     {
                         var imageBytes = part.InlineData.Data;
-                        return AiResult.OkFile(imageBytes, part.InlineData.MimeType, new Dictionary<string, object>
+                        var imgResult = AiResult.OkFile(imageBytes, part.InlineData.MimeType, new Dictionary<string, object>
                         {
                             ["model"] = imageModel,
                             ["revisedPrompt"] = ""
                         });
+                        imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(imageModel);
+                        return imgResult;
                     }
                 }
 
@@ -333,13 +338,15 @@ namespace Server.Services.Ai
 
                 var videoBytes = await dlResp.Content.ReadAsByteArrayAsync();
 
-                return AiResult.OkFile(videoBytes, "video/mp4", new Dictionary<string, object>
+                var vidResult = AiResult.OkFile(videoBytes, "video/mp4", new Dictionary<string, object>
                 {
                     ["model"] = modelName,
                     ["duration"] = duration,
                     ["aspectRatio"] = aspectRatio,
                     ["resolution"] = resolution
                 });
+                vidResult.EstimatedCost = PricingCatalog.EstimateVideoCost(modelName);
+                return vidResult;
             }
 
             return AiResult.Fail($"Timeout esperando generacion de video de Google Veo (>{maxAttempts * pollIntervalMs / 1000}s)");
