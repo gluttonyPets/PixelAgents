@@ -208,17 +208,22 @@ namespace Server.Services.Ai
             };
 
             // If an input image is provided (image-to-video), add it
+            // Only veo-3.1 preview models support image input on the Gemini API
             if (context.InputFiles is not null && context.InputFiles.Count > 0)
             {
-                var imageBytes = context.InputFiles[0];
-                instance["image"] = new Dictionary<string, object>
+                if (!modelName.Contains("veo-3.1"))
                 {
-                    ["inlineData"] = new Dictionary<string, object>
+                    // Model doesn't support image input — ignore the image, generate from prompt only
+                }
+                else
+                {
+                    var imageBytes = context.InputFiles[0];
+                    instance["image"] = new Dictionary<string, object>
                     {
-                        ["mimeType"] = "image/png",
-                        ["data"] = Convert.ToBase64String(imageBytes)
-                    }
-                };
+                        ["bytesBase64Encoded"] = Convert.ToBase64String(imageBytes),
+                        ["mimeType"] = "image/png"
+                    };
+                }
             }
 
             // Build parameters

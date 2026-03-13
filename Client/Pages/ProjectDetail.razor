@@ -341,7 +341,10 @@ else
                 <label>Usar imagen del paso anterior</label>
                 <select @bind="_videoSource">
                     <option value="prompt">No, solo texto</option>
-                    <option value="both">Si, usar imagen + prompt</option>
+                    @if (selectedModule?.ModelName?.Contains("veo-3.1") == true)
+                    {
+                        <option value="both">Si, usar imagen + prompt</option>
+                    }
                 </select>
                 <p class="text-sm text-muted" style="margin-top: 0.3rem;">
                     @if (_videoSource == "prompt")
@@ -350,9 +353,15 @@ else
                     }
                     else
                     {
-                        <span>Se usara la imagen generada en el paso anterior como primer fotograma junto con el prompt. Asegurate de que el paso anterior sea de tipo Imagen.</span>
+                        <span>Se usara la imagen generada en el paso anterior como primer fotograma junto con el prompt. Solo disponible con Veo 3.1.</span>
                     }
                 </p>
+                @if (selectedModule?.ModelName?.Contains("veo-3.1") != true)
+                {
+                    <p class="text-sm" style="color: var(--warning); margin-top: 0.2rem;">
+                        Image-to-video solo esta disponible con modelos Veo 3.1. Este modelo solo soporta texto.
+                    </p>
+                }
             </div>
         }
 
