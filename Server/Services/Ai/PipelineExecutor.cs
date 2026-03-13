@@ -383,8 +383,12 @@ namespace Server.Services.Ai
                     else if (pm.AiModule.ModuleType == "Video")
                     {
                         // Video modules: prompt always from step config (set by user), never from previous step
+                        // Debug: log raw config from DB
                         await _logger.LogAsync(projectId, executionId, "info",
-                            $"Generando video con {pm.AiModule.ModelName}...",
+                            $"[Video Debug] moduleConfig={pm.AiModule.Configuration ?? "null"}, stepConfig={pm.Configuration ?? "null"}",
+                            pm.StepOrder, stepName);
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"[Video Debug] merged config keys=[{string.Join(", ", config.Keys)}], values=[{string.Join(", ", config.Select(kv => $"{kv.Key}={kv.Value}"))}]",
                             pm.StepOrder, stepName);
 
                         // Read prompt from step configuration (mandatory, set in UI)
@@ -392,6 +396,10 @@ namespace Server.Services.Ai
                         var videoPrompt = "";
                         if (config.TryGetValue("videoPrompt", out var vp))
                             videoPrompt = vp is JsonElement vpEl ? vpEl.GetString() ?? "" : vp?.ToString() ?? "";
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"[Video Debug] videoPrompt extracted='{videoPrompt}', vp type={vp?.GetType().Name ?? "null"}, vp value={vp}",
+                            pm.StepOrder, stepName);
 
                         if (string.IsNullOrWhiteSpace(videoPrompt))
                         {
@@ -464,6 +472,10 @@ namespace Server.Services.Ai
                                     pm.StepOrder, stepName);
                             }
                         }
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"[Video Debug] Llamando a Veo: Input='{videoContext.Input[..Math.Min(videoContext.Input.Length, 100)]}', InputFiles={videoContext.InputFiles?.Count ?? 0}, Model={videoContext.ModelName}",
+                            pm.StepOrder, stepName);
 
                         var result = await provider.ExecuteAsync(videoContext);
                         stepResults[pm.StepOrder] = result;

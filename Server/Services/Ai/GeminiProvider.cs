@@ -244,17 +244,14 @@ namespace Server.Services.Ai
 
             var json = JsonSerializer.Serialize(requestBody);
 
-            // Log request details (truncate base64 image data for readability)
-            var logJson = json;
-            if (logJson.Length > 2000)
+            // Build a readable version of the request for error messages (truncate base64)
+            var debugBody = json;
+            if (debugBody.Length > 2000)
             {
-                var dataIdx = logJson.IndexOf("\"data\":");
+                var dataIdx = debugBody.IndexOf("\"data\":");
                 if (dataIdx > 0)
-                    logJson = logJson[..Math.Min(dataIdx + 50, logJson.Length)] + "...[base64 truncated]...\"}}}]}";
+                    debugBody = debugBody[..Math.Min(dataIdx + 30, debugBody.Length)] + "...[BASE64_TRUNCATED]...\"}}}]}";
             }
-            Console.WriteLine($"[Veo Request] URL: {VeoBaseUrl}/models/{modelName}:predictLongRunning");
-            Console.WriteLine($"[Veo Request] Body: {logJson}");
-            Console.WriteLine($"[Veo Request] InputFiles: {(context.InputFiles is not null ? $"{context.InputFiles.Count} file(s), first={context.InputFiles[0].Length} bytes" : "none")}");
 
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
@@ -266,11 +263,10 @@ namespace Server.Services.Ai
 
             var submitResp = await http.SendAsync(request);
             var submitJson = await submitResp.Content.ReadAsStringAsync();
-            Console.WriteLine($"[Veo Response] HTTP {(int)submitResp.StatusCode}: {submitJson[..Math.Min(submitJson.Length, 1000)]}");
 
             if (!submitResp.IsSuccessStatusCode)
             {
-                return AiResult.Fail($"Google Veo rechazo la solicitud (HTTP {(int)submitResp.StatusCode}): {submitJson}");
+                return AiResult.Fail($"Google Veo HTTP {(int)submitResp.StatusCode}. Request: {debugBody}. Response: {submitJson}");
             }
 
             var submitDoc = JsonDocument.Parse(submitJson);
@@ -299,13 +295,7 @@ namespace Server.Services.Ai
                 var pollDoc = JsonDocument.Parse(pollJson);
 
                 if (!pollDoc.RootElement.TryGetProperty("done", out var doneEl) || !doneEl.GetBoolean())
-                {
-                    if (attempt % 10 == 0) // Log every 30s
-                        Console.WriteLine($"[Veo Poll] Attempt {attempt}/{maxAttempts}, not done yet...");
                     continue;
-                }
-
-                Console.WriteLine($"[Veo Poll] Done! Response: {pollJson[..Math.Min(pollJson.Length, 500)]}");
 
                 // Check for error
                 if (pollDoc.RootElement.TryGetProperty("error", out var errorEl))
