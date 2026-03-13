@@ -36,8 +36,7 @@ namespace Server.Models
     public record SwapStepOrderRequest(Guid ModuleIdA, Guid ModuleIdB);
     public record ProjectModuleResponse(
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
-        int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,
-        string? ApiKeyName);
+        int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
 
     // ── Execution ──
     public record ExecuteProjectRequest(string? UserInput);

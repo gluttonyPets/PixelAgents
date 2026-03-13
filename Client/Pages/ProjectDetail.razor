@@ -151,7 +151,7 @@ else
                     <th>Paso</th>
                     <th>Modulo</th>
                     <th>Tipo</th>
-                    <th>API Key</th>
+                    <th>Coste</th>
                     <th>Input</th>
                     <th>Orden</th>
                     <th></th>
@@ -178,7 +178,19 @@ else
                         </td>
                         <td>@pm.AiModuleName</td>
                         <td><span class="badge badge-warning">@pm.ModuleType</span></td>
-                        <td><span class="text-sm">@(pm.ApiKeyName ?? "-")</span></td>
+                        <td>
+                            @{
+                                var stepCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == pm.Id)?.EstimatedCost;
+                            }
+                            @if (stepCost.HasValue && stepCost.Value > 0)
+                            {
+                                <span class="text-sm text-muted">~$@stepCost.Value.ToString("F4")</span>
+                            }
+                            else
+                            {
+                                <span class="text-sm text-muted">-</span>
+                            }
+                        </td>
                         <td>
                             @if (isEditing)
                             {
