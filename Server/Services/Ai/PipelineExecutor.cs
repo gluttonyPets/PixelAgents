@@ -388,22 +388,27 @@ namespace Server.Services.Ai
                             pm.StepOrder, stepName);
 
                         // Read prompt from step configuration (mandatory, set in UI)
+                        // Values come as JsonElement from MergeConfiguration
                         var videoPrompt = "";
-                        if (config.TryGetValue("videoPrompt", out var vp) && vp is string vpStr)
-                            videoPrompt = vpStr;
+                        if (config.TryGetValue("videoPrompt", out var vp))
+                            videoPrompt = vp is JsonElement vpEl ? vpEl.GetString() ?? "" : vp?.ToString() ?? "";
 
                         if (string.IsNullOrWhiteSpace(videoPrompt))
                         {
                             await _logger.LogAsync(projectId, executionId, "error",
-                                "El paso de video no tiene prompt configurado. Configura un prompt en el paso.",
+                                $"El paso de video no tiene prompt configurado. Config keys: [{string.Join(", ", config.Keys)}]",
                                 pm.StepOrder, stepName);
                             await FailStep(stepExecution, execution, "Prompt de video no configurado", db);
                             return execution;
                         }
 
                         var videoSource = "prompt";
-                        if (config.TryGetValue("videoSource", out var vs) && vs is string vsStr)
-                            videoSource = vsStr;
+                        if (config.TryGetValue("videoSource", out var vs))
+                            videoSource = vs is JsonElement vsEl ? vsEl.GetString() ?? "prompt" : vs?.ToString() ?? "prompt";
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Video config: videoSource={videoSource}, prompt={videoPrompt[..Math.Min(videoPrompt.Length, 100)]}..., model={pm.AiModule.ModelName}",
+                            pm.StepOrder, stepName);
 
                         var videoContext = new AiExecutionContext
                         {
@@ -420,25 +425,42 @@ namespace Server.Services.Ai
                         {
                             var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
                                 .OrderByDescending(k => k).FirstOrDefault();
-                            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput)
-                                && prevOutput.Files.Count > 0
-                                && prevOutput.Files[0].ContentType.StartsWith("image/"))
+
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Buscando imagen en paso anterior (orden {prevOrder}). StepOutputs keys: [{string.Join(", ", stepOutputs.Keys)}]",
+                                pm.StepOrder, stepName);
+
+                            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput))
                             {
-                                var prevFile = prevOutput.Files[0];
-                                var prevFilePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevFile.FileName);
-                                if (File.Exists(prevFilePath))
+                                await _logger.LogAsync(projectId, executionId, "info",
+                                    $"Paso {prevOrder}: tipo={prevOutput.Type}, files={prevOutput.Files.Count}" +
+                                    (prevOutput.Files.Count > 0 ? $", file0={prevOutput.Files[0].FileName} ({prevOutput.Files[0].ContentType}, {prevOutput.Files[0].FileSize} bytes)" : ""),
+                                    pm.StepOrder, stepName);
+
+                                if (prevOutput.Files.Count > 0
+                                    && prevOutput.Files[0].ContentType.StartsWith("image/"))
                                 {
-                                    var imgBytes = await File.ReadAllBytesAsync(prevFilePath);
-                                    videoContext.InputFiles = new List<byte[]> { imgBytes };
+                                    var prevFile = prevOutput.Files[0];
+                                    var prevFilePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevFile.FileName);
+
                                     await _logger.LogAsync(projectId, executionId, "info",
-                                        $"Usando imagen del paso {prevOrder} como entrada para video",
+                                        $"Cargando imagen: {prevFilePath} (exists={File.Exists(prevFilePath)})",
                                         pm.StepOrder, stepName);
+
+                                    if (File.Exists(prevFilePath))
+                                    {
+                                        var imgBytes = await File.ReadAllBytesAsync(prevFilePath);
+                                        videoContext.InputFiles = new List<byte[]> { imgBytes };
+                                        await _logger.LogAsync(projectId, executionId, "info",
+                                            $"Imagen cargada: {imgBytes.Length} bytes, se pasara a Veo como entrada",
+                                            pm.StepOrder, stepName);
+                                    }
                                 }
                             }
                             else
                             {
                                 await _logger.LogAsync(projectId, executionId, "warning",
-                                    "No se encontro imagen en el paso anterior. Se generara video solo con prompt.",
+                                    $"No se encontro output del paso {prevOrder}. Se generara video solo con prompt.",
                                     pm.StepOrder, stepName);
                             }
                         }
