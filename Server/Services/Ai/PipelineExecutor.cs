@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Server.Data;
@@ -20,14 +21,16 @@ namespace Server.Services.Ai
         private readonly BufferService _buffer;
         private readonly CoreDbContext _coreDb;
         private readonly IConfiguration _configuration;
+        private readonly string _mediaRoot;
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
             WhatsAppService whatsApp, TelegramService telegram, BufferService buffer,
-            CoreDbContext coreDb, IConfiguration configuration)
+            CoreDbContext coreDb, IConfiguration configuration, IWebHostEnvironment env)
         {
             _registry = registry;
             _baseLogger = logger;
             _logger = logger;
+            _mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
             _whatsApp = whatsApp;
             _telegram = telegram;
             _buffer = buffer;
@@ -101,7 +104,7 @@ namespace Server.Services.Ai
                     "Validacion pre-ejecucion fallida:\n" + string.Join("\n", errors));
 
             var executionId = Guid.NewGuid();
-            var workspacePath = Path.Combine("storage", tenantDbName, projectId.ToString(), executionId.ToString());
+            var workspacePath = Path.Combine(_mediaRoot, tenantDbName, projectId.ToString(), executionId.ToString());
 
             var execution = new ProjectExecution
             {
