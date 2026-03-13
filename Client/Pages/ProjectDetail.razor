@@ -151,6 +151,7 @@ else
                     <th>Paso</th>
                     <th>Modulo</th>
                     <th>Tipo</th>
+                    <th>API Key</th>
                     <th>Input</th>
                     <th>Orden</th>
                     <th></th>
@@ -177,6 +178,7 @@ else
                         </td>
                         <td>@pm.AiModuleName</td>
                         <td><span class="badge badge-warning">@pm.ModuleType</span></td>
+                        <td><span class="text-sm">@(pm.ApiKeyName ?? "-")</span></td>
                         <td>
                             @if (isEditing)
                             {

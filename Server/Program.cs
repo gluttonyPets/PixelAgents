@@ -471,6 +471,7 @@ app.MapGet("/api/projects/{id}", async (
     var project = await db.Projects
         .Include(p => p.ProjectModules.OrderBy(pm => pm.StepOrder))
             .ThenInclude(pm => pm.AiModule)
+                .ThenInclude(m => m.ApiKey)
         .FirstOrDefaultAsync(p => p.Id == id);
 
     if (project is null) return Results.NotFound();
@@ -478,7 +479,8 @@ app.MapGet("/api/projects/{id}", async (
     var modules = project.ProjectModules.Select(pm =>
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
             pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
-            pm.InputMapping, pm.Configuration, pm.IsActive)).ToList();
+            pm.InputMapping, pm.Configuration, pm.IsActive,
+            pm.AiModule.ApiKey?.Name)).ToList();
 
     return Results.Ok(new ProjectDetailResponse(
         project.Id, project.Name, project.Description, project.Context,
@@ -532,7 +534,7 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     var project = await db.Projects.FindAsync(projectId);
     if (project is null) return Results.NotFound();
 
-    var module = await db.AiModules.FindAsync(req.AiModuleId);
+    var module = await db.AiModules.Include(m => m.ApiKey).FirstOrDefaultAsync(m => m.Id == req.AiModuleId);
     if (module is null) return Results.BadRequest(new { error = "Modulo no encontrado" });
 
     var pm = new ProjectModule
@@ -555,7 +557,8 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
             module.ModuleType, module.ModelName, pm.StepOrder, pm.StepName,
-            pm.InputMapping, pm.Configuration, pm.IsActive));
+            pm.InputMapping, pm.Configuration, pm.IsActive,
+            module.ApiKey?.Name));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/modules/{id}", async (
@@ -567,6 +570,7 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
 
     var pm = await db.ProjectModules
         .Include(x => x.AiModule)
+            .ThenInclude(m => m.ApiKey)
         .FirstOrDefaultAsync(x => x.Id == id && x.ProjectId == projectId);
     if (pm is null) return Results.NotFound();
 
@@ -580,7 +584,8 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
         pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
-        pm.InputMapping, pm.Configuration, pm.IsActive));
+        pm.InputMapping, pm.Configuration, pm.IsActive,
+        pm.AiModule.ApiKey?.Name));
 }).RequireAuthorization();
 
 app.MapPost("/api/projects/{projectId}/modules/swap", async (

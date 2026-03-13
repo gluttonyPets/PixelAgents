@@ -34,7 +34,8 @@ public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? St
 public record UpdateProjectModuleRequest(int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
 public record ProjectModuleResponse(
     Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
-    int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
+    int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,
+    string? ApiKeyName);
 
 // ── Execution ──
 public record ExecuteProjectRequest(string? UserInput);
