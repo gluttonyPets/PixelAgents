@@ -25,9 +25,9 @@ namespace Server.Services.Ai
                 ["claude-opus-4-20250514"]      = (5.00m, 25.00m),
                 ["claude-3-5-haiku-20241022"]   = (0.80m,  4.00m),
 
-                // Google Gemini
+                // Google Gemini (Gemini Developer API pricing)
                 ["gemini-2.0-flash"]   = (0.10m,  0.40m),
-                ["gemini-2.5-flash"]   = (0.15m,  0.60m),
+                ["gemini-2.5-flash"]   = (0.30m,  2.50m),  // output includes thinking tokens
                 ["gemini-2.5-pro"]     = (1.25m, 10.00m),
             };
 
@@ -54,8 +54,8 @@ namespace Server.Services.Ai
                 ["leonardo-flux-schnell"]  = 0.021m,
             };
 
-        // ── Video models: fixed price per generation ──
-        private static readonly Dictionary<string, decimal> VideoFixedPrices =
+        // ── Video models: price per second (Gemini Developer API) ──
+        private static readonly Dictionary<string, decimal> VideoPerSecondPrices =
             new(StringComparer.OrdinalIgnoreCase)
             {
                 ["veo-2"]               = 0.35m,
@@ -171,16 +171,20 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// Estimates cost for a video generation.
+        /// Estimates cost for a video generation based on duration in seconds.
         /// </summary>
-        public static decimal EstimateVideoCost(string modelName)
+        public static decimal EstimateVideoCost(string modelName, int durationSeconds = 8)
         {
-            if (VideoFixedPrices.TryGetValue(modelName, out var price))
-                return price;
+            decimal perSecond;
+            if (!VideoPerSecondPrices.TryGetValue(modelName, out perSecond))
+            {
+                var key = VideoPerSecondPrices.Keys.FirstOrDefault(k =>
+                    modelName.StartsWith(k, StringComparison.OrdinalIgnoreCase));
+                if (key is null) return 0m;
+                perSecond = VideoPerSecondPrices[key];
+            }
 
-            var key = VideoFixedPrices.Keys.FirstOrDefault(k =>
-                modelName.StartsWith(k, StringComparison.OrdinalIgnoreCase));
-            return key is not null ? VideoFixedPrices[key] : 0m;
+            return perSecond * durationSeconds;
         }
     }
 }

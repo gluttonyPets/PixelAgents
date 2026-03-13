@@ -345,7 +345,7 @@ namespace Server.Services.Ai
                     ["aspectRatio"] = aspectRatio,
                     ["resolution"] = resolution
                 });
-                vidResult.EstimatedCost = PricingCatalog.EstimateVideoCost(modelName);
+                vidResult.EstimatedCost = PricingCatalog.EstimateVideoCost(modelName, int.TryParse(duration, out var durSec) ? durSec : 8);
                 return vidResult;
             }
 
