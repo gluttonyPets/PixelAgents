@@ -116,13 +116,16 @@ namespace Server.Services.Ai
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
 
+            // Prepend instruction to ensure Gemini generates an image, not text
+            prompt = $"Generate an image based on this description: {prompt}";
+
             var maxLen = InputAdapter.GetMaxPromptLength(imageModel);
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
             var config = new GenerateContentConfig
             {
-                ResponseModalities = ["IMAGE", "TEXT"],
+                ResponseModalities = ["IMAGE"],
             };
 
             const int maxRetries = 2;
