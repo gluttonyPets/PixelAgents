@@ -387,21 +387,31 @@ namespace Server.Services.Ai
                             $"Generando video con {pm.AiModule.ModelName}...",
                             pm.StepOrder, stepName);
 
+                        // Check videoSource config to decide how to build the prompt
+                        var videoSource = "prompt";
+                        if (config.TryGetValue("videoSource", out var vs) && vs is string vsStr)
+                            videoSource = vsStr;
+
+                        // For image/both modes, the prompt should come from the user input,
+                        // not from the previous step's (image) output which has no text.
+                        var videoPrompt = inputs[0];
+                        if (videoSource is "image" or "both" && string.IsNullOrWhiteSpace(videoPrompt))
+                            videoPrompt = userInput ?? "";
+
+                        if (string.IsNullOrWhiteSpace(videoPrompt))
+                            videoPrompt = "Animate this image with smooth natural motion";
+
                         var videoContext = new AiExecutionContext
                         {
                             ModuleType = pm.AiModule.ModuleType,
                             ModelName = pm.AiModule.ModelName,
                             ApiKey = apiKey,
-                            Input = inputs[0],
+                            Input = videoPrompt,
                             ProjectContext = project.Context,
                             Configuration = config,
                         };
 
-                        // Check if previous step produced an image file — pass it for image-to-video
-                        var videoSource = "prompt";
-                        if (config.TryGetValue("videoSource", out var vs) && vs is string vsStr)
-                            videoSource = vsStr;
-
+                        // Load image from previous step for image-to-video / both modes
                         if (videoSource is "image" or "both")
                         {
                             var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
@@ -422,9 +432,6 @@ namespace Server.Services.Ai
                                 }
                             }
                         }
-
-                        if (videoSource == "image" && string.IsNullOrWhiteSpace(videoContext.Input))
-                            videoContext.Input = "Animate this image";
 
                         var result = await provider.ExecuteAsync(videoContext);
                         stepResults[pm.StepOrder] = result;
