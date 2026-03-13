@@ -382,24 +382,28 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "Video")
                     {
-                        // Video modules: single execution, may use image from previous step
+                        // Video modules: prompt always from step config (set by user), never from previous step
                         await _logger.LogAsync(projectId, executionId, "info",
                             $"Generando video con {pm.AiModule.ModelName}...",
                             pm.StepOrder, stepName);
 
-                        // Check videoSource config to decide how to build the prompt
+                        // Read prompt from step configuration (mandatory, set in UI)
+                        var videoPrompt = "";
+                        if (config.TryGetValue("videoPrompt", out var vp) && vp is string vpStr)
+                            videoPrompt = vpStr;
+
+                        if (string.IsNullOrWhiteSpace(videoPrompt))
+                        {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                "El paso de video no tiene prompt configurado. Configura un prompt en el paso.",
+                                pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, "Prompt de video no configurado", db);
+                            return execution;
+                        }
+
                         var videoSource = "prompt";
                         if (config.TryGetValue("videoSource", out var vs) && vs is string vsStr)
                             videoSource = vsStr;
-
-                        // For image/both modes, the prompt should come from the user input,
-                        // not from the previous step's (image) output which has no text.
-                        var videoPrompt = inputs[0];
-                        if (videoSource is "image" or "both" && string.IsNullOrWhiteSpace(videoPrompt))
-                            videoPrompt = userInput ?? "";
-
-                        if (string.IsNullOrWhiteSpace(videoPrompt))
-                            videoPrompt = "Animate this image with smooth natural motion";
 
                         var videoContext = new AiExecutionContext
                         {
@@ -411,8 +415,8 @@ namespace Server.Services.Ai
                             Configuration = config,
                         };
 
-                        // Load image from previous step for image-to-video / both modes
-                        if (videoSource is "image" or "both")
+                        // Load image from previous step if videoSource is "both"
+                        if (videoSource == "both")
                         {
                             var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
                                 .OrderByDescending(k => k).FirstOrDefault();
@@ -430,6 +434,12 @@ namespace Server.Services.Ai
                                         $"Usando imagen del paso {prevOrder} como entrada para video",
                                         pm.StepOrder, stepName);
                                 }
+                            }
+                            else
+                            {
+                                await _logger.LogAsync(projectId, executionId, "warning",
+                                    "No se encontro imagen en el paso anterior. Se generara video solo con prompt.",
+                                    pm.StepOrder, stepName);
                             }
                         }
 
