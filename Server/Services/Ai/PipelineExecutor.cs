@@ -13,7 +13,8 @@ namespace Server.Services.Ai
     public class PipelineExecutor : IPipelineExecutor
     {
         private readonly IAiProviderRegistry _registry;
-        private readonly IExecutionLogger _logger;
+        private IExecutionLogger _logger;
+        private readonly IExecutionLogger _baseLogger;
         private readonly WhatsAppService _whatsApp;
         private readonly TelegramService _telegram;
         private readonly BufferService _buffer;
@@ -25,6 +26,7 @@ namespace Server.Services.Ai
             CoreDbContext coreDb, IConfiguration configuration)
         {
             _registry = registry;
+            _baseLogger = logger;
             _logger = logger;
             _whatsApp = whatsApp;
             _telegram = telegram;
@@ -44,6 +46,8 @@ namespace Server.Services.Ai
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
+            _logger = _baseLogger.WithDb(db);
+
             var project = await db.Projects
                 .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
                     .ThenInclude(pm => pm.AiModule)
@@ -1185,6 +1189,8 @@ namespace Server.Services.Ai
         public async Task<ProjectExecution> ResumeFromInteractionAsync(
             Guid executionId, string responseText, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
+            _logger = _baseLogger.WithDb(db);
+
             var execution = await db.ProjectExecutions
                 .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
                 .FirstOrDefaultAsync(e => e.Id == executionId && e.Status == "WaitingForInput")
@@ -1590,6 +1596,8 @@ namespace Server.Services.Ai
         public async Task<ProjectExecution> RetryFromStepAsync(
             Guid executionId, int fromStepOrder, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
+            _logger = _baseLogger.WithDb(db);
+
             var execution = await db.ProjectExecutions
                 .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
                     .ThenInclude(s => s.Files)

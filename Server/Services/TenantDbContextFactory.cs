@@ -47,6 +47,19 @@ namespace Server.Services
                     "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text");
                 ctx.Database.ExecuteSqlRaw(
                     "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"UserInput\" text");
+                ctx.Database.ExecuteSqlRaw(@"
+                    CREATE TABLE IF NOT EXISTS ""ExecutionLogs"" (
+                        ""Id"" uuid NOT NULL PRIMARY KEY,
+                        ""ExecutionId"" uuid NOT NULL REFERENCES ""ProjectExecutions""(""Id"") ON DELETE CASCADE,
+                        ""Level"" varchar(20) NOT NULL DEFAULT 'info',
+                        ""Message"" text NOT NULL,
+                        ""StepOrder"" integer,
+                        ""StepName"" varchar(200),
+                        ""Timestamp"" timestamp with time zone NOT NULL
+                    )");
+                ctx.Database.ExecuteSqlRaw(@"
+                    CREATE INDEX IF NOT EXISTS ""IX_ExecutionLogs_ExecutionId""
+                    ON ""ExecutionLogs"" (""ExecutionId"")");
             }
             catch { /* column already exists or table doesn't exist yet */ }
         }

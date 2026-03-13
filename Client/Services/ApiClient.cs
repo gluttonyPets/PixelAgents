@@ -230,6 +230,13 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
     }
 
+    public async Task<List<ExecutionLogResponse>?> GetExecutionLogsAsync(Guid executionId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/executions/{executionId}/logs");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<List<ExecutionLogResponse>>();
+    }
+
     public async Task<(bool Ok, ExecutionDetailResponse? Result, string? Error)> RetryFromStepAsync(
         Guid executionId, int stepOrder, string? comment)
     {

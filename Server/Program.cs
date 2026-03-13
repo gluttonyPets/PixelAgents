@@ -750,6 +750,23 @@ app.MapGet("/api/executions/{id}", async (
         exec.CreatedAt, exec.CompletedAt, exec.UserInput, steps));
 }).RequireAuthorization();
 
+// Get persisted logs for an execution
+app.MapGet("/api/executions/{executionId}/logs", async (
+    Guid executionId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var logs = await db.ExecutionLogs
+        .Where(l => l.ExecutionId == executionId)
+        .OrderBy(l => l.Timestamp)
+        .Select(l => new { l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp })
+        .ToListAsync();
+
+    return Results.Ok(logs);
+}).RequireAuthorization();
+
 // Retry execution from a specific step
 app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     Guid executionId, RetryFromStepRequest req, HttpContext ctx,

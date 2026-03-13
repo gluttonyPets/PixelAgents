@@ -1133,7 +1133,16 @@ else
     private async Task LoadExecution(Guid id)
     {
         _logEntries.Clear();
-        try { _result = await Api.GetExecutionDetailAsync(id); }
+        try
+        {
+            _result = await Api.GetExecutionDetailAsync(id);
+            // Load persisted logs
+            var logs = await Api.GetExecutionLogsAsync(id);
+            if (logs is not null)
+            {
+                _logEntries = logs.Select(l => new LogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
+            }
+        }
         catch { }
     }
 
