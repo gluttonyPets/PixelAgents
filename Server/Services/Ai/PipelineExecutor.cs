@@ -380,6 +380,107 @@ namespace Server.Services.Ai
                             $"{outputFiles.Count} imagen(es) generada(s) correctamente",
                             pm.StepOrder, stepName);
                     }
+                    else if (pm.AiModule.ModuleType == "Video")
+                    {
+                        // Video modules: single execution, may use image from previous step
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Generando video con {pm.AiModule.ModelName}...",
+                            pm.StepOrder, stepName);
+
+                        var videoContext = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = inputs[0],
+                            ProjectContext = project.Context,
+                            Configuration = config,
+                        };
+
+                        // Check if previous step produced an image file — pass it for image-to-video
+                        var videoSource = "prompt";
+                        if (config.TryGetValue("videoSource", out var vs) && vs is string vsStr)
+                            videoSource = vsStr;
+
+                        if (videoSource is "image" or "both")
+                        {
+                            var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
+                                .OrderByDescending(k => k).FirstOrDefault();
+                            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput)
+                                && prevOutput.Files.Count > 0
+                                && prevOutput.Files[0].ContentType.StartsWith("image/"))
+                            {
+                                var prevFile = prevOutput.Files[0];
+                                var prevFilePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevFile.FileName);
+                                if (File.Exists(prevFilePath))
+                                {
+                                    var imgBytes = await File.ReadAllBytesAsync(prevFilePath);
+                                    videoContext.InputFiles = new List<byte[]> { imgBytes };
+                                    await _logger.LogAsync(projectId, executionId, "info",
+                                        $"Usando imagen del paso {prevOrder} como entrada para video",
+                                        pm.StepOrder, stepName);
+                                }
+                            }
+                        }
+
+                        if (videoSource == "image" && string.IsNullOrWhiteSpace(videoContext.Input))
+                            videoContext.Input = "Animate this image";
+
+                        var result = await provider.ExecuteAsync(videoContext);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+
+                        if (!result.Success)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                $"Error en video: {result.Error}", pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        var outputFiles = new List<OutputFile>();
+
+                        if (result.FileOutput is not null)
+                        {
+                            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            Directory.CreateDirectory(stepDir);
+
+                            var ext = GetExtension(result.ContentType ?? "video/mp4");
+                            var fileName = $"output{ext}";
+                            var filePath = Path.Combine(stepDir, fileName);
+                            await File.WriteAllBytesAsync(filePath, result.FileOutput);
+
+                            var execFile = new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(),
+                                StepExecutionId = stepExecution.Id,
+                                FileName = fileName,
+                                ContentType = result.ContentType ?? "video/mp4",
+                                FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                Direction = "Output",
+                                FileSize = result.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            };
+                            db.ExecutionFiles.Add(execFile);
+
+                            outputFiles.Add(new OutputFile
+                            {
+                                FileId = execFile.Id,
+                                FileName = fileName,
+                                ContentType = execFile.ContentType,
+                                FileSize = execFile.FileSize
+                            });
+                        }
+
+                        var videoOutput = OutputSchemaHelper.BuildVideoOutput(outputFiles, pm.AiModule.ModelName, result.Metadata);
+                        stepOutputs[pm.StepOrder] = videoOutput;
+                        stepExecution.OutputData = JsonSerializer.Serialize(videoOutput);
+                        await db.SaveChangesAsync();
+
+                        await _logger.LogAsync(projectId, executionId, "success",
+                            $"Video generado correctamente ({result.Metadata.GetValueOrDefault("duration", "?")}s)",
+                            pm.StepOrder, stepName);
+                    }
                     else
                     {
                         // Generic fallback for other module types (Audio, Transcription, etc.)
@@ -1961,6 +2062,8 @@ namespace Server.Services.Ai
             "image/webp" => ".webp",
             "audio/mpeg" or "audio/mp3" => ".mp3",
             "audio/wav" => ".wav",
+            "video/mp4" => ".mp4",
+            "video/webm" => ".webm",
             "text/plain" => ".txt",
             _ => ".bin"
         };

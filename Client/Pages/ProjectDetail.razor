@@ -327,6 +327,32 @@ else
             }
         }
 
+        @if (selectedModule?.ModuleType == "Video")
+        {
+            <div class="form-group" style="margin-top: 0.5rem;">
+                <label>Fuente del video</label>
+                <select @bind="_videoSource">
+                    <option value="prompt">Solo desde prompt de texto</option>
+                    <option value="image">Desde imagen del paso anterior</option>
+                    <option value="both">Prompt + imagen del paso anterior</option>
+                </select>
+                <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                    @if (_videoSource == "prompt")
+                    {
+                        <span>El video se generara unicamente a partir del texto de entrada.</span>
+                    }
+                    else if (_videoSource == "image")
+                    {
+                        <span>Se usara la imagen generada en el paso anterior como primer fotograma. Asegurate de que el paso anterior sea de tipo Imagen.</span>
+                    }
+                    else
+                    {
+                        <span>Se combinara el prompt de texto con la imagen del paso anterior para generar el video.</span>
+                    }
+                </p>
+            </div>
+        }
+
         @if (selectedModule?.ModuleType == "Publish")
         {
             <div class="form-group">
@@ -502,6 +528,41 @@ else
                                                 <span class="text-sm text-muted">Out: @outTok</span>
                                             }
                                         </div>
+                                    }
+                                }
+                                else if (parsed?.Type == "video")
+                                {
+                                    @if (parsed.Metadata is not null && parsed.Metadata.TryGetValue("model", out var vidModel))
+                                    {
+                                        <span class="badge badge-warning">@vidModel</span>
+                                        @if (parsed.Metadata.TryGetValue("duration", out var vidDur))
+                                        {
+                                            <span class="text-sm text-muted ml-1">@vidDur s</span>
+                                        }
+                                        @if (parsed.Metadata.TryGetValue("resolution", out var vidRes))
+                                        {
+                                            <span class="text-sm text-muted ml-1">@vidRes</span>
+                                        }
+                                    }
+
+                                    @if (parsed.Files is not null && parsed.Files.Count > 0)
+                                    {
+                                        @foreach (var f in parsed.Files)
+                                        {
+                                            var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
+                                            <div style="margin-top: 0.5rem;">
+                                                <video controls style="max-width: 100%; border-radius: 8px;" crossorigin="use-credentials">
+                                                    <source src="@fileUrl" type="@f.ContentType" />
+                                                    Tu navegador no soporta video HTML5.
+                                                </video>
+                                                <div class="file-info" style="margin-top: 0.3rem;">
+                                                    <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
+                                                        Descargar @f.FileName
+                                                    </a>
+                                                    <span class="text-sm text-muted">(@(f.FileSize / 1024) KB)</span>
+                                                </div>
+                                            </div>
+                                        }
                                     }
                                 }
                                 else if (parsed?.Type == "image")
@@ -697,6 +758,9 @@ else
 
     private string _publishCaption = "";
     private string _publishType = "post";
+
+    // Video step
+    private string _videoSource = "prompt";
 
     // Edit step
     private Guid? _editingPmId;
@@ -949,9 +1013,16 @@ else
                     publishType = _publishType
                 });
             }
+            if (mod?.ModuleType == "Video")
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    videoSource = _videoSource
+                });
+            }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _publishCaption = ""; _publishType = "post"; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _publishCaption = ""; _publishType = "post"; _videoSource = "prompt"; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }

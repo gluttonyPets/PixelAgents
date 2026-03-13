@@ -152,6 +152,27 @@ Reglas de contenido (OBLIGATORIAS):
         }
 
         /// <summary>
+        /// Construye un StepOutput para un módulo de video.
+        /// </summary>
+        public static StepOutput BuildVideoOutput(List<OutputFile> files, string modelName, Dictionary<string, object>? extraMeta = null)
+        {
+            var meta = new Dictionary<string, object>
+            {
+                ["model"] = modelName,
+                ["count"] = files.Count
+            };
+            if (extraMeta is not null)
+                foreach (var kv in extraMeta) meta[kv.Key] = kv.Value;
+
+            return new StepOutput
+            {
+                Type = "video",
+                Files = files,
+                Metadata = meta
+            };
+        }
+
+        /// <summary>
         /// Construye un StepOutput para un módulo de audio.
         /// </summary>
         public static StepOutput BuildAudioOutput(List<OutputFile> files, string modelName, string? voice = null)
