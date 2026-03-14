@@ -358,6 +358,22 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Canva Config ──
+
+    public async Task<CanvaConfigDto?> GetCanvaConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/canva-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<CanvaConfigDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SaveCanvaConfigAsync(Guid projectId, CanvaConfigDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/canva-config", dto);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp)
     {
         try

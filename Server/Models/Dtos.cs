@@ -68,4 +68,7 @@ namespace Server.Models
 
     // ── Instagram (Buffer) ──
     public record BufferConfigDto(string ApiKey, string ChannelId);
+
+    // ── Canva ──
+    public record CanvaConfigDto(string AccessToken, string? BrandTemplateId);
 }
