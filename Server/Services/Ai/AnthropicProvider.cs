@@ -77,6 +77,8 @@ namespace Server.Services.Ai
             systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
+            if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
+                systemParts.Add(context.PreviousExecutionsSummary);
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
                 systemParts.Add(sp);
             parameters.System = new List<SystemMessage> { new SystemMessage(string.Join("\n\n", systemParts)) };

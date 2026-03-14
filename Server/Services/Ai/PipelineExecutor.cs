@@ -136,6 +136,9 @@ namespace Server.Services.Ai
             var stepOutputs = new Dictionary<int, StepOutput>();
             var stepModuleTypes = new Dictionary<int, string>();
 
+            // ── Load previous execution summaries for context ──
+            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, projectId, executionId);
+
             var allModules = project.ProjectModules.ToList();
 
             for (var mi = 0; mi < allModules.Count; mi++)
@@ -254,6 +257,7 @@ namespace Server.Services.Ai
                             ApiKey = apiKey,
                             Input = inputs[0], // Text modules always get single input
                             ProjectContext = project.Context,
+                            PreviousExecutionsSummary = previousSummaryContext,
                             Configuration = config,
                         };
 
@@ -657,6 +661,17 @@ namespace Server.Services.Ai
 
             await _logger.LogAsync(projectId, executionId, "success", "Pipeline completado correctamente");
 
+            // ── Generate execution summary for future context ──
+            try
+            {
+                await GenerateExecutionSummaryAsync(execution, stepOutputs, userInput, db);
+            }
+            catch (Exception ex)
+            {
+                await _logger.LogAsync(projectId, executionId, "warning",
+                    $"No se pudo generar resumen: {ex.Message}");
+            }
+
             return execution;
         }
 
@@ -722,6 +737,109 @@ namespace Server.Services.Ai
                 default:
                     return [userInput ?? ""];
             }
+        }
+
+        // ── Execution summary generation ──
+        private async Task GenerateExecutionSummaryAsync(
+            ProjectExecution execution,
+            Dictionary<int, StepOutput> stepOutputs,
+            string? userInput,
+            UserDbContext db)
+        {
+            // Find an OpenAI API key from any module in this tenant DB
+            var openAiKey = await db.AiModules
+                .Include(m => m.ApiKey)
+                .Where(m => m.ProviderType == "OpenAI" && m.ApiKey != null && m.ApiKey.EncryptedKey != "")
+                .Select(m => m.ApiKey!.EncryptedKey)
+                .FirstOrDefaultAsync();
+
+            if (string.IsNullOrEmpty(openAiKey))
+                return; // No OpenAI key available, skip summary
+
+            // Build a compact representation of what was done
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(userInput))
+                parts.Add($"Input del usuario: {Truncate(userInput, 300)}");
+
+            foreach (var (stepOrder, output) in stepOutputs.OrderBy(kv => kv.Key))
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.Append($"Paso {stepOrder} ({output.Type}): ");
+                if (!string.IsNullOrWhiteSpace(output.Title))
+                    sb.Append($"titulo=\"{Truncate(output.Title, 100)}\" ");
+                if (!string.IsNullOrWhiteSpace(output.Summary))
+                    sb.Append($"resumen=\"{Truncate(output.Summary, 200)}\" ");
+                else if (!string.IsNullOrWhiteSpace(output.Content))
+                    sb.Append($"contenido=\"{Truncate(output.Content, 200)}\" ");
+                if (output.Items.Count > 0)
+                    sb.Append($"[{output.Items.Count} items: {string.Join(", ", output.Items.Take(3).Select(i => Truncate(i.Content, 80)))}] ");
+                if (output.Files.Count > 0)
+                    sb.Append($"[{output.Files.Count} archivo(s)] ");
+                parts.Add(sb.ToString().TrimEnd());
+            }
+
+            var executionContext = string.Join("\n", parts);
+            if (string.IsNullOrWhiteSpace(executionContext))
+                return;
+
+            var prompt = $@"Resume en 2-4 frases lo que se produjo en esta ejecucion de pipeline. Se conciso y especifico: que contenido se creo, sobre que tema, cuantas imagenes/videos si los hubo, y cualquier dato clave. No uses markdown ni emojis. Solo texto plano.
+
+Datos de la ejecucion:
+{executionContext}";
+
+            try
+            {
+                var client = new OpenAI.Chat.ChatClient(model: "gpt-4o-mini", apiKey: openAiKey);
+                var options = new OpenAI.Chat.ChatCompletionOptions { MaxOutputTokenCount = 200 };
+                var completion = await client.CompleteChatAsync(
+                    [new OpenAI.Chat.UserChatMessage(prompt)], options);
+
+                var summary = completion.Value.Content[0].Text?.Trim();
+                if (!string.IsNullOrWhiteSpace(summary))
+                {
+                    execution.ExecutionSummary = summary;
+                    await db.SaveChangesAsync();
+                }
+
+                var cost = PricingCatalog.EstimateTextCost("gpt-4o-mini",
+                    completion.Value.Usage.InputTokenCount, completion.Value.Usage.OutputTokenCount);
+                execution.TotalEstimatedCost += cost;
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(execution.ProjectId, execution.Id, "info",
+                    $"Resumen generado (~${cost:F4})");
+            }
+            catch (Exception ex)
+            {
+                await _logger.LogAsync(execution.ProjectId, execution.Id, "warning",
+                    $"Error generando resumen: {ex.Message}");
+            }
+        }
+
+        private static string Truncate(string text, int maxLen)
+            => text.Length <= maxLen ? text : text[..maxLen] + "...";
+
+        private static async Task<string?> BuildPreviousSummaryContextAsync(
+            UserDbContext db, Guid projectId, Guid currentExecutionId)
+        {
+            var previousSummaries = await db.ProjectExecutions
+                .Where(e => e.ProjectId == projectId
+                    && e.Status == "Completed"
+                    && e.ExecutionSummary != null
+                    && e.Id != currentExecutionId)
+                .OrderByDescending(e => e.CompletedAt)
+                .Take(10)
+                .Select(e => new { e.CompletedAt, e.ExecutionSummary })
+                .ToListAsync();
+
+            if (previousSummaries.Count == 0)
+                return null;
+
+            var lines = previousSummaries
+                .OrderBy(s => s.CompletedAt)
+                .Select(s => $"- ({s.CompletedAt:yyyy-MM-dd HH:mm}) {s.ExecutionSummary}");
+            return "[Historial de ejecuciones anteriores - NO repitas contenido ya creado]\n"
+                + string.Join("\n", lines);
         }
 
         // ── Publish step handler (via Buffer or Canva) ──
@@ -1585,6 +1703,9 @@ namespace Server.Services.Ai
             var allModules = project.ProjectModules.ToList();
             var workspacePath = execution.WorkspacePath;
 
+            // Load previous execution summaries for context
+            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, execution.ProjectId, execution.Id);
+
             for (var mi = 0; mi < allModules.Count; mi++)
             {
                 var pm = allModules[mi];
@@ -1681,6 +1802,7 @@ namespace Server.Services.Ai
                             ApiKey = apiKey,
                             Input = inputs[0],
                             ProjectContext = project.Context,
+                            PreviousExecutionsSummary = previousSummaryContext,
                             Configuration = config,
                         };
 
@@ -1825,6 +1947,18 @@ namespace Server.Services.Ai
                 .SumAsync(s => s.EstimatedCost);
             await db.SaveChangesAsync();
             await _logger.LogAsync(project.Id, execution.Id, "success", "Pipeline completado correctamente");
+
+            // Generate execution summary for future context
+            try
+            {
+                await GenerateExecutionSummaryAsync(execution, stepOutputs, pauseState.UserInput, db);
+            }
+            catch (Exception ex)
+            {
+                await _logger.LogAsync(project.Id, execution.Id, "warning",
+                    $"No se pudo generar resumen: {ex.Message}");
+            }
+
             return execution;
         }
 
@@ -2063,6 +2197,9 @@ namespace Server.Services.Ai
             var retryModulesList = project.ProjectModules
                 .Where(pm => pm.StepOrder >= fromStepOrder).ToList();
 
+            // Load previous execution summaries for context
+            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, projectId, executionId);
+
             for (var mi = 0; mi < retryModulesList.Count; mi++)
             {
                 var pm = retryModulesList[mi];
@@ -2178,6 +2315,7 @@ namespace Server.Services.Ai
                             ApiKey = apiKey,
                             Input = inputs[0],
                             ProjectContext = project.Context,
+                            PreviousExecutionsSummary = previousSummaryContext,
                             Configuration = config,
                         };
 
@@ -2414,6 +2552,17 @@ namespace Server.Services.Ai
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(projectId, executionId, "success", "Pipeline reintentado correctamente");
+
+            // Generate execution summary for future context
+            try
+            {
+                await GenerateExecutionSummaryAsync(execution, stepOutputs, originalUserInput, db);
+            }
+            catch (Exception ex)
+            {
+                await _logger.LogAsync(projectId, executionId, "warning",
+                    $"No se pudo generar resumen: {ex.Message}");
+            }
 
             return execution;
         }

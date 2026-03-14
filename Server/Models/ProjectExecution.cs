@@ -12,6 +12,8 @@ namespace Server.Models
         public string? PausedStepData { get; set; }
         public string? UserInput { get; set; }
         public decimal TotalEstimatedCost { get; set; }
+        /// <summary>AI-generated summary of what was produced in this execution, used as context for future runs.</summary>
+        public string? ExecutionSummary { get; set; }
 
         public Project Project { get; set; } = null!;
         public ICollection<StepExecution> StepExecutions { get; set; } = new List<StepExecution>();

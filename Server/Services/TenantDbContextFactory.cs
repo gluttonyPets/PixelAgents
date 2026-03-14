@@ -53,6 +53,7 @@ namespace Server.Services
                 ON ""ExecutionLogs"" (""ExecutionId"")");
             RunSafe(ctx, "ALTER TABLE \"StepExecutions\" ADD COLUMN IF NOT EXISTS \"EstimatedCost\" numeric NOT NULL DEFAULT 0");
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"TotalEstimatedCost\" numeric NOT NULL DEFAULT 0");
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"ExecutionSummary\" text");
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ProjectSchedules"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
