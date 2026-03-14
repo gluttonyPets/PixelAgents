@@ -42,6 +42,8 @@ namespace Server.Services
                 ctx.Database.ExecuteSqlRaw(
                     "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"InstagramConfig\" text");
                 ctx.Database.ExecuteSqlRaw(
+                    "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"CanvaConfig\" text");
+                ctx.Database.ExecuteSqlRaw(
                     "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtStepOrder\" integer");
                 ctx.Database.ExecuteSqlRaw(
                     "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text");
