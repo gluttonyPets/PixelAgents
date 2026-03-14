@@ -897,6 +897,11 @@ else
             _project = await Api.GetProjectDetailAsync(ProjectId);
             _modules = await Api.GetModulesAsync();
             _executions = await Api.GetExecutionsAsync(ProjectId);
+            if (_executions.Count > 0 && _result is null)
+            {
+                var latest = _executions.OrderByDescending(e => e.CreatedAt).First();
+                _result = await Api.GetExecutionDetailAsync(latest.Id);
+            }
             if (_project is not null)
                 _stepOrder = _project.Modules.Count + 1;
 
