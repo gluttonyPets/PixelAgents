@@ -1,12 +1,16 @@
 # ── Stage 1: Build Server ──
+# trigger rebuild
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-server
 WORKDIR /src
+
+ARG GIT_COMMIT=unknown
 
 COPY Server/Server.csproj Server/
 RUN dotnet restore Server/Server.csproj
 
 COPY Server/ Server/
-RUN dotnet publish Server/Server.csproj -c Release -o /app/server
+RUN dotnet publish Server/Server.csproj -c Release -o /app/server \
+ && echo "{\"commitHash\":\"${GIT_COMMIT}\",\"buildDate\":\"$(date -u '+%Y-%m-%d %H:%M:%S UTC')\"}" > /app/server/build-info.json
 
 # ── Stage 2: Build Client (Blazor WASM) ──
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-client

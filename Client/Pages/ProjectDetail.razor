@@ -59,6 +59,39 @@ else
         </div>
     </details>
 
+    <!-- Buffer Config (Publish) -->
+    <details class="card" style="margin-bottom: 1rem;">
+        <summary style="cursor: pointer; font-weight: bold;">Configuracion Buffer (Publicacion)</summary>
+        <div style="padding-top: 0.5rem;">
+            @if (_igError is not null)
+            {
+                <div class="alert alert-error">@_igError</div>
+            }
+            @if (_igSuccess)
+            {
+                <div class="alert alert-success">Configuracion Buffer guardada correctamente</div>
+            }
+            <div class="form-row">
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" @bind="_igApiKey" placeholder="Token de Buffer API" />
+                </div>
+                <div class="form-group">
+                    <label>Channel ID</label>
+                    <input type="text" @bind="_igChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
+                </div>
+            </div>
+            <p class="text-sm text-muted">
+                1. Ve a <strong>buffer.com</strong> → Cuenta → API Settings → genera tu API Key.<br/>
+                2. El <strong>Channel ID</strong> se obtiene consultando tus canales conectados via la API.<br/>
+                3. Plan gratuito: 3 canales, 10 posts programados por canal. Soporta Instagram, Twitter, LinkedIn, etc.
+            </p>
+            <button class="btn btn-primary" @onclick="SaveInstagramConfig" disabled="@_igSaving">
+                @(_igSaving ? "Guardando..." : "Guardar configuracion")
+            </button>
+        </div>
+    </details>
+
     <!-- WhatsApp Config (legacy) -->
     <details class="card" style="margin-bottom: 1rem;">
         <summary style="cursor: pointer; font-weight: bold;">Configuracion WhatsApp (alternativa)</summary>
@@ -118,6 +151,7 @@ else
                     <th>Paso</th>
                     <th>Modulo</th>
                     <th>Tipo</th>
+                    <th>Coste</th>
                     <th>Input</th>
                     <th>Orden</th>
                     <th></th>
@@ -144,6 +178,19 @@ else
                         </td>
                         <td>@pm.AiModuleName</td>
                         <td><span class="badge badge-warning">@pm.ModuleType</span></td>
+                        <td>
+                            @{
+                                var stepCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == pm.Id)?.EstimatedCost;
+                            }
+                            @if (stepCost.HasValue && stepCost.Value > 0)
+                            {
+                                <span class="text-sm text-muted">~$@stepCost.Value.ToString("F4")</span>
+                            }
+                            else
+                            {
+                                <span class="text-sm text-muted">-</span>
+                            }
+                        </td>
                         <td>
                             @if (isEditing)
                             {
@@ -273,6 +320,87 @@ else
             }
         }
 
+        @if (selectedModule?.ModuleType == "Text")
+        {
+            <div class="form-group" style="margin-top: 0.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" @bind="_isImagePrompt" />
+                    Este paso genera prompts para imagenes
+                </label>
+            </div>
+            @if (_isImagePrompt)
+            {
+                <div class="form-group">
+                    <label>Numero de imagenes a generar</label>
+                    <input type="number" @bind="_imageCount" min="1" max="20" style="max-width: 100px;" />
+                    <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                        Se forzara al modelo a devolver exactamente @_imageCount item(s) en la respuesta,
+                        cada uno sera un prompt para el paso de generacion de imagenes.
+                    </p>
+                </div>
+            }
+        }
+
+        @if (selectedModule?.ModuleType == "Video")
+        {
+            <div class="form-group" style="margin-top: 0.5rem;">
+                <label>Prompt del video <span style="color: var(--danger);">*</span></label>
+                <textarea @bind="_videoPrompt" rows="3"
+                    placeholder="Describe lo que quieres que muestre el video..."></textarea>
+                <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                    Este prompt se enviara siempre al modelo de video. Es obligatorio.
+                </p>
+            </div>
+            <div class="form-group" style="margin-top: 0.5rem;">
+                <label>Usar imagen del paso anterior</label>
+                <select @bind="_videoSource">
+                    <option value="prompt">No, solo texto</option>
+                    @if (selectedModule?.ModelName?.Contains("veo-3.1") == true)
+                    {
+                        <option value="both">Si, usar imagen + prompt</option>
+                    }
+                </select>
+                <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                    @if (_videoSource == "prompt")
+                    {
+                        <span>El video se generara unicamente a partir del prompt de texto.</span>
+                    }
+                    else
+                    {
+                        <span>Se usara la imagen generada en el paso anterior como primer fotograma junto con el prompt. Solo disponible con Veo 3.1.</span>
+                    }
+                </p>
+                @if (selectedModule?.ModelName?.Contains("veo-3.1") != true)
+                {
+                    <p class="text-sm" style="color: var(--warning); margin-top: 0.2rem;">
+                        Image-to-video solo esta disponible con modelos Veo 3.1. Este modelo solo soporta texto.
+                    </p>
+                }
+            </div>
+        }
+
+        @if (selectedModule?.ModuleType == "Publish")
+        {
+            <div class="form-group">
+                <label>Tipo de publicacion</label>
+                <select @bind="_publishType">
+                    <option value="post">Post</option>
+                    <option value="reel">Reel</option>
+                    <option value="story">Story</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
+                <textarea @bind="_publishCaption" rows="3"
+                    placeholder="{previous_output}"></textarea>
+            </div>
+            <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                Las imagenes/videos del paso anterior se adjuntan automaticamente.
+                Buffer publica en el canal configurado (Instagram, Twitter, LinkedIn, etc.).
+                Programacion automatica (Buffer elige la mejor hora). Plan gratuito: 10 posts por canal.
+            </p>
+        }
+
         <button class="btn btn-primary mt-1" @onclick="AddStep" disabled="@_loading">Agregar</button>
     </div>
 
@@ -314,7 +442,23 @@ else
             <div class="execution-results">
                 @if (_result is not null)
                 {
-                    <h3>Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span></h3>
+                    <h3>
+                        Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span>
+                        @if (_result.TotalEstimatedCost > 0)
+                        {
+                            <span class="badge" style="background: var(--surface); color: var(--text); margin-left: 0.5rem; font-weight: normal; font-size: 0.75rem;">
+                                ~$@_result.TotalEstimatedCost.ToString("F4") USD
+                            </span>
+                        }
+                    </h3>
+
+                    @if (!string.IsNullOrWhiteSpace(_result.UserInput))
+                    {
+                        <div class="card" style="margin-bottom: 0.8rem; padding: 0.6rem 0.8rem;">
+                            <label class="text-sm text-muted" style="margin-bottom: 0.2rem;">Prompt inicial</label>
+                            <div class="output-block" style="white-space: pre-wrap;">@_result.UserInput</div>
+                        </div>
+                    }
 
                     @foreach (var step in _result.Steps.OrderBy(s => s.StepOrder))
                     {
@@ -322,6 +466,10 @@ else
                             <div class="step-header">
                                 <strong>Paso @step.StepOrder: @step.ModuleName</strong>
                                 <span class="badge @StatusBadge(step.Status)">@step.Status</span>
+                                @if (step.EstimatedCost > 0)
+                                {
+                                    <span class="text-sm text-muted" style="margin-left: 0.4rem;">~$@step.EstimatedCost.ToString("F4")</span>
+                                }
                                 @if (!_executing && (_result.Status == "Completed" || _result.Status == "Failed")
                                     && (step.Status == "Completed" || step.Status == "Failed"))
                                 {
@@ -392,9 +540,18 @@ else
                                     @if (parsed.Metadata is not null)
                                     {
                                         <div class="step-meta mt-1">
+                                            @if (parsed.Metadata.TryGetValue("publishType", out var pubType))
+                                            {
+                                                <span class="badge badge-info">@pubType.ToString().ToUpper()</span>
+                                            }
                                             @if (parsed.Metadata.TryGetValue("caption", out var caption))
                                             {
                                                 <span class="badge badge-info">Caption: @caption</span>
+                                            }
+                                            @if (parsed.Metadata.ContainsKey("bufferRequest"))
+                                            {
+                                                <button class="btn btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem; margin-left: 0.3rem;"
+                                                        @onclick="() => ShowBufferDebug(parsed)">Ver API</button>
                                             }
                                             @if (parsed.Metadata.TryGetValue("model", out var model))
                                             {
@@ -409,6 +566,41 @@ else
                                                 <span class="text-sm text-muted">Out: @outTok</span>
                                             }
                                         </div>
+                                    }
+                                }
+                                else if (parsed?.Type == "video")
+                                {
+                                    @if (parsed.Metadata is not null && parsed.Metadata.TryGetValue("model", out var vidModel))
+                                    {
+                                        <span class="badge badge-warning">@vidModel</span>
+                                        @if (parsed.Metadata.TryGetValue("duration", out var vidDur))
+                                        {
+                                            <span class="text-sm text-muted ml-1">@vidDur s</span>
+                                        }
+                                        @if (parsed.Metadata.TryGetValue("resolution", out var vidRes))
+                                        {
+                                            <span class="text-sm text-muted ml-1">@vidRes</span>
+                                        }
+                                    }
+
+                                    @if (parsed.Files is not null && parsed.Files.Count > 0)
+                                    {
+                                        @foreach (var f in parsed.Files)
+                                        {
+                                            var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
+                                            <div style="margin-top: 0.5rem;">
+                                                <video controls style="max-width: 100%; border-radius: 8px;" crossorigin="use-credentials">
+                                                    <source src="@fileUrl" type="@f.ContentType" />
+                                                    Tu navegador no soporta video HTML5.
+                                                </video>
+                                                <div class="file-info" style="margin-top: 0.3rem;">
+                                                    <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
+                                                        Descargar @f.FileName
+                                                    </a>
+                                                    <span class="text-sm text-muted">(@(f.FileSize / 1024) KB)</span>
+                                                </div>
+                                            </div>
+                                        }
                                     }
                                 }
                                 else if (parsed?.Type == "image")
@@ -528,6 +720,7 @@ else
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Prompt</th>
                     <th>Status</th>
                     <th>Fecha</th>
                     <th></th>
@@ -538,6 +731,9 @@ else
                 {
                     <tr>
                         <td class="text-sm">@e.Id.ToString()[..8]...</td>
+                        <td class="text-sm" style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            @(e.UserInput is not null ? (e.UserInput.Length > 80 ? e.UserInput[..80] + "..." : e.UserInput) : "-")
+                        </td>
                         <td><span class="badge @StatusBadge(e.Status)">@e.Status</span></td>
                         <td class="text-sm text-muted">@e.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss")</td>
                         <td><button class="btn btn-sm btn-primary" @onclick="() => LoadExecution(e.Id)">Ver</button></td>
@@ -550,6 +746,25 @@ else
     {
         <p class="text-muted">Sin ejecuciones aun.</p>
     }
+}
+
+@if (_showBufferDebug)
+{
+    <div class="modal-overlay" @onclick="() => _showBufferDebug = false">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <strong>Buffer API Debug</strong>
+                <span class="badge @(_bufferDebugStatus == 200 ? "badge-success" : "badge-danger")">@_bufferDebugStatus</span>
+                <button class="btn btn-sm" style="margin-left: auto; padding: 0.1rem 0.4rem;" @onclick="() => _showBufferDebug = false">X</button>
+            </div>
+            <div class="modal-body">
+                <h4>Request</h4>
+                <pre class="debug-pre">@_bufferDebugRequest</pre>
+                <h4>Response</h4>
+                <pre class="debug-pre">@_bufferDebugResponse</pre>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
@@ -575,6 +790,17 @@ else
     private string _interactionMessageType = "combined";
     private string _interactionWaitForResponse = "true";
 
+    // Publish step (Buffer)
+    private bool _isImagePrompt = false;
+    private int _imageCount = 1;
+
+    private string _publishCaption = "";
+    private string _publishType = "post";
+
+    // Video step
+    private string _videoSource = "prompt";
+    private string _videoPrompt = "";
+
     // Edit step
     private Guid? _editingPmId;
     private string _editStepName = "";
@@ -597,6 +823,19 @@ else
     private bool _tgSuccess;
     private bool _tgSaving;
 
+    // Buffer config
+    private string _igApiKey = "";
+    private string _igChannelId = "";
+    private string? _igError;
+    private bool _igSuccess;
+    private bool _igSaving;
+
+    // Buffer API debug modal
+    private bool _showBufferDebug;
+    private string? _bufferDebugRequest;
+    private string? _bufferDebugResponse;
+    private int? _bufferDebugStatus;
+
     // WhatsApp config
     private string _waPhoneNumberId = "";
     private string _waAccessToken = "";
@@ -618,14 +857,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _apiBase = (Config["ApiBaseUrl"] ?? "https://localhost:6951").TrimEnd('/');
+        _apiBase = (Config["ApiBaseUrl"] ?? "http://localhost:5000").TrimEnd('/');
         await LoadAll();
         await InitializeSignalR();
     }
 
     private async Task InitializeSignalR()
     {
-        var apiBase = (Config["ApiBaseUrl"] ?? "https://localhost:6951").TrimEnd('/');
+        var apiBase = (Config["ApiBaseUrl"] ?? "http://localhost:5000").TrimEnd('/');
         var hubUrl = apiBase + "/hubs/execution";
 
         _hubConnection = new HubConnectionBuilder()
@@ -669,6 +908,14 @@ else
                 _tgChatId = tgConfig.ChatId;
             }
 
+            // Load Buffer config
+            var igConfig = await Api.GetInstagramConfigAsync(ProjectId);
+            if (igConfig is not null)
+            {
+                _igApiKey = igConfig.ApiKey;
+                _igChannelId = igConfig.ChannelId;
+            }
+
             // Load WhatsApp config
             var waConfig = await Api.GetWhatsAppConfigAsync(ProjectId);
             if (waConfig is not null)
@@ -702,6 +949,27 @@ else
         }
         catch (Exception ex) { _tgError = ex.Message; }
         _tgSaving = false;
+    }
+
+    private async Task SaveInstagramConfig()
+    {
+        _igError = null;
+        _igSuccess = false;
+        _igSaving = true;
+        try
+        {
+            var dto = new BufferConfigDto(_igApiKey, _igChannelId);
+            var (ok, error) = await Api.SaveInstagramConfigAsync(ProjectId, dto);
+            if (ok)
+            {
+                _igSuccess = true;
+                _modules = await Api.GetModulesAsync();
+            }
+            else
+                _igError = error;
+        }
+        catch (Exception ex) { _igError = ex.Message; }
+        _igSaving = false;
     }
 
     private async Task SaveWhatsAppConfig()
@@ -768,9 +1036,39 @@ else
                     waitForResponse = _interactionWaitForResponse == "true"
                 });
             }
+            if (mod?.ModuleType == "Text" && _isImagePrompt)
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    isImagePrompt = true,
+                    imageCount = _imageCount
+                });
+            }
+            if (mod?.ModuleType == "Publish")
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption,
+                    publishType = _publishType
+                });
+            }
+            if (mod?.ModuleType == "Video")
+            {
+                if (string.IsNullOrWhiteSpace(_videoPrompt))
+                {
+                    _stepError = "El prompt del video es obligatorio.";
+                    _loading = false;
+                    return;
+                }
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    videoSource = _videoSource,
+                    videoPrompt = _videoPrompt.Trim()
+                });
+            }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _publishCaption = ""; _publishType = "post"; _videoSource = "prompt"; _videoPrompt = ""; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
@@ -870,7 +1168,16 @@ else
     private async Task LoadExecution(Guid id)
     {
         _logEntries.Clear();
-        try { _result = await Api.GetExecutionDetailAsync(id); }
+        try
+        {
+            _result = await Api.GetExecutionDetailAsync(id);
+            // Load persisted logs
+            var logs = await Api.GetExecutionLogsAsync(id);
+            if (logs is not null)
+            {
+                _logEntries = logs.Select(l => new LogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
+            }
+        }
         catch { }
     }
 
@@ -936,6 +1243,39 @@ else
     private void ClearLog()
     {
         _logEntries.Clear();
+    }
+
+    private void ShowBufferDebug(StepOutputDto parsed)
+    {
+        _bufferDebugRequest = null;
+        _bufferDebugResponse = null;
+        _bufferDebugStatus = null;
+
+        if (parsed.Metadata is not null)
+        {
+            if (parsed.Metadata.TryGetValue("bufferRequest", out var req))
+                _bufferDebugRequest = FormatJson(req?.ToString());
+            if (parsed.Metadata.TryGetValue("bufferResponse", out var resp))
+                _bufferDebugResponse = FormatJson(resp?.ToString());
+            if (parsed.Metadata.TryGetValue("bufferStatusCode", out var sc))
+            {
+                if (sc is JsonElement je && je.TryGetInt32(out var code))
+                    _bufferDebugStatus = code;
+            }
+        }
+
+        _showBufferDebug = true;
+    }
+
+    private static string? FormatJson(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return raw;
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch { return raw; }
     }
 
     private static StepOutputDto? TryParseOutput(string? json)

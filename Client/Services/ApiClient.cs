@@ -230,6 +230,13 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
     }
 
+    public async Task<List<ExecutionLogResponse>?> GetExecutionLogsAsync(Guid executionId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/executions/{executionId}/logs");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<List<ExecutionLogResponse>>();
+    }
+
     public async Task<(bool Ok, ExecutionDetailResponse? Result, string? Error)> RetryFromStepAsync(
         Guid executionId, int stepOrder, string? comment)
     {
@@ -248,6 +255,15 @@ public class ApiClient
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/cancel");
         return resp.IsSuccessStatusCode;
+    }
+
+    // ── Build Info ──
+
+    public async Task<BuildInfoResponse?> GetBuildInfoAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/build-info");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<BuildInfoResponse>();
     }
 
     // ── Internal ──
@@ -322,6 +338,22 @@ public class ApiClient
     public async Task<(bool Ok, string? Error)> SaveTelegramConfigAsync(Guid projectId, TelegramConfigDto dto)
     {
         var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/telegram-config", dto);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    // ── Instagram (Buffer) Config ──
+
+    public async Task<BufferConfigDto?> GetInstagramConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/instagram-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<BufferConfigDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SaveInstagramConfigAsync(Guid projectId, BufferConfigDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/instagram-config", dto);
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }

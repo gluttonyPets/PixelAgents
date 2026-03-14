@@ -92,10 +92,10 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("presetStyle", out var ps) && ps is string psStr)
                 presetStyle = psStr;
 
-            // Build prompt
-            var prompt = context.Input;
+            // Build prompt with spelling rule for rendered text
+            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.Input}";
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                prompt = $"{context.ProjectContext}\n\n{prompt}";
+                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.ProjectContext}\n\n{context.Input}";
 
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
             if (prompt.Length > maxLen)
@@ -199,11 +199,13 @@ namespace Server.Services.Ai
                     }
                     var imageBytes = await imgResp.Content.ReadAsByteArrayAsync();
 
-                    return AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
+                    var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
                     {
                         ["model"] = context.ModelName,
                         ["revisedPrompt"] = ""
                     });
+                    imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName);
+                    return imgResult;
                 }
 
                 if (status == "FAILED")

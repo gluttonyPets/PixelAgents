@@ -19,10 +19,16 @@
         {
             <div>No autenticado</div>
         }
+        @if (_buildInfo is not null)
+        {
+            <div class="build-info">@_buildInfo.BuildDate | @_buildInfo.CommitHash</div>
+        }
     </div>
 </nav>
 
 @code {
+    private Client.Models.BuildInfoResponse? _buildInfo;
+
     protected override async Task OnInitializedAsync()
     {
         AuthState.OnChange += StateHasChanged;
@@ -35,6 +41,7 @@
             }
             catch { }
         }
+        try { _buildInfo = await Api.GetBuildInfoAsync(); } catch { }
     }
 
     public void Dispose()

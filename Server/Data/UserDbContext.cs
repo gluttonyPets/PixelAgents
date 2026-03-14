@@ -14,6 +14,7 @@ namespace Server.Data
         public DbSet<ProjectExecution> ProjectExecutions => Set<ProjectExecution>();
         public DbSet<StepExecution> StepExecutions => Set<StepExecution>();
         public DbSet<ExecutionFile> ExecutionFiles => Set<ExecutionFile>();
+        public DbSet<ExecutionLog> ExecutionLogs => Set<ExecutionLog>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -56,6 +57,7 @@ namespace Server.Data
                 e.Property(x => x.Context).HasColumnType("text");
                 e.Property(x => x.WhatsAppConfig).HasColumnType("text");
                 e.Property(x => x.TelegramConfig).HasColumnType("text");
+                e.Property(x => x.InstagramConfig).HasColumnType("text");
             });
 
             // ── ProjectModule ──
@@ -94,6 +96,7 @@ namespace Server.Data
 
                 e.HasIndex(x => x.ProjectId);
                 e.Property(x => x.PausedStepData).HasColumnType("text");
+                e.Property(x => x.UserInput).HasColumnType("text");
             });
 
             // ── StepExecution ──
@@ -116,6 +119,22 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 e.HasIndex(x => new { x.ExecutionId, x.StepOrder });
+            });
+
+            // ── ExecutionLog ──
+            modelBuilder.Entity<ExecutionLog>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Level).IsRequired().HasMaxLength(20);
+                e.Property(x => x.Message).IsRequired().HasColumnType("text");
+                e.Property(x => x.StepName).HasMaxLength(200);
+
+                e.HasOne(x => x.Execution)
+                    .WithMany()
+                    .HasForeignKey(x => x.ExecutionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => x.ExecutionId);
             });
 
             // ── ExecutionFile ──

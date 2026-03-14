@@ -138,7 +138,7 @@ namespace Server.Services.Telegram
         /// Parses an incoming Telegram update. Handles both regular messages and callback_query (button presses).
         /// Returns (Text, ChatId, CallbackQueryId). CallbackQueryId is non-null for button presses.
         /// </summary>
-        public static (string? Text, string? ChatId, string? CallbackQueryId) ParseIncomingUpdate(JsonElement body)
+        public static (string? Text, string? ChatId, string? CallbackQueryId, DateTime? MessageDate) ParseIncomingUpdate(JsonElement body)
         {
             try
             {
@@ -159,12 +159,13 @@ namespace Server.Services.Telegram
                     if (callbackQuery.TryGetProperty("id", out var cbIdField))
                         cbId = cbIdField.GetString();
 
-                    return (cbData, cbChatId, cbId);
+                    // Callback queries are button presses — always considered fresh
+                    return (cbData, cbChatId, cbId, null);
                 }
 
                 // Handle regular text message
                 if (!body.TryGetProperty("message", out var message))
-                    return (null, null, null);
+                    return (null, null, null, null);
 
                 string? text = null;
                 if (message.TryGetProperty("text", out var textProp))
@@ -174,11 +175,16 @@ namespace Server.Services.Telegram
                 if (message.TryGetProperty("chat", out var chat) && chat.TryGetProperty("id", out var idProp))
                     chatId = idProp.GetRawText();
 
-                return (text, chatId, null);
+                // Extract message date (Unix timestamp) to validate timing
+                DateTime? messageDate = null;
+                if (message.TryGetProperty("date", out var dateProp) && dateProp.TryGetInt64(out var unixDate))
+                    messageDate = DateTimeOffset.FromUnixTimeSeconds(unixDate).UtcDateTime;
+
+                return (text, chatId, null, messageDate);
             }
             catch
             {
-                return (null, null, null);
+                return (null, null, null, null);
             }
         }
     }

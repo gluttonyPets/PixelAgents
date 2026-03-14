@@ -197,6 +197,56 @@
                     </div>
                 </div>
             }
+            else if (_moduleType == "Video" && _provider == "Google")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Relacion de aspecto</label>
+                        <select @bind="_videoAspectRatio">
+                            <option value="16:9">16:9 (Paisaje)</option>
+                            <option value="9:16">9:16 (Retrato)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Duracion (segundos)</label>
+                        <select @bind="_videoDuration">
+                            @if (_model.Contains("veo-2"))
+                            {
+                                <option value="5">5s</option>
+                                <option value="6">6s</option>
+                                <option value="8">8s</option>
+                            }
+                            else
+                            {
+                                <option value="4">4s</option>
+                                <option value="6">6s</option>
+                                <option value="8">8s</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Resolucion</label>
+                        <select @bind="_videoResolution">
+                            <option value="720p">720p</option>
+                            @if (!_model.Contains("veo-2"))
+                            {
+                                <option value="1080p">1080p</option>
+                                <option value="4k">4K</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Generacion de personas</label>
+                        <select @bind="_videoPersonGeneration">
+                            <option value="allow_adult">Permitir adultos</option>
+                            <option value="allow_all">Permitir todos</option>
+                            <option value="dont_allow">No permitir</option>
+                        </select>
+                    </div>
+                </div>
+            }
             else if (_moduleType == "Embeddings")
             {
                 <div class="form-group">
@@ -402,6 +452,45 @@
                                         </select>
                                     </div>
                                 }
+                                else if (m.ModuleType == "Video" && m.ProviderType == "Google")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Relacion de aspecto</label>
+                                            <select @bind="_editVideoAspectRatio">
+                                                <option value="16:9">16:9 (Paisaje)</option>
+                                                <option value="9:16">9:16 (Retrato)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Duracion (segundos)</label>
+                                            <select @bind="_editVideoDuration">
+                                                <option value="4">4s</option>
+                                                <option value="5">5s</option>
+                                                <option value="6">6s</option>
+                                                <option value="8">8s</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Resolucion</label>
+                                            <select @bind="_editVideoResolution">
+                                                <option value="720p">720p</option>
+                                                <option value="1080p">1080p</option>
+                                                <option value="4k">4K</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Generacion de personas</label>
+                                            <select @bind="_editVideoPersonGeneration">
+                                                <option value="allow_adult">Permitir adultos</option>
+                                                <option value="allow_all">Permitir todos</option>
+                                                <option value="dont_allow">No permitir</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                }
                                 else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
                                 {
                                     <div class="form-row">
@@ -427,7 +516,7 @@
                                     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
                                 }
 
-                                @if (m.ModuleType is "Text" or "Image" or "Audio")
+                                @if (m.ModuleType is "Text" or "Image" or "Audio" or "Video")
                                 {
                                     <button class="btn btn-primary btn-sm" @onclick="() => SaveConfig(m)" disabled="@_editConfigSaving">
                                         @(_editConfigSaving ? "Guardando..." : "Guardar")
@@ -500,6 +589,18 @@ else if (!_loading)
     private int _geminiImageCount = 1;
     private string _editGeminiAspectRatio = "1:1";
     private int _editGeminiImageCount = 1;
+
+    // ── Form: video (Google Veo) ──
+    private string _videoAspectRatio = "16:9";
+    private string _videoDuration = "8";
+    private string _videoResolution = "720p";
+    private string _videoPersonGeneration = "allow_adult";
+
+    // ── Edit: video config ──
+    private string _editVideoAspectRatio = "16:9";
+    private string _editVideoDuration = "8";
+    private string _editVideoResolution = "720p";
+    private string _editVideoPersonGeneration = "allow_adult";
 
     // ── Form: audio TTS ──
     private string _ttsVoice = "alloy";
@@ -583,6 +684,13 @@ else if (!_loading)
         new("gemini-3.1-flash-image-preview","Gemini 3.1 Flash Image Preview","Google", ["Image"], ["image-generation"], "Ultimo modelo de imagen. Optimizado para velocidad."),
         new("gemini-3-pro-image-preview",   "Gemini 3 Pro Image Preview",   "Google", ["Image"], ["image-generation"], "Modelo Pro. Alta calidad para produccion profesional."),
 
+        // ─── Google: Video Generation (Veo) ───
+        new("veo-3.1-generate-preview", "Veo 3.1 Preview",       "Google", ["Video"], ["video-generation"], "Ultimo modelo. Hasta 8s, 4K. Soporta imagen como entrada."),
+        new("veo-3.1-fast-generate-preview", "Veo 3.1 Fast Preview", "Google", ["Video"], ["video-generation"], "Veo 3.1 rapido. Menor latencia. Soporta imagen como entrada."),
+        new("veo-3.0-generate-001",     "Veo 3.0",               "Google", ["Video"], ["video-generation"], "Veo 3 estable. Hasta 8s, 1080p. Solo texto."),
+        new("veo-3.0-fast-generate-001", "Veo 3.0 Fast",         "Google", ["Video"], ["video-generation"], "Veo 3 rapido. Menor latencia. Solo texto."),
+        new("veo-2.0-generate-001",     "Veo 2.0",               "Google", ["Video"], ["video-generation"], "Veo 2. Hasta 8s, 720p. Solo texto."),
+
         // ─── Leonardo AI: Image Generation ───
         new("leonardo-phoenix",              "Leonardo Phoenix 1.0","LeonardoAI", ["Image"], ["image-generation"], "Modelo flagship de Leonardo. Alta calidad y versatilidad."),
         new("leonardo-phoenix-0.9",          "Leonardo Phoenix 0.9","LeonardoAI", ["Image"], ["image-generation"], "Version anterior de Phoenix, estable y probada."),
@@ -604,6 +712,7 @@ else if (!_loading)
                 "Text"          => "Texto / Chat",
                 "Image"         => "Generacion de imagen",
                 "Embeddings"    => "Embeddings",
+                "Video"         => "Generacion de video",
                 "Audio"         => "Audio (TTS)",
                 "Transcription" => "Transcripcion (STT)",
                 _               => t
@@ -668,6 +777,10 @@ else if (!_loading)
         _leoPresetStyle = "DYNAMIC";
         _geminiAspectRatio = "1:1";
         _geminiImageCount = 1;
+        _videoAspectRatio = "16:9";
+        _videoDuration = "8";
+        _videoResolution = "720p";
+        _videoPersonGeneration = "allow_adult";
         _ttsVoice = "alloy";
         _ttsSpeed = 1.0;
         _transcriptionLang = "";
@@ -712,6 +825,17 @@ else if (!_loading)
                 parts.Add($"\"quality\":\"{_imageQuality}\"");
             if (IsGptImage() && _imageCount != 1)
                 parts.Add($"\"n\":{_imageCount}");
+        }
+        else if (_moduleType == "Video" && _provider == "Google")
+        {
+            if (_videoAspectRatio != "16:9")
+                parts.Add($"\"aspectRatio\":\"{_videoAspectRatio}\"");
+            if (_videoDuration != "8")
+                parts.Add($"\"duration\":\"{_videoDuration}\"");
+            if (_videoResolution != "720p")
+                parts.Add($"\"resolution\":\"{_videoResolution}\"");
+            if (_videoPersonGeneration != "allow_adult")
+                parts.Add($"\"personGeneration\":\"{_videoPersonGeneration}\"");
         }
         else if (_moduleType == "Embeddings")
         {
@@ -850,8 +974,15 @@ else if (!_loading)
                 if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
                 if (root.TryGetProperty("height", out var lh)) _editLeoHeight = lh.GetInt32();
                 if (root.TryGetProperty("presetStyle", out var lps)) _editLeoPresetStyle = lps.GetString() ?? "DYNAMIC";
-                if (root.TryGetProperty("aspectRatio", out var ar)) _editGeminiAspectRatio = ar.GetString() ?? "1:1";
+                if (root.TryGetProperty("aspectRatio", out var ar))
+                {
+                    _editGeminiAspectRatio = ar.GetString() ?? "1:1";
+                    _editVideoAspectRatio = ar.GetString() ?? "16:9";
+                }
                 if (root.TryGetProperty("numberOfImages", out var ni)) _editGeminiImageCount = ni.GetInt32();
+                if (root.TryGetProperty("duration", out var vdur)) _editVideoDuration = vdur.GetString() ?? "8";
+                if (root.TryGetProperty("resolution", out var vres)) _editVideoResolution = vres.GetString() ?? "720p";
+                if (root.TryGetProperty("personGeneration", out var vpg)) _editVideoPersonGeneration = vpg.GetString() ?? "allow_adult";
             }
             catch { }
         }
@@ -916,6 +1047,17 @@ else if (!_loading)
                 parts.Add($"\"size\":\"{_editImageSize}\"");
             if (_editImageQuality != "standard")
                 parts.Add($"\"quality\":\"{_editImageQuality}\"");
+        }
+        else if (moduleType == "Video" && providerType == "Google")
+        {
+            if (_editVideoAspectRatio != "16:9")
+                parts.Add($"\"aspectRatio\":\"{_editVideoAspectRatio}\"");
+            if (_editVideoDuration != "8")
+                parts.Add($"\"duration\":\"{_editVideoDuration}\"");
+            if (_editVideoResolution != "720p")
+                parts.Add($"\"resolution\":\"{_editVideoResolution}\"");
+            if (_editVideoPersonGeneration != "allow_adult")
+                parts.Add($"\"personGeneration\":\"{_editVideoPersonGeneration}\"");
         }
         else if (moduleType == "Audio")
         {

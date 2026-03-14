@@ -29,9 +29,9 @@ namespace Server.Services.Telegram
 
         public async Task ProcessUpdateAsync(JsonElement json)
         {
-            var (text, chatId, callbackQueryId) = TelegramService.ParseIncomingUpdate(json);
+            var (text, chatId, callbackQueryId, messageDate) = TelegramService.ParseIncomingUpdate(json);
 
-            Console.WriteLine($"[TG-Update] Parsed — text={text}, chatId={chatId}, callbackQueryId={callbackQueryId}");
+            Console.WriteLine($"[TG-Update] Parsed — text={text}, chatId={chatId}, callbackQueryId={callbackQueryId}, messageDate={messageDate:O}");
 
             if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(chatId))
             {
@@ -54,6 +54,19 @@ namespace Server.Services.Telegram
                     .ToListAsync();
                 Console.WriteLine($"[TG-Update] No correlation found for chatId={normalizedChatId}. Pending: {JsonSerializer.Serialize(pending)}");
                 return;
+            }
+
+            // Reject text messages sent before the correlation was created (prevents stale "ok" from previous pipelines)
+            // Callback queries (button presses) are exempt — they are always intentional actions on our messages.
+            if (messageDate.HasValue && string.IsNullOrWhiteSpace(callbackQueryId))
+            {
+                // Allow a small tolerance (5 seconds) to handle clock skew between Telegram servers and our server
+                var tolerance = TimeSpan.FromSeconds(5);
+                if (messageDate.Value < correlation.CreatedAt - tolerance)
+                {
+                    Console.WriteLine($"[TG-Update] Ignored stale message: messageDate={messageDate.Value:O} < correlation.CreatedAt={correlation.CreatedAt:O}");
+                    return;
+                }
             }
 
             Console.WriteLine($"[TG-Update] Matched correlation {correlation.Id} for execution {correlation.ExecutionId}");

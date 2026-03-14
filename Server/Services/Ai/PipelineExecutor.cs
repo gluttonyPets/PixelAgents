@@ -1,38 +1,56 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Server.Data;
 using Server.Hubs;
 using Server.Models;
 using Server.Services.WhatsApp;
 using Server.Services.Telegram;
+using Server.Services.Instagram;
 
 namespace Server.Services.Ai
 {
     public class PipelineExecutor : IPipelineExecutor
     {
         private readonly IAiProviderRegistry _registry;
-        private readonly IExecutionLogger _logger;
+        private IExecutionLogger _logger;
+        private readonly IExecutionLogger _baseLogger;
         private readonly WhatsAppService _whatsApp;
         private readonly TelegramService _telegram;
+        private readonly BufferService _buffer;
         private readonly CoreDbContext _coreDb;
+        private readonly IConfiguration _configuration;
+        private readonly string _mediaRoot;
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
-            WhatsAppService whatsApp, TelegramService telegram, CoreDbContext coreDb)
+            WhatsAppService whatsApp, TelegramService telegram, BufferService buffer,
+            CoreDbContext coreDb, IConfiguration configuration, IWebHostEnvironment env)
         {
             _registry = registry;
+            _baseLogger = logger;
             _logger = logger;
+            _mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
             _whatsApp = whatsApp;
             _telegram = telegram;
+            _buffer = buffer;
             _coreDb = coreDb;
+            _configuration = configuration;
         }
 
         private static bool IsInteractionStep(AiModule module) =>
             module.ModuleType == "Interaction" ||
             (module.ProviderType == "System" && (module.ModelName == "whatsapp" || module.ModelName == "telegram"));
 
+        private static bool IsPublishStep(AiModule module) =>
+            module.ModuleType == "Publish" ||
+            (module.ProviderType == "System" && module.ModelName == "instagram");
+
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
+            _logger = _baseLogger.WithDb(db);
+
             var project = await db.Projects
                 .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
                     .ThenInclude(pm => pm.AiModule)
@@ -53,8 +71,9 @@ namespace Server.Services.Ai
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                // Interaction steps don't need API key validation
-                if (IsInteractionStep(pm.AiModule))
+                // Interaction and Publish steps don't need API key validation
+                // Also skip modules without ApiKeyId (e.g. system modules) — they have their own validation
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -85,7 +104,7 @@ namespace Server.Services.Ai
                     "Validacion pre-ejecucion fallida:\n" + string.Join("\n", errors));
 
             var executionId = Guid.NewGuid();
-            var workspacePath = Path.Combine("storage", tenantDbName, projectId.ToString(), executionId.ToString());
+            var workspacePath = Path.Combine(_mediaRoot, tenantDbName, projectId.ToString(), executionId.ToString());
 
             var execution = new ProjectExecution
             {
@@ -94,6 +113,7 @@ namespace Server.Services.Ai
                 Status = "Running",
                 WorkspacePath = workspacePath,
                 CreatedAt = DateTime.UtcNow,
+                UserInput = userInput,
             };
 
             db.ProjectExecutions.Add(execution);
@@ -154,6 +174,15 @@ namespace Server.Services.Ai
                         continue; // fire-and-forget: move to next step
                     }
 
+                    // ── Publish step: publish content via Buffer ──
+                    if (IsPublishStep(pm.AiModule))
+                    {
+                        await HandlePublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada para modulo '{pm.AiModule.Name}'");
 
@@ -172,6 +201,10 @@ namespace Server.Services.Ai
                         else
                             config["systemPrompt"] = rule;
                     }
+
+                    // Inject image count rule if configured
+                    if (pm.AiModule.ModuleType == "Text")
+                        InjectImageCountRule(config);
 
                     // Resolve inputs: check if previous step has multiple items
                     var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
@@ -210,6 +243,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -286,6 +320,7 @@ namespace Server.Services.Ai
                             };
 
                             var result = await provider.ExecuteAsync(context);
+                            stepExecution.EstimatedCost += result.EstimatedCost;
 
                             if (!result.Success)
                             {
@@ -354,6 +389,159 @@ namespace Server.Services.Ai
                             $"{outputFiles.Count} imagen(es) generada(s) correctamente",
                             pm.StepOrder, stepName);
                     }
+                    else if (pm.AiModule.ModuleType == "Video")
+                    {
+                        // Video modules: prompt always from step config (set by user), never from previous step
+                        // Debug: log raw config from DB
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"[Video Debug] moduleConfig={pm.AiModule.Configuration ?? "null"}, stepConfig={pm.Configuration ?? "null"}",
+                            pm.StepOrder, stepName);
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"[Video Debug] merged config keys=[{string.Join(", ", config.Keys)}], values=[{string.Join(", ", config.Select(kv => $"{kv.Key}={kv.Value}"))}]",
+                            pm.StepOrder, stepName);
+
+                        // Read prompt from step configuration (mandatory, set in UI)
+                        // Values come as JsonElement from MergeConfiguration
+                        var videoPrompt = "";
+                        if (config.TryGetValue("videoPrompt", out var vp))
+                            videoPrompt = vp is JsonElement vpEl ? vpEl.GetString() ?? "" : vp?.ToString() ?? "";
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"[Video Debug] videoPrompt extracted='{videoPrompt}', vp type={vp?.GetType().Name ?? "null"}, vp value={vp}",
+                            pm.StepOrder, stepName);
+
+                        if (string.IsNullOrWhiteSpace(videoPrompt))
+                        {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                $"El paso de video no tiene prompt configurado. Config keys: [{string.Join(", ", config.Keys)}]",
+                                pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, "Prompt de video no configurado", db);
+                            return execution;
+                        }
+
+                        var videoSource = "prompt";
+                        if (config.TryGetValue("videoSource", out var vs))
+                            videoSource = vs is JsonElement vsEl ? vsEl.GetString() ?? "prompt" : vs?.ToString() ?? "prompt";
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Video config: videoSource={videoSource}, prompt={videoPrompt[..Math.Min(videoPrompt.Length, 100)]}..., model={pm.AiModule.ModelName}",
+                            pm.StepOrder, stepName);
+
+                        var videoContext = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = videoPrompt,
+                            ProjectContext = project.Context,
+                            Configuration = config,
+                        };
+
+                        // Load image from previous step if videoSource is "both"
+                        if (videoSource == "both")
+                        {
+                            var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
+                                .OrderByDescending(k => k).FirstOrDefault();
+
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Buscando imagen en paso anterior (orden {prevOrder}). StepOutputs keys: [{string.Join(", ", stepOutputs.Keys)}]",
+                                pm.StepOrder, stepName);
+
+                            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput))
+                            {
+                                await _logger.LogAsync(projectId, executionId, "info",
+                                    $"Paso {prevOrder}: tipo={prevOutput.Type}, files={prevOutput.Files.Count}" +
+                                    (prevOutput.Files.Count > 0 ? $", file0={prevOutput.Files[0].FileName} ({prevOutput.Files[0].ContentType}, {prevOutput.Files[0].FileSize} bytes)" : ""),
+                                    pm.StepOrder, stepName);
+
+                                if (prevOutput.Files.Count > 0
+                                    && prevOutput.Files[0].ContentType.StartsWith("image/"))
+                                {
+                                    var prevFile = prevOutput.Files[0];
+                                    var prevFilePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevFile.FileName);
+
+                                    await _logger.LogAsync(projectId, executionId, "info",
+                                        $"Cargando imagen: {prevFilePath} (exists={File.Exists(prevFilePath)})",
+                                        pm.StepOrder, stepName);
+
+                                    if (File.Exists(prevFilePath))
+                                    {
+                                        var imgBytes = await File.ReadAllBytesAsync(prevFilePath);
+                                        videoContext.InputFiles = new List<byte[]> { imgBytes };
+                                        await _logger.LogAsync(projectId, executionId, "info",
+                                            $"Imagen cargada: {imgBytes.Length} bytes, se pasara a Veo como entrada",
+                                            pm.StepOrder, stepName);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                await _logger.LogAsync(projectId, executionId, "warning",
+                                    $"No se encontro output del paso {prevOrder}. Se generara video solo con prompt.",
+                                    pm.StepOrder, stepName);
+                            }
+                        }
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"[Video Debug] Llamando a Veo: Input='{videoContext.Input[..Math.Min(videoContext.Input.Length, 100)]}', InputFiles={videoContext.InputFiles?.Count ?? 0}, Model={videoContext.ModelName}",
+                            pm.StepOrder, stepName);
+
+                        var result = await provider.ExecuteAsync(videoContext);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
+
+                        if (!result.Success)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                $"Error en video: {result.Error}", pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        var outputFiles = new List<OutputFile>();
+
+                        if (result.FileOutput is not null)
+                        {
+                            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            Directory.CreateDirectory(stepDir);
+
+                            var ext = GetExtension(result.ContentType ?? "video/mp4");
+                            var fileName = $"output{ext}";
+                            var filePath = Path.Combine(stepDir, fileName);
+                            await File.WriteAllBytesAsync(filePath, result.FileOutput);
+
+                            var execFile = new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(),
+                                StepExecutionId = stepExecution.Id,
+                                FileName = fileName,
+                                ContentType = result.ContentType ?? "video/mp4",
+                                FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                Direction = "Output",
+                                FileSize = result.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            };
+                            db.ExecutionFiles.Add(execFile);
+
+                            outputFiles.Add(new OutputFile
+                            {
+                                FileId = execFile.Id,
+                                FileName = fileName,
+                                ContentType = execFile.ContentType,
+                                FileSize = execFile.FileSize
+                            });
+                        }
+
+                        var videoOutput = OutputSchemaHelper.BuildVideoOutput(outputFiles, pm.AiModule.ModelName, result.Metadata);
+                        stepOutputs[pm.StepOrder] = videoOutput;
+                        stepExecution.OutputData = JsonSerializer.Serialize(videoOutput);
+                        await db.SaveChangesAsync();
+
+                        await _logger.LogAsync(projectId, executionId, "success",
+                            $"Video generado correctamente ({result.Metadata.GetValueOrDefault("duration", "?")}s)",
+                            pm.StepOrder, stepName);
+                    }
                     else
                     {
                         // Generic fallback for other module types (Audio, Transcription, etc.)
@@ -370,6 +558,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -444,6 +633,9 @@ namespace Server.Services.Ai
 
             execution.Status = "Completed";
             execution.CompletedAt = DateTime.UtcNow;
+            execution.TotalEstimatedCost = await db.StepExecutions
+                .Where(s => s.ExecutionId == execution.Id)
+                .SumAsync(s => s.EstimatedCost);
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(projectId, executionId, "success", "Pipeline completado correctamente");
@@ -512,6 +704,270 @@ namespace Server.Services.Ai
 
                 default:
                     return [userInput ?? ""];
+            }
+        }
+
+        // ── Publish step handler (via Buffer) ──
+        private async Task HandlePublishStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            UserDbContext db,
+            string? tenantDbName = null)
+        {
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+            var projectId = project.Id;
+            var executionId = execution.Id;
+
+            if (string.IsNullOrWhiteSpace(project.InstagramConfig))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Buffer");
+
+            var bufferConfig = JsonSerializer.Deserialize<BufferConfig>(project.InstagramConfig)
+                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Buffer invalida");
+
+            if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: API Key de Buffer no configurada");
+
+            // Read publish config from step configuration
+            var stepConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+            // Build caption from template + previous output
+            var captionTemplate = "{previous_output}";
+            if (stepConfig.TryGetValue("caption", out var capVal))
+            {
+                var cap = capVal is JsonElement capEl ? capEl.GetString() : capVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(cap))
+                    captionTemplate = cap;
+            }
+
+            // For caption, skip Interaction steps (their output is just the user's response, e.g. "continue")
+            var previousText = "";
+            string? previousTitle = null;
+            var candidateOrders = stepOutputs.Keys
+                .Where(k => k < pm.StepOrder)
+                .OrderByDescending(k => k)
+                .ToList();
+
+            foreach (var co in candidateOrders)
+            {
+                if (stepModuleTypes.TryGetValue(co, out var prevModType) &&
+                    prevModType == "Interaction")
+                    continue;
+
+                if (stepOutputs.TryGetValue(co, out var prevOutput))
+                {
+                    previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
+                    if (!string.IsNullOrWhiteSpace(prevOutput.Title))
+                        previousTitle ??= prevOutput.Title;
+                    break;
+                }
+                if (stepResults.TryGetValue(co, out var prevResult))
+                {
+                    previousText = prevResult.TextOutput ?? "";
+                    break;
+                }
+            }
+
+            // If no title found yet, search all previous non-Interaction steps for a title
+            if (previousTitle is null)
+            {
+                foreach (var co in candidateOrders)
+                {
+                    if (stepModuleTypes.TryGetValue(co, out var mt) && mt == "Interaction")
+                        continue;
+                    if (stepOutputs.TryGetValue(co, out var so) && !string.IsNullOrWhiteSpace(so.Title))
+                    {
+                        previousTitle = so.Title;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback: if all previous steps were Interaction, use the most recent one
+            if (string.IsNullOrEmpty(previousText) && candidateOrders.Count > 0)
+            {
+                var fallbackOrder = candidateOrders[0];
+                if (stepOutputs.TryGetValue(fallbackOrder, out var fbOutput))
+                    previousText = fbOutput.Content ?? string.Join("\n", fbOutput.Items.Select(i => i.Content));
+                else if (stepResults.TryGetValue(fallbackOrder, out var fbResult))
+                    previousText = fbResult.TextOutput ?? "";
+            }
+
+            // Use the AI-generated title as caption if available, otherwise fall back to template
+            var caption = !string.IsNullOrWhiteSpace(previousTitle) && captionTemplate == "{previous_output}"
+                ? previousTitle
+                : captionTemplate
+                    .Replace("{previous_output}", previousText)
+                    .Replace("{step_number}", pm.StepOrder.ToString());
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Publicando via Buffer...", pm.StepOrder, stepName);
+
+            // Collect and classify media from the nearest non-Interaction previous step
+            var classifiedMedia = new List<ClassifiedMedia>();
+            var mediaStepOrder = candidateOrders.FirstOrDefault(co =>
+                !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
+            if (mediaStepOrder == 0 && candidateOrders.Count > 0)
+                mediaStepOrder = candidateOrders[0]; // fallback
+
+            var prevStepExec = await db.StepExecutions
+                .Include(s => s.Files)
+                .FirstOrDefaultAsync(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder);
+
+            if (prevStepExec?.Files is not null)
+            {
+                var serverBaseUrl = (_configuration["BaseUrl"]
+                    ?? _configuration["AllowedOrigin"]
+                    ?? "").TrimEnd('/');
+
+                // Warn if the URL is not publicly accessible
+                var isLocal = string.IsNullOrEmpty(serverBaseUrl)
+                    || serverBaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+                    || serverBaseUrl.Contains("127.0.0.1")
+                    || serverBaseUrl.Contains("0.0.0.0");
+
+                if (isLocal)
+                {
+                    await _logger.LogAsync(projectId, executionId, "warning",
+                        $"La URL base del servidor ({(string.IsNullOrEmpty(serverBaseUrl) ? "(vacia)" : serverBaseUrl)}) " +
+                        "no es accesible desde internet. Buffer no podra descargar las imagenes. " +
+                        "Configura BaseUrl o AllowedOrigin con tu IP/dominio publico.",
+                        pm.StepOrder, stepName);
+                }
+
+                if (tenantDbName is null)
+                {
+                    await _logger.LogAsync(projectId, executionId, "error",
+                        "No se puede publicar con imagenes sin tenant. Buffer necesita una URL publica.",
+                        pm.StepOrder, stepName);
+                }
+
+                foreach (var file in prevStepExec.Files.Where(f =>
+                    f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
+                {
+                    var publicUrl = $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}/{file.FileName}";
+                    var kind = file.ContentType.StartsWith("video/") ? MediaKind.Video : MediaKind.Image;
+                    classifiedMedia.Add(new ClassifiedMedia { Url = publicUrl, Kind = kind });
+                }
+            }
+
+            var hasImages = classifiedMedia.Any(m => m.Kind == MediaKind.Image);
+            var hasVideos = classifiedMedia.Any(m => m.Kind == MediaKind.Video);
+
+            // Read publish type from step configuration (post/reel/story)
+            var publishType = "post";
+            if (stepConfig.TryGetValue("publishType", out var ptVal))
+            {
+                var pt = ptVal is JsonElement ptEl ? ptEl.GetString() : ptVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(pt))
+                    publishType = pt;
+            }
+
+            // Auto-adjust publishType based on actual media type
+            var originalPublishType = publishType;
+            if (hasImages && !hasVideos && publishType == "reel")
+            {
+                publishType = "post";
+                await _logger.LogAsync(projectId, executionId, "warning",
+                    $"publishType cambiado de 'reel' a 'post' porque solo hay imagenes (reel requiere video)",
+                    pm.StepOrder, stepName);
+            }
+
+            // Publish via Buffer
+            BufferPublishResult bufferResult;
+            try
+            {
+                bufferResult = await _buffer.PublishAsync(
+                    bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType);
+            }
+            catch (Exception ex)
+            {
+                await _logger.LogAsync(projectId, executionId, "error",
+                    $"Error publicando via Buffer: {ex.Message}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
+                throw;
+            }
+
+            // Build plain-text output with status and schedule
+            string outputText;
+            string scheduleLine = "";
+            if (bufferResult.IsSuccess)
+            {
+                if (!string.IsNullOrEmpty(bufferResult.DueAt) &&
+                    DateTime.TryParse(bufferResult.DueAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dueDate))
+                {
+                    scheduleLine = $"Programado para: {dueDate:dd/MM/yyyy HH:mm} UTC";
+                }
+                else
+                {
+                    scheduleLine = "Programado (horario pendiente de confirmacion)";
+                }
+                outputText = $"Publicacion exitosa\nPost ID: {bufferResult.PostId}\n{scheduleLine}";
+            }
+            else
+            {
+                outputText = $"Error en publicacion: {bufferResult.Error}";
+            }
+
+            var publishOutput = new StepOutput
+            {
+                Type = "text",
+                Content = outputText,
+                Summary = bufferResult.IsSuccess
+                    ? $"Publicado via Buffer - {scheduleLine}"
+                    : $"Error Buffer: {bufferResult.Error}",
+                Items = [new OutputItem { Content = outputText, Label = "buffer publish" }],
+                Metadata = new Dictionary<string, object>
+                {
+                    ["publishType"] = publishType,
+                    ["caption"] = caption,
+                    ["bufferPostId"] = bufferResult.PostId,
+                    ["bufferDueAt"] = bufferResult.DueAt ?? "",
+                    ["bufferRequest"] = bufferResult.RequestBody,
+                    ["bufferResponse"] = bufferResult.ResponseBody,
+                    ["bufferStatusCode"] = bufferResult.StatusCode
+                }
+            };
+
+            stepExecution.OutputData = JsonSerializer.Serialize(publishOutput);
+            stepExecution.InputData = JsonSerializer.Serialize(new
+            {
+                caption,
+                mediaCount = classifiedMedia.Count,
+                imageCount = classifiedMedia.Count(m => m.Kind == MediaKind.Image),
+                videoCount = classifiedMedia.Count(m => m.Kind == MediaKind.Video),
+                originalPublishType,
+                effectivePublishType = publishType,
+                bufferPostId = bufferResult.PostId
+            });
+
+            if (bufferResult.IsSuccess)
+            {
+                stepExecution.Status = "Completed";
+                stepExecution.CompletedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+
+                stepOutputs[pm.StepOrder] = publishOutput;
+                stepModuleTypes[pm.StepOrder] = "Publish";
+                stepResults[pm.StepOrder] = AiResult.Ok(outputText, new Dictionary<string, object>
+                {
+                    ["bufferPostId"] = bufferResult.PostId,
+                    ["bufferDueAt"] = bufferResult.DueAt ?? "",
+                    ["mediaCount"] = classifiedMedia.Count
+                });
+
+                await _logger.LogAsync(projectId, executionId, "success",
+                    $"Publicado via Buffer (post {bufferResult.PostId}) - {scheduleLine}",
+                    pm.StepOrder, stepName);
+            }
+            else
+            {
+                await _logger.LogAsync(projectId, executionId, "error",
+                    $"Error publicando via Buffer: {bufferResult.Error}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, $"Error Buffer: {bufferResult.Error}", db);
+                throw new InvalidOperationException(bufferResult.Error);
             }
         }
 
@@ -743,6 +1199,8 @@ namespace Server.Services.Ai
         public async Task<ProjectExecution> ResumeFromInteractionAsync(
             Guid executionId, string responseText, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
+            _logger = _baseLogger.WithDb(db);
+
             var execution = await db.ProjectExecutions
                 .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
                 .FirstOrDefaultAsync(e => e.Id == executionId && e.Status == "WaitingForInput")
@@ -862,6 +1320,15 @@ namespace Server.Services.Ai
                         continue;
                     }
 
+                    // Handle publish step
+                    if (IsPublishStep(pm.AiModule))
+                    {
+                        await HandlePublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
 
@@ -880,6 +1347,10 @@ namespace Server.Services.Ai
                             config["systemPrompt"] = rule;
                     }
 
+                    // Inject image count rule if configured
+                    if (pm.AiModule.ModuleType == "Text")
+                        InjectImageCountRule(config);
+
                     var inputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
 
                     if (pm.AiModule.ModuleType == "Text")
@@ -897,6 +1368,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -955,6 +1427,7 @@ namespace Server.Services.Ai
                             };
 
                             var result = await provider.ExecuteAsync(context);
+                            stepExecution.EstimatedCost += result.EstimatedCost;
 
                             if (!result.Success)
                             {
@@ -1028,6 +1501,9 @@ namespace Server.Services.Ai
 
             execution.Status = "Completed";
             execution.CompletedAt = DateTime.UtcNow;
+            execution.TotalEstimatedCost = await db.StepExecutions
+                .Where(s => s.ExecutionId == execution.Id)
+                .SumAsync(s => s.EstimatedCost);
             await db.SaveChangesAsync();
             await _logger.LogAsync(project.Id, execution.Id, "success", "Pipeline completado correctamente");
             return execution;
@@ -1074,6 +1550,34 @@ namespace Server.Services.Ai
             return config;
         }
 
+        /// <summary>
+        /// If the Text step is configured as an image prompt generator, injects a rule
+        /// forcing the model to return exactly N items in the output.
+        /// </summary>
+        private static void InjectImageCountRule(Dictionary<string, object> config)
+        {
+            if (!config.TryGetValue("isImagePrompt", out var ipVal))
+                return;
+
+            var isImgPrompt = ipVal is JsonElement jpIp ? jpIp.GetBoolean() : ipVal is bool b && b;
+            if (!isImgPrompt)
+                return;
+
+            var imgCount = 1;
+            if (config.TryGetValue("imageCount", out var icVal))
+                imgCount = icVal is JsonElement jpIc ? jpIc.GetInt32() : Convert.ToInt32(icVal);
+
+            var imgRule = $"\n\nREGLA DE IMAGENES: Este prompt genera descripciones para imagenes. " +
+                $"DEBES devolver EXACTAMENTE {imgCount} elemento(s) en el array \"items\". " +
+                $"Cada item debe ser un prompt descriptivo independiente para generar una imagen. " +
+                $"No generes mas ni menos de {imgCount}. Esto es obligatorio.";
+
+            if (config.TryGetValue("systemPrompt", out var existingSp) && existingSp is string sp)
+                config["systemPrompt"] = sp + imgRule;
+            else
+                config["systemPrompt"] = imgRule;
+        }
+
         public async Task<ProjectExecution> AbortFromInteractionAsync(
             Guid executionId, UserDbContext db, string tenantDbName)
         {
@@ -1107,6 +1611,8 @@ namespace Server.Services.Ai
         public async Task<ProjectExecution> RetryFromStepAsync(
             Guid executionId, int fromStepOrder, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
+            _logger = _baseLogger.WithDb(db);
+
             var execution = await db.ProjectExecutions
                 .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
                     .ThenInclude(s => s.Files)
@@ -1135,7 +1641,7 @@ namespace Server.Services.Ai
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (IsInteractionStep(pm.AiModule))
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -1282,6 +1788,15 @@ namespace Server.Services.Ai
                         continue;
                     }
 
+                    // Handle publish step during retry
+                    if (IsPublishStep(pm.AiModule))
+                    {
+                        await HandlePublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
 
@@ -1300,6 +1815,10 @@ namespace Server.Services.Ai
                         else
                             config["systemPrompt"] = rule;
                     }
+
+                    // Inject image count rule if configured
+                    if (pm.AiModule.ModuleType == "Text")
+                        InjectImageCountRule(config);
 
                     var inputs = ResolveInputs(pm, originalUserInput, stepResults, stepOutputs,
                         pm.AiModule.ModuleType, pm.AiModule.ModelName);
@@ -1337,6 +1856,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -1403,6 +1923,7 @@ namespace Server.Services.Ai
                             };
 
                             var result = await provider.ExecuteAsync(context);
+                            stepExecution.EstimatedCost += result.EstimatedCost;
 
                             if (!result.Success)
                             {
@@ -1485,6 +2006,7 @@ namespace Server.Services.Ai
                         var result = await provider.ExecuteAsync(context);
                         stepResults[pm.StepOrder] = result;
                         stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
 
                         if (!result.Success)
                         {
@@ -1558,6 +2080,9 @@ namespace Server.Services.Ai
 
             execution.Status = "Completed";
             execution.CompletedAt = DateTime.UtcNow;
+            execution.TotalEstimatedCost = await db.StepExecutions
+                .Where(s => s.ExecutionId == execution.Id)
+                .SumAsync(s => s.EstimatedCost);
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(projectId, executionId, "success", "Pipeline reintentado correctamente");
@@ -1617,6 +2142,8 @@ namespace Server.Services.Ai
             "image/webp" => ".webp",
             "audio/mpeg" or "audio/mp3" => ".mp3",
             "audio/wav" => ".wav",
+            "video/mp4" => ".mp4",
+            "video/webm" => ".webm",
             "text/plain" => ".txt",
             _ => ".bin"
         };

@@ -57,6 +57,7 @@ builder.Services.AddSingleton<IAiProvider, GeminiProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddHttpClient<Server.Services.WhatsApp.WhatsAppService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
+builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
@@ -681,7 +682,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
             new StepExecutionResponse(s.Id, s.ProjectModuleId,
                 s.ProjectModule.AiModule.Name, s.StepOrder,
                 s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                s.CreatedAt, s.CompletedAt,
+                s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                 s.Files.Select(f => new ExecutionFileResponse(
                     f.Id, f.FileName, f.ContentType, f.FilePath,
                     f.Direction, f.FileSize, f.CreatedAt)).ToList()
@@ -691,7 +692,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 
         return Results.Ok(new ExecutionDetailResponse(
             exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, steps));
+            exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
     }
     catch (Exception ex)
     {
@@ -711,7 +712,7 @@ app.MapGet("/api/projects/{projectId}/executions", async (
         .Where(e => e.ProjectId == projectId)
         .OrderByDescending(e => e.CreatedAt)
         .Select(e => new ExecutionResponse(e.Id, e.ProjectId, e.Status,
-            e.WorkspacePath, e.CreatedAt, e.CompletedAt))
+            e.WorkspacePath, e.CreatedAt, e.CompletedAt, e.UserInput, e.TotalEstimatedCost))
         .ToListAsync();
 
     return Results.Ok(executions);
@@ -738,7 +739,7 @@ app.MapGet("/api/executions/{id}", async (
         new StepExecutionResponse(s.Id, s.ProjectModuleId,
             s.ProjectModule.AiModule.Name, s.StepOrder,
             s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-            s.CreatedAt, s.CompletedAt,
+            s.CreatedAt, s.CompletedAt, s.EstimatedCost,
             s.Files.Select(f => new ExecutionFileResponse(
                 f.Id, f.FileName, f.ContentType, f.FilePath,
                 f.Direction, f.FileSize, f.CreatedAt)).ToList()
@@ -746,7 +747,24 @@ app.MapGet("/api/executions/{id}", async (
 
     return Results.Ok(new ExecutionDetailResponse(
         exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-        exec.CreatedAt, exec.CompletedAt, steps));
+        exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
+}).RequireAuthorization();
+
+// Get persisted logs for an execution
+app.MapGet("/api/executions/{executionId}/logs", async (
+    Guid executionId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var logs = await db.ExecutionLogs
+        .Where(l => l.ExecutionId == executionId)
+        .OrderBy(l => l.Timestamp)
+        .Select(l => new { l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp })
+        .ToListAsync();
+
+    return Results.Ok(logs);
 }).RequireAuthorization();
 
 // Retry execution from a specific step
@@ -781,7 +799,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
             new StepExecutionResponse(s.Id, s.ProjectModuleId,
                 s.ProjectModule.AiModule.Name, s.StepOrder,
                 s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                s.CreatedAt, s.CompletedAt,
+                s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                 s.Files.Select(f => new ExecutionFileResponse(
                     f.Id, f.FileName, f.ContentType, f.FilePath,
                     f.Direction, f.FileSize, f.CreatedAt)).ToList()
@@ -789,7 +807,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
 
         return Results.Ok(new ExecutionDetailResponse(
             exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, steps));
+            exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
     }
     catch (Exception ex)
     {
@@ -828,6 +846,33 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     var bytes = await File.ReadAllBytesAsync(fullPath);
     return Results.File(bytes, file.ContentType, file.FileName);
 }).RequireAuthorization();
+
+// Public file endpoint for external services (e.g., Buffer) that cannot authenticate
+app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async (
+    string tenant, Guid executionId, Guid fileId, string fileName, ITenantDbContextFactory factory) =>
+{
+    UserDbContext db;
+    try { db = factory.Create(tenant); }
+    catch { return Results.NotFound(); }
+
+    await using (db)
+    {
+        var exec = await db.ProjectExecutions
+            .FirstOrDefaultAsync(e => e.Id == executionId);
+        if (exec is null) return Results.NotFound();
+
+        var file = await db.ExecutionFiles
+            .FirstOrDefaultAsync(f => f.Id == fileId &&
+                f.StepExecution.ExecutionId == executionId);
+        if (file is null) return Results.NotFound();
+
+        var fullPath = Path.Combine(exec.WorkspacePath, file.FilePath);
+        if (!File.Exists(fullPath)) return Results.NotFound();
+
+        var bytes = await File.ReadAllBytesAsync(fullPath);
+        return Results.File(bytes, file.ContentType, file.FileName);
+    }
+});
 
 // ==================== WhatsApp Config Endpoints ====================
 
@@ -1052,6 +1097,59 @@ app.MapGet("/api/projects/{projectId:guid}/telegram-webhook-info", async (
     }
 }).RequireAuthorization();
 
+// ==================== Instagram (Buffer) Config Endpoints ====================
+
+app.MapGet("/api/projects/{projectId:guid}/instagram-config", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(project.InstagramConfig))
+        return Results.Ok(new BufferConfigDto("", ""));
+
+    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.InstagramConfig);
+    return Results.Ok(config);
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
+    Guid projectId, BufferConfigDto dto, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    project.InstagramConfig = System.Text.Json.JsonSerializer.Serialize(dto);
+    project.UpdatedAt = DateTime.UtcNow;
+
+    // Ensure the Buffer Publish sentinel module exists
+    var hasBufferPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "instagram");
+    if (!hasBufferPublish)
+    {
+        db.AiModules.Add(new AiModule
+        {
+            Id = Guid.NewGuid(),
+            Name = "Buffer Publish",
+            Description = "Publica contenido en redes sociales (Instagram, Twitter, etc.) via Buffer.",
+            ProviderType = "System",
+            ModuleType = "Publish",
+            ModelName = "instagram",
+            IsEnabled = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { message = "Configuracion Buffer guardada" });
+}).RequireAuthorization();
+
 // ==================== Telegram Webhook Endpoint ====================
 
 app.MapPost("/api/webhooks/telegram", async (
@@ -1069,5 +1167,17 @@ app.MapPost("/api/webhooks/telegram", async (
 });
 
 app.MapHub<ExecutionHub>("/hubs/execution");
+
+// ── Build info ──
+app.MapGet("/api/build-info", () =>
+{
+    var path = Path.Combine(AppContext.BaseDirectory, "build-info.json");
+    if (File.Exists(path))
+    {
+        var json = File.ReadAllText(path);
+        return Results.Content(json, "application/json");
+    }
+    return Results.Ok(new { commitHash = "unknown", buildDate = "unknown" });
+});
 
 app.Run();

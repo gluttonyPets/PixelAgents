@@ -8,6 +8,9 @@ namespace Server.Services.Ai
         [JsonPropertyName("type")]
         public string Type { get; set; } = default!;
 
+        [JsonPropertyName("title")]
+        public string? Title { get; set; }
+
         [JsonPropertyName("content")]
         public string? Content { get; set; }
 
@@ -55,6 +58,7 @@ namespace Server.Services.Ai
     {
         private const string TextOutputInstruction = @"IMPORTANTE: Debes responder SIEMPRE en JSON valido con esta estructura exacta (sin texto adicional fuera del JSON):
 {
+  ""title"": ""titulo corto y atractivo para publicacion"",
   ""content"": ""tu respuesta completa aqui"",
   ""summary"": ""resumen de 1-2 frases"",
   ""items"": [
@@ -64,6 +68,7 @@ namespace Server.Services.Ai
 }
 
 Reglas:
+- ""title"" es obligatorio: crea un titulo corto, atractivo y descriptivo (maximo 100 caracteres). Este titulo se usara como descripcion de la publicacion en redes sociales.
 - ""content"" es obligatorio: pon aqui tu respuesta principal completa.
 - ""summary"" es obligatorio: resumen breve del contenido.
 - Si generas multiples elementos (slides, prompts de imagen, secciones, partes), pon cada uno como un objeto en ""items"" con su ""content"" y ""label"".
@@ -79,7 +84,13 @@ Reglas de formato (OBLIGATORIAS para todos los valores de texto):
 - NO uses saltos de linea (\n) dentro de los valores de texto. Escribe todo en una sola linea continua.
 - NO uses caracteres especiales decorativos: flechas, bullets, guiones largos, comillas tipograficas, simbolos como estrella, circulo, rombo, triangulo, flecha, etc.
 - Usa solo texto plano ASCII basico: letras, numeros, puntuacion normal (. , ; : ! ? ' "").
-- Si necesitas separar ideas, usa comas o puntos, nunca saltos de linea ni listas.";
+- Si necesitas separar ideas, usa comas o puntos, nunca saltos de linea ni listas.
+
+Reglas de contenido (OBLIGATORIAS):
+- NUNCA menciones marcas, empresas, productos, servicios o nombres comerciales de ningun tipo. Esto incluye marcas de tecnologia, redes sociales, ropa, alimentacion, automocion, software, hardware, o cualquier otro sector.
+- Si necesitas referirte a un concepto asociado a una marca, usa una descripcion generica. Por ejemplo: en vez de ""Instagram"" di ""redes sociales"", en vez de ""iPhone"" di ""telefono movil"", en vez de ""Photoshop"" di ""editor de imagenes"".
+- Esta regla aplica a todos los campos: title, content, summary, items y metadata.
+- No uses nombres de marcas ni siquiera como referencia, comparacion, ejemplo o metafora.";
 
         public static string GetTextOutputInstruction() => TextOutputInstruction;
 
@@ -137,6 +148,27 @@ Reglas de formato (OBLIGATORIAS para todos los valores de texto):
                     ["model"] = modelName,
                     ["count"] = files.Count
                 }
+            };
+        }
+
+        /// <summary>
+        /// Construye un StepOutput para un módulo de video.
+        /// </summary>
+        public static StepOutput BuildVideoOutput(List<OutputFile> files, string modelName, Dictionary<string, object>? extraMeta = null)
+        {
+            var meta = new Dictionary<string, object>
+            {
+                ["model"] = modelName,
+                ["count"] = files.Count
+            };
+            if (extraMeta is not null)
+                foreach (var kv in extraMeta) meta[kv.Key] = kv.Value;
+
+            return new StepOutput
+            {
+                Type = "video",
+                Files = files,
+                Metadata = meta
             };
         }
 

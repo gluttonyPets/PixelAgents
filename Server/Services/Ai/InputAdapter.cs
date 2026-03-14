@@ -49,6 +49,17 @@ namespace Server.Services.Ai
             return s.Trim();
         }
 
+        private const string VisualMediaRule =
+            "IMPORTANT: Any text rendered in the image or video MUST be written in correct Spanish (Castilian). " +
+            "Double-check every word for spelling, accents and grammar before rendering. " +
+            "No spelling mistakes, no missing accents, no invented words. " +
+            "If a word seems uncertain, use a simpler synonym that you are sure is correct.";
+
+        /// <summary>
+        /// Returns a spelling/language instruction to prepend to image and video prompts.
+        /// </summary>
+        public static string GetVisualMediaRule() => VisualMediaRule;
+
         public static string TruncateAtWord(string text, int maxLength)
         {
             if (text.Length <= maxLength)

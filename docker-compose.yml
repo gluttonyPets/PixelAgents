@@ -12,7 +12,10 @@ services:
       - "127.0.0.1:${PG_PORT:-5433}:5432"
 
   pixelagents:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     restart: unless-stopped
     depends_on:
       - postgres
