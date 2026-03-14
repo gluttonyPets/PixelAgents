@@ -58,6 +58,7 @@ builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddHttpClient<Server.Services.WhatsApp.WhatsAppService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
+builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
@@ -1148,6 +1149,59 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
 
     await db.SaveChangesAsync();
     return Results.Ok(new { message = "Configuracion Buffer guardada" });
+}).RequireAuthorization();
+
+// ==================== Canva Config Endpoints ====================
+
+app.MapGet("/api/projects/{projectId:guid}/canva-config", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(project.CanvaConfig))
+        return Results.Ok(new CanvaConfigDto("", null));
+
+    var config = System.Text.Json.JsonSerializer.Deserialize<CanvaConfigDto>(project.CanvaConfig);
+    return Results.Ok(config);
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/canva-config", async (
+    Guid projectId, CanvaConfigDto dto, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    project.CanvaConfig = System.Text.Json.JsonSerializer.Serialize(dto);
+    project.UpdatedAt = DateTime.UtcNow;
+
+    // Ensure the Canva Publish sentinel module exists
+    var hasCanvaPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "canva");
+    if (!hasCanvaPublish)
+    {
+        db.AiModules.Add(new AiModule
+        {
+            Id = Guid.NewGuid(),
+            Name = "Canva Publish",
+            Description = "Crea y exporta disenos via Canva (autofill de brand templates o diseno nuevo).",
+            ProviderType = "System",
+            ModuleType = "Publish",
+            ModelName = "canva",
+            IsEnabled = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { message = "Configuracion Canva guardada" });
 }).RequireAuthorization();
 
 // ==================== Telegram Webhook Endpoint ====================

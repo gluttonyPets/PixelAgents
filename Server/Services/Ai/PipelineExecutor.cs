@@ -8,6 +8,7 @@ using Server.Models;
 using Server.Services.WhatsApp;
 using Server.Services.Telegram;
 using Server.Services.Instagram;
+using Server.Services.Canva;
 
 namespace Server.Services.Ai
 {
@@ -19,12 +20,14 @@ namespace Server.Services.Ai
         private readonly WhatsAppService _whatsApp;
         private readonly TelegramService _telegram;
         private readonly BufferService _buffer;
+        private readonly CanvaService _canva;
         private readonly CoreDbContext _coreDb;
         private readonly IConfiguration _configuration;
         private readonly string _mediaRoot;
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
             WhatsAppService whatsApp, TelegramService telegram, BufferService buffer,
+            CanvaService canva,
             CoreDbContext coreDb, IConfiguration configuration, IWebHostEnvironment env)
         {
             _registry = registry;
@@ -34,6 +37,7 @@ namespace Server.Services.Ai
             _whatsApp = whatsApp;
             _telegram = telegram;
             _buffer = buffer;
+            _canva = canva;
             _coreDb = coreDb;
             _configuration = configuration;
         }
@@ -44,7 +48,7 @@ namespace Server.Services.Ai
 
         private static bool IsPublishStep(AiModule module) =>
             module.ModuleType == "Publish" ||
-            (module.ProviderType == "System" && module.ModelName == "instagram");
+            (module.ProviderType == "System" && (module.ModelName == "instagram" || module.ModelName == "canva"));
 
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
@@ -707,7 +711,7 @@ namespace Server.Services.Ai
             }
         }
 
-        // ── Publish step handler (via Buffer) ──
+        // ── Publish step handler (via Buffer or Canva) ──
         private async Task HandlePublishStepAsync(
             Project project, ProjectExecution execution, StepExecution stepExecution,
             ProjectModule pm,
@@ -717,6 +721,15 @@ namespace Server.Services.Ai
             UserDbContext db,
             string? tenantDbName = null)
         {
+            // Route to Canva handler if this is a Canva publish step
+            if (pm.AiModule.ModelName == "canva")
+            {
+                await HandleCanvaPublishStepAsync(
+                    project, execution, stepExecution, pm,
+                    stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                return;
+            }
+
             var stepName = pm.StepName ?? pm.AiModule.Name;
             var projectId = project.Id;
             var executionId = execution.Id;
@@ -968,6 +981,298 @@ namespace Server.Services.Ai
                     $"Error publicando via Buffer: {bufferResult.Error}", pm.StepOrder, stepName);
                 await FailStep(stepExecution, execution, $"Error Buffer: {bufferResult.Error}", db);
                 throw new InvalidOperationException(bufferResult.Error);
+            }
+        }
+
+        // ── Canva Publish step handler ──
+        private async Task HandleCanvaPublishStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            UserDbContext db,
+            string? tenantDbName = null)
+        {
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+            var projectId = project.Id;
+            var executionId = execution.Id;
+
+            if (string.IsNullOrWhiteSpace(project.CanvaConfig))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Canva");
+
+            var canvaConfig = JsonSerializer.Deserialize<CanvaConfig>(project.CanvaConfig)
+                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Canva invalida");
+
+            if (string.IsNullOrWhiteSpace(canvaConfig.AccessToken))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: Access Token de Canva no configurado");
+
+            var stepConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+            // Read export format from step configuration (png/jpg/pdf/pptx)
+            var exportFormat = "png";
+            if (stepConfig.TryGetValue("exportFormat", out var efVal))
+            {
+                var ef = efVal is JsonElement efEl ? efEl.GetString() : efVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(ef))
+                    exportFormat = ef;
+            }
+
+            // Read design title from step configuration or build from previous output
+            var title = "PixelAgents Design";
+            if (stepConfig.TryGetValue("designTitle", out var dtVal))
+            {
+                var dt = dtVal is JsonElement dtEl ? dtEl.GetString() : dtVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(dt))
+                    title = dt;
+            }
+
+            // Collect previous text output for autofill data
+            var previousText = "";
+            var candidateOrders = stepOutputs.Keys
+                .Where(k => k < pm.StepOrder)
+                .OrderByDescending(k => k)
+                .ToList();
+
+            foreach (var co in candidateOrders)
+            {
+                if (stepModuleTypes.TryGetValue(co, out var prevModType) &&
+                    prevModType == "Interaction")
+                    continue;
+
+                if (stepOutputs.TryGetValue(co, out var prevOutput))
+                {
+                    previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
+                    if (!string.IsNullOrWhiteSpace(prevOutput.Title) && title == "PixelAgents Design")
+                        title = prevOutput.Title;
+                    break;
+                }
+                if (stepResults.TryGetValue(co, out var prevResult))
+                {
+                    previousText = prevResult.TextOutput ?? "";
+                    break;
+                }
+            }
+
+            // Replace template variables in title
+            title = title
+                .Replace("{previous_output}", previousText)
+                .Replace("{step_number}", pm.StepOrder.ToString());
+
+            // Read brand template ID from step config or project-level config
+            var brandTemplateId = canvaConfig.BrandTemplateId;
+            if (stepConfig.TryGetValue("brandTemplateId", out var btVal))
+            {
+                var bt = btVal is JsonElement btEl ? btEl.GetString() : btVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(bt))
+                    brandTemplateId = bt;
+            }
+
+            // Read design type for non-autofill designs
+            var designTypeName = "doc";
+            if (stepConfig.TryGetValue("designType", out var dtnVal))
+            {
+                var dtn = dtnVal is JsonElement dtnEl ? dtnEl.GetString() : dtnVal?.ToString();
+                if (!string.IsNullOrWhiteSpace(dtn))
+                    designTypeName = dtn;
+            }
+
+            CanvaPublishResult canvaResult;
+            var useAutofill = !string.IsNullOrWhiteSpace(brandTemplateId);
+
+            try
+            {
+                if (useAutofill)
+                {
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Creando diseno en Canva con autofill (template: {brandTemplateId})...",
+                        pm.StepOrder, stepName);
+
+                    // Build autofill data: use previous text as the main content field
+                    var autofillData = new Dictionary<string, CanvaAutofillField>();
+
+                    // Read custom autofill fields from step config
+                    if (stepConfig.TryGetValue("autofillData", out var afVal) && afVal is JsonElement afEl)
+                    {
+                        foreach (var prop in afEl.EnumerateObject())
+                        {
+                            var fieldText = prop.Value.GetString() ?? "";
+                            fieldText = fieldText.Replace("{previous_output}", previousText);
+                            autofillData[prop.Name] = new CanvaAutofillField { type = "text", text = fieldText };
+                        }
+                    }
+
+                    // If no custom data, use a default "body" field
+                    if (autofillData.Count == 0)
+                    {
+                        autofillData["body"] = new CanvaAutofillField { type = "text", text = previousText };
+                        autofillData["title"] = new CanvaAutofillField { type = "text", text = title };
+                    }
+
+                    // Upload images from previous step as assets for autofill
+                    var mediaStepOrder = candidateOrders.FirstOrDefault(co =>
+                        !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
+                    if (mediaStepOrder > 0)
+                    {
+                        var prevStepExec = await db.StepExecutions
+                            .Include(s => s.Files)
+                            .FirstOrDefaultAsync(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder);
+
+                        if (prevStepExec?.Files is not null)
+                        {
+                            var imageFiles = prevStepExec.Files
+                                .Where(f => f.ContentType.StartsWith("image/"))
+                                .Take(5)
+                                .ToList();
+
+                            var imageNum = 1;
+                            foreach (var imgFile in imageFiles)
+                            {
+                                var filePath = Path.Combine(_mediaRoot, imgFile.FilePath);
+                                if (File.Exists(filePath))
+                                {
+                                    var imgBytes = await File.ReadAllBytesAsync(filePath);
+                                    var uploadResult = await _canva.UploadAssetAsync(
+                                        canvaConfig, imgBytes, $"image_{imageNum}");
+
+                                    if (uploadResult.JobId is not null)
+                                    {
+                                        var uploadComplete = await _canva.WaitForAssetUploadAsync(
+                                            canvaConfig, uploadResult.JobId);
+                                        if (uploadComplete.IsSuccess && uploadComplete.AssetId is not null)
+                                        {
+                                            autofillData[$"image_{imageNum}"] = new CanvaAutofillField
+                                            {
+                                                type = "image",
+                                                asset_id = uploadComplete.AssetId
+                                            };
+                                            await _logger.LogAsync(projectId, executionId, "info",
+                                                $"Imagen {imageNum} subida a Canva (asset: {uploadComplete.AssetId})",
+                                                pm.StepOrder, stepName);
+                                        }
+                                    }
+                                    imageNum++;
+                                }
+                            }
+                        }
+                    }
+
+                    canvaResult = await _canva.AutofillAndExportAsync(
+                        canvaConfig, brandTemplateId!, title, autofillData, exportFormat);
+                }
+                else
+                {
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Creando diseno en Canva (tipo: {designTypeName})...",
+                        pm.StepOrder, stepName);
+
+                    canvaResult = await _canva.CreateAndExportAsync(
+                        canvaConfig, title, designTypeName, exportFormat);
+                }
+            }
+            catch (Exception ex)
+            {
+                await _logger.LogAsync(projectId, executionId, "error",
+                    $"Error publicando via Canva: {ex.Message}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, $"Error Canva: {ex.Message}", db);
+                throw;
+            }
+
+            // Save exported files
+            if (canvaResult.IsSuccess && canvaResult.DownloadedFiles.Count > 0)
+            {
+                var workspace = Path.Combine(_mediaRoot, execution.WorkspacePath);
+                Directory.CreateDirectory(workspace);
+
+                foreach (var file in canvaResult.DownloadedFiles)
+                {
+                    var filePath = Path.Combine(execution.WorkspacePath, file.FileName);
+                    var fullPath = Path.Combine(_mediaRoot, filePath);
+                    await File.WriteAllBytesAsync(fullPath, file.Data);
+
+                    db.ExecutionFiles.Add(new ExecutionFile
+                    {
+                        Id = Guid.NewGuid(),
+                        StepExecutionId = stepExecution.Id,
+                        FileName = file.FileName,
+                        ContentType = file.ContentType,
+                        FilePath = filePath,
+                        Direction = "output",
+                        FileSize = file.Data.Length,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
+            // Build output text
+            string outputText;
+            if (canvaResult.IsSuccess)
+            {
+                outputText = $"Diseno creado en Canva\nDesign ID: {canvaResult.DesignId}";
+                if (!string.IsNullOrEmpty(canvaResult.EditUrl))
+                    outputText += $"\nEditar: {canvaResult.EditUrl}";
+                if (!string.IsNullOrEmpty(canvaResult.ViewUrl))
+                    outputText += $"\nVer: {canvaResult.ViewUrl}";
+                outputText += $"\nArchivos exportados: {canvaResult.DownloadedFiles.Count} ({exportFormat})";
+            }
+            else
+            {
+                outputText = $"Error en Canva: {canvaResult.Error}";
+            }
+
+            var publishOutput = new StepOutput
+            {
+                Type = "text",
+                Content = outputText,
+                Summary = canvaResult.IsSuccess
+                    ? $"Publicado via Canva - Design {canvaResult.DesignId}"
+                    : $"Error Canva: {canvaResult.Error}",
+                Items = [new OutputItem { Content = outputText, Label = "canva publish" }],
+                Metadata = new Dictionary<string, object>
+                {
+                    ["publishType"] = useAutofill ? "autofill" : "create",
+                    ["canvaDesignId"] = canvaResult.DesignId ?? "",
+                    ["canvaEditUrl"] = canvaResult.EditUrl ?? "",
+                    ["canvaViewUrl"] = canvaResult.ViewUrl ?? "",
+                    ["exportFormat"] = exportFormat,
+                    ["exportedFiles"] = canvaResult.DownloadedFiles.Count
+                }
+            };
+
+            stepExecution.OutputData = JsonSerializer.Serialize(publishOutput);
+            stepExecution.InputData = JsonSerializer.Serialize(new
+            {
+                title,
+                exportFormat,
+                useAutofill,
+                brandTemplateId = brandTemplateId ?? "",
+                canvaDesignId = canvaResult.DesignId ?? ""
+            });
+
+            if (canvaResult.IsSuccess)
+            {
+                stepExecution.Status = "Completed";
+                stepExecution.CompletedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+
+                stepOutputs[pm.StepOrder] = publishOutput;
+                stepModuleTypes[pm.StepOrder] = "Publish";
+                stepResults[pm.StepOrder] = AiResult.Ok(outputText, new Dictionary<string, object>
+                {
+                    ["canvaDesignId"] = canvaResult.DesignId ?? "",
+                    ["exportedFiles"] = canvaResult.DownloadedFiles.Count
+                });
+
+                await _logger.LogAsync(projectId, executionId, "success",
+                    $"Diseno creado en Canva (design {canvaResult.DesignId}) - {canvaResult.DownloadedFiles.Count} archivos exportados",
+                    pm.StepOrder, stepName);
+            }
+            else
+            {
+                await _logger.LogAsync(projectId, executionId, "error",
+                    $"Error publicando via Canva: {canvaResult.Error}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, $"Error Canva: {canvaResult.Error}", db);
+                throw new InvalidOperationException(canvaResult.Error);
             }
         }
 

@@ -9,6 +9,7 @@ namespace Server.Models
         public string? WhatsAppConfig { get; set; }
         public string? TelegramConfig { get; set; }
         public string? InstagramConfig { get; set; }
+        public string? CanvaConfig { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 

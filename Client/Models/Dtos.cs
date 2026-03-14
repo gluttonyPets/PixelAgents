@@ -71,6 +71,9 @@ public record TelegramConfigDto(string BotToken, string ChatId);
 // ── Instagram (Buffer) ──
 public record BufferConfigDto(string ApiKey, string ChannelId);
 
+// ── Canva ──
+public record CanvaConfigDto(string AccessToken, string? BrandTemplateId);
+
 // ── Structured Output ──
 public class StepOutputDto
 {
