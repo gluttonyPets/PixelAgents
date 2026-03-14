@@ -26,259 +26,328 @@ else
         </div>
     }
 
-    <!-- Telegram Config -->
-    <details class="card" style="margin-bottom: 1rem;">
-        <summary style="cursor: pointer; font-weight: bold;">Configuracion Telegram (Interaccion)</summary>
-        <div style="padding-top: 0.5rem;">
-            @if (_tgError is not null)
-            {
-                <div class="alert alert-error">@_tgError</div>
-            }
-            @if (_tgSuccess)
-            {
-                <div class="alert alert-success">Configuracion Telegram guardada correctamente</div>
-            }
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Bot Token</label>
-                    <input type="password" @bind="_tgBotToken" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" />
-                </div>
-                <div class="form-group">
-                    <label>Chat ID</label>
-                    <input type="text" @bind="_tgChatId" placeholder="Ej: 123456789" />
+    <!-- ═══════════ CONFIGURATION SECTIONS ═══════════ -->
+    <div class="config-sections">
+
+        <!-- ── SECTION: Interacciones con el usuario ── -->
+        <div class="config-section">
+            <div class="config-section-header">
+                <span class="config-section-icon">&#x1f4ac;</span>
+                <div>
+                    <h3 class="config-section-title">Interacciones con el usuario</h3>
+                    <p class="config-section-desc">Canales de mensajeria para interactuar con el usuario durante la ejecucion del pipeline</p>
                 </div>
             </div>
-            <p class="text-sm text-muted">
-                1. Habla con <strong>@@BotFather</strong> en Telegram → <code>/newbot</code> → copia el token.<br/>
-                2. Envia un mensaje al bot y visita <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> para obtener tu Chat ID.<br/>
-                3. Webhook URL: <code>https://tu-servidor/api/webhooks/telegram</code> — se configura automaticamente al guardar.
-            </p>
-            <button class="btn btn-primary" @onclick="SaveTelegramConfig" disabled="@_tgSaving">
-                @(_tgSaving ? "Guardando..." : "Guardar configuracion")
-            </button>
-        </div>
-    </details>
 
-    <!-- Buffer Config (Publish) -->
-    <details class="card" style="margin-bottom: 1rem;">
-        <summary style="cursor: pointer; font-weight: bold;">Configuracion Buffer (Publicacion)</summary>
-        <div style="padding-top: 0.5rem;">
-            @if (_igError is not null)
-            {
-                <div class="alert alert-error">@_igError</div>
-            }
-            @if (_igSuccess)
-            {
-                <div class="alert alert-success">Configuracion Buffer guardada correctamente</div>
-            }
-            <div class="form-row">
-                <div class="form-group">
-                    <label>API Key</label>
-                    <input type="password" @bind="_igApiKey" placeholder="Token de Buffer API" />
-                </div>
-                <div class="form-group">
-                    <label>Channel ID</label>
-                    <input type="text" @bind="_igChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
-                </div>
-            </div>
-            <p class="text-sm text-muted">
-                1. Ve a <strong>buffer.com</strong> → Cuenta → API Settings → genera tu API Key.<br/>
-                2. El <strong>Channel ID</strong> se obtiene consultando tus canales conectados via la API.<br/>
-                3. Plan gratuito: 3 canales, 10 posts programados por canal. Soporta Instagram, Twitter, LinkedIn, etc.
-            </p>
-            <button class="btn btn-primary" @onclick="SaveInstagramConfig" disabled="@_igSaving">
-                @(_igSaving ? "Guardando..." : "Guardar configuracion")
-            </button>
-        </div>
-    </details>
-
-    <!-- Schedule Config -->
-    <details class="card" style="margin-bottom: 1rem;">
-        <summary style="cursor: pointer; font-weight: bold;">Programacion automatica</summary>
-        <div style="padding-top: 0.5rem;">
-            @if (_schedError is not null)
-            {
-                <div class="alert alert-error">@_schedError</div>
-            }
-            @if (_schedSuccess)
-            {
-                <div class="alert alert-success">Programacion guardada correctamente</div>
-            }
-
-            @if (_schedule is not null)
-            {
-                <div style="margin-bottom: 0.75rem; padding: 0.5rem; background: var(--bg-secondary, #1a1a2e); border-radius: 6px;">
-                    <span style="font-weight: bold;">Estado:</span>
-                    @if (_schedule.IsEnabled)
+            <details class="config-item">
+                <summary class="config-item-summary">
+                    <span class="config-item-name">Telegram</span>
+                    @if (!string.IsNullOrWhiteSpace(_tgBotToken))
                     {
-                        <span style="color: #4ade80;">Activa</span>
+                        <span class="badge badge-success">Configurado</span>
                     }
                     else
                     {
-                        <span style="color: #f87171;">Pausada</span>
+                        <span class="badge badge-muted">Sin configurar</span>
                     }
-                    @if (_schedule.NextRunAt.HasValue)
+                </summary>
+                <div class="config-item-body">
+                    @if (_tgError is not null)
                     {
-                        <span class="text-muted"> | Proxima ejecucion: @_schedule.NextRunAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                        <div class="alert alert-error">@_tgError</div>
                     }
-                    @if (_schedule.LastRunAt.HasValue)
+                    @if (_tgSuccess)
                     {
-                        <span class="text-muted"> | Ultima ejecucion: @_schedule.LastRunAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                        <div class="alert alert-success">Configuracion guardada correctamente</div>
                     }
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Bot Token</label>
+                            <input type="password" @bind="_tgBotToken" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" />
+                        </div>
+                        <div class="form-group">
+                            <label>Chat ID</label>
+                            <input type="text" @bind="_tgChatId" placeholder="Ej: 123456789" />
+                        </div>
+                    </div>
+                    <p class="text-sm text-muted">
+                        1. Habla con <strong>@@BotFather</strong> en Telegram → <code>/newbot</code> → copia el token.<br/>
+                        2. Envia un mensaje al bot y visita <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> para obtener tu Chat ID.<br/>
+                        3. Webhook URL: <code>https://tu-servidor/api/webhooks/telegram</code> — se configura automaticamente al guardar.
+                    </p>
+                    <button class="btn btn-primary" @onclick="SaveTelegramConfig" disabled="@_tgSaving">
+                        @(_tgSaving ? "Guardando..." : "Guardar")
+                    </button>
                 </div>
-            }
+            </details>
 
-            <div class="form-group">
-                <label>Frecuencia</label>
-                <select @bind="_schedPreset">
-                    <option value="">Personalizado (cron)</option>
-                    <option value="daily">Diaria (a una hora fija)</option>
-                    <option value="twice">2 veces al dia</option>
-                    <option value="weekly">Semanal</option>
-                </select>
+            <details class="config-item">
+                <summary class="config-item-summary">
+                    <span class="config-item-name">WhatsApp</span>
+                    @if (!string.IsNullOrWhiteSpace(_waAccessToken))
+                    {
+                        <span class="badge badge-success">Configurado</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-muted">Sin configurar</span>
+                    }
+                </summary>
+                <div class="config-item-body">
+                    @if (_waError is not null)
+                    {
+                        <div class="alert alert-error">@_waError</div>
+                    }
+                    @if (_waSuccess)
+                    {
+                        <div class="alert alert-success">Configuracion guardada correctamente</div>
+                    }
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Phone Number ID</label>
+                            <input type="text" @bind="_waPhoneNumberId" placeholder="Ej: 123456789012345" />
+                        </div>
+                        <div class="form-group">
+                            <label>Numero destinatario</label>
+                            <input type="text" @bind="_waRecipientNumber" placeholder="Ej: 34612345678" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Access Token</label>
+                        <input type="password" @bind="_waAccessToken" placeholder="EAABx..." />
+                    </div>
+                    <div class="form-group">
+                        <label>Webhook Verify Token</label>
+                        <input type="text" @bind="_waVerifyToken" placeholder="Token de verificacion para el webhook" />
+                    </div>
+                    <p class="text-sm text-muted">
+                        Webhook URL: <code>https://tu-servidor/api/webhooks/whatsapp</code> — Configuralo en Meta for Developers.
+                    </p>
+                    <button class="btn btn-primary" @onclick="SaveWhatsAppConfig" disabled="@_waSaving">
+                        @(_waSaving ? "Guardando..." : "Guardar")
+                    </button>
+                </div>
+            </details>
+        </div>
+
+        <!-- ── SECTION: Redes sociales ── -->
+        <div class="config-section">
+            <div class="config-section-header">
+                <span class="config-section-icon">&#x1f310;</span>
+                <div>
+                    <h3 class="config-section-title">Redes sociales</h3>
+                    <p class="config-section-desc">Plataformas donde se publica el contenido generado por el pipeline</p>
+                </div>
             </div>
 
-            @if (_schedPreset == "daily" || _schedPreset == "twice")
-            {
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Hora (0-23)</label>
-                        <input type="number" min="0" max="23" @bind="_schedHour1" />
+            <details class="config-item">
+                <summary class="config-item-summary">
+                    <span class="config-item-name">Buffer</span>
+                    <span class="text-sm text-muted" style="margin-left: 0.3rem;">Instagram, Twitter, LinkedIn...</span>
+                    @if (!string.IsNullOrWhiteSpace(_igApiKey))
+                    {
+                        <span class="badge badge-success">Configurado</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-muted">Sin configurar</span>
+                    }
+                </summary>
+                <div class="config-item-body">
+                    @if (_igError is not null)
+                    {
+                        <div class="alert alert-error">@_igError</div>
+                    }
+                    @if (_igSuccess)
+                    {
+                        <div class="alert alert-success">Configuracion guardada correctamente</div>
+                    }
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" @bind="_igApiKey" placeholder="Token de Buffer API" />
+                        </div>
+                        <div class="form-group">
+                            <label>Channel ID</label>
+                            <input type="text" @bind="_igChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label>Minuto (0-59)</label>
-                        <input type="number" min="0" max="59" @bind="_schedMinute1" />
-                    </div>
+                    <p class="text-sm text-muted">
+                        1. Ve a <strong>buffer.com</strong> → Cuenta → API Settings → genera tu API Key.<br/>
+                        2. El <strong>Channel ID</strong> se obtiene consultando tus canales conectados via la API.<br/>
+                        3. Plan gratuito: 3 canales, 10 posts programados por canal. Soporta Instagram, Twitter, LinkedIn, etc.
+                    </p>
+                    <button class="btn btn-primary" @onclick="SaveInstagramConfig" disabled="@_igSaving">
+                        @(_igSaving ? "Guardando..." : "Guardar")
+                    </button>
                 </div>
-                @if (_schedPreset == "twice")
+            </details>
+        </div>
+
+        <!-- ── SECTION: Programacion ── -->
+        <div class="config-section">
+            <div class="config-section-header">
+                <span class="config-section-icon">&#x23f0;</span>
+                <div>
+                    <h3 class="config-section-title">Programacion automatica</h3>
+                    <p class="config-section-desc">Ejecuta el pipeline automaticamente segun la frecuencia configurada</p>
+                </div>
+                @if (_schedule is not null)
+                {
+                    @if (_schedule.IsEnabled)
+                    {
+                        <span class="badge badge-success" style="margin-left: auto;">Activa</span>
+                    }
+                    else
+                    {
+                        <span class="badge badge-warning" style="margin-left: auto;">Pausada</span>
+                    }
+                }
+            </div>
+
+            <div class="config-item-body" style="padding-top: 0;">
+                @if (_schedError is not null)
+                {
+                    <div class="alert alert-error">@_schedError</div>
+                }
+                @if (_schedSuccess)
+                {
+                    <div class="alert alert-success">Programacion guardada correctamente</div>
+                }
+
+                @if (_schedule is not null)
+                {
+                    <div class="schedule-status">
+                        @if (_schedule.NextRunAt.HasValue)
+                        {
+                            <div class="schedule-status-item">
+                                <span class="text-muted">Proxima ejecucion</span>
+                                <strong>@_schedule.NextRunAt.Value.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</strong>
+                            </div>
+                        }
+                        @if (_schedule.LastRunAt.HasValue)
+                        {
+                            <div class="schedule-status-item">
+                                <span class="text-muted">Ultima ejecucion</span>
+                                <strong>@_schedule.LastRunAt.Value.ToLocalTime().ToString("dd MMM yyyy, HH:mm")</strong>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="form-group">
+                    <label>Frecuencia</label>
+                    <select @bind="_schedPreset">
+                        <option value="">Personalizado (cron)</option>
+                        <option value="daily">Diaria (a una hora fija)</option>
+                        <option value="twice">2 veces al dia</option>
+                        <option value="weekly">Semanal</option>
+                    </select>
+                </div>
+
+                @if (_schedPreset == "daily" || _schedPreset == "twice")
                 {
                     <div class="form-row">
                         <div class="form-group">
-                            <label>2a hora (0-23)</label>
-                            <input type="number" min="0" max="23" @bind="_schedHour2" />
+                            <label>Hora (0-23)</label>
+                            <input type="number" min="0" max="23" @bind="_schedHour1" />
                         </div>
                         <div class="form-group">
-                            <label>2o minuto (0-59)</label>
-                            <input type="number" min="0" max="59" @bind="_schedMinute2" />
+                            <label>Minuto (0-59)</label>
+                            <input type="number" min="0" max="59" @bind="_schedMinute1" />
+                        </div>
+                    </div>
+                    @if (_schedPreset == "twice")
+                    {
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>2a hora (0-23)</label>
+                                <input type="number" min="0" max="23" @bind="_schedHour2" />
+                            </div>
+                            <div class="form-group">
+                                <label>2o minuto (0-59)</label>
+                                <input type="number" min="0" max="59" @bind="_schedMinute2" />
+                            </div>
+                        </div>
+                    }
+                }
+                else if (_schedPreset == "weekly")
+                {
+                    <div class="form-row" style="grid-template-columns: 1fr 1fr 1fr;">
+                        <div class="form-group">
+                            <label>Dia de la semana</label>
+                            <select @bind="_schedDayOfWeek">
+                                <option value="1">Lunes</option>
+                                <option value="2">Martes</option>
+                                <option value="3">Miercoles</option>
+                                <option value="4">Jueves</option>
+                                <option value="5">Viernes</option>
+                                <option value="6">Sabado</option>
+                                <option value="0">Domingo</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Hora (0-23)</label>
+                            <input type="number" min="0" max="23" @bind="_schedHour1" />
+                        </div>
+                        <div class="form-group">
+                            <label>Minuto (0-59)</label>
+                            <input type="number" min="0" max="59" @bind="_schedMinute1" />
                         </div>
                     </div>
                 }
-            }
-            else if (_schedPreset == "weekly")
-            {
+                else
+                {
+                    <div class="form-group">
+                        <label>Expresion Cron</label>
+                        <input type="text" @bind="_schedCron" placeholder="0 9 * * * (cada dia a las 9:00)" />
+                    </div>
+                    <p class="text-sm text-muted" style="margin-top: -0.4rem; margin-bottom: 0.8rem;">
+                        Ejemplos: <code>0 9 * * *</code> (diario 9am) · <code>0 9,18 * * *</code> (9am y 6pm) · <code>0 10 * * 1</code> (lunes 10am)
+                    </p>
+                }
+
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Dia de la semana</label>
-                        <select @bind="_schedDayOfWeek">
-                            <option value="1">Lunes</option>
-                            <option value="2">Martes</option>
-                            <option value="3">Miercoles</option>
-                            <option value="4">Jueves</option>
-                            <option value="5">Viernes</option>
-                            <option value="6">Sabado</option>
-                            <option value="0">Domingo</option>
+                        <label>Zona horaria</label>
+                        <select @bind="_schedTimeZone">
+                            <option value="Europe/Madrid">Europe/Madrid</option>
+                            <option value="Europe/London">Europe/London</option>
+                            <option value="America/New_York">America/New_York</option>
+                            <option value="America/Chicago">America/Chicago</option>
+                            <option value="America/Denver">America/Denver</option>
+                            <option value="America/Los_Angeles">America/Los_Angeles</option>
+                            <option value="America/Mexico_City">America/Mexico_City</option>
+                            <option value="America/Bogota">America/Bogota</option>
+                            <option value="America/Buenos_Aires">America/Buenos_Aires</option>
+                            <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+                            <option value="UTC">UTC</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>Hora (0-23)</label>
-                        <input type="number" min="0" max="23" @bind="_schedHour1" />
-                    </div>
-                    <div class="form-group">
-                        <label>Minuto (0-59)</label>
-                        <input type="number" min="0" max="59" @bind="_schedMinute1" />
+                        <label>Input automatico <span class="text-sm text-muted">(opcional)</span></label>
+                        <input type="text" @bind="_schedUserInput" placeholder="Ej: Genera un post sobre tendencias de hoy" />
                     </div>
                 </div>
-            }
-            else
-            {
-                <div class="form-group">
-                    <label>Expresion Cron</label>
-                    <input type="text" @bind="_schedCron" placeholder="0 9 * * * (cada dia a las 9:00)" />
+
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.3rem;">
+                    <button class="btn btn-primary" @onclick="SaveSchedule" disabled="@_schedSaving">
+                        @(_schedSaving ? "Guardando..." : (_schedule is null ? "Crear programacion" : "Actualizar"))
+                    </button>
+                    @if (_schedule is not null)
+                    {
+                        <button class="btn btn-secondary" @onclick="ToggleSchedule" disabled="@_schedSaving">
+                            @(_schedule.IsEnabled ? "Pausar" : "Activar")
+                        </button>
+                        <button class="btn btn-danger" @onclick="DeleteSchedule" disabled="@_schedSaving">
+                            Eliminar
+                        </button>
+                    }
                 </div>
-            }
-
-            <div class="form-group">
-                <label>Zona horaria</label>
-                <select @bind="_schedTimeZone">
-                    <option value="Europe/Madrid">Europe/Madrid</option>
-                    <option value="Europe/London">Europe/London</option>
-                    <option value="America/New_York">America/New_York</option>
-                    <option value="America/Chicago">America/Chicago</option>
-                    <option value="America/Denver">America/Denver</option>
-                    <option value="America/Los_Angeles">America/Los_Angeles</option>
-                    <option value="America/Mexico_City">America/Mexico_City</option>
-                    <option value="America/Bogota">America/Bogota</option>
-                    <option value="America/Buenos_Aires">America/Buenos_Aires</option>
-                    <option value="America/Sao_Paulo">America/Sao_Paulo</option>
-                    <option value="UTC">UTC</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>Input automatico <span class="text-sm text-muted">(opcional - texto que se envia al pipeline en cada ejecucion)</span></label>
-                <textarea rows="2" @bind="_schedUserInput" placeholder="Ej: Genera un post sobre tendencias de hoy"></textarea>
-            </div>
-
-            <p class="text-sm text-muted">
-                La programacion ejecuta el pipeline automaticamente segun la frecuencia configurada.
-                Ejemplos cron: <code>0 9 * * *</code> (diario 9am), <code>0 9,18 * * *</code> (9am y 6pm), <code>0 10 * * 1</code> (lunes 10am).
-            </p>
-
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
-                <button class="btn btn-primary" @onclick="SaveSchedule" disabled="@_schedSaving">
-                    @(_schedSaving ? "Guardando..." : (_schedule is null ? "Crear programacion" : "Actualizar programacion"))
-                </button>
-                @if (_schedule is not null)
-                {
-                    <button class="btn btn-secondary" @onclick="ToggleSchedule" disabled="@_schedSaving">
-                        @(_schedule.IsEnabled ? "Pausar" : "Activar")
-                    </button>
-                    <button class="btn btn-danger" @onclick="DeleteSchedule" disabled="@_schedSaving">
-                        Eliminar
-                    </button>
-                }
             </div>
         </div>
-    </details>
 
-    <!-- WhatsApp Config (legacy) -->
-    <details class="card" style="margin-bottom: 1rem;">
-        <summary style="cursor: pointer; font-weight: bold;">Configuracion WhatsApp (alternativa)</summary>
-        <div style="padding-top: 0.5rem;">
-            @if (_waError is not null)
-            {
-                <div class="alert alert-error">@_waError</div>
-            }
-            @if (_waSuccess)
-            {
-                <div class="alert alert-success">Configuracion guardada correctamente</div>
-            }
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Phone Number ID</label>
-                    <input type="text" @bind="_waPhoneNumberId" placeholder="Ej: 123456789012345" />
-                </div>
-                <div class="form-group">
-                    <label>Numero destinatario</label>
-                    <input type="text" @bind="_waRecipientNumber" placeholder="Ej: 34612345678" />
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Access Token</label>
-                <input type="password" @bind="_waAccessToken" placeholder="EAABx..." />
-            </div>
-            <div class="form-group">
-                <label>Webhook Verify Token</label>
-                <input type="text" @bind="_waVerifyToken" placeholder="Token de verificacion para el webhook" />
-            </div>
-            <p class="text-sm text-muted">
-                Webhook URL: <code>https://tu-servidor/api/webhooks/whatsapp</code> — Configuralo en Meta for Developers.
-            </p>
-            <button class="btn btn-primary" @onclick="SaveWhatsAppConfig" disabled="@_waSaving">
-                @(_waSaving ? "Guardando..." : "Guardar configuracion")
-            </button>
-        </div>
-    </details>
+    </div>
 
     <!-- Pipeline Steps -->
     <h3>Pipeline</h3>
