@@ -48,7 +48,11 @@ namespace Server.Services.Ai
 
         private static bool IsPublishStep(AiModule module) =>
             module.ModuleType == "Publish" ||
-            (module.ProviderType == "System" && (module.ModelName == "instagram" || module.ModelName == "canva"));
+            (module.ProviderType == "System" && module.ModelName == "instagram");
+
+        private static bool IsDesignStep(AiModule module) =>
+            module.ModuleType == "Design" ||
+            module.ProviderType == "Canva";
 
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
@@ -77,7 +81,7 @@ namespace Server.Services.Ai
 
                 // Interaction and Publish steps don't need API key validation
                 // Also skip modules without ApiKeyId (e.g. system modules) — they have their own validation
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -182,6 +186,15 @@ namespace Server.Services.Ai
                     if (IsPublishStep(pm.AiModule))
                     {
                         await HandlePublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // ── Design step: create design via Canva ──
+                    if (IsDesignStep(pm.AiModule))
+                    {
+                        await HandleCanvaPublishStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
@@ -721,15 +734,6 @@ namespace Server.Services.Ai
             UserDbContext db,
             string? tenantDbName = null)
         {
-            // Route to Canva handler if this is a Canva publish step
-            if (pm.AiModule.ModelName == "canva")
-            {
-                await HandleCanvaPublishStepAsync(
-                    project, execution, stepExecution, pm,
-                    stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                return;
-            }
-
             var stepName = pm.StepName ?? pm.AiModule.Name;
             var projectId = project.Id;
             var executionId = execution.Id;
@@ -1634,6 +1638,15 @@ namespace Server.Services.Ai
                         continue;
                     }
 
+                    // Handle design step (Canva)
+                    if (IsDesignStep(pm.AiModule))
+                    {
+                        await HandleCanvaPublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
 
@@ -1946,7 +1959,7 @@ namespace Server.Services.Ai
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -2097,6 +2110,15 @@ namespace Server.Services.Ai
                     if (IsPublishStep(pm.AiModule))
                     {
                         await HandlePublishStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // Handle design step during retry (Canva)
+                    if (IsDesignStep(pm.AiModule))
+                    {
+                        await HandleCanvaPublishStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;

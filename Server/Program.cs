@@ -1182,24 +1182,6 @@ app.MapPut("/api/projects/{projectId:guid}/canva-config", async (
     project.CanvaConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
 
-    // Ensure the Canva Publish sentinel module exists
-    var hasCanvaPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "canva");
-    if (!hasCanvaPublish)
-    {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "Canva Publish",
-            Description = "Crea y exporta disenos via Canva (autofill de brand templates o diseno nuevo).",
-            ProviderType = "System",
-            ModuleType = "Publish",
-            ModelName = "canva",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-    }
-
     await db.SaveChangesAsync();
     return Results.Ok(new { message = "Configuracion Canva guardada" });
 }).RequireAuthorization();
