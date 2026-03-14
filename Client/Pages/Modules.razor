@@ -697,7 +697,9 @@ else if (!_loading)
     private static readonly ModelInfo[] AllModels =
     [
         // ─── OpenAI: Chat / Text (GPT-5.x) ───
-        new("gpt-5.2",          "GPT-5.2",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Ultimo modelo flagship. Razonamiento avanzado multi-nivel.", "400K"),
+        new("gpt-5.4",          "GPT-5.4",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Ultimo modelo flagship. 1M contexto. Razonamiento multi-nivel.", "1M"),
+        new("gpt-5.4-pro",      "GPT-5.4 Pro",       "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Version Pro. Mas preciso, usa mas compute para pensar.", "1M"),
+        new("gpt-5.2",          "GPT-5.2",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo anterior. Razonamiento avanzado multi-nivel.", "400K"),
         new("gpt-5.1",          "GPT-5.1",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5.1 con vision y razonamiento.", "400K"),
         new("gpt-5",            "GPT-5",             "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5 potente y versatil.", "400K"),
         new("gpt-5-mini",       "GPT-5 Mini",        "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "GPT-5 version rapida y economica.", "400K"),

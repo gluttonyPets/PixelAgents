@@ -11,6 +11,12 @@ namespace Server.Services.Ai
             new(StringComparer.OrdinalIgnoreCase)
             {
                 // OpenAI
+                ["gpt-5.4"]          = (2.50m,  15.00m),
+                ["gpt-5.4-pro"]      = (30.00m, 180.00m),
+                ["gpt-5.2"]          = (2.00m,  10.00m),
+                ["gpt-5"]            = (2.00m,  10.00m),
+                ["gpt-5-mini"]       = (0.50m,   2.00m),
+                ["gpt-5-nano"]       = (0.15m,   0.60m),
                 ["gpt-4o"]           = (5.00m,  15.00m),
                 ["gpt-4o-mini"]      = (0.25m,   1.00m),
                 ["gpt-4.1"]          = (2.00m,   8.00m),

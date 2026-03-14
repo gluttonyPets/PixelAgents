@@ -78,7 +78,7 @@ namespace Server.Services.Ai
             {
                 // Use a minimal chat completion (max_tokens=1) to verify the key has quota.
                 // GET /v1/models returns 200 even with insufficient_quota.
-                var client = new ChatClient(model: "gpt-4o-mini", apiKey: apiKey);
+                var client = new ChatClient(model: "gpt-5-nano", apiKey: apiKey);
                 var options = new ChatCompletionOptions { MaxOutputTokenCount = 1 };
                 await client.CompleteChatAsync(
                     [new UserChatMessage("hi")], options);
