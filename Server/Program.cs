@@ -1259,41 +1259,6 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
     return Results.Ok(new { message = "Configuracion Buffer guardada" });
 }).RequireAuthorization();
 
-// ==================== Canva Config Endpoints ====================
-
-app.MapGet("/api/projects/{projectId:guid}/canva-config", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(project.CanvaConfig))
-        return Results.Ok(new CanvaConfigDto("", null));
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<CanvaConfigDto>(project.CanvaConfig);
-    return Results.Ok(config);
-}).RequireAuthorization();
-
-app.MapPut("/api/projects/{projectId:guid}/canva-config", async (
-    Guid projectId, CanvaConfigDto dto, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    project.CanvaConfig = System.Text.Json.JsonSerializer.Serialize(dto);
-    project.UpdatedAt = DateTime.UtcNow;
-
-    await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Configuracion Canva guardada" });
-}).RequireAuthorization();
-
 // ==================== Telegram Webhook Endpoint ====================
 
 app.MapPost("/api/webhooks/telegram", async (

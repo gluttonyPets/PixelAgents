@@ -69,9 +69,6 @@ namespace Server.Models
     // ── Instagram (Buffer) ──
     public record BufferConfigDto(string ApiKey, string ChannelId);
 
-    // ── Canva ──
-    public record CanvaConfigDto(string AccessToken, string? BrandTemplateId);
-
     // ── Schedule ──
     public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput);
     public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled);

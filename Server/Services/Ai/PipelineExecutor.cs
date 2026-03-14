@@ -1002,16 +1002,17 @@ namespace Server.Services.Ai
             var projectId = project.Id;
             var executionId = execution.Id;
 
-            if (string.IsNullOrWhiteSpace(project.CanvaConfig))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Canva");
-
-            var canvaConfig = JsonSerializer.Deserialize<CanvaConfig>(project.CanvaConfig)
-                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Canva invalida");
-
-            if (string.IsNullOrWhiteSpace(canvaConfig.AccessToken))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: Access Token de Canva no configurado");
-
             var stepConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+            // Read Canva credentials from step/module configuration
+            var accessToken = "";
+            if (stepConfig.TryGetValue("accessToken", out var atVal))
+                accessToken = (atVal is JsonElement atEl ? atEl.GetString() : atVal?.ToString()) ?? "";
+
+            if (string.IsNullOrWhiteSpace(accessToken))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: Access Token de Canva no configurado en el modulo");
+
+            var canvaConfig = new CanvaConfig { AccessToken = accessToken };
 
             // Read export format from step configuration (png/jpg/pdf/pptx)
             var exportFormat = "png";
@@ -1063,8 +1064,8 @@ namespace Server.Services.Ai
                 .Replace("{previous_output}", previousText)
                 .Replace("{step_number}", pm.StepOrder.ToString());
 
-            // Read brand template ID from step config or project-level config
-            var brandTemplateId = canvaConfig.BrandTemplateId;
+            // Read brand template ID from step config
+            string? brandTemplateId = null;
             if (stepConfig.TryGetValue("brandTemplateId", out var btVal))
             {
                 var bt = btVal is JsonElement btEl ? btEl.GetString() : btVal?.ToString();

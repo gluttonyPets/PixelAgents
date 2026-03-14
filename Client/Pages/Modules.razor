@@ -251,6 +251,10 @@
             else if (_moduleType == "Design" && _provider == "Canva")
             {
                 <div class="form-group">
+                    <label>Access Token <span class="text-sm text-muted">(OAuth token de Canva Connect API)</span></label>
+                    <input type="password" @bind="_canvaAccessToken" placeholder="Token OAuth de Canva" />
+                </div>
+                <div class="form-group">
                     <label>Formato de exportacion</label>
                     <select @bind="_canvaExportFormat">
                         <option value="png">PNG (imagen)</option>
@@ -262,7 +266,7 @@
                 @if (_model == "canva-autofill")
                 {
                     <div class="form-group">
-                        <label>Brand Template ID <span class="text-sm text-muted">(se puede sobreescribir desde el proyecto)</span></label>
+                        <label>Brand Template ID <span class="text-sm text-muted">(opcional, se puede sobreescribir desde el paso del pipeline)</span></label>
                         <input type="text" @bind="_canvaBrandTemplate" placeholder="Ej: DAVZr1z5464..." />
                     </div>
                 }
@@ -545,6 +549,10 @@
                                 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
                                 {
                                     <div class="form-group">
+                                        <label>Access Token</label>
+                                        <input type="password" @bind="_editCanvaAccessToken" placeholder="Token OAuth de Canva" />
+                                    </div>
+                                    <div class="form-group">
                                         <label>Formato de exportacion</label>
                                         <select @bind="_editCanvaExportFormat">
                                             <option value="png">PNG (imagen)</option>
@@ -672,11 +680,13 @@ else if (!_loading)
     private string _transcriptionFormat = "json";
 
     // ── Form: Canva ──
+    private string _canvaAccessToken = "";
     private string _canvaExportFormat = "png";
     private string _canvaBrandTemplate = "";
     private string _canvaDesignType = "doc";
 
     // ── Edit: Canva config ──
+    private string _editCanvaAccessToken = "";
     private string _editCanvaExportFormat = "png";
     private string _editCanvaBrandTemplate = "";
     private string _editCanvaDesignType = "doc";
@@ -861,6 +871,7 @@ else if (!_loading)
         _ttsSpeed = 1.0;
         _transcriptionLang = "";
         _transcriptionFormat = "json";
+        _canvaAccessToken = "";
         _canvaExportFormat = "png";
         _canvaBrandTemplate = "";
         _canvaDesignType = "doc";
@@ -936,6 +947,8 @@ else if (!_loading)
         }
         else if (_moduleType == "Design" && _provider == "Canva")
         {
+            if (!string.IsNullOrWhiteSpace(_canvaAccessToken))
+                parts.Add($"\"accessToken\":{System.Text.Json.JsonSerializer.Serialize(_canvaAccessToken)}");
             if (_canvaExportFormat != "png")
                 parts.Add($"\"exportFormat\":\"{_canvaExportFormat}\"");
             if (!string.IsNullOrWhiteSpace(_canvaBrandTemplate))
@@ -1044,6 +1057,7 @@ else if (!_loading)
         _editLeoWidth = 1024;
         _editLeoHeight = 1024;
         _editLeoPresetStyle = "DYNAMIC";
+        _editCanvaAccessToken = "";
         _editCanvaExportFormat = "png";
         _editCanvaBrandTemplate = "";
         _editCanvaDesignType = "doc";
@@ -1074,6 +1088,7 @@ else if (!_loading)
                 if (root.TryGetProperty("duration", out var vdur)) _editVideoDuration = vdur.GetString() ?? "8";
                 if (root.TryGetProperty("resolution", out var vres)) _editVideoResolution = vres.GetString() ?? "720p";
                 if (root.TryGetProperty("personGeneration", out var vpg)) _editVideoPersonGeneration = vpg.GetString() ?? "allow_adult";
+                if (root.TryGetProperty("accessToken", out var cat)) _editCanvaAccessToken = cat.GetString() ?? "";
                 if (root.TryGetProperty("exportFormat", out var cef)) _editCanvaExportFormat = cef.GetString() ?? "png";
                 if (root.TryGetProperty("brandTemplateId", out var cbt)) _editCanvaBrandTemplate = cbt.GetString() ?? "";
                 if (root.TryGetProperty("designType", out var cdt)) _editCanvaDesignType = cdt.GetString() ?? "doc";
@@ -1161,6 +1176,8 @@ else if (!_loading)
         }
         else if (moduleType == "Design" && providerType == "Canva")
         {
+            if (!string.IsNullOrWhiteSpace(_editCanvaAccessToken))
+                parts.Add($"\"accessToken\":{System.Text.Json.JsonSerializer.Serialize(_editCanvaAccessToken)}");
             if (_editCanvaExportFormat != "png")
                 parts.Add($"\"exportFormat\":\"{_editCanvaExportFormat}\"");
             if (!string.IsNullOrWhiteSpace(_editCanvaBrandTemplate))

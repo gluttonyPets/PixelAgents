@@ -59,7 +59,7 @@ namespace Server.Data
                 e.Property(x => x.WhatsAppConfig).HasColumnType("text");
                 e.Property(x => x.TelegramConfig).HasColumnType("text");
                 e.Property(x => x.InstagramConfig).HasColumnType("text");
-                e.Property(x => x.CanvaConfig).HasColumnType("text");
+
             });
 
             // ── ProjectModule ──

@@ -92,39 +92,6 @@ else
         </div>
     </details>
 
-    <!-- Canva Config (Publish) -->
-    <details class="card" style="margin-bottom: 1rem;">
-        <summary style="cursor: pointer; font-weight: bold;">Configuracion Canva (Disenos)</summary>
-        <div style="padding-top: 0.5rem;">
-            @if (_canvaError is not null)
-            {
-                <div class="alert alert-error">@_canvaError</div>
-            }
-            @if (_canvaSuccess)
-            {
-                <div class="alert alert-success">Configuracion Canva guardada correctamente</div>
-            }
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Access Token</label>
-                    <input type="password" @bind="_canvaAccessToken" placeholder="Token OAuth de Canva Connect API" />
-                </div>
-                <div class="form-group">
-                    <label>Brand Template ID (opcional)</label>
-                    <input type="text" @bind="_canvaBrandTemplateId" placeholder="Ej: DAVZr1z5464..." />
-                </div>
-            </div>
-            <p class="text-sm text-muted">
-                1. Registra tu app en <strong>canva.dev</strong> → obtiene un Access Token via OAuth 2.0.<br/>
-                2. El <strong>Brand Template ID</strong> es opcional. Si se proporciona, se usara autofill con el template.<br/>
-                3. Formatos de exportacion soportados: PNG, JPG, PDF, PPTX, MP4, GIF.
-            </p>
-            <button class="btn btn-primary" @onclick="SaveCanvaConfig" disabled="@_canvaSaving">
-                @(_canvaSaving ? "Guardando..." : "Guardar configuracion")
-            </button>
-        </div>
-    </details>
-
     <!-- Schedule Config -->
     <details class="card" style="margin-bottom: 1rem;">
         <summary style="cursor: pointer; font-weight: bold;">Programacion automatica</summary>
@@ -577,8 +544,8 @@ else
                 <input type="text" @bind="_canvaDesignTitle" placeholder="PixelAgents Design" />
             </div>
             <div class="form-group">
-                <label>Brand Template ID <span class="text-sm text-muted">(opcional, sobreescribe el del proyecto y del modulo)</span></label>
-                <input type="text" @bind="_canvaStepBrandTemplateId" placeholder="Ej: DAVZr1z5464... (dejar vacio para usar el del modulo/proyecto)" />
+                <label>Brand Template ID <span class="text-sm text-muted">(opcional, sobreescribe el del modulo)</span></label>
+                <input type="text" @bind="_canvaStepBrandTemplateId" placeholder="Ej: DAVZr1z5464... (dejar vacio para usar el del modulo)" />
             </div>
             <div class="form-group">
                 <label>Tipo de diseno <span class="text-sm text-muted">(si no usa template)</span></label>
@@ -589,7 +556,7 @@ else
                 </select>
             </div>
             <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                Si se configura un Brand Template ID (aqui, en el modulo o en la config del proyecto), se usara autofill
+                Si se configura un Brand Template ID (aqui o en el modulo), se usara autofill
                 con los datos del paso anterior. Si no, se creara un diseno en blanco del tipo seleccionado.
                 Las imagenes del paso anterior se suben automaticamente como assets.
             </p>
@@ -1052,13 +1019,6 @@ else
     private bool _igSuccess;
     private bool _igSaving;
 
-    // Canva config
-    private string _canvaAccessToken = "";
-    private string _canvaBrandTemplateId = "";
-    private string? _canvaError;
-    private bool _canvaSuccess;
-    private bool _canvaSaving;
-
     // Buffer API debug modal
     private bool _showBufferDebug;
     private string? _bufferDebugRequest;
@@ -1160,14 +1120,6 @@ else
                 _igChannelId = igConfig.ChannelId;
             }
 
-            // Load Canva config
-            var canvaConfig = await Api.GetCanvaConfigAsync(ProjectId);
-            if (canvaConfig is not null)
-            {
-                _canvaAccessToken = canvaConfig.AccessToken;
-                _canvaBrandTemplateId = canvaConfig.BrandTemplateId ?? "";
-            }
-
             // Load Schedule
             _schedule = await Api.GetScheduleAsync(ProjectId);
             if (_schedule is not null)
@@ -1233,28 +1185,6 @@ else
         }
         catch (Exception ex) { _igError = ex.Message; }
         _igSaving = false;
-    }
-
-    private async Task SaveCanvaConfig()
-    {
-        _canvaError = null;
-        _canvaSuccess = false;
-        _canvaSaving = true;
-        try
-        {
-            var dto = new CanvaConfigDto(_canvaAccessToken,
-                string.IsNullOrWhiteSpace(_canvaBrandTemplateId) ? null : _canvaBrandTemplateId);
-            var (ok, error) = await Api.SaveCanvaConfigAsync(ProjectId, dto);
-            if (ok)
-            {
-                _canvaSuccess = true;
-                _modules = await Api.GetModulesAsync();
-            }
-            else
-                _canvaError = error;
-        }
-        catch (Exception ex) { _canvaError = ex.Message; }
-        _canvaSaving = false;
     }
 
     private string BuildCronFromPreset()
