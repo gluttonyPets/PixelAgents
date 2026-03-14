@@ -1990,17 +1990,35 @@ Datos de la ejecucion:
             {
                 var moduleDict = JsonSerializer.Deserialize<Dictionary<string, object>>(moduleConfig);
                 if (moduleDict is not null)
-                    foreach (var kv in moduleDict) config[kv.Key] = kv.Value;
+                    foreach (var kv in moduleDict) config[kv.Key] = UnwrapJsonElement(kv.Value);
             }
 
             if (stepConfig is not null)
             {
                 var stepDict = JsonSerializer.Deserialize<Dictionary<string, object>>(stepConfig);
                 if (stepDict is not null)
-                    foreach (var kv in stepDict) config[kv.Key] = kv.Value;
+                    foreach (var kv in stepDict) config[kv.Key] = UnwrapJsonElement(kv.Value);
             }
 
             return config;
+        }
+
+        /// <summary>
+        /// Converts JsonElement values to their native .NET types so that
+        /// downstream code can use pattern matching (e.g. "value is string s").
+        /// </summary>
+        private static object UnwrapJsonElement(object value)
+        {
+            if (value is not JsonElement el) return value;
+            return el.ValueKind switch
+            {
+                JsonValueKind.String => el.GetString()!,
+                JsonValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Null => null!,
+                _ => value // arrays/objects stay as JsonElement
+            };
         }
 
         /// <summary>
