@@ -229,9 +229,11 @@ namespace Server.Services.Ai
                     // Resolve inputs: check if previous step has multiple items
                     var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
 
+                    // Store raw input data including systemPrompt so history shows exactly what was sent
+                    var systemPrompt = config.TryGetValue("systemPrompt", out var spVal) && spVal is string spStr ? spStr : null;
                     stepExecution.InputData = inputs.Count == 1
-                        ? JsonSerializer.Serialize(new { prompt = inputs[0] })
-                        : JsonSerializer.Serialize(new { prompts = inputs, count = inputs.Count });
+                        ? JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompt = inputs[0] })
+                        : JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count });
 
                     if (inputs.Count > 1)
                     {
@@ -2313,9 +2315,10 @@ Datos de la ejecucion:
                         inputs = EnrichInputsWithFeedback(inputs, comment, prevOutput, pm.AiModule.ModuleType);
                     }
 
+                    var retrySysPrompt = config.TryGetValue("systemPrompt", out var rspVal) && rspVal is string rspStr ? rspStr : null;
                     stepExecution.InputData = inputs.Count == 1
-                        ? JsonSerializer.Serialize(new { prompt = inputs[0] })
-                        : JsonSerializer.Serialize(new { prompts = inputs, count = inputs.Count });
+                        ? JsonSerializer.Serialize(new { systemPrompt = retrySysPrompt, projectContext = project.Context, prompt = inputs[0] })
+                        : JsonSerializer.Serialize(new { systemPrompt = retrySysPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count });
 
                     if (pm.AiModule.ModuleType == "Text")
                     {

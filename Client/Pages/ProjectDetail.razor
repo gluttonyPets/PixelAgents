@@ -482,21 +482,37 @@ else
 
                                     @if (!string.IsNullOrWhiteSpace(step.InputData))
                                     {
-                                        var prompts = ParseInputPrompts(step.InputData);
-                                        if (prompts.Count > 0)
+                                        var inputData = ParseInputData(step.InputData);
+                                        if (inputData is not null)
                                         {
                                             <details class="step-input-details">
                                                 <summary class="step-input-summary">
-                                                    Prompt enviado @if (prompts.Count > 1) { <span class="text-muted">(@prompts.Count prompts)</span> }
+                                                    Input enviado al modelo
                                                 </summary>
                                                 <div class="step-input-content">
-                                                    @foreach (var (prompt, idx) in prompts.Select((p, i) => (p, i)))
+                                                    @if (!string.IsNullOrWhiteSpace(inputData.SystemPrompt))
                                                     {
-                                                        @if (prompts.Count > 1)
+                                                        <label class="step-input-label">System Prompt</label>
+                                                        <div class="output-block step-input-block">@inputData.SystemPrompt</div>
+                                                    }
+                                                    @if (!string.IsNullOrWhiteSpace(inputData.ProjectContext))
+                                                    {
+                                                        <label class="step-input-label">Contexto del proyecto</label>
+                                                        <div class="output-block step-input-block">@inputData.ProjectContext</div>
+                                                    }
+                                                    @if (inputData.Prompts.Count > 0)
+                                                    {
+                                                        @foreach (var (prompt, idx) in inputData.Prompts.Select((p, i) => (p, i)))
                                                         {
-                                                            <label class="text-sm text-muted" style="margin-bottom: 0.1rem;">Prompt @(idx + 1)</label>
+                                                            <label class="step-input-label">@(inputData.Prompts.Count > 1 ? $"Prompt {idx + 1}" : "Prompt")</label>
+                                                            <div class="output-block step-input-block">@prompt</div>
                                                         }
-                                                        <div class="output-block step-input-block">@prompt</div>
+                                                    }
+                                                    else if (string.IsNullOrWhiteSpace(inputData.SystemPrompt))
+                                                    {
+                                                        @* Non-AI steps (publish, canva, etc): show raw JSON *@
+                                                        <label class="step-input-label">Datos de entrada</label>
+                                                        <div class="output-block step-input-block">@inputData.RawJson</div>
                                                     }
                                                 </div>
                                             </details>
@@ -1807,34 +1823,49 @@ else
         catch { return raw; }
     }
 
-    private static List<string> ParseInputPrompts(string? json)
+    private record ParsedInputData(string? SystemPrompt, string? ProjectContext, List<string> Prompts, string RawJson);
+
+    private static ParsedInputData? ParseInputData(string? json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return new();
+        if (string.IsNullOrWhiteSpace(json)) return null;
         try
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // Single prompt: { "prompt": "..." }
+            string? systemPrompt = null;
+            string? projectContext = null;
+            var prompts = new List<string>();
+
+            if (root.TryGetProperty("systemPrompt", out var spEl) && spEl.ValueKind == JsonValueKind.String)
+                systemPrompt = spEl.GetString();
+
+            if (root.TryGetProperty("projectContext", out var pcEl) && pcEl.ValueKind == JsonValueKind.String)
+                projectContext = pcEl.GetString();
+
+            // Single prompt
             if (root.TryGetProperty("prompt", out var promptEl) && promptEl.ValueKind == JsonValueKind.String)
             {
                 var val = promptEl.GetString();
-                if (!string.IsNullOrWhiteSpace(val)) return new() { val };
+                if (!string.IsNullOrWhiteSpace(val)) prompts.Add(val);
             }
 
-            // Multiple prompts: { "prompts": ["...", "..."], "count": N }
+            // Multiple prompts
             if (root.TryGetProperty("prompts", out var promptsEl) && promptsEl.ValueKind == JsonValueKind.Array)
             {
-                return promptsEl.EnumerateArray()
+                prompts = promptsEl.EnumerateArray()
                     .Where(e => e.ValueKind == JsonValueKind.String)
                     .Select(e => e.GetString()!)
                     .Where(s => !string.IsNullOrWhiteSpace(s))
                     .ToList();
             }
 
-            return new();
+            // Pretty-print the raw JSON for fallback/non-AI steps
+            var rawJson = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+
+            return new ParsedInputData(systemPrompt, projectContext, prompts, rawJson);
         }
-        catch { return new(); }
+        catch { return null; }
     }
 
     private static StepOutputDto? TryParseOutput(string? json)

@@ -320,6 +320,18 @@ tr:hover td {
 .step-input-content {
     margin-top: 0.3rem;
 }
+.step-input-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 0.4rem 0 0.15rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.step-input-label:first-child {
+    margin-top: 0;
+}
 .step-input-block {
     white-space: pre-wrap;
     font-size: 0.8rem;
