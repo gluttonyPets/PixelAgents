@@ -125,6 +125,155 @@ else
         </div>
     </details>
 
+    <!-- Schedule Config -->
+    <details class="card" style="margin-bottom: 1rem;">
+        <summary style="cursor: pointer; font-weight: bold;">Programacion automatica</summary>
+        <div style="padding-top: 0.5rem;">
+            @if (_schedError is not null)
+            {
+                <div class="alert alert-error">@_schedError</div>
+            }
+            @if (_schedSuccess)
+            {
+                <div class="alert alert-success">Programacion guardada correctamente</div>
+            }
+
+            @if (_schedule is not null)
+            {
+                <div style="margin-bottom: 0.75rem; padding: 0.5rem; background: var(--bg-secondary, #1a1a2e); border-radius: 6px;">
+                    <span style="font-weight: bold;">Estado:</span>
+                    @if (_schedule.IsEnabled)
+                    {
+                        <span style="color: #4ade80;">Activa</span>
+                    }
+                    else
+                    {
+                        <span style="color: #f87171;">Pausada</span>
+                    }
+                    @if (_schedule.NextRunAt.HasValue)
+                    {
+                        <span class="text-muted"> | Proxima ejecucion: @_schedule.NextRunAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                    }
+                    @if (_schedule.LastRunAt.HasValue)
+                    {
+                        <span class="text-muted"> | Ultima ejecucion: @_schedule.LastRunAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+                    }
+                </div>
+            }
+
+            <div class="form-group">
+                <label>Frecuencia</label>
+                <select @bind="_schedPreset">
+                    <option value="">Personalizado (cron)</option>
+                    <option value="daily">Diaria (a una hora fija)</option>
+                    <option value="twice">2 veces al dia</option>
+                    <option value="weekly">Semanal</option>
+                </select>
+            </div>
+
+            @if (_schedPreset == "daily" || _schedPreset == "twice")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Hora (0-23)</label>
+                        <input type="number" min="0" max="23" @bind="_schedHour1" />
+                    </div>
+                    <div class="form-group">
+                        <label>Minuto (0-59)</label>
+                        <input type="number" min="0" max="59" @bind="_schedMinute1" />
+                    </div>
+                </div>
+                @if (_schedPreset == "twice")
+                {
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>2a hora (0-23)</label>
+                            <input type="number" min="0" max="23" @bind="_schedHour2" />
+                        </div>
+                        <div class="form-group">
+                            <label>2o minuto (0-59)</label>
+                            <input type="number" min="0" max="59" @bind="_schedMinute2" />
+                        </div>
+                    </div>
+                }
+            }
+            else if (_schedPreset == "weekly")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Dia de la semana</label>
+                        <select @bind="_schedDayOfWeek">
+                            <option value="1">Lunes</option>
+                            <option value="2">Martes</option>
+                            <option value="3">Miercoles</option>
+                            <option value="4">Jueves</option>
+                            <option value="5">Viernes</option>
+                            <option value="6">Sabado</option>
+                            <option value="0">Domingo</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Hora (0-23)</label>
+                        <input type="number" min="0" max="23" @bind="_schedHour1" />
+                    </div>
+                    <div class="form-group">
+                        <label>Minuto (0-59)</label>
+                        <input type="number" min="0" max="59" @bind="_schedMinute1" />
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="form-group">
+                    <label>Expresion Cron</label>
+                    <input type="text" @bind="_schedCron" placeholder="0 9 * * * (cada dia a las 9:00)" />
+                </div>
+            }
+
+            <div class="form-group">
+                <label>Zona horaria</label>
+                <select @bind="_schedTimeZone">
+                    <option value="Europe/Madrid">Europe/Madrid</option>
+                    <option value="Europe/London">Europe/London</option>
+                    <option value="America/New_York">America/New_York</option>
+                    <option value="America/Chicago">America/Chicago</option>
+                    <option value="America/Denver">America/Denver</option>
+                    <option value="America/Los_Angeles">America/Los_Angeles</option>
+                    <option value="America/Mexico_City">America/Mexico_City</option>
+                    <option value="America/Bogota">America/Bogota</option>
+                    <option value="America/Buenos_Aires">America/Buenos_Aires</option>
+                    <option value="America/Sao_Paulo">America/Sao_Paulo</option>
+                    <option value="UTC">UTC</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Input automatico <span class="text-sm text-muted">(opcional - texto que se envia al pipeline en cada ejecucion)</span></label>
+                <textarea rows="2" @bind="_schedUserInput" placeholder="Ej: Genera un post sobre tendencias de hoy"></textarea>
+            </div>
+
+            <p class="text-sm text-muted">
+                La programacion ejecuta el pipeline automaticamente segun la frecuencia configurada.
+                Ejemplos cron: <code>0 9 * * *</code> (diario 9am), <code>0 9,18 * * *</code> (9am y 6pm), <code>0 10 * * 1</code> (lunes 10am).
+            </p>
+
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button class="btn btn-primary" @onclick="SaveSchedule" disabled="@_schedSaving">
+                    @(_schedSaving ? "Guardando..." : (_schedule is null ? "Crear programacion" : "Actualizar programacion"))
+                </button>
+                @if (_schedule is not null)
+                {
+                    <button class="btn btn-secondary" @onclick="ToggleSchedule" disabled="@_schedSaving">
+                        @(_schedule.IsEnabled ? "Pausar" : "Activar")
+                    </button>
+                    <button class="btn btn-danger" @onclick="DeleteSchedule" disabled="@_schedSaving">
+                        Eliminar
+                    </button>
+                }
+            </div>
+        </div>
+    </details>
+
     <!-- WhatsApp Config (legacy) -->
     <details class="card" style="margin-bottom: 1rem;">
         <summary style="cursor: pointer; font-weight: bold;">Configuracion WhatsApp (alternativa)</summary>
@@ -925,6 +1074,21 @@ else
     private bool _waSuccess;
     private bool _waSaving;
 
+    // Schedule
+    private ScheduleResponse? _schedule;
+    private string _schedPreset = "daily";
+    private int _schedHour1 = 9;
+    private int _schedMinute1 = 0;
+    private int _schedHour2 = 18;
+    private int _schedMinute2 = 0;
+    private string _schedDayOfWeek = "1";
+    private string _schedCron = "";
+    private string _schedTimeZone = "Europe/Madrid";
+    private string _schedUserInput = "";
+    private string? _schedError;
+    private bool _schedSuccess;
+    private bool _schedSaving;
+
     // Execution log
     private List<LogEntry> _logEntries = [];
     private HubConnection? _hubConnection;
@@ -1004,6 +1168,17 @@ else
                 _canvaBrandTemplateId = canvaConfig.BrandTemplateId ?? "";
             }
 
+            // Load Schedule
+            _schedule = await Api.GetScheduleAsync(ProjectId);
+            if (_schedule is not null)
+            {
+                _schedCron = _schedule.CronExpression;
+                _schedTimeZone = _schedule.TimeZone;
+                _schedUserInput = _schedule.UserInput ?? "";
+                // Try to detect preset from cron
+                DetectPresetFromCron(_schedule.CronExpression);
+            }
+
             // Load WhatsApp config
             var waConfig = await Api.GetWhatsAppConfigAsync(ProjectId);
             if (waConfig is not null)
@@ -1080,6 +1255,160 @@ else
         }
         catch (Exception ex) { _canvaError = ex.Message; }
         _canvaSaving = false;
+    }
+
+    private string BuildCronFromPreset()
+    {
+        return _schedPreset switch
+        {
+            "daily" => $"{_schedMinute1} {_schedHour1} * * *",
+            "twice" => $"{_schedMinute1} {_schedHour1},{_schedHour2} * * *",
+            "weekly" => $"{_schedMinute1} {_schedHour1} * * {_schedDayOfWeek}",
+            _ => _schedCron
+        };
+    }
+
+    private void DetectPresetFromCron(string cron)
+    {
+        var parts = cron.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 5) { _schedPreset = ""; return; }
+
+        // daily: M H * * *
+        if (parts[2] == "*" && parts[3] == "*" && parts[4] == "*"
+            && int.TryParse(parts[0], out var m1) && int.TryParse(parts[1], out var h1)
+            && !parts[1].Contains(','))
+        {
+            _schedPreset = "daily";
+            _schedHour1 = h1;
+            _schedMinute1 = m1;
+            return;
+        }
+
+        // twice: M H1,H2 * * *
+        if (parts[2] == "*" && parts[3] == "*" && parts[4] == "*"
+            && int.TryParse(parts[0], out var m2) && parts[1].Contains(','))
+        {
+            var hours = parts[1].Split(',');
+            if (hours.Length == 2 && int.TryParse(hours[0], out var ha) && int.TryParse(hours[1], out var hb))
+            {
+                _schedPreset = "twice";
+                _schedMinute1 = m2;
+                _schedHour1 = ha;
+                _schedHour2 = hb;
+                return;
+            }
+        }
+
+        // weekly: M H * * DOW
+        if (parts[2] == "*" && parts[3] == "*" && parts[4] != "*"
+            && int.TryParse(parts[0], out var m3) && int.TryParse(parts[1], out var h3))
+        {
+            _schedPreset = "weekly";
+            _schedMinute1 = m3;
+            _schedHour1 = h3;
+            _schedDayOfWeek = parts[4];
+            return;
+        }
+
+        _schedPreset = "";
+    }
+
+    private async Task SaveSchedule()
+    {
+        _schedError = null;
+        _schedSuccess = false;
+        _schedSaving = true;
+        try
+        {
+            var cron = BuildCronFromPreset();
+            if (string.IsNullOrWhiteSpace(cron))
+            {
+                _schedError = "Debes configurar una expresion cron o seleccionar una frecuencia.";
+                _schedSaving = false;
+                return;
+            }
+
+            var input = string.IsNullOrWhiteSpace(_schedUserInput) ? null : _schedUserInput;
+
+            if (_schedule is null)
+            {
+                var (ok, result, error) = await Api.CreateScheduleAsync(ProjectId,
+                    new CreateScheduleRequest(cron, _schedTimeZone, input));
+                if (ok)
+                {
+                    _schedule = result;
+                    _schedSuccess = true;
+                }
+                else
+                    _schedError = error;
+            }
+            else
+            {
+                var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
+                    new UpdateScheduleRequest(cron, _schedTimeZone, input, _schedule.IsEnabled));
+                if (ok)
+                {
+                    _schedule = result;
+                    _schedSuccess = true;
+                }
+                else
+                    _schedError = error;
+            }
+        }
+        catch (Exception ex) { _schedError = ex.Message; }
+        _schedSaving = false;
+    }
+
+    private async Task ToggleSchedule()
+    {
+        if (_schedule is null) return;
+        _schedError = null;
+        _schedSuccess = false;
+        _schedSaving = true;
+        try
+        {
+            var cron = _schedule.CronExpression;
+            var tz = _schedule.TimeZone;
+            var input = _schedule.UserInput;
+            var newEnabled = !_schedule.IsEnabled;
+
+            var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
+                new UpdateScheduleRequest(cron, tz, input, newEnabled));
+            if (ok)
+            {
+                _schedule = result;
+                _schedSuccess = true;
+            }
+            else
+                _schedError = error;
+        }
+        catch (Exception ex) { _schedError = ex.Message; }
+        _schedSaving = false;
+    }
+
+    private async Task DeleteSchedule()
+    {
+        if (_schedule is null) return;
+        _schedError = null;
+        _schedSuccess = false;
+        _schedSaving = true;
+        try
+        {
+            var (ok, error) = await Api.DeleteScheduleAsync(ProjectId);
+            if (ok)
+            {
+                _schedule = null;
+                _schedPreset = "daily";
+                _schedHour1 = 9;
+                _schedMinute1 = 0;
+                _schedUserInput = "";
+                _schedSuccess = true;
+            }
+            else
+                _schedError = error;
+        }
+        catch (Exception ex) { _schedError = ex.Message; }
+        _schedSaving = false;
     }
 
     private async Task SaveWhatsAppConfig()

@@ -358,6 +358,40 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Schedule ──
+
+    public async Task<ScheduleResponse?> GetScheduleAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/schedule");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<ScheduleResponse>();
+    }
+
+    public async Task<(bool Ok, ScheduleResponse? Result, string? Error)> CreateScheduleAsync(Guid projectId, CreateScheduleRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/schedule", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<ScheduleResponse>();
+        return (true, result, null);
+    }
+
+    public async Task<(bool Ok, ScheduleResponse? Result, string? Error)> UpdateScheduleAsync(Guid projectId, UpdateScheduleRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/schedule", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<ScheduleResponse>();
+        return (true, result, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteScheduleAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/schedule");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Canva Config ──
 
     public async Task<CanvaConfigDto?> GetCanvaConfigAsync(Guid projectId)

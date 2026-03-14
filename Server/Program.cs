@@ -61,6 +61,7 @@ builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
+builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
 builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
@@ -874,6 +875,113 @@ app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async
         return Results.File(bytes, file.ContentType, file.FileName);
     }
 });
+
+// ==================== Schedule Endpoints ====================
+
+app.MapGet("/api/projects/{projectId:guid}/schedule", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var schedule = await db.ProjectSchedules
+        .FirstOrDefaultAsync(s => s.ProjectId == projectId);
+
+    if (schedule is null) return Results.Ok((ScheduleResponse?)null);
+
+    return Results.Ok(new ScheduleResponse(
+        schedule.Id, schedule.ProjectId, schedule.IsEnabled,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.LastRunAt, schedule.NextRunAt,
+        schedule.CreatedAt, schedule.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{projectId:guid}/schedule", async (
+    Guid projectId, CreateScheduleRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    // Only one schedule per project
+    var existing = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == projectId);
+    if (existing is not null)
+        return Results.BadRequest(new { error = "Este proyecto ya tiene una programacion. Usa PUT para actualizarla." });
+
+    var now = DateTime.UtcNow;
+    var nextRun = Server.Services.Scheduler.SchedulerBackgroundService.ComputeNextRun(
+        req.CronExpression, req.TimeZone, now);
+
+    var schedule = new ProjectSchedule
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = projectId,
+        IsEnabled = true,
+        CronExpression = req.CronExpression,
+        TimeZone = req.TimeZone,
+        UserInput = req.UserInput,
+        NextRunAt = nextRun,
+        CreatedAt = now,
+        UpdatedAt = now
+    };
+
+    db.ProjectSchedules.Add(schedule);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new ScheduleResponse(
+        schedule.Id, schedule.ProjectId, schedule.IsEnabled,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.LastRunAt, schedule.NextRunAt,
+        schedule.CreatedAt, schedule.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/schedule", async (
+    Guid projectId, UpdateScheduleRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var schedule = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == projectId);
+    if (schedule is null) return Results.NotFound();
+
+    var now = DateTime.UtcNow;
+
+    schedule.CronExpression = req.CronExpression;
+    schedule.TimeZone = req.TimeZone;
+    schedule.UserInput = req.UserInput;
+    schedule.IsEnabled = req.IsEnabled;
+    schedule.NextRunAt = req.IsEnabled
+        ? Server.Services.Scheduler.SchedulerBackgroundService.ComputeNextRun(req.CronExpression, req.TimeZone, now)
+        : null;
+    schedule.UpdatedAt = now;
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new ScheduleResponse(
+        schedule.Id, schedule.ProjectId, schedule.IsEnabled,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.LastRunAt, schedule.NextRunAt,
+        schedule.CreatedAt, schedule.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapDelete("/api/projects/{projectId:guid}/schedule", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var schedule = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == projectId);
+    if (schedule is null) return Results.NotFound();
+
+    db.ProjectSchedules.Remove(schedule);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { message = "Programacion eliminada" });
+}).RequireAuthorization();
 
 // ==================== WhatsApp Config Endpoints ====================
 

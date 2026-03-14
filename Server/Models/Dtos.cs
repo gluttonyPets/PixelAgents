@@ -71,4 +71,12 @@ namespace Server.Models
 
     // ── Canva ──
     public record CanvaConfigDto(string AccessToken, string? BrandTemplateId);
+
+    // ── Schedule ──
+    public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput);
+    public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled);
+    public record ScheduleResponse(
+        Guid Id, Guid ProjectId, bool IsEnabled, string CronExpression, string TimeZone,
+        string? UserInput, DateTime? LastRunAt, DateTime? NextRunAt,
+        DateTime CreatedAt, DateTime UpdatedAt);
 }

@@ -54,6 +54,21 @@ namespace Server.Services
                 ON ""ExecutionLogs"" (""ExecutionId"")");
             RunSafe(ctx, "ALTER TABLE \"StepExecutions\" ADD COLUMN IF NOT EXISTS \"EstimatedCost\" numeric NOT NULL DEFAULT 0");
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"TotalEstimatedCost\" numeric NOT NULL DEFAULT 0");
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ProjectSchedules"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
+                    ""IsEnabled"" boolean NOT NULL DEFAULT true,
+                    ""CronExpression"" varchar(100) NOT NULL,
+                    ""TimeZone"" varchar(100) NOT NULL DEFAULT 'UTC',
+                    ""UserInput"" text,
+                    ""LastRunAt"" timestamp with time zone,
+                    ""NextRunAt"" timestamp with time zone,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )");
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_ProjectId"" ON ""ProjectSchedules"" (""ProjectId"")");
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_IsEnabled_NextRunAt"" ON ""ProjectSchedules"" (""IsEnabled"", ""NextRunAt"")");
         }
 
         private static void RunSafe(UserDbContext ctx, string sql)

@@ -15,6 +15,7 @@ namespace Server.Data
         public DbSet<StepExecution> StepExecutions => Set<StepExecution>();
         public DbSet<ExecutionFile> ExecutionFiles => Set<ExecutionFile>();
         public DbSet<ExecutionLog> ExecutionLogs => Set<ExecutionLog>();
+        public DbSet<ProjectSchedule> ProjectSchedules => Set<ProjectSchedule>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -120,6 +121,24 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 e.HasIndex(x => new { x.ExecutionId, x.StepOrder });
+            });
+
+            // ── ProjectSchedule ──
+            modelBuilder.Entity<ProjectSchedule>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.CronExpression).IsRequired().HasMaxLength(100);
+                e.Property(x => x.TimeZone).IsRequired().HasMaxLength(100).HasDefaultValue("UTC");
+                e.Property(x => x.UserInput).HasColumnType("text");
+                e.Property(x => x.IsEnabled).HasDefaultValue(true);
+
+                e.HasOne(x => x.Project)
+                    .WithMany()
+                    .HasForeignKey(x => x.ProjectId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => x.ProjectId);
+                e.HasIndex(x => new { x.IsEnabled, x.NextRunAt });
             });
 
             // ── ExecutionLog ──
