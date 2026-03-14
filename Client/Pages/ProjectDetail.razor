@@ -412,7 +412,40 @@ else
             </div>
         }
 
-        @if (selectedModule?.ModuleType == "Publish")
+        @if (selectedModule?.ModuleType == "Publish" && selectedModule?.ModelName == "canva")
+        {
+            <div class="form-group">
+                <label>Formato de exportacion</label>
+                <select @bind="_canvaExportFormat">
+                    <option value="png">PNG (imagen)</option>
+                    <option value="jpg">JPG (imagen)</option>
+                    <option value="pdf">PDF (documento)</option>
+                    <option value="pptx">PPTX (presentacion)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Titulo del diseno <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
+                <input type="text" @bind="_canvaDesignTitle" placeholder="PixelAgents Design" />
+            </div>
+            <div class="form-group">
+                <label>Brand Template ID <span class="text-sm text-muted">(opcional, sobreescribe el del proyecto)</span></label>
+                <input type="text" @bind="_canvaStepBrandTemplateId" placeholder="Ej: DAVZr1z5464... (dejar vacio para usar el del proyecto)" />
+            </div>
+            <div class="form-group">
+                <label>Tipo de diseno <span class="text-sm text-muted">(si no usa template)</span></label>
+                <select @bind="_canvaDesignType">
+                    <option value="doc">Documento</option>
+                    <option value="presentation">Presentacion</option>
+                    <option value="whiteboard">Pizarra</option>
+                </select>
+            </div>
+            <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                Si se configura un Brand Template ID (aqui o en la config del proyecto), se usara autofill
+                con los datos del paso anterior. Si no, se creara un diseno en blanco del tipo seleccionado.
+                Las imagenes del paso anterior se suben automaticamente como assets.
+            </p>
+        }
+        else if (selectedModule?.ModuleType == "Publish")
         {
             <div class="form-group">
                 <label>Tipo de publicacion</label>
@@ -830,6 +863,12 @@ else
     private string _publishCaption = "";
     private string _publishType = "post";
 
+    // Publish step (Canva)
+    private string _canvaExportFormat = "png";
+    private string _canvaDesignTitle = "";
+    private string _canvaStepBrandTemplateId = "";
+    private string _canvaDesignType = "doc";
+
     // Video step
     private string _videoSource = "prompt";
     private string _videoPrompt = "";
@@ -1114,7 +1153,17 @@ else
                     imageCount = _imageCount
                 });
             }
-            if (mod?.ModuleType == "Publish")
+            if (mod?.ModuleType == "Publish" && mod?.ModelName == "canva")
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    exportFormat = _canvaExportFormat,
+                    designTitle = string.IsNullOrWhiteSpace(_canvaDesignTitle) ? "PixelAgents Design" : _canvaDesignTitle,
+                    brandTemplateId = string.IsNullOrWhiteSpace(_canvaStepBrandTemplateId) ? (string?)null : _canvaStepBrandTemplateId,
+                    designType = _canvaDesignType
+                });
+            }
+            else if (mod?.ModuleType == "Publish")
             {
                 stepConfig = JsonSerializer.Serialize(new
                 {
@@ -1138,7 +1187,7 @@ else
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _publishCaption = ""; _publishType = "post"; _videoSource = "prompt"; _videoPrompt = ""; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
