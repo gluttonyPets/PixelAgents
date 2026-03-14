@@ -480,6 +480,29 @@ else
                                         </div>
                                     }
 
+                                    @if (!string.IsNullOrWhiteSpace(step.InputData))
+                                    {
+                                        var prompts = ParseInputPrompts(step.InputData);
+                                        if (prompts.Count > 0)
+                                        {
+                                            <details class="step-input-details">
+                                                <summary class="step-input-summary">
+                                                    Prompt enviado @if (prompts.Count > 1) { <span class="text-muted">(@prompts.Count prompts)</span> }
+                                                </summary>
+                                                <div class="step-input-content">
+                                                    @foreach (var (prompt, idx) in prompts.Select((p, i) => (p, i)))
+                                                    {
+                                                        @if (prompts.Count > 1)
+                                                        {
+                                                            <label class="text-sm text-muted" style="margin-bottom: 0.1rem;">Prompt @(idx + 1)</label>
+                                                        }
+                                                        <div class="output-block step-input-block">@prompt</div>
+                                                    }
+                                                </div>
+                                            </details>
+                                        }
+                                    }
+
                                     @if (step.ErrorMessage is not null)
                                     {
                                         <div class="alert alert-error">@step.ErrorMessage</div>
@@ -1782,6 +1805,36 @@ else
             return JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
         }
         catch { return raw; }
+    }
+
+    private static List<string> ParseInputPrompts(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Single prompt: { "prompt": "..." }
+            if (root.TryGetProperty("prompt", out var promptEl) && promptEl.ValueKind == JsonValueKind.String)
+            {
+                var val = promptEl.GetString();
+                if (!string.IsNullOrWhiteSpace(val)) return new() { val };
+            }
+
+            // Multiple prompts: { "prompts": ["...", "..."], "count": N }
+            if (root.TryGetProperty("prompts", out var promptsEl) && promptsEl.ValueKind == JsonValueKind.Array)
+            {
+                return promptsEl.EnumerateArray()
+                    .Where(e => e.ValueKind == JsonValueKind.String)
+                    .Select(e => e.GetString()!)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .ToList();
+            }
+
+            return new();
+        }
+        catch { return new(); }
     }
 
     private static StepOutputDto? TryParseOutput(string? json)

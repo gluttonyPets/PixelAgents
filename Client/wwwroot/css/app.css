@@ -304,6 +304,34 @@ tr:hover td {
     flex-wrap: wrap;
 }
 
+.step-input-details {
+    margin: 0.4rem 0;
+}
+.step-input-summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--accent);
+    user-select: none;
+    padding: 0.2rem 0;
+}
+.step-input-summary:hover {
+    text-decoration: underline;
+}
+.step-input-content {
+    margin-top: 0.3rem;
+}
+.step-input-block {
+    white-space: pre-wrap;
+    font-size: 0.8rem;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 0.3rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    padding: 0.5rem 0.6rem;
+}
+
 .image-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
