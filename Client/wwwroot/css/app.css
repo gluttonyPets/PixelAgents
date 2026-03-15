@@ -589,27 +589,59 @@ tr:hover td {
 }
 .step-connector:hover .fork-btn { opacity: 1; }
 
-/* Branch layout */
+/* Branch layout — fork visual */
 .pipeline-fork {
     width: 100%;
-    margin: 0.5rem 0;
+    margin: 0.3rem 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.fork-junction {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-card);
+    box-shadow: 0 0 0 2px var(--accent);
+    z-index: 1;
+}
+
+/* Vertical line from junction to horizontal bar */
+.fork-junction + .fork-lines {
+    width: 2px;
+    height: 1.2rem;
+    background: var(--accent);
+    opacity: 0.4;
+}
+
+/* Connector line between branch step cards */
+.branch-connector {
+    width: 2px;
+    height: 14px;
+    background: var(--border);
 }
 
 .pipeline-branches {
     display: flex;
     justify-content: center;
-    gap: 1.5rem;
+    gap: 2rem;
     position: relative;
+    padding-top: 1.2rem;
+    margin-top: 0.3rem;
 }
 
+/* Horizontal connector line spanning all branches */
 .pipeline-branches::before {
     content: '';
     position: absolute;
     top: 0;
-    left: 25%;
-    right: 25%;
+    left: 15%;
+    right: 15%;
     height: 2px;
-    background: var(--border);
+    background: var(--accent);
+    opacity: 0.4;
 }
 
 .pipeline-branch {
@@ -618,17 +650,34 @@ tr:hover td {
     align-items: center;
     gap: 0.4rem;
     position: relative;
-    padding-top: 0.5rem;
+    padding-top: 0.8rem;
+    min-width: 280px;
 }
 
+/* Vertical connector from horizontal bar to branch header */
 .pipeline-branch::before {
     content: '';
     position: absolute;
     top: 0;
     left: 50%;
+    transform: translateX(-50%);
     width: 2px;
-    height: 0.5rem;
-    background: var(--border);
+    height: 0.8rem;
+    background: var(--accent);
+    opacity: 0.5;
+}
+
+/* Branch side indicators — colored left edge for left branches, right edge for right */
+.pipeline-branch.branch-right .branch-header {
+    background: var(--accent);
+}
+.pipeline-branch.branch-left .branch-header {
+    background: #8b5cf6;
+}
+
+/* Left-side branch colored connector */
+.pipeline-branch.branch-left::before {
+    background: #8b5cf6;
 }
 
 .branch-header {
@@ -637,10 +686,11 @@ tr:hover td {
     gap: 0.3rem;
     background: var(--accent);
     color: #fff;
-    padding: 0.15rem 0.7rem;
-    border-radius: 12px;
+    padding: 0.2rem 0.8rem;
+    border-radius: 14px;
     font-size: 0.75rem;
     font-weight: 600;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
 }
 
 .branch-name {

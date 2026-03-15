@@ -159,19 +159,28 @@ else
                         {
                             <div class="step-connector"></div>
                             <div class="pipeline-fork">
+                                <div class="fork-junction"></div>
+                                <div class="fork-lines" style="--branch-count: @forksHere.Count;"></div>
                                 <div class="pipeline-branches">
-                                    @foreach (var (branchId, branchSteps) in forksHere)
+                                    @for (var bi = 0; bi < forksHere.Count; bi++)
                                     {
-                                        <div class="pipeline-branch">
+                                        var (branchId, branchSteps) = forksHere[bi];
+                                        var branchSide = bi % 2 == 0 ? "branch-right" : "branch-left";
+                                        <div class="pipeline-branch @branchSide" style="order: @(bi % 2 == 0 ? bi + 2 : bi)">
                                             <div class="branch-header">
                                                 <span class="branch-name">@branchId</span>
                                                 <button class="btn btn-xs btn-danger" @onclick="() => DeleteBranch(branchId)" title="Eliminar rama">&#x2715;</button>
                                             </div>
-                                            @foreach (var bpm in branchSteps)
+                                            @for (var bsi = 0; bsi < branchSteps.Count; bsi++)
                                             {
+                                                var bpm = branchSteps[bsi];
                                                 var bIsEditing = _editingPmId == bpm.Id;
                                                 var bCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == bpm.Id)?.EstimatedCost;
 
+                                                @if (bsi > 0)
+                                                {
+                                                    <div class="branch-connector"></div>
+                                                }
                                                 <div class="step-card-v2 branch-step @(bIsEditing ? "editing" : "")">
                                                     <div class="step-card-header">
                                                         <span class="step-number">@bpm.StepOrder</span>
