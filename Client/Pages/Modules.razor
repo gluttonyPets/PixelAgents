@@ -331,6 +331,31 @@
             }
         </fieldset>
 
+        @if (_moduleType == "Text")
+        {
+            <div class="form-group">
+                <label>Archivos adjuntos <span class="text-sm text-muted">(imagenes, documentos, etc.)</span></label>
+
+                @if (_createPendingFiles.Count > 0)
+                {
+                    <div class="file-list">
+                        @foreach (var f in _createPendingFiles)
+                        {
+                            <div class="file-item">
+                                <span class="file-name" title="@f.Name">@f.Name</span>
+                                <span class="text-sm text-muted">@FormatFileSize(f.Size)</span>
+                                <button class="btn btn-danger btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem;"
+                                        @onclick="() => _createPendingFiles.Remove(f)">x</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <InputFile OnChange="OnCreateFilesSelected" multiple
+                           accept="image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx" />
+            </div>
+        }
+
         <button class="btn btn-primary mt-1" @onclick="Create" disabled="@_loading">Crear Modulo</button>
     }
 </div>
@@ -729,6 +754,9 @@ else if (!_loading)
     private string _editCanvaBrandTemplate = "";
     private string _editCanvaDesignType = "doc";
 
+    // ── Create: pending files ──
+    private List<IBrowserFile> _createPendingFiles = [];
+
     // ── Edit: Module files ──
     private List<ModuleFileResponse> _editModuleFiles = [];
     private bool _uploadingFiles;
@@ -1033,9 +1061,20 @@ else if (!_loading)
             Guid? keyId = Guid.TryParse(_apiKeyId, out var id) ? id : null;
             var config = BuildConfigJson();
             var req = new CreateAiModuleRequest(_name, _desc, _provider, _moduleType, _model, keyId, config);
-            var (ok, error) = await Api.CreateModuleAsync(req);
+            var (ok, error, moduleId) = await Api.CreateModuleAsync(req);
             if (ok)
             {
+                if (moduleId.HasValue && _createPendingFiles.Count > 0)
+                {
+                    using var content = new MultipartFormDataContent();
+                    foreach (var file in _createPendingFiles)
+                    {
+                        var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
+                        content.Add(new StreamContent(stream), "files", file.Name);
+                    }
+                    await Api.UploadModuleFilesAsync(moduleId.Value, content);
+                }
+                _createPendingFiles.Clear();
                 _name = ""; _desc = ""; _model = ""; _apiKeyId = "";
                 ResetConfig();
                 _modules = await Api.GetModulesAsync();
@@ -1168,6 +1207,11 @@ else if (!_loading)
         }
         catch (Exception ex) { _fileUploadError = $"Error al subir: {ex.Message}"; }
         _uploadingFiles = false;
+    }
+
+    private void OnCreateFilesSelected(InputFileChangeEventArgs e)
+    {
+        _createPendingFiles.AddRange(e.GetMultipleFiles(10));
     }
 
     private async Task DeleteModuleFile(Guid fileId, Guid moduleId)

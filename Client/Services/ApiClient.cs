@@ -78,11 +78,15 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<AiModuleResponse>>() ?? [];
     }
 
-    public async Task<(bool Ok, string? Error)> CreateModuleAsync(CreateAiModuleRequest req)
+    public async Task<(bool Ok, string? Error, Guid? ModuleId)> CreateModuleAsync(CreateAiModuleRequest req)
     {
         var resp = await SendAsync(HttpMethod.Post, "/api/modules", req);
-        if (resp.IsSuccessStatusCode) return (true, null);
-        return (false, await ReadErrorAsync(resp));
+        if (resp.IsSuccessStatusCode)
+        {
+            var created = await resp.Content.ReadFromJsonAsync<AiModuleResponse>();
+            return (true, null, created?.Id);
+        }
+        return (false, await ReadErrorAsync(resp), null);
     }
 
     public async Task<(bool Ok, string? Error)> UpdateModuleApiKeyAsync(Guid moduleId, AiModuleResponse current, Guid? newApiKeyId)
