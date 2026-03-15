@@ -208,7 +208,6 @@ namespace Server.Services.Ai
                 var editOptions = new ImageEditOptions
                 {
                     Size = options.Size,
-                    Quality = options.Quality,
                 };
                 var editResult = await client.GenerateImageEditAsync(
                     imageStream, "input.png", prompt, editOptions);

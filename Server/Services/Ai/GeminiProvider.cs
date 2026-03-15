@@ -165,10 +165,10 @@ namespace Server.Services.Ai
                 if (context.InputFiles is { Count: > 0 })
                 {
                     // Image editing: pass input images alongside the prompt
-                    var parts = new List<Part> { new Part { Text = prompt } };
+                    var inputParts = new List<Part> { new Part { Text = prompt } };
                     foreach (var fileBytes in context.InputFiles)
                     {
-                        parts.Add(new Part
+                        inputParts.Add(new Part
                         {
                             InlineData = new Blob
                             {
@@ -179,7 +179,7 @@ namespace Server.Services.Ai
                     }
                     response = await client.Models.GenerateContentAsync(
                         model: imageModel,
-                        contents: new Content { Parts = parts, Role = "user" },
+                        contents: new Content { Parts = inputParts, Role = "user" },
                         config: config
                     );
                 }
