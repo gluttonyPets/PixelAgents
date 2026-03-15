@@ -76,7 +76,7 @@ namespace Server.Services.Ai
                     });
                 }
                 contentBlocks.Add(new TextContent { Text = context.Input });
-                messages.Add(new Message(RoleType.User, contentBlocks));
+                messages.Add(new Message { Role = RoleType.User, Content = contentBlocks });
             }
             else
             {
