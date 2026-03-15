@@ -69,6 +69,17 @@ namespace Server.Services
                 )");
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_ProjectId"" ON ""ProjectSchedules"" (""ProjectId"")");
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_IsEnabled_NextRunAt"" ON ""ProjectSchedules"" (""IsEnabled"", ""NextRunAt"")");
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ModuleFiles"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""AiModuleId"" uuid NOT NULL REFERENCES ""AiModules""(""Id"") ON DELETE CASCADE,
+                    ""FileName"" varchar(500) NOT NULL,
+                    ""ContentType"" varchar(100) NOT NULL,
+                    ""FilePath"" varchar(1000) NOT NULL,
+                    ""FileSize"" bigint NOT NULL DEFAULT 0,
+                    ""CreatedAt"" timestamp with time zone NOT NULL
+                )");
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleFiles_AiModuleId"" ON ""ModuleFiles"" (""AiModuleId"")");
         }
 
         private static void RunSafe(UserDbContext ctx, string sql)
