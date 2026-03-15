@@ -83,18 +83,12 @@ else
                     Regla global: Sin emojis, sin markdown (**, *, #), sin saltos de linea, sin caracteres decorativos. Solo texto plano ASCII.
                 </div>
 
-                @{
-                    var mainSteps = _project.Modules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList();
-                    var branches = _project.Modules.Where(m => m.BranchId != "main")
-                        .GroupBy(m => m.BranchId)
-                        .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
-                }
-
                 <div class="pipeline-flow">
-                    @for (var si = 0; si < mainSteps.Count; si++)
+                    @{ var __main = GetMainSteps(); }
+                    @for (var si = 0; si < __main.Count; si++)
                     {
-                        var pm = mainSteps[si];
-                        var nextPm = si + 1 < mainSteps.Count ? mainSteps[si + 1] : null;
+                        var pm = __main[si];
+                        var nextPm = si + 1 < __main.Count ? __main[si + 1] : null;
                         var isEditing = _editingPmId == pm.Id;
                         var stepCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == pm.Id)?.EstimatedCost;
 
@@ -151,7 +145,7 @@ else
                                     else
                                     {
                                         <button class="btn btn-xs" @onclick="() => MoveStep(pm, -1)" disabled="@(pm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
-                                        <button class="btn btn-xs" @onclick="() => MoveStep(pm, 1)" disabled="@(pm.StepOrder >= mainSteps.Count)" title="Bajar">&#x25BC;</button>
+                                        <button class="btn btn-xs" @onclick="() => MoveStep(pm, 1)" disabled="@(pm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
                                         <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
                                         <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
                                     }
@@ -160,10 +154,8 @@ else
                         </div>
 
                         <!-- Fork branches from this step -->
-                        @{
-                            var forksHere = branches.Where(b => b.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder).ToList();
-                        }
-                        @if (forksHere.Count > 0)
+                        var forksHere = GetBranchesFromStep(pm.StepOrder);
+                        if (forksHere.Count > 0)
                         {
                             <div class="step-connector"></div>
                             <div class="pipeline-fork">
@@ -241,7 +233,7 @@ else
                         }
 
                         <!-- Connector + add branch button -->
-                        @if (si < mainSteps.Count - 1 || forksHere.Count == 0)
+                        @if (si < __main.Count - 1 || forksHere.Count == 0)
                         {
                             <div class="step-connector">
                                 <button class="btn btn-xs btn-outline fork-btn" @onclick="() => StartAddBranch(pm.StepOrder)" title="Crear rama desde este paso">
@@ -1643,6 +1635,17 @@ else
         catch (Exception ex) { _waError = ex.Message; }
         _waSaving = false;
     }
+
+    private List<ProjectModuleResponse> GetMainSteps()
+        => _project?.Modules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList() ?? new();
+
+    private List<KeyValuePair<string, List<ProjectModuleResponse>>> GetBranchesFromStep(int stepOrder)
+        => (_project?.Modules.Where(m => m.BranchId != "main")
+            .GroupBy(m => m.BranchId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList())
+            ?? new())
+            .Where(b => b.Value.FirstOrDefault()?.BranchFromStep == stepOrder)
+            .ToList();
 
     private static string FormatInputMapping(string? mapping)
     {
