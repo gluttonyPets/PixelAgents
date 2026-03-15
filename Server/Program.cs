@@ -604,7 +604,8 @@ app.MapGet("/api/projects/{id}", async (
     var modules = project.ProjectModules.Select(pm =>
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
             pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
-            pm.InputMapping, pm.Configuration, pm.IsActive)).ToList();
+            pm.InputMapping, pm.Configuration, pm.IsActive,
+            pm.BranchId, pm.BranchFromStep)).ToList();
 
     return Results.Ok(new ProjectDetailResponse(
         project.Id, project.Name, project.Description, project.Context,
@@ -667,6 +668,8 @@ app.MapPost("/api/projects/{projectId}/modules", async (
         ProjectId = projectId,
         AiModuleId = req.AiModuleId,
         StepOrder = req.StepOrder,
+        BranchId = req.BranchId,
+        BranchFromStep = req.BranchFromStep,
         StepName = req.StepName,
         InputMapping = req.InputMapping,
         Configuration = req.Configuration,
@@ -681,7 +684,8 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
             module.ModuleType, module.ModelName, pm.StepOrder, pm.StepName,
-            pm.InputMapping, pm.Configuration, pm.IsActive));
+            pm.InputMapping, pm.Configuration, pm.IsActive,
+            pm.BranchId, pm.BranchFromStep));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/modules/{id}", async (
@@ -706,7 +710,28 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
         pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
-        pm.InputMapping, pm.Configuration, pm.IsActive));
+        pm.InputMapping, pm.Configuration, pm.IsActive,
+        pm.BranchId, pm.BranchFromStep));
+}).RequireAuthorization();
+
+app.MapDelete("/api/projects/{projectId}/branches/{branchId}", async (
+    Guid projectId, string branchId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    if (branchId == "main") return Results.BadRequest(new { error = "No se puede eliminar la rama principal" });
+
+    var branchModules = await db.ProjectModules
+        .Where(x => x.ProjectId == projectId && x.BranchId == branchId)
+        .ToListAsync();
+
+    if (branchModules.Count == 0) return Results.NotFound();
+
+    db.ProjectModules.RemoveRange(branchModules);
+    await db.SaveChangesAsync();
+    return Results.Ok();
 }).RequireAuthorization();
 
 app.MapPost("/api/projects/{projectId}/modules/swap", async (

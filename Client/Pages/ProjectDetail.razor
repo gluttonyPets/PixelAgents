@@ -82,114 +82,191 @@ else
                 <div class="pipeline-format-rule">
                     Regla global: Sin emojis, sin markdown (**, *, #), sin saltos de linea, sin caracteres decorativos. Solo texto plano ASCII.
                 </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Paso</th>
-                            <th>Modulo</th>
-                            <th>Tipo</th>
-                            <th>Coste</th>
-                            <th>Input</th>
-                            <th>Orden</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @{ var sorted = _project.Modules.OrderBy(m => m.StepOrder).ToList(); }
-                        @for (var si = 0; si < sorted.Count; si++)
-                        {
-                            var pm = sorted[si];
-                            var nextPm = si + 1 < sorted.Count ? sorted[si + 1] : null;
-                            var isEditing = _editingPmId == pm.Id;
-                            <tr>
-                                <td>@pm.StepOrder</td>
-                                <td>
-                                    @if (isEditing)
-                                    {
-                                        <input type="text" class="input-inline" @bind="_editStepName" placeholder="Nombre del paso" />
-                                    }
-                                    else
-                                    {
-                                        @(pm.StepName ?? "-")
-                                    }
-                                </td>
-                                <td>@pm.AiModuleName</td>
-                                <td><span class="badge badge-warning">@pm.ModuleType</span></td>
-                                <td>
-                                    @{
-                                        var stepCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == pm.Id)?.EstimatedCost;
-                                    }
+
+                @{
+                    var mainSteps = _project.Modules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList();
+                    var branches = _project.Modules.Where(m => m.BranchId != "main")
+                        .GroupBy(m => m.BranchId)
+                        .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
+                }
+
+                <div class="pipeline-flow">
+                    @for (var si = 0; si < mainSteps.Count; si++)
+                    {
+                        var pm = mainSteps[si];
+                        var nextPm = si + 1 < mainSteps.Count ? mainSteps[si + 1] : null;
+                        var isEditing = _editingPmId == pm.Id;
+                        var stepCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == pm.Id)?.EstimatedCost;
+
+                        <!-- Step card -->
+                        <div class="pipeline-step">
+                            <div class="step-card-v2 @(isEditing ? "editing" : "")">
+                                <div class="step-card-header">
+                                    <span class="step-number">@pm.StepOrder</span>
+                                    <span class="step-title">
+                                        @if (isEditing)
+                                        {
+                                            <input type="text" class="input-inline" @bind="_editStepName" placeholder="Nombre" />
+                                        }
+                                        else
+                                        {
+                                            @(pm.StepName ?? pm.AiModuleName)
+                                        }
+                                    </span>
+                                    <span class="badge badge-@(pm.ModuleType.ToLower())">@pm.ModuleType</span>
+                                </div>
+                                <div class="step-card-meta">
+                                    <span>@pm.AiModuleName</span>
+                                    <span class="text-muted">@FormatInputMapping(pm.InputMapping)</span>
                                     @if (stepCost.HasValue && stepCost.Value > 0)
                                     {
-                                        <span class="text-sm text-muted">~$@stepCost.Value.ToString("F4")</span>
+                                        <span class="text-muted">~$@stepCost.Value.ToString("F4")</span>
                                     }
-                                    else
-                                    {
-                                        <span class="text-sm text-muted">-</span>
-                                    }
-                                </td>
-                                <td>
-                                    @if (isEditing)
-                                    {
+                                </div>
+                                @if (isEditing)
+                                {
+                                    <div class="step-card-edit">
                                         <select class="select-inline" @bind="_editInputMapping">
                                             <option value='{"source":"user"}'>Entrada del usuario</option>
                                             <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
                                             <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
                                         </select>
+                                        @if (pm.ModuleType == "Image")
+                                        {
+                                            <textarea @bind="_imagePrompt" rows="2" placeholder="Prompt de imagen (opcional)" style="width:100%; margin-top:0.3rem;"></textarea>
+                                        }
+                                    </div>
+                                }
+                                @if (!isEditing && pm.ModuleType == "Text" && nextPm is not null)
+                                {
+                                    var maxLen = GetMaxPromptLength(nextPm.ModelName);
+                                    <div class="step-rule-hint">Limite: @maxLen chars (siguiente: @nextPm.ModelName)</div>
+                                }
+                                <div class="step-card-actions">
+                                    @if (isEditing)
+                                    {
+                                        <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
+                                        <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
                                     }
                                     else
                                     {
-                                        <span class="text-sm">@FormatInputMapping(pm.InputMapping)</span>
+                                        <button class="btn btn-xs" @onclick="() => MoveStep(pm, -1)" disabled="@(pm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
+                                        <button class="btn btn-xs" @onclick="() => MoveStep(pm, 1)" disabled="@(pm.StepOrder >= mainSteps.Count)" title="Bajar">&#x25BC;</button>
+                                        <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
+                                        <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
                                     }
-                                </td>
-                                <td>
-                                    <div style="display:flex; gap:0.2rem;">
-                                        <button class="btn btn-sm" @onclick="() => MoveStep(pm, -1)"
-                                                disabled="@(pm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
-                                        <button class="btn btn-sm" @onclick="() => MoveStep(pm, 1)"
-                                                disabled="@(pm.StepOrder >= sorted.Count)" title="Bajar">&#x25BC;</button>
-                                    </div>
-                                </td>
-                                <td>
-                                    <div style="display:flex; gap:0.3rem;">
-                                        @if (isEditing)
-                                        {
-                                            <button class="btn btn-sm btn-success" @onclick="SaveEdit">Guardar</button>
-                                            <button class="btn btn-sm" @onclick="CancelEdit">Cancelar</button>
-                                        }
-                                        else
-                                        {
-                                            <button class="btn btn-sm btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
-                                        }
-                                        <button class="btn btn-sm btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
-                                    </div>
-                                </td>
-                            </tr>
-                            @if (isEditing && pm.ModuleType == "Image")
-                            {
-                                <tr class="step-rule-row">
-                                    <td colspan="7">
-                                        <div class="form-group" style="margin: 0.3rem 0;">
-                                            <label class="text-sm">Prompt de la imagen <span class="text-muted">(opcional)</span></label>
-                                            <textarea @bind="_imagePrompt" rows="2"
-                                                placeholder="Describe la imagen que quieres generar..." style="width: 100%;"></textarea>
-                                        </div>
-                                    </td>
-                                </tr>
-                            }
-                            @if (pm.ModuleType == "Text" && nextPm is not null)
-                            {
-                                var maxLen = GetMaxPromptLength(nextPm.ModelName);
-                                <tr class="step-rule-row">
-                                    <td colspan="7">
-                                        <span class="step-rule-hint">Los items generados en este paso se limitaran a <strong>@maxLen caracteres</strong> (modelo siguiente: @nextPm.ModelName)</span>
-                                    </td>
-                                </tr>
-                            }
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Fork branches from this step -->
+                        @{
+                            var forksHere = branches.Where(b => b.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder).ToList();
                         }
-                    </tbody>
-                </table>
+                        @if (forksHere.Count > 0)
+                        {
+                            <div class="step-connector"></div>
+                            <div class="pipeline-fork">
+                                <div class="pipeline-branches">
+                                    @foreach (var (branchId, branchSteps) in forksHere)
+                                    {
+                                        <div class="pipeline-branch">
+                                            <div class="branch-header">
+                                                <span class="branch-name">@branchId</span>
+                                                <button class="btn btn-xs btn-danger" @onclick="() => DeleteBranch(branchId)" title="Eliminar rama">&#x2715;</button>
+                                            </div>
+                                            @foreach (var bpm in branchSteps)
+                                            {
+                                                var bIsEditing = _editingPmId == bpm.Id;
+                                                var bCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == bpm.Id)?.EstimatedCost;
+
+                                                <div class="step-card-v2 branch-step @(bIsEditing ? "editing" : "")">
+                                                    <div class="step-card-header">
+                                                        <span class="step-number">@bpm.StepOrder</span>
+                                                        <span class="step-title">
+                                                            @if (bIsEditing)
+                                                            {
+                                                                <input type="text" class="input-inline" @bind="_editStepName" placeholder="Nombre" />
+                                                            }
+                                                            else
+                                                            {
+                                                                @(bpm.StepName ?? bpm.AiModuleName)
+                                                            }
+                                                        </span>
+                                                        <span class="badge badge-@(bpm.ModuleType.ToLower())">@bpm.ModuleType</span>
+                                                    </div>
+                                                    <div class="step-card-meta">
+                                                        <span>@bpm.AiModuleName</span>
+                                                        @if (bCost.HasValue && bCost.Value > 0)
+                                                        {
+                                                            <span class="text-muted">~$@bCost.Value.ToString("F4")</span>
+                                                        }
+                                                    </div>
+                                                    @if (bIsEditing)
+                                                    {
+                                                        <div class="step-card-edit">
+                                                            <select class="select-inline" @bind="_editInputMapping">
+                                                                <option value='{"source":"user"}'>Entrada del usuario</option>
+                                                                <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
+                                                                <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
+                                                            </select>
+                                                        </div>
+                                                    }
+                                                    <div class="step-card-actions">
+                                                        @if (bIsEditing)
+                                                        {
+                                                            <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
+                                                            <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
+                                                        }
+                                                        else
+                                                        {
+                                                            var bSorted = branchSteps;
+                                                            <button class="btn btn-xs" @onclick="() => MoveStep(bpm, -1)" disabled="@(bpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
+                                                            <button class="btn btn-xs" @onclick="() => MoveStep(bpm, 1)" disabled="@(bpm.StepOrder >= bSorted.Count)" title="Bajar">&#x25BC;</button>
+                                                            <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(bpm)">Editar</button>
+                                                            <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(bpm.Id)">Quitar</button>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+                                            <!-- Add step to branch -->
+                                            <button class="btn btn-xs btn-outline branch-add-step"
+                                                @onclick="() => StartAddStepToBranch(branchId, branchSteps.First().BranchFromStep, branchSteps.Count + 1)">
+                                                + Paso
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Connector + add branch button -->
+                        @if (si < mainSteps.Count - 1 || forksHere.Count == 0)
+                        {
+                            <div class="step-connector">
+                                <button class="btn btn-xs btn-outline fork-btn" @onclick="() => StartAddBranch(pm.StepOrder)" title="Crear rama desde este paso">
+                                    &#x2442;
+                                </button>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <!-- Add branch dialog -->
+                @if (_showAddBranch)
+                {
+                    <div class="card" style="margin-top: 0.5rem; border-color: var(--accent);">
+                        <h4 style="margin-top:0;">Nueva rama desde paso @_addBranchFromStep</h4>
+                        <div class="form-group">
+                            <label>Nombre de la rama</label>
+                            <input type="text" @bind="_newBranchName" placeholder="Ej: instagram, tiktok, twitter..." />
+                        </div>
+                        <div style="display:flex; gap:0.5rem;">
+                            <button class="btn btn-sm btn-primary" @onclick="ConfirmAddBranch">Crear rama</button>
+                            <button class="btn btn-sm" @onclick="() => _showAddBranch = false">Cancelar</button>
+                        </div>
+                    </div>
+                }
             }
             else
             {
@@ -202,7 +279,14 @@ else
 
             <!-- Add Step -->
             <div class="card" style="margin-top: 1rem;">
-                <h3 style="margin-top:0;">Agregar Paso</h3>
+                <h3 style="margin-top:0;">
+                    Agregar Paso
+                    @if (_stepBranchId != "main")
+                    {
+                        <span class="badge badge-info" style="margin-left:0.5rem;">Rama: @_stepBranchId</span>
+                        <button class="btn btn-xs" @onclick='() => { _stepBranchId = "main"; _stepBranchFromStep = null; }' style="margin-left:0.3rem;">&#x2715; Volver a main</button>
+                    }
+                </h3>
                 @if (_stepError is not null)
                 {
                     <div class="alert alert-error">@_stepError</div>
@@ -1177,6 +1261,13 @@ else
     // Image step
     private string _imagePrompt = "";
 
+    // Branch step
+    private string _stepBranchId = "main";
+    private int? _stepBranchFromStep;
+    private string _newBranchName = "";
+    private bool _showAddBranch = false;
+    private int _addBranchFromStep = 0;
+
     // Video step
     private string _videoSource = "prompt";
     private string _videoPrompt = "";
@@ -1643,9 +1734,9 @@ else
                     videoPrompt = _videoPrompt.Trim()
                 });
             }
-            var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
+            var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig, _stepBranchId, _stepBranchFromStep);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _stepBranchId = "main"; _stepBranchFromStep = null; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
@@ -1727,12 +1818,13 @@ else
         if (_project is null) return;
         _editError = null;
 
-        var sorted = _project.Modules.OrderBy(m => m.StepOrder).ToList();
-        var idx = sorted.FindIndex(m => m.Id == target.Id);
+        // Only swap within the same branch
+        var sameBranch = _project.Modules.Where(m => m.BranchId == target.BranchId).OrderBy(m => m.StepOrder).ToList();
+        var idx = sameBranch.FindIndex(m => m.Id == target.Id);
         var swapIdx = idx + direction;
-        if (swapIdx < 0 || swapIdx >= sorted.Count) return;
+        if (swapIdx < 0 || swapIdx >= sameBranch.Count) return;
 
-        var other = sorted[swapIdx];
+        var other = sameBranch[swapIdx];
 
         try
         {
@@ -1749,6 +1841,44 @@ else
         try
         {
             var (ok, error) = await Api.DeleteProjectModuleAsync(ProjectId, pmId);
+            if (ok) await LoadAll();
+            else _editError = error;
+        }
+        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
+    }
+
+    private void StartAddBranch(int fromStepOrder)
+    {
+        _addBranchFromStep = fromStepOrder;
+        _newBranchName = "";
+        _showAddBranch = true;
+    }
+
+    private void ConfirmAddBranch()
+    {
+        if (string.IsNullOrWhiteSpace(_newBranchName)) return;
+        var branchId = _newBranchName.Trim().ToLowerInvariant().Replace(" ", "-");
+        _stepBranchId = branchId;
+        _stepBranchFromStep = _addBranchFromStep;
+        _stepOrder = 1;
+        _inputMapping = $"{{\"source\":\"step\",\"stepOrder\":{_addBranchFromStep}}}";
+        _showAddBranch = false;
+    }
+
+    private void StartAddStepToBranch(string branchId, int? branchFromStep, int nextOrder)
+    {
+        _stepBranchId = branchId;
+        _stepBranchFromStep = branchFromStep;
+        _stepOrder = nextOrder;
+        _inputMapping = "{\"source\":\"previous\",\"field\":\"text\"}";
+    }
+
+    private async Task DeleteBranch(string branchId)
+    {
+        _editError = null;
+        try
+        {
+            var (ok, error) = await Api.DeleteBranchAsync(ProjectId, branchId);
             if (ok) await LoadAll();
             else _editError = error;
         }

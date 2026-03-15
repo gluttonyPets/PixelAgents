@@ -67,6 +67,7 @@ namespace Server.Data
             modelBuilder.Entity<ProjectModule>(e =>
             {
                 e.HasKey(x => x.Id);
+                e.Property(x => x.BranchId).IsRequired().HasMaxLength(100).HasDefaultValue("main");
                 e.Property(x => x.StepName).HasMaxLength(200);
                 e.Property(x => x.InputMapping).HasColumnType("text");
                 e.Property(x => x.Configuration).HasColumnType("text");
@@ -82,7 +83,7 @@ namespace Server.Data
                     .HasForeignKey(x => x.AiModuleId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                e.HasIndex(x => new { x.ProjectId, x.StepOrder }).IsUnique();
+                e.HasIndex(x => new { x.ProjectId, x.BranchId, x.StepOrder }).IsUnique();
             });
 
             // ── ProjectExecution ──

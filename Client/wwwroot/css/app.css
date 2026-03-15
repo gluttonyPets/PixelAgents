@@ -479,6 +479,200 @@ tr:hover td {
     font-style: italic;
 }
 
+/* ═══════════ Pipeline Flow Visual ═══════════ */
+
+.pipeline-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 1rem 0;
+}
+
+.pipeline-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.step-card-v2 {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    width: 340px;
+    transition: border-color 0.2s;
+}
+.step-card-v2:hover { border-color: var(--accent); }
+.step-card-v2.editing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.step-card-v2.branch-step { width: 280px; }
+
+.step-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+}
+
+.step-number {
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.step-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.step-card-meta {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+}
+
+.step-card-edit {
+    margin-top: 0.4rem;
+}
+
+.step-card-actions {
+    display: flex;
+    gap: 0.2rem;
+    margin-top: 0.4rem;
+    justify-content: flex-end;
+}
+
+.btn-xs {
+    padding: 0.1rem 0.4rem;
+    font-size: 0.65rem;
+    line-height: 1.4;
+    border-radius: 4px;
+}
+
+.step-connector {
+    width: 2px;
+    height: 28px;
+    background: var(--border);
+    margin: 0 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fork-btn {
+    position: absolute;
+    left: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    padding: 0 0.3rem;
+    line-height: 1.2;
+    opacity: 0;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+}
+.step-connector:hover .fork-btn { opacity: 1; }
+
+/* Branch layout */
+.pipeline-fork {
+    width: 100%;
+    margin: 0.5rem 0;
+}
+
+.pipeline-branches {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    position: relative;
+}
+
+.pipeline-branches::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 25%;
+    right: 25%;
+    height: 2px;
+    background: var(--border);
+}
+
+.pipeline-branch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    position: relative;
+    padding-top: 0.5rem;
+}
+
+.pipeline-branch::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 2px;
+    height: 0.5rem;
+    background: var(--border);
+}
+
+.branch-header {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: var(--accent);
+    color: #fff;
+    padding: 0.15rem 0.7rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.branch-name {
+    text-transform: capitalize;
+}
+
+.branch-add-step {
+    margin-top: 0.3rem;
+    font-size: 0.65rem;
+    opacity: 0.7;
+}
+.branch-add-step:hover { opacity: 1; }
+
+.btn-outline {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-muted);
+}
+.btn-outline:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Badge variants for module types */
+.badge-text { background: #3b82f6; color: #fff; }
+.badge-image { background: #8b5cf6; color: #fff; }
+.badge-video { background: #ec4899; color: #fff; }
+.badge-interaction { background: #f59e0b; color: #000; }
+.badge-publish { background: #22c55e; color: #fff; }
+.badge-design { background: #06b6d4; color: #fff; }
+.badge-info { background: var(--accent); color: #fff; }
+
 .log-retry-btn {
     flex-shrink: 0;
     margin-left: auto;

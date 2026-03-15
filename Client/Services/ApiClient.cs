@@ -238,6 +238,13 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    public async Task<(bool Ok, string? Error)> DeleteBranchAsync(Guid projectId, string branchId)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/branches/{branchId}");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Executions ──
 
     public async Task<(bool Ok, ExecutionDetailResponse? Result, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput)
