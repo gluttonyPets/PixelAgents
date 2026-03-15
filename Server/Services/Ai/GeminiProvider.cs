@@ -95,7 +95,7 @@ namespace Server.Services.Ai
                         InlineData = new Blob
                         {
                             MimeType = "image/png",
-                            Data = Convert.ToBase64String(fileBytes)
+                            Data = fileBytes
                         }
                     });
                 }

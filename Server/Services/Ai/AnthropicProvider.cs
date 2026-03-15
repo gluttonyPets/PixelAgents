@@ -71,7 +71,7 @@ namespace Server.Services.Ai
                         Source = new ImageSource
                         {
                             MediaType = "image/png",
-                            Data = fileBytes
+                            Data = Convert.ToBase64String(fileBytes)
                         }
                     });
                 }
