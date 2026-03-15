@@ -157,16 +157,96 @@ else
                         var forksHere = GetBranchesFromStep(pm.StepOrder);
                         if (forksHere.Count > 0)
                         {
+                            var remainingMain = __main.Skip(si + 1).ToList();
                             <div class="step-connector"></div>
                             <div class="pipeline-fork">
                                 <div class="fork-junction"></div>
-                                <div class="fork-lines" style="--branch-count: @forksHere.Count;"></div>
+                                <div class="fork-lines" style="--branch-count: @(forksHere.Count + (remainingMain.Count > 0 ? 1 : 0));"></div>
                                 <div class="pipeline-branches">
+                                    <!-- Main continuation column -->
+                                    @if (remainingMain.Count > 0)
+                                    {
+                                        <div class="pipeline-branch branch-main" style="order: 0">
+                                            <div class="branch-header branch-header-main">
+                                                <span class="branch-name">Principal</span>
+                                            </div>
+                                            @for (var rmi = 0; rmi < remainingMain.Count; rmi++)
+                                            {
+                                                var rpm = remainingMain[rmi];
+                                                var rIsEditing = _editingPmId == rpm.Id;
+                                                var rNextPm = rmi + 1 < remainingMain.Count ? remainingMain[rmi + 1] : null;
+                                                var rCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == rpm.Id)?.EstimatedCost;
+
+                                                @if (rmi > 0)
+                                                {
+                                                    <div class="branch-connector"></div>
+                                                }
+                                                <div class="step-card-v2 branch-step @(rIsEditing ? "editing" : "")">
+                                                    <div class="step-card-header">
+                                                        <span class="step-number">@rpm.StepOrder</span>
+                                                        <span class="step-title">
+                                                            @if (rIsEditing)
+                                                            {
+                                                                <input type="text" class="input-inline" @bind="_editStepName" placeholder="Nombre" />
+                                                            }
+                                                            else
+                                                            {
+                                                                @(rpm.StepName ?? rpm.AiModuleName)
+                                                            }
+                                                        </span>
+                                                        <span class="badge badge-@(rpm.ModuleType.ToLower())">@rpm.ModuleType</span>
+                                                    </div>
+                                                    <div class="step-card-meta">
+                                                        <span>@rpm.AiModuleName</span>
+                                                        <span class="text-muted">@FormatInputMapping(rpm.InputMapping)</span>
+                                                        @if (rCost.HasValue && rCost.Value > 0)
+                                                        {
+                                                            <span class="text-muted">~$@rCost.Value.ToString("F4")</span>
+                                                        }
+                                                    </div>
+                                                    @if (rIsEditing)
+                                                    {
+                                                        <div class="step-card-edit">
+                                                            <select class="select-inline" @bind="_editInputMapping">
+                                                                <option value='{"source":"user"}'>Entrada del usuario</option>
+                                                                <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
+                                                                <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
+                                                            </select>
+                                                            @if (rpm.ModuleType == "Image")
+                                                            {
+                                                                <textarea @bind="_imagePrompt" rows="2" placeholder="Prompt de imagen (opcional)" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                            }
+                                                        </div>
+                                                    }
+                                                    @if (!rIsEditing && rpm.ModuleType == "Text" && rNextPm is not null)
+                                                    {
+                                                        var rMaxLen = GetMaxPromptLength(rNextPm.ModelName);
+                                                        <div class="step-rule-hint">Limite: @rMaxLen chars (siguiente: @rNextPm.ModelName)</div>
+                                                    }
+                                                    <div class="step-card-actions">
+                                                        @if (rIsEditing)
+                                                        {
+                                                            <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
+                                                            <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button class="btn btn-xs" @onclick="() => MoveStep(rpm, -1)" disabled="@(rpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
+                                                            <button class="btn btn-xs" @onclick="() => MoveStep(rpm, 1)" disabled="@(rpm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
+                                                            <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(rpm)">Editar</button>
+                                                            <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(rpm.Id)">Quitar</button>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+
+                                    <!-- Branch columns -->
                                     @for (var bi = 0; bi < forksHere.Count; bi++)
                                     {
                                         var (branchId, branchSteps) = forksHere[bi];
-                                        var branchSide = bi % 2 == 0 ? "branch-right" : "branch-left";
-                                        <div class="pipeline-branch @branchSide" style="order: @(bi % 2 == 0 ? bi + 2 : bi)">
+                                        <div class="pipeline-branch branch-fork" style="order: @(bi + 1)">
                                             <div class="branch-header">
                                                 <span class="branch-name">@branchId</span>
                                                 <button class="btn btn-xs btn-danger" @onclick="() => DeleteBranch(branchId)" title="Eliminar rama">&#x2715;</button>
@@ -239,10 +319,11 @@ else
                                     }
                                 </div>
                             </div>
+                            break; // Remaining main steps already rendered inside the fork
                         }
 
-                        <!-- Connector + add branch button -->
-                        @if (si < __main.Count - 1 || forksHere.Count == 0)
+                        <!-- Connector + add branch button (only when no fork) -->
+                        @if (si < __main.Count - 1)
                         {
                             <div class="step-connector">
                                 <button class="btn btn-xs btn-outline fork-btn" @onclick="() => StartAddBranch(pm.StepOrder)" title="Crear rama desde este paso">

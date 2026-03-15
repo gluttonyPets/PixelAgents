@@ -672,16 +672,17 @@ tr:hover td {
     opacity: 0.5;
 }
 
-/* Branch side indicators — colored left edge for left branches, right edge for right */
-.pipeline-branch.branch-right .branch-header {
+/* Branch side indicators */
+.pipeline-branch.branch-main .branch-header,
+.pipeline-branch.branch-main .branch-header.branch-header-main {
     background: var(--accent);
 }
-.pipeline-branch.branch-left .branch-header {
+.pipeline-branch.branch-fork .branch-header {
     background: #8b5cf6;
 }
 
-/* Left-side branch colored connector */
-.pipeline-branch.branch-left::before {
+/* Fork branch colored connector */
+.pipeline-branch.branch-fork::before {
     background: #8b5cf6;
 }
 
