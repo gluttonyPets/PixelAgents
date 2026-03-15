@@ -261,6 +261,7 @@ namespace Server.Services.Ai
                             ProjectContext = project.Context,
                             PreviousExecutionsSummary = previousSummaryContext,
                             Configuration = config,
+                            InputFiles = await LoadModuleFilesAsync(pm, db),
                         };
 
                         var result = await provider.ExecuteAsync(context);
@@ -340,6 +341,7 @@ namespace Server.Services.Ai
                                 Input = singleInput,
                                 ProjectContext = project.Context,
                                 Configuration = config,
+                                InputFiles = await LoadModuleFilesAsync(pm, db),
                             };
 
                             var result = await provider.ExecuteAsync(context);
@@ -1806,6 +1808,7 @@ Datos de la ejecucion:
                             ProjectContext = project.Context,
                             PreviousExecutionsSummary = previousSummaryContext,
                             Configuration = config,
+                            InputFiles = await LoadModuleFilesAsync(pm, db),
                         };
 
                         var result = await provider.ExecuteAsync(context);
@@ -1867,6 +1870,7 @@ Datos de la ejecucion:
                                 Input = singleInput,
                                 ProjectContext = project.Context,
                                 Configuration = config,
+                                InputFiles = await LoadModuleFilesAsync(pm, db),
                             };
 
                             var result = await provider.ExecuteAsync(context);
@@ -2021,6 +2025,28 @@ Datos de la ejecucion:
                 JsonValueKind.Null => null!,
                 _ => value // arrays/objects stay as JsonElement
             };
+        }
+
+        /// <summary>
+        /// Loads files attached to a module from disk and returns them as byte arrays.
+        /// </summary>
+        private async Task<List<byte[]>?> LoadModuleFilesAsync(ProjectModule pm, UserDbContext db)
+        {
+            var fileRecords = await db.ModuleFiles
+                .Where(f => f.AiModuleId == pm.AiModuleId)
+                .ToListAsync();
+
+            if (fileRecords.Count == 0) return null;
+
+            var files = new List<byte[]>();
+            foreach (var f in fileRecords)
+            {
+                var fullPath = Path.Combine(_mediaRoot, f.FilePath);
+                if (File.Exists(fullPath))
+                    files.Add(await File.ReadAllBytesAsync(fullPath));
+            }
+
+            return files.Count > 0 ? files : null;
         }
 
         /// <summary>
@@ -2338,6 +2364,7 @@ Datos de la ejecucion:
                             ProjectContext = project.Context,
                             PreviousExecutionsSummary = previousSummaryContext,
                             Configuration = config,
+                            InputFiles = await LoadModuleFilesAsync(pm, db),
                         };
 
                         var result = await provider.ExecuteAsync(context);
@@ -2407,6 +2434,7 @@ Datos de la ejecucion:
                                 Input = singleInput,
                                 ProjectContext = project.Context,
                                 Configuration = config,
+                                InputFiles = await LoadModuleFilesAsync(pm, db),
                             };
 
                             var result = await provider.ExecuteAsync(context);

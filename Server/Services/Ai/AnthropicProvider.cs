@@ -60,10 +60,28 @@ namespace Server.Services.Ai
         {
             var client = new AnthropicClient(context.ApiKey);
 
-            var messages = new List<Message>
+            var messages = new List<Message>();
+            if (context.InputFiles is { Count: > 0 })
             {
-                new Message(RoleType.User, context.Input)
-            };
+                var contentBlocks = new List<ContentBase>();
+                foreach (var fileBytes in context.InputFiles)
+                {
+                    contentBlocks.Add(new ImageContent
+                    {
+                        Source = new ImageSource
+                        {
+                            MediaType = "image/png",
+                            Data = Convert.ToBase64String(fileBytes)
+                        }
+                    });
+                }
+                contentBlocks.Add(new TextContent { Text = context.Input });
+                messages.Add(new Message(RoleType.User, contentBlocks));
+            }
+            else
+            {
+                messages.Add(new Message(RoleType.User, context.Input));
+            }
 
             var parameters = new MessageParameters
             {

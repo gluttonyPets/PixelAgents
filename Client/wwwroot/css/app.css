@@ -344,6 +344,29 @@ tr:hover td {
     padding: 0.5rem 0.6rem;
 }
 
+.file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.5rem;
+}
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+}
+.file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .image-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

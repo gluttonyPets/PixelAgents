@@ -144,6 +144,37 @@ public class ApiClient
         await SendAsync(HttpMethod.Delete, $"/api/modules/{id}");
     }
 
+    // ── Module Files ──
+
+    public async Task<List<ModuleFileResponse>> UploadModuleFilesAsync(Guid moduleId, MultipartFormDataContent content)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/modules/{moduleId}/files");
+        request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
+        request.Content = content;
+        var resp = await _http.SendAsync(request);
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
+    }
+
+    public async Task<List<ModuleFileResponse>> GetModuleFilesAsync(Guid moduleId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/modules/{moduleId}/files");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
+    }
+
+    public async Task<List<ModuleFileResponse>> GetAllModuleFilesAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/module-files");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
+    }
+
+    public async Task DeleteModuleFileAsync(Guid fileId)
+    {
+        await SendAsync(HttpMethod.Delete, $"/api/module-files/{fileId}");
+    }
+
     // ── Projects ──
 
     public async Task<List<ProjectResponse>> GetProjectsAsync()

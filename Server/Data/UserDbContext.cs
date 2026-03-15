@@ -16,6 +16,7 @@ namespace Server.Data
         public DbSet<ExecutionFile> ExecutionFiles => Set<ExecutionFile>();
         public DbSet<ExecutionLog> ExecutionLogs => Set<ExecutionLog>();
         public DbSet<ProjectSchedule> ProjectSchedules => Set<ProjectSchedule>();
+        public DbSet<ModuleFile> ModuleFiles => Set<ModuleFile>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -172,6 +173,22 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
 
                 e.HasIndex(x => x.StepExecutionId);
+            });
+
+            // ── ModuleFile ──
+            modelBuilder.Entity<ModuleFile>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.FileName).IsRequired().HasMaxLength(500);
+                e.Property(x => x.ContentType).IsRequired().HasMaxLength(100);
+                e.Property(x => x.FilePath).IsRequired().HasMaxLength(1000);
+
+                e.HasOne(x => x.AiModule)
+                    .WithMany(m => m.Files)
+                    .HasForeignKey(x => x.AiModuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => x.AiModuleId);
             });
         }
     }

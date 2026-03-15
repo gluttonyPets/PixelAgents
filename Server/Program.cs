@@ -422,6 +422,130 @@ app.MapDelete("/api/modules/{id}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+// ==================== Module File Endpoints ====================
+
+app.MapPost("/api/modules/{moduleId}/files", async (
+    Guid moduleId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var module = await db.AiModules.FindAsync(moduleId);
+    if (module is null) return Results.NotFound();
+
+    var form = await ctx.Request.ReadFormAsync();
+    var files = form.Files;
+    if (files.Count == 0) return Results.BadRequest("No se adjuntaron archivos");
+
+    var claims = await um.GetClaimsAsync((await um.GetUserAsync(ctx.User))!);
+    var tenantDbName = claims.First(c => c.Type == "db_name").Value;
+    var storageDir = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia", tenantDbName, "module-files", moduleId.ToString());
+    Directory.CreateDirectory(storageDir);
+
+    var result = new List<ModuleFileResponse>();
+
+    foreach (var file in files)
+    {
+        var id = Guid.NewGuid();
+        var ext = Path.GetExtension(file.FileName);
+        var storedName = $"{id}{ext}";
+        var fullPath = Path.Combine(storageDir, storedName);
+
+        await using (var stream = new FileStream(fullPath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        var moduleFile = new ModuleFile
+        {
+            Id = id,
+            AiModuleId = moduleId,
+            FileName = file.FileName,
+            ContentType = file.ContentType,
+            FilePath = Path.Combine(tenantDbName, "module-files", moduleId.ToString(), storedName),
+            FileSize = file.Length,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        db.ModuleFiles.Add(moduleFile);
+        result.Add(new ModuleFileResponse(moduleFile.Id, moduleFile.AiModuleId, module.Name,
+            moduleFile.FileName, moduleFile.ContentType, moduleFile.FileSize, moduleFile.CreatedAt));
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(result);
+}).RequireAuthorization().DisableAntiforgery();
+
+app.MapGet("/api/modules/{moduleId}/files", async (
+    Guid moduleId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var files = await db.ModuleFiles
+        .Where(f => f.AiModuleId == moduleId)
+        .OrderByDescending(f => f.CreatedAt)
+        .Select(f => new ModuleFileResponse(f.Id, f.AiModuleId, f.AiModule.Name,
+            f.FileName, f.ContentType, f.FileSize, f.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(files);
+}).RequireAuthorization();
+
+app.MapGet("/api/module-files", async (
+    HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var files = await db.ModuleFiles
+        .Include(f => f.AiModule)
+        .OrderByDescending(f => f.CreatedAt)
+        .Select(f => new ModuleFileResponse(f.Id, f.AiModuleId, f.AiModule.Name,
+            f.FileName, f.ContentType, f.FileSize, f.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(files);
+}).RequireAuthorization();
+
+app.MapGet("/api/module-files/{fileId}/download", async (
+    Guid fileId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var file = await db.ModuleFiles.FindAsync(fileId);
+    if (file is null) return Results.NotFound();
+
+    var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia", file.FilePath);
+    if (!File.Exists(fullPath)) return Results.NotFound("Archivo no encontrado en disco");
+
+    var bytes = await File.ReadAllBytesAsync(fullPath);
+    return Results.File(bytes, file.ContentType, file.FileName);
+}).RequireAuthorization();
+
+app.MapDelete("/api/module-files/{fileId}", async (
+    Guid fileId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var file = await db.ModuleFiles.FindAsync(fileId);
+    if (file is null) return Results.NotFound();
+
+    var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia", file.FilePath);
+    if (File.Exists(fullPath)) File.Delete(fullPath);
+
+    db.ModuleFiles.Remove(file);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
 // ==================== Project Endpoints ====================
 
 app.MapPost("/api/projects", async (

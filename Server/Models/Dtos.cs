@@ -69,6 +69,11 @@ namespace Server.Models
     // ── Instagram (Buffer) ──
     public record BufferConfigDto(string ApiKey, string ChannelId);
 
+    // ── Module Files ──
+    public record ModuleFileResponse(
+        Guid Id, Guid AiModuleId, string ModuleName,
+        string FileName, string ContentType, long FileSize, DateTime CreatedAt);
+
     // ── Schedule ──
     public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput);
     public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled);

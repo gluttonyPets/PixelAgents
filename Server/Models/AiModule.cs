@@ -16,5 +16,6 @@ namespace Server.Models
 
         public ApiKey? ApiKey { get; set; }
         public ICollection<ProjectModule> ProjectModules { get; set; } = new List<ProjectModule>();
+        public ICollection<ModuleFile> Files { get; set; } = new List<ModuleFile>();
     }
 }

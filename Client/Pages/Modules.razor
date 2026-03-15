@@ -1,4 +1,5 @@
 @page "/modules"
+@using Microsoft.AspNetCore.Components.Forms
 @inject ApiClient Api
 
 <h2>Modulos IA</h2>
@@ -585,6 +586,43 @@
                                     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
                                 }
 
+                                @* ── File attachments ── *@
+                                @if (m.ModuleType == "Text")
+                                {
+                                    <hr style="margin: 0.75rem 0; border-color: var(--border);" />
+                                    <div class="form-group">
+                                        <label>Archivos adjuntos <span class="text-sm text-muted">(imagenes, documentos, etc.)</span></label>
+
+                                        @if (_editModuleFiles.Count > 0)
+                                        {
+                                            <div class="file-list">
+                                                @foreach (var f in _editModuleFiles)
+                                                {
+                                                    <div class="file-item">
+                                                        <span class="file-name" title="@f.FileName">@f.FileName</span>
+                                                        <span class="text-sm text-muted">@FormatFileSize(f.FileSize)</span>
+                                                        <button class="btn btn-danger btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem;"
+                                                                @onclick="() => DeleteModuleFile(f.Id, m.Id)">x</button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+
+                                        <InputFile OnChange="OnModuleFilesSelected" multiple
+                                                   accept="image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx" />
+
+                                        @if (_fileUploadError is not null)
+                                        {
+                                            <div class="alert alert-error" style="margin-top: 0.3rem;">@_fileUploadError</div>
+                                        }
+
+                                        @if (_uploadingFiles)
+                                        {
+                                            <p class="text-muted" style="margin-top: 0.3rem;">Subiendo archivos...</p>
+                                        }
+                                    </div>
+                                }
+
                                 @if (m.ModuleType is "Text" or "Image" or "Audio" or "Video" or "Design")
                                 {
                                     <button class="btn btn-primary btn-sm" @onclick="() => SaveConfig(m)" disabled="@_editConfigSaving">
@@ -690,6 +728,11 @@ else if (!_loading)
     private string _editCanvaExportFormat = "png";
     private string _editCanvaBrandTemplate = "";
     private string _editCanvaDesignType = "doc";
+
+    // ── Edit: Module files ──
+    private List<ModuleFileResponse> _editModuleFiles = [];
+    private bool _uploadingFiles;
+    private string? _fileUploadError;
 
     // ── Model catalog ──
     private record ModelInfo(string Id, string DisplayName, string Provider, string[] Types, string[] Capabilities, string Description, string? MaxContext = null);
@@ -1036,7 +1079,7 @@ else if (!_loading)
         catch (Exception ex) { _error = $"Error al cambiar API Key: {ex.Message}"; }
     }
 
-    private void ToggleEditConfig(AiModuleResponse module)
+    private async Task ToggleEditConfig(AiModuleResponse module)
     {
         if (_editingModuleId == module.Id)
         {
@@ -1097,6 +1140,51 @@ else if (!_loading)
             }
             catch { }
         }
+
+        // Load module files
+        _editModuleFiles = [];
+        _fileUploadError = null;
+        try { _editModuleFiles = await Api.GetModuleFilesAsync(module.Id); } catch { }
+    }
+
+    private async Task OnModuleFilesSelected(InputFileChangeEventArgs e)
+    {
+        if (_editingModuleId is null) return;
+        _fileUploadError = null;
+        _uploadingFiles = true;
+        StateHasChanged();
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            foreach (var file in e.GetMultipleFiles(10))
+            {
+                var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024); // 50MB
+                content.Add(new StreamContent(stream), "files", file.Name);
+            }
+
+            var uploaded = await Api.UploadModuleFilesAsync(_editingModuleId.Value, content);
+            _editModuleFiles.InsertRange(0, uploaded);
+        }
+        catch (Exception ex) { _fileUploadError = $"Error al subir: {ex.Message}"; }
+        _uploadingFiles = false;
+    }
+
+    private async Task DeleteModuleFile(Guid fileId, Guid moduleId)
+    {
+        try
+        {
+            await Api.DeleteModuleFileAsync(fileId);
+            _editModuleFiles.RemoveAll(f => f.Id == fileId);
+        }
+        catch { }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
     }
 
     private async Task SaveConfig(AiModuleResponse module)

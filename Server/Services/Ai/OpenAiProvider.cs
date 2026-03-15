@@ -42,7 +42,21 @@ namespace Server.Services.Ai
                 systemParts.Add(context.PreviousExecutionsSummary);
             messages.Add(new SystemChatMessage(string.Join("\n\n", systemParts)));
 
-            messages.Add(new UserChatMessage(context.Input));
+            if (context.InputFiles is { Count: > 0 })
+            {
+                var parts = new List<ChatMessageContentPart>();
+                parts.Add(ChatMessageContentPart.CreateTextPart(context.Input));
+                foreach (var fileBytes in context.InputFiles)
+                {
+                    parts.Add(ChatMessageContentPart.CreateImagePart(
+                        BinaryData.FromBytes(fileBytes), "image/png"));
+                }
+                messages.Add(new UserChatMessage(parts));
+            }
+            else
+            {
+                messages.Add(new UserChatMessage(context.Input));
+            }
 
             var options = new ChatCompletionOptions();
 

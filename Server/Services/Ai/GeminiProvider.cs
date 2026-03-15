@@ -84,11 +84,35 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
                 config.MaxOutputTokens = Convert.ToInt32(maxTok);
 
-            var response = await client.Models.GenerateContentAsync(
-                model: context.ModelName,
-                contents: context.Input,
-                config: config
-            );
+            GenerateContentResponse response;
+            if (context.InputFiles is { Count: > 0 })
+            {
+                var parts = new List<Part> { new Part { Text = context.Input } };
+                foreach (var fileBytes in context.InputFiles)
+                {
+                    parts.Add(new Part
+                    {
+                        InlineData = new Blob
+                        {
+                            MimeType = "image/png",
+                            Data = Convert.ToBase64String(fileBytes)
+                        }
+                    });
+                }
+                response = await client.Models.GenerateContentAsync(
+                    model: context.ModelName,
+                    contents: new Content { Parts = parts, Role = "user" },
+                    config: config
+                );
+            }
+            else
+            {
+                response = await client.Models.GenerateContentAsync(
+                    model: context.ModelName,
+                    contents: context.Input,
+                    config: config
+                );
+            }
 
             var text = response.Candidates?[0].Content?.Parts?[0].Text
                 ?? throw new InvalidOperationException("Gemini no devolvio texto en la respuesta");
