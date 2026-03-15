@@ -311,6 +311,14 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "Image")
                     {
+                        // If a fixed imagePrompt is configured in step config, use it instead of resolved inputs
+                        var imagePrompt = "";
+                        if (config.TryGetValue("imagePrompt", out var ip))
+                            imagePrompt = ip is JsonElement ipEl ? ipEl.GetString() ?? "" : ip?.ToString() ?? "";
+
+                        if (!string.IsNullOrWhiteSpace(imagePrompt))
+                            inputs = new List<string> { imagePrompt };
+
                         // Image modules: may execute multiple times if previous step had items
                         var outputFiles = new List<OutputFile>();
                         string? imageError = null;

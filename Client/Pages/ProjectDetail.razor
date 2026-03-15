@@ -166,6 +166,18 @@ else
                                     </div>
                                 </td>
                             </tr>
+                            @if (isEditing && pm.ModuleType == "Image")
+                            {
+                                <tr class="step-rule-row">
+                                    <td colspan="7">
+                                        <div class="form-group" style="margin: 0.3rem 0;">
+                                            <label class="text-sm">Prompt de la imagen <span class="text-muted">(opcional)</span></label>
+                                            <textarea @bind="_imagePrompt" rows="2"
+                                                placeholder="Describe la imagen que quieres generar..." style="width: 100%;"></textarea>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
                             @if (pm.ModuleType == "Text" && nextPm is not null)
                             {
                                 var maxLen = GetMaxPromptLength(nextPm.ModelName);
@@ -281,6 +293,18 @@ else
                             </p>
                         </div>
                     }
+                }
+
+                @if (selectedModule?.ModuleType == "Image")
+                {
+                    <div class="form-group" style="margin-top: 0.5rem;">
+                        <label>Prompt de la imagen <span class="text-sm text-muted">(opcional)</span></label>
+                        <textarea @bind="_imagePrompt" rows="3"
+                            placeholder="Describe la imagen que quieres generar..."></textarea>
+                        <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                            Si se proporciona, este prompt se usara directamente. Si se deja vacio, se usara la entrada de datos configurada arriba.
+                        </p>
+                    </div>
                 }
 
                 @if (selectedModule?.ModuleType == "Video")
@@ -1150,6 +1174,9 @@ else
     private string _canvaStepBrandTemplateId = "";
     private string _canvaDesignType = "doc";
 
+    // Image step
+    private string _imagePrompt = "";
+
     // Video step
     private string _videoSource = "prompt";
     private string _videoPrompt = "";
@@ -1595,6 +1622,13 @@ else
                     publishType = _publishType
                 });
             }
+            if (mod?.ModuleType == "Image" && !string.IsNullOrWhiteSpace(_imagePrompt))
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    imagePrompt = _imagePrompt.Trim()
+                });
+            }
             if (mod?.ModuleType == "Video")
             {
                 if (string.IsNullOrWhiteSpace(_videoPrompt))
@@ -1611,7 +1645,7 @@ else
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; await LoadAll(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
@@ -1624,6 +1658,28 @@ else
         _editStepName = pm.StepName ?? "";
         _editInputMapping = pm.InputMapping ?? "{\"source\":\"user\"}";
         _editError = null;
+
+        // Load type-specific step config
+        _imagePrompt = "";
+        _videoPrompt = "";
+        _videoSource = "prompt";
+        if (!string.IsNullOrWhiteSpace(pm.Configuration))
+        {
+            try
+            {
+                var cfg = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+                if (cfg is not null)
+                {
+                    if (cfg.TryGetValue("imagePrompt", out var ipEl))
+                        _imagePrompt = ipEl.GetString() ?? "";
+                    if (cfg.TryGetValue("videoPrompt", out var vpEl))
+                        _videoPrompt = vpEl.GetString() ?? "";
+                    if (cfg.TryGetValue("videoSource", out var vsEl))
+                        _videoSource = vsEl.GetString() ?? "prompt";
+                }
+            }
+            catch { /* ignore parse errors */ }
+        }
     }
 
     private void CancelEdit()
@@ -1642,11 +1698,22 @@ else
 
         try
         {
+            // Rebuild step config for Image/Video modules
+            var stepConfig = pm.Configuration;
+            if (pm.ModuleType == "Image" && !string.IsNullOrWhiteSpace(_imagePrompt))
+            {
+                stepConfig = JsonSerializer.Serialize(new { imagePrompt = _imagePrompt.Trim() });
+            }
+            else if (pm.ModuleType == "Image" && string.IsNullOrWhiteSpace(_imagePrompt))
+            {
+                stepConfig = null;
+            }
+
             var req = new UpdateProjectModuleRequest(
                 pm.StepOrder,
                 string.IsNullOrWhiteSpace(_editStepName) ? null : _editStepName,
                 _editInputMapping,
-                pm.Configuration,
+                stepConfig,
                 pm.IsActive);
             var (ok, error) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
             if (ok) { _editingPmId = null; await LoadAll(); }
