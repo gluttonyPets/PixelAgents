@@ -487,6 +487,7 @@ tr:hover td {
     align-items: center;
     gap: 0;
     padding: 1rem 0;
+    align-self: stretch;
 }
 
 .pipeline-step {
@@ -596,6 +597,7 @@ tr:hover td {
     display: flex;
     flex-direction: column;
     align-items: center;
+    align-self: stretch;
 }
 
 .fork-junction {
@@ -625,11 +627,14 @@ tr:hover td {
 
 .pipeline-branches {
     display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
     justify-content: center;
     gap: 2rem;
     position: relative;
     padding-top: 1.2rem;
     margin-top: 0.3rem;
+    width: 100%;
 }
 
 /* Horizontal connector line spanning all branches */
