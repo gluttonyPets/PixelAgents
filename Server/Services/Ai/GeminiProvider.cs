@@ -142,6 +142,11 @@ namespace Server.Services.Ai
             var imageModel = context.ModelName;
 
             var prompt = context.Input;
+
+            // Include systemPrompt from module config (e.g. branding instructions for image-to-image editing)
+            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
+                prompt = string.IsNullOrWhiteSpace(prompt) ? sp : $"{sp}\n\n{prompt}";
+
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
 

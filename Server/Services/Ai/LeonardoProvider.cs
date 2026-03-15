@@ -93,9 +93,15 @@ namespace Server.Services.Ai
                 presetStyle = psStr;
 
             // Build prompt with spelling rule for rendered text
-            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.Input}";
+            var baseInput = context.Input;
+
+            // Include systemPrompt from module config (e.g. branding instructions for image-to-image editing)
+            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
+                baseInput = string.IsNullOrWhiteSpace(baseInput) ? sp : $"{sp}\n\n{baseInput}";
+
+            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{baseInput}";
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.ProjectContext}\n\n{context.Input}";
+                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.ProjectContext}\n\n{baseInput}";
 
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
             if (prompt.Length > maxLen)

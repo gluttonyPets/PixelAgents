@@ -190,9 +190,15 @@ namespace Server.Services.Ai
                 options.ResponseFormat = GeneratedImageFormat.Bytes;
             }
 
-            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.Input}";
+            var baseInput = context.Input;
+
+            // Include systemPrompt from module config (e.g. branding instructions for image-to-image editing)
+            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
+                baseInput = string.IsNullOrWhiteSpace(baseInput) ? sp : $"{sp}\n\n{baseInput}";
+
+            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{baseInput}";
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{context.Input}";
+                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{baseInput}";
 
             // Truncar al máximo del modelo como red de seguridad
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);

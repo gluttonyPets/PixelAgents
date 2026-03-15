@@ -231,9 +231,21 @@ namespace Server.Services.Ai
 
                     // Store raw input data including systemPrompt so history shows exactly what was sent
                     var systemPrompt = config.TryGetValue("systemPrompt", out var spVal) && spVal is string spStr ? spStr : null;
-                    stepExecution.InputData = inputs.Count == 1
-                        ? JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompt = inputs[0] })
-                        : JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count });
+                    if (pm.AiModule.ModuleType == "Image")
+                    {
+                        // For Image steps, also record whether input files are being passed
+                        var hasFileInput = pm.InputMapping is not null
+                            && pm.InputMapping.Contains("\"file\"");
+                        stepExecution.InputData = inputs.Count == 1
+                            ? JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompt = inputs[0], inputMode = hasFileInput ? "image-to-image" : "text-to-image" })
+                            : JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count, inputMode = hasFileInput ? "image-to-image" : "text-to-image" });
+                    }
+                    else
+                    {
+                        stepExecution.InputData = inputs.Count == 1
+                            ? JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompt = inputs[0] })
+                            : JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count });
+                    }
 
                     if (inputs.Count > 1)
                     {
@@ -319,6 +331,50 @@ namespace Server.Services.Ai
                         if (!string.IsNullOrWhiteSpace(imagePrompt))
                             inputs = new List<string> { imagePrompt };
 
+                        // Detect if InputMapping requests file from previous step (image-to-image editing)
+                        List<byte[]>? previousStepFiles = null;
+                        var isFileInput = false;
+                        if (pm.InputMapping is not null)
+                        {
+                            var mappingJson = JsonSerializer.Deserialize<JsonElement>(pm.InputMapping);
+                            if (mappingJson.TryGetProperty("field", out var fieldProp) && fieldProp.GetString() == "file")
+                            {
+                                isFileInput = true;
+                                var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
+                                    .OrderByDescending(k => k).FirstOrDefault();
+
+                                if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
+                                {
+                                    previousStepFiles = new List<byte[]>();
+                                    foreach (var prevFile in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+                                    {
+                                        var prevFilePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevFile.FileName);
+                                        if (File.Exists(prevFilePath))
+                                        {
+                                            var imgBytes = await File.ReadAllBytesAsync(prevFilePath);
+                                            previousStepFiles.Add(imgBytes);
+                                            await _logger.LogAsync(projectId, executionId, "info",
+                                                $"Imagen del paso {prevOrder} cargada: {prevFile.FileName} ({imgBytes.Length} bytes)",
+                                                pm.StepOrder, stepName);
+                                        }
+                                    }
+
+                                    if (previousStepFiles.Count == 0)
+                                    {
+                                        await _logger.LogAsync(projectId, executionId, "warning",
+                                            $"InputMapping solicita archivo del paso anterior pero no se encontraron imagenes en paso {prevOrder}",
+                                            pm.StepOrder, stepName);
+                                    }
+                                }
+                                else
+                                {
+                                    await _logger.LogAsync(projectId, executionId, "warning",
+                                        $"InputMapping solicita archivo del paso anterior pero no hay archivos en paso {prevOrder}",
+                                        pm.StepOrder, stepName);
+                                }
+                            }
+                        }
+
                         // Image modules: may execute multiple times if previous step had items
                         var outputFiles = new List<OutputFile>();
                         string? imageError = null;
@@ -341,6 +397,18 @@ namespace Server.Services.Ai
                             if (singleInput.Length > maxLen)
                                 singleInput = InputAdapter.TruncateAtWord(singleInput, maxLen);
 
+                            // Build InputFiles: prefer previous step files for image-to-image, fallback to module files
+                            var inputFiles = previousStepFiles is { Count: > 0 }
+                                ? previousStepFiles
+                                : await LoadModuleFilesAsync(pm, db);
+
+                            if (isFileInput)
+                            {
+                                await _logger.LogAsync(projectId, executionId, "info",
+                                    $"[Image Debug] Mode=image-to-image, InputFiles={inputFiles?.Count ?? 0}, Prompt='{singleInput[..Math.Min(singleInput.Length, 100)]}', Model={pm.AiModule.ModelName}",
+                                    pm.StepOrder, stepName);
+                            }
+
                             var context = new AiExecutionContext
                             {
                                 ModuleType = pm.AiModule.ModuleType,
@@ -349,7 +417,7 @@ namespace Server.Services.Ai
                                 Input = singleInput,
                                 ProjectContext = project.Context,
                                 Configuration = config,
-                                InputFiles = await LoadModuleFilesAsync(pm, db),
+                                InputFiles = inputFiles,
                             };
 
                             var result = await provider.ExecuteAsync(context);
@@ -1856,6 +1924,28 @@ Datos de la ejecucion:
                     }
                     else if (pm.AiModule.ModuleType == "Image")
                     {
+                        // Load previous step files for image-to-image editing (resume path)
+                        List<byte[]>? resumePrevFiles = null;
+                        if (pm.InputMapping is not null)
+                        {
+                            var mappingJson = JsonSerializer.Deserialize<JsonElement>(pm.InputMapping);
+                            if (mappingJson.TryGetProperty("field", out var fieldProp) && fieldProp.GetString() == "file")
+                            {
+                                var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
+                                    .OrderByDescending(k => k).FirstOrDefault();
+                                if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
+                                {
+                                    resumePrevFiles = new List<byte[]>();
+                                    foreach (var pf in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+                                    {
+                                        var pfPath = Path.Combine(workspacePath, $"step_{prevOrder}", pf.FileName);
+                                        if (File.Exists(pfPath))
+                                            resumePrevFiles.Add(await File.ReadAllBytesAsync(pfPath));
+                                    }
+                                }
+                            }
+                        }
+
                         var outputFiles = new List<OutputFile>();
                         string? imageError = null;
 
@@ -1870,6 +1960,10 @@ Datos de la ejecucion:
                             if (singleInput.Length > maxLen)
                                 singleInput = InputAdapter.TruncateAtWord(singleInput, maxLen);
 
+                            var inputFiles = resumePrevFiles is { Count: > 0 }
+                                ? resumePrevFiles
+                                : await LoadModuleFilesAsync(pm, db);
+
                             var context = new AiExecutionContext
                             {
                                 ModuleType = pm.AiModule.ModuleType,
@@ -1878,7 +1972,7 @@ Datos de la ejecucion:
                                 Input = singleInput,
                                 ProjectContext = project.Context,
                                 Configuration = config,
-                                InputFiles = await LoadModuleFilesAsync(pm, db),
+                                InputFiles = inputFiles,
                             };
 
                             var result = await provider.ExecuteAsync(context);
@@ -2415,6 +2509,28 @@ Datos de la ejecucion:
                     }
                     else if (pm.AiModule.ModuleType == "Image")
                     {
+                        // Load previous step files for image-to-image editing (retry path)
+                        List<byte[]>? retryPrevFiles = null;
+                        if (pm.InputMapping is not null)
+                        {
+                            var mappingJson = JsonSerializer.Deserialize<JsonElement>(pm.InputMapping);
+                            if (mappingJson.TryGetProperty("field", out var fieldProp) && fieldProp.GetString() == "file")
+                            {
+                                var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
+                                    .OrderByDescending(k => k).FirstOrDefault();
+                                if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
+                                {
+                                    retryPrevFiles = new List<byte[]>();
+                                    foreach (var pf in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+                                    {
+                                        var pfPath = Path.Combine(workspacePath, $"step_{prevOrder}", pf.FileName);
+                                        if (File.Exists(pfPath))
+                                            retryPrevFiles.Add(await File.ReadAllBytesAsync(pfPath));
+                                    }
+                                }
+                            }
+                        }
+
                         var outputFiles = new List<OutputFile>();
                         string? imageError = null;
 
@@ -2434,6 +2550,10 @@ Datos de la ejecucion:
                             if (singleInput.Length > maxLen)
                                 singleInput = InputAdapter.TruncateAtWord(singleInput, maxLen);
 
+                            var inputFiles = retryPrevFiles is { Count: > 0 }
+                                ? retryPrevFiles
+                                : await LoadModuleFilesAsync(pm, db);
+
                             var context = new AiExecutionContext
                             {
                                 ModuleType = pm.AiModule.ModuleType,
@@ -2442,7 +2562,7 @@ Datos de la ejecucion:
                                 Input = singleInput,
                                 ProjectContext = project.Context,
                                 Configuration = config,
-                                InputFiles = await LoadModuleFilesAsync(pm, db),
+                                InputFiles = inputFiles,
                             };
 
                             var result = await provider.ExecuteAsync(context);
