@@ -199,18 +199,37 @@ namespace Server.Services.Ai
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
-            var result = await client.GenerateImageAsync(prompt, options);
+            GeneratedImage generatedImage;
+
+            if (context.InputFiles is { Count: > 0 } && isGptImage)
+            {
+                // Image editing: use the first input file as reference
+                using var imageStream = new MemoryStream(context.InputFiles[0]);
+                var editOptions = new ImageEditOptions
+                {
+                    Size = options.Size,
+                    Quality = options.Quality,
+                };
+                var editResult = await client.GenerateImageEditAsync(
+                    imageStream, "input.png", prompt, editOptions);
+                generatedImage = editResult.Value;
+            }
+            else
+            {
+                var result = await client.GenerateImageAsync(prompt, options);
+                generatedImage = result.Value;
+            }
 
             byte[] imageBytes;
-            if (result.Value.ImageBytes is not null && result.Value.ImageBytes.ToArray().Length > 0)
+            if (generatedImage.ImageBytes is not null && generatedImage.ImageBytes.ToArray().Length > 0)
             {
-                imageBytes = result.Value.ImageBytes.ToArray();
+                imageBytes = generatedImage.ImageBytes.ToArray();
             }
-            else if (!string.IsNullOrEmpty(result.Value.ImageUri?.ToString()))
+            else if (!string.IsNullOrEmpty(generatedImage.ImageUri?.ToString()))
             {
                 // gpt-image models return a URL — download the image
                 using var httpClient = new HttpClient();
-                imageBytes = await httpClient.GetByteArrayAsync(result.Value.ImageUri);
+                imageBytes = await httpClient.GetByteArrayAsync(generatedImage.ImageUri);
             }
             else
             {
@@ -220,7 +239,7 @@ namespace Server.Services.Ai
             var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
             {
                 ["model"] = context.ModelName,
-                ["revisedPrompt"] = result.Value.RevisedPrompt ?? ""
+                ["revisedPrompt"] = generatedImage.RevisedPrompt ?? ""
             });
             imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName, context.Configuration);
             return imgResult;

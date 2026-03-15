@@ -160,11 +160,37 @@ namespace Server.Services.Ai
             const int maxRetries = 2;
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                var response = await client.Models.GenerateContentAsync(
-                    model: imageModel,
-                    contents: prompt,
-                    config: config
-                );
+                GenerateContentResponse response;
+
+                if (context.InputFiles is { Count: > 0 })
+                {
+                    // Image editing: pass input images alongside the prompt
+                    var parts = new List<Part> { new Part { Text = prompt } };
+                    foreach (var fileBytes in context.InputFiles)
+                    {
+                        parts.Add(new Part
+                        {
+                            InlineData = new Blob
+                            {
+                                MimeType = "image/png",
+                                Data = fileBytes
+                            }
+                        });
+                    }
+                    response = await client.Models.GenerateContentAsync(
+                        model: imageModel,
+                        contents: new Content { Parts = parts, Role = "user" },
+                        config: config
+                    );
+                }
+                else
+                {
+                    response = await client.Models.GenerateContentAsync(
+                        model: imageModel,
+                        contents: prompt,
+                        config: config
+                    );
+                }
 
                 if (response.Candidates is null || response.Candidates.Count == 0)
                 {

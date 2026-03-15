@@ -109,6 +109,13 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("contrast", out var c))
                 contrast = Convert.ToDouble(c);
 
+            // Upload init image if provided
+            string? initImageId = null;
+            if (context.InputFiles is { Count: > 0 })
+            {
+                initImageId = await UploadInitImageAsync(http, context.InputFiles[0]);
+            }
+
             // Step 1: Submit generation request
             var body = new Dictionary<string, object>
             {
@@ -118,6 +125,12 @@ namespace Server.Services.Ai
                 ["height"] = height,
                 ["num_images"] = 1,
             };
+
+            if (initImageId is not null)
+            {
+                body["init_image_id"] = initImageId;
+                body["init_strength"] = 0.5;
+            }
 
             // presetStyle is not supported by Phoenix/Flux models
             if (!NoPresetStyleModels.Contains(context.ModelName))
@@ -215,6 +228,51 @@ namespace Server.Services.Ai
             }
 
             return AiResult.Fail($"Timeout esperando generacion de Leonardo AI (>{maxAttempts * pollIntervalMs / 1000}s)");
+        }
+
+        /// <summary>
+        /// Uploads an init image to Leonardo AI via presigned URL and returns the init_image_id.
+        /// </summary>
+        private static async Task<string?> UploadInitImageAsync(HttpClient http, byte[] imageBytes)
+        {
+            // Step 1: Get presigned URL
+            var reqBody = JsonSerializer.Serialize(new { extension = "png" });
+            var reqContent = new StringContent(reqBody, Encoding.UTF8, "application/json");
+            var resp = await http.PostAsync($"{BaseUrl}/init-image", reqContent);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            var json = await resp.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(json);
+
+            if (!doc.RootElement.TryGetProperty("uploadInitImage", out var upload))
+                return null;
+
+            var id = upload.GetProperty("id").GetString();
+            var url = upload.GetProperty("url").GetString();
+            var fieldsStr = upload.GetProperty("fields").GetString();
+            var key = upload.GetProperty("key").GetString();
+
+            if (id is null || url is null || fieldsStr is null || key is null)
+                return null;
+
+            // Step 2: Upload to presigned URL (multipart form)
+            var fields = JsonDocument.Parse(fieldsStr);
+            using var formContent = new MultipartFormDataContent();
+
+            foreach (var field in fields.RootElement.EnumerateObject())
+            {
+                formContent.Add(new StringContent(field.Value.GetString() ?? ""), field.Name);
+            }
+
+            formContent.Add(new ByteArrayContent(imageBytes), "file", "image.png");
+
+            // Use a clean HttpClient without auth headers for S3 upload
+            using var uploadClient = new HttpClient();
+            var uploadResp = await uploadClient.PostAsync(url, formContent);
+
+            return uploadResp.IsSuccessStatusCode || (int)uploadResp.StatusCode == 204
+                ? id
+                : null;
         }
     }
 }

@@ -331,10 +331,10 @@
             }
         </fieldset>
 
-        @if (_moduleType == "Text")
+        @if (_moduleType is "Text" or "Image")
         {
             <div class="form-group">
-                <label>Archivos adjuntos <span class="text-sm text-muted">(imagenes, documentos, etc.)</span></label>
+                <label>Archivos adjuntos <span class="text-sm text-muted">(@(_moduleType == "Image" ? "imagenes de referencia para edicion" : "imagenes, documentos, etc."))</span></label>
 
                 @if (_createPendingFiles.Count > 0)
                 {
@@ -352,7 +352,7 @@
                 }
 
                 <InputFile OnChange="OnCreateFilesSelected" multiple
-                           accept="image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx" />
+                           accept="@(_moduleType == "Image" ? "image/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
             </div>
         }
 
@@ -612,11 +612,11 @@
                                 }
 
                                 @* ── File attachments ── *@
-                                @if (m.ModuleType == "Text")
+                                @if (m.ModuleType is "Text" or "Image")
                                 {
                                     <hr style="margin: 0.75rem 0; border-color: var(--border);" />
                                     <div class="form-group">
-                                        <label>Archivos adjuntos <span class="text-sm text-muted">(imagenes, documentos, etc.)</span></label>
+                                        <label>Archivos adjuntos <span class="text-sm text-muted">(@(m.ModuleType == "Image" ? "imagenes de referencia para edicion" : "imagenes, documentos, etc."))</span></label>
 
                                         @if (_editModuleFiles.Count > 0)
                                         {
@@ -634,7 +634,7 @@
                                         }
 
                                         <InputFile OnChange="OnModuleFilesSelected" multiple
-                                                   accept="image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx" />
+                                                   accept="@(m.ModuleType == "Image" ? "image/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
 
                                         @if (_fileUploadError is not null)
                                         {
