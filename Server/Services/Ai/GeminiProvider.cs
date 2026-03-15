@@ -152,9 +152,18 @@ namespace Server.Services.Ai
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
+            // Read aspect ratio from module configuration (same pattern as GenerateVideoAsync)
+            var aspectRatio = "1:1";
+            if (context.Configuration.TryGetValue("aspectRatio", out var ar) && ar is string arStr)
+                aspectRatio = arStr;
+
             var config = new GenerateContentConfig
             {
                 ResponseModalities = ["IMAGE"],
+                ImageConfig = new ImageConfig
+                {
+                    AspectRatio = aspectRatio,
+                },
             };
 
             const int maxRetries = 2;
