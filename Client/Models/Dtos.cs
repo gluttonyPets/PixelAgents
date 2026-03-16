@@ -24,6 +24,7 @@ public record AiModuleResponse(
 
 // ── Project ──
 public record CreateProjectRequest(string Name, string? Description, string? Context);
+public record UpdateProjectRequest(string Name, string? Description, string? Context);
 public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt);
 public record ProjectDetailResponse(
     Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt,

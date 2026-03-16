@@ -1189,6 +1189,121 @@ a.link:hover { text-decoration: underline; }
     font-size: 0.72rem;
 }
 
+/* Project grid & cards */
+.project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.project-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    position: relative;
+}
+
+.project-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(108, 99, 255, 0.15);
+}
+
+.project-card-body {
+    padding: 1rem 1rem 0.6rem;
+    cursor: pointer;
+}
+
+.project-card-title {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+    color: var(--text);
+}
+
+.project-card-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 0.3rem;
+}
+
+.project-card-context {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    font-style: italic;
+    margin-bottom: 0.3rem;
+}
+
+.project-card-date {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.project-card-actions {
+    display: flex;
+    border-top: 1px solid var(--border);
+}
+
+.project-action-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    transition: background 0.15s, color 0.15s;
+    border-right: 1px solid var(--border);
+}
+
+.project-action-btn:last-child {
+    border-right: none;
+}
+
+.project-action-btn.action-edit:hover {
+    background: rgba(108, 99, 255, 0.1);
+    color: var(--accent);
+}
+
+.project-action-btn.action-duplicate:hover {
+    background: rgba(76, 175, 80, 0.1);
+    color: var(--success);
+}
+
+.project-action-btn.action-delete:hover {
+    background: rgba(244, 67, 54, 0.1);
+    color: #f44336;
+}
+
+.project-card-edit {
+    padding: 1rem;
+}
+
+.project-card-edit .form-group {
+    margin-bottom: 0.5rem;
+}
+
+.project-card-edit label {
+    font-size: 0.75rem;
+    margin-bottom: 0.15rem;
+}
+
+.project-card-edit input,
+.project-card-edit textarea {
+    font-size: 0.85rem;
+    padding: 0.35rem 0.5rem;
+}
+
+.project-card-edit-actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
 /* Utility */
 .mt-1 { margin-top: 0.5rem; }
 .mb-1 { margin-bottom: 0.5rem; }
