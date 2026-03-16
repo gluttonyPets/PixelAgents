@@ -362,24 +362,30 @@
 
 @if (_modules.Count > 0)
 {
-    <table>
-        <thead>
-            <tr>
-                <th>Nombre</th>
-                <th>Proveedor</th>
-                <th>Tipo</th>
-                <th>Modelo</th>
-                <th>API Key</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var m in _modules)
-            {
+    @foreach (var group in GetModuleGroups())
+    {
+        <div class="module-group" data-type="@group.Type">
+            <div class="module-group-header">
+                <span class="module-group-icon">@group.Icon</span>
+                <h3 class="module-group-title">@group.Label</h3>
+                <span class="badge badge-@(group.Type.ToLower()) module-group-count">@group.Modules.Count</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Proveedor</th>
+                        <th>Modelo</th>
+                        <th>API Key</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in group.Modules)
+                    {
                 <tr>
                     <td>@m.Name</td>
                     <td><span class="badge badge-info">@m.ProviderType</span></td>
-                    <td><span class="badge badge-warning">@m.ModuleType</span></td>
                     <td>
                         <select class="select-inline"
                                 value="@m.ModelName"
@@ -409,7 +415,7 @@
                 @if (_editingModuleId == m.Id)
                 {
                     <tr>
-                        <td colspan="6">
+                        <td colspan="5">
                             <div class="card" style="margin: 0.5rem 0;">
                                 @if (_editConfigError is not null)
                                 {
@@ -658,9 +664,11 @@
                         </td>
                     </tr>
                 }
-            }
-        </tbody>
-    </table>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
 else if (!_loading)
 {
@@ -668,6 +676,37 @@ else if (!_loading)
 }
 
 @code {
+    // ── Module group display ──
+    private record ModuleGroup(string Type, string Label, string Icon, List<AiModuleResponse> Modules);
+
+    private static readonly (string Type, string Label, string Icon)[] ModuleTypeOrder =
+    [
+        ("Text",        "Generacion de texto",   "T"),
+        ("Image",       "Generacion de imagen",  "I"),
+        ("Video",       "Generacion de video",   "V"),
+        ("Audio",       "Generacion de audio",   "A"),
+        ("Interaction", "Interaccion",           "C"),
+        ("Publish",     "Publicacion",           "P"),
+        ("Design",      "Diseno",                "D"),
+    ];
+
+    private List<ModuleGroup> GetModuleGroups()
+    {
+        var groups = new List<ModuleGroup>();
+        foreach (var (type, label, icon) in ModuleTypeOrder)
+        {
+            var mods = _modules.Where(m => m.ModuleType == type).ToList();
+            if (mods.Count > 0)
+                groups.Add(new ModuleGroup(type, label, icon, mods));
+        }
+        // Any unknown types
+        var knownTypes = ModuleTypeOrder.Select(t => t.Type).ToHashSet();
+        var others = _modules.Where(m => !knownTypes.Contains(m.ModuleType)).ToList();
+        if (others.Count > 0)
+            groups.Add(new ModuleGroup("other", "Otros", "?", others));
+        return groups;
+    }
+
     // ── Data lists ──
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];

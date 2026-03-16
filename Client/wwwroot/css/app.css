@@ -720,10 +720,35 @@ tr:hover td {
     color: var(--accent);
 }
 
+/* Module group layout */
+.module-group { margin-bottom: 1.5rem; }
+.module-group-header {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0; border-bottom: 2px solid var(--border);
+    margin-bottom: 0.5rem;
+}
+.module-group-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.8rem; height: 1.8rem; border-radius: 0.4rem;
+    font-weight: 700; font-size: 0.85rem;
+    color: #fff;
+}
+.module-group[data-type="Text"]        .module-group-icon { background: #3b82f6; }
+.module-group[data-type="Image"]       .module-group-icon { background: #8b5cf6; }
+.module-group[data-type="Video"]       .module-group-icon { background: #ec4899; }
+.module-group[data-type="Audio"]       .module-group-icon { background: #f97316; }
+.module-group[data-type="Interaction"] .module-group-icon { background: #f59e0b; color: #000; }
+.module-group[data-type="Publish"]     .module-group-icon { background: #22c55e; }
+.module-group[data-type="Design"]      .module-group-icon { background: #06b6d4; }
+.module-group-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.module-group-count { font-size: 0.7rem; padding: 0.15rem 0.5rem; }
+.module-group table { margin-top: 0; }
+
 /* Badge variants for module types */
 .badge-text { background: #3b82f6; color: #fff; }
 .badge-image { background: #8b5cf6; color: #fff; }
 .badge-video { background: #ec4899; color: #fff; }
+.badge-audio { background: #f97316; color: #fff; }
 .badge-interaction { background: #f59e0b; color: #000; }
 .badge-publish { background: #22c55e; color: #fff; }
 .badge-design { background: #06b6d4; color: #fff; }
