@@ -372,15 +372,22 @@ else
                         <select value="@_stepBranchId" @onchange="OnBranchSelectChanged">
                             <option value="main">Principal (main)</option>
                             @{
-                                var allBranches = (_project?.Modules ?? new())
+                                var existingBranches = (_project?.Modules ?? new())
                                     .Where(m => m.BranchId != "main")
                                     .Select(m => m.BranchId)
                                     .Distinct()
-                                    .OrderBy(b => b);
+                                    .OrderBy(b => b)
+                                    .ToList();
+                                var pendingBranch = _stepBranchId != "main" && !existingBranches.Contains(_stepBranchId)
+                                    ? _stepBranchId : null;
                             }
-                            @foreach (var b in allBranches)
+                            @foreach (var b in existingBranches)
                             {
                                 <option value="@b">@b</option>
+                            }
+                            @if (pendingBranch is not null)
+                            {
+                                <option value="@pendingBranch">@pendingBranch (nueva)</option>
                             }
                         </select>
                     </div>
