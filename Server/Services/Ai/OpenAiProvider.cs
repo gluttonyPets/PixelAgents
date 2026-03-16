@@ -124,12 +124,13 @@ namespace Server.Services.Ai
             {
                 if (isGptImage)
                 {
-                    // gpt-image: 1024x1024, 1536x1024, 1024x1536
+                    // gpt-image: 1024x1024, 1536x1024, 1024x1536, auto
                     options.Size = sizeStr switch
                     {
                         "1024x1024" => GeneratedImageSize.W1024xH1024,
                         "1536x1024" => new GeneratedImageSize(1536, 1024),
                         "1024x1536" => new GeneratedImageSize(1024, 1536),
+                        "auto" => new GeneratedImageSize("auto"),
                         _ => GeneratedImageSize.W1024xH1024
                     };
                 }

@@ -449,11 +449,10 @@
                                         <div class="form-group">
                                             <label>Tamano</label>
                                             <select @bind="_editImageSize">
-                                                <option value="1024x1024">1024x1024</option>
-                                                <option value="1024x1792">1024x1792</option>
-                                                <option value="1792x1024">1792x1024</option>
-                                                <option value="256x256">256x256</option>
-                                                <option value="512x512">512x512</option>
+                                                @foreach (var s in GetImageSizesForModel(m.ModelName))
+                                                {
+                                                    <option value="@s">@s</option>
+                                                }
                                             </select>
                                         </div>
                                         <div class="form-group">
@@ -936,9 +935,16 @@ else if (!_loading)
 
     private string[] GetImageSizes()
     {
-        return _model switch
+        return GetImageSizesForModel(_model);
+    }
+
+    private static string[] GetImageSizesForModel(string model)
+    {
+        return model switch
         {
-            "dall-e-3" or "gpt-image-1" or "gpt-image-1.5" => ["1024x1024", "1024x1792", "1792x1024"],
+            _ when model.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase)
+                => ["1024x1024", "1536x1024", "1024x1536", "auto"],
+            "dall-e-3" => ["1024x1024", "1024x1792", "1792x1024"],
             "dall-e-2" => ["256x256", "512x512", "1024x1024"],
             _ => ["1024x1024"]
         };
