@@ -207,6 +207,13 @@ public class ApiClient
         await SendAsync(HttpMethod.Delete, $"/api/projects/{id}");
     }
 
+    public async Task<ProjectResponse?> DuplicateProjectAsync(Guid id)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{id}/duplicate");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<ProjectResponse>();
+    }
+
     // ── ProjectModules (Pipeline) ──
 
     public async Task<(bool Ok, string? Error)> AddProjectModuleAsync(Guid projectId, AddProjectModuleRequest req)

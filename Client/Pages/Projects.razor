@@ -48,7 +48,10 @@
                     <td class="text-sm text-muted">@(p.Description ?? "-")</td>
                     <td class="text-sm text-muted">@(Truncate(p.Context, 50))</td>
                     <td class="text-sm text-muted">@p.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
-                    <td><button class="btn btn-danger" @onclick="() => Delete(p.Id)">Eliminar</button></td>
+                    <td>
+                        <button class="btn btn-xs" @onclick="() => Duplicate(p.Id)" title="Duplicar proyecto">Duplicar</button>
+                        <button class="btn btn-danger" @onclick="() => Delete(p.Id)">Eliminar</button>
+                    </td>
                 </tr>
             }
         </tbody>
@@ -101,6 +104,12 @@ else if (!_loading)
     private async Task Delete(Guid id)
     {
         try { await Api.DeleteProjectAsync(id); await Load(); }
+        catch { }
+    }
+
+    private async Task Duplicate(Guid id)
+    {
+        try { await Api.DuplicateProjectAsync(id); await Load(); }
         catch { }
     }
 

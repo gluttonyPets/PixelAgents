@@ -647,6 +647,61 @@ app.MapDelete("/api/projects/{id}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+app.MapPost("/api/projects/{id}/duplicate", async (
+    Guid id, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var source = await db.Projects
+        .Include(p => p.ProjectModules)
+            .ThenInclude(pm => pm.AiModule)
+        .FirstOrDefaultAsync(p => p.Id == id);
+
+    if (source is null) return Results.NotFound();
+
+    var newProject = new Project
+    {
+        Id = Guid.NewGuid(),
+        Name = source.Name + " (copia)",
+        Description = source.Description,
+        Context = source.Context,
+        WhatsAppConfig = source.WhatsAppConfig,
+        TelegramConfig = source.TelegramConfig,
+        InstagramConfig = source.InstagramConfig,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    db.Projects.Add(newProject);
+
+    foreach (var pm in source.ProjectModules)
+    {
+        db.ProjectModules.Add(new ProjectModule
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = newProject.Id,
+            AiModuleId = pm.AiModuleId,
+            StepOrder = pm.StepOrder,
+            StepName = pm.StepName,
+            InputMapping = pm.InputMapping,
+            Configuration = pm.Configuration,
+            IsActive = pm.IsActive,
+            BranchId = pm.BranchId,
+            BranchFromStep = pm.BranchFromStep,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/projects/{newProject.Id}",
+        new ProjectResponse(newProject.Id, newProject.Name, newProject.Description,
+            newProject.Context, newProject.CreatedAt, newProject.UpdatedAt));
+}).RequireAuthorization();
+
 // ==================== ProjectModule (Pipeline) Endpoints ====================
 
 app.MapPost("/api/projects/{projectId}/modules", async (
