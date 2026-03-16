@@ -1,4 +1,5 @@
 @page "/modules"
+@using Microsoft.AspNetCore.Components.Forms
 @inject ApiClient Api
 
 <h2>Modulos IA</h2>
@@ -19,6 +20,7 @@
             <option value="Anthropic">Anthropic</option>
             <option value="Google">Google (Gemini)</option>
             <option value="LeonardoAI">Leonardo AI</option>
+            <option value="Canva">Canva</option>
         </select>
     </div>
 
@@ -42,7 +44,7 @@
         <!-- Step 3: Model (filtered by provider + type) -->
         <div class="form-group">
             <label>Modelo</label>
-            <select @bind="_model">
+            <select value="@_model" @onchange="OnModelChanged">
                 <option value="">-- Seleccionar modelo --</option>
                 @foreach (var m in GetAvailableModels())
                 {
@@ -247,6 +249,40 @@
                     </div>
                 </div>
             }
+            else if (_moduleType == "Design" && _provider == "Canva")
+            {
+                <div class="form-group">
+                    <label>Access Token <span class="text-sm text-muted">(OAuth token de Canva Connect API)</span></label>
+                    <input type="password" @bind="_canvaAccessToken" placeholder="Token OAuth de Canva" />
+                </div>
+                <div class="form-group">
+                    <label>Formato de exportacion</label>
+                    <select @bind="_canvaExportFormat">
+                        <option value="png">PNG (imagen)</option>
+                        <option value="jpg">JPG (imagen)</option>
+                        <option value="pdf">PDF (documento)</option>
+                        <option value="pptx">PPTX (presentacion)</option>
+                    </select>
+                </div>
+                @if (_model == "canva-autofill")
+                {
+                    <div class="form-group">
+                        <label>Brand Template ID <span class="text-sm text-muted">(opcional, se puede sobreescribir desde el paso del pipeline)</span></label>
+                        <input type="text" @bind="_canvaBrandTemplate" placeholder="Ej: DAVZr1z5464..." />
+                    </div>
+                }
+                else
+                {
+                    <div class="form-group">
+                        <label>Tipo de diseno</label>
+                        <select @bind="_canvaDesignType">
+                            <option value="doc">Documento</option>
+                            <option value="presentation">Presentacion</option>
+                            <option value="whiteboard">Pizarra</option>
+                        </select>
+                    </div>
+                }
+            }
             else if (_moduleType == "Embeddings")
             {
                 <div class="form-group">
@@ -295,30 +331,61 @@
             }
         </fieldset>
 
+        @if (_moduleType is "Text" or "Image")
+        {
+            <div class="form-group">
+                <label>Archivos adjuntos <span class="text-sm text-muted">(@(_moduleType == "Image" ? "imagenes de referencia para edicion" : "imagenes, documentos, etc."))</span></label>
+
+                @if (_createPendingFiles.Count > 0)
+                {
+                    <div class="file-list">
+                        @foreach (var f in _createPendingFiles)
+                        {
+                            <div class="file-item">
+                                <span class="file-name" title="@f.Name">@f.Name</span>
+                                <span class="text-sm text-muted">@FormatFileSize(f.Size)</span>
+                                <button class="btn btn-danger btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem;"
+                                        @onclick="() => _createPendingFiles.Remove(f)">x</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <InputFile OnChange="OnCreateFilesSelected" multiple
+                           accept="@(_moduleType == "Image" ? "image/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
+            </div>
+        }
+
         <button class="btn btn-primary mt-1" @onclick="Create" disabled="@_loading">Crear Modulo</button>
     }
 </div>
 
 @if (_modules.Count > 0)
 {
-    <table>
-        <thead>
-            <tr>
-                <th>Nombre</th>
-                <th>Proveedor</th>
-                <th>Tipo</th>
-                <th>Modelo</th>
-                <th>API Key</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var m in _modules)
-            {
+    @foreach (var group in GetModuleGroups())
+    {
+        <div class="module-group" data-type="@group.Type">
+            <div class="module-group-header">
+                <span class="module-group-icon">@group.Icon</span>
+                <h3 class="module-group-title">@group.Label</h3>
+                <span class="badge badge-@(group.Type.ToLower()) module-group-count">@group.Modules.Count</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Proveedor</th>
+                        <th>Modelo</th>
+                        <th>API Key</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in group.Modules)
+                    {
                 <tr>
                     <td>@m.Name</td>
                     <td><span class="badge badge-info">@m.ProviderType</span></td>
-                    <td><span class="badge badge-warning">@m.ModuleType</span></td>
                     <td>
                         <select class="select-inline"
                                 value="@m.ModelName"
@@ -348,7 +415,7 @@
                 @if (_editingModuleId == m.Id)
                 {
                     <tr>
-                        <td colspan="6">
+                        <td colspan="5">
                             <div class="card" style="margin: 0.5rem 0;">
                                 @if (_editConfigError is not null)
                                 {
@@ -382,11 +449,10 @@
                                         <div class="form-group">
                                             <label>Tamano</label>
                                             <select @bind="_editImageSize">
-                                                <option value="1024x1024">1024x1024</option>
-                                                <option value="1024x1792">1024x1792</option>
-                                                <option value="1792x1024">1792x1024</option>
-                                                <option value="256x256">256x256</option>
-                                                <option value="512x512">512x512</option>
+                                                @foreach (var s in GetImageSizesForModel(m.ModelName))
+                                                {
+                                                    <option value="@s">@s</option>
+                                                }
                                             </select>
                                         </div>
                                         <div class="form-group">
@@ -511,12 +577,83 @@
                                         </div>
                                     </div>
                                 }
+                                else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
+                                {
+                                    <div class="form-group">
+                                        <label>Access Token</label>
+                                        <input type="password" @bind="_editCanvaAccessToken" placeholder="Token OAuth de Canva" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Formato de exportacion</label>
+                                        <select @bind="_editCanvaExportFormat">
+                                            <option value="png">PNG (imagen)</option>
+                                            <option value="jpg">JPG (imagen)</option>
+                                            <option value="pdf">PDF (documento)</option>
+                                            <option value="pptx">PPTX (presentacion)</option>
+                                        </select>
+                                    </div>
+                                    @if (m.ModelName == "canva-autofill")
+                                    {
+                                        <div class="form-group">
+                                            <label>Brand Template ID</label>
+                                            <input type="text" @bind="_editCanvaBrandTemplate" placeholder="Ej: DAVZr1z5464..." />
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="form-group">
+                                            <label>Tipo de diseno</label>
+                                            <select @bind="_editCanvaDesignType">
+                                                <option value="doc">Documento</option>
+                                                <option value="presentation">Presentacion</option>
+                                                <option value="whiteboard">Pizarra</option>
+                                            </select>
+                                        </div>
+                                    }
+                                }
                                 else
                                 {
                                     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
                                 }
 
-                                @if (m.ModuleType is "Text" or "Image" or "Audio" or "Video")
+                                @* ── File attachments ── *@
+                                @if (m.ModuleType is "Text" or "Image")
+                                {
+                                    <hr style="margin: 0.75rem 0; border-color: var(--border);" />
+                                    <div class="form-group">
+                                        <label>Archivos adjuntos <span class="text-sm text-muted">(@(m.ModuleType == "Image" ? "imagenes de referencia para edicion" : "imagenes, documentos, etc."))</span></label>
+
+                                        @if (_editModuleFiles.Count > 0)
+                                        {
+                                            <div class="file-list">
+                                                @foreach (var f in _editModuleFiles)
+                                                {
+                                                    <div class="file-item">
+                                                        <span class="file-name" title="@f.FileName">@f.FileName</span>
+                                                        <span class="text-sm text-muted">@FormatFileSize(f.FileSize)</span>
+                                                        <button class="btn btn-danger btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem;"
+                                                                @onclick="() => DeleteModuleFile(f.Id, m.Id)">x</button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+
+                                        <InputFile OnChange="OnModuleFilesSelected" multiple
+                                                   accept="@(m.ModuleType == "Image" ? "image/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
+
+                                        @if (_fileUploadError is not null)
+                                        {
+                                            <div class="alert alert-error" style="margin-top: 0.3rem;">@_fileUploadError</div>
+                                        }
+
+                                        @if (_uploadingFiles)
+                                        {
+                                            <p class="text-muted" style="margin-top: 0.3rem;">Subiendo archivos...</p>
+                                        }
+                                    </div>
+                                }
+
+                                @if (m.ModuleType is "Text" or "Image" or "Audio" or "Video" or "Design")
                                 {
                                     <button class="btn btn-primary btn-sm" @onclick="() => SaveConfig(m)" disabled="@_editConfigSaving">
                                         @(_editConfigSaving ? "Guardando..." : "Guardar")
@@ -526,9 +663,11 @@
                         </td>
                     </tr>
                 }
-            }
-        </tbody>
-    </table>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
 else if (!_loading)
 {
@@ -536,6 +675,37 @@ else if (!_loading)
 }
 
 @code {
+    // ── Module group display ──
+    private record ModuleGroup(string Type, string Label, string Icon, List<AiModuleResponse> Modules);
+
+    private static readonly (string Type, string Label, string Icon)[] ModuleTypeOrder =
+    [
+        ("Text",        "Generacion de texto",   "T"),
+        ("Image",       "Generacion de imagen",  "I"),
+        ("Video",       "Generacion de video",   "V"),
+        ("Audio",       "Generacion de audio",   "A"),
+        ("Interaction", "Interaccion",           "C"),
+        ("Publish",     "Publicacion",           "P"),
+        ("Design",      "Diseno",                "D"),
+    ];
+
+    private List<ModuleGroup> GetModuleGroups()
+    {
+        var groups = new List<ModuleGroup>();
+        foreach (var (type, label, icon) in ModuleTypeOrder)
+        {
+            var mods = _modules.Where(m => m.ModuleType == type).ToList();
+            if (mods.Count > 0)
+                groups.Add(new ModuleGroup(type, label, icon, mods));
+        }
+        // Any unknown types
+        var knownTypes = ModuleTypeOrder.Select(t => t.Type).ToHashSet();
+        var others = _modules.Where(m => !knownTypes.Contains(m.ModuleType)).ToList();
+        if (others.Count > 0)
+            groups.Add(new ModuleGroup("other", "Otros", "?", others));
+        return groups;
+    }
+
     // ── Data lists ──
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];
@@ -610,13 +780,35 @@ else if (!_loading)
     private string _transcriptionLang = "";
     private string _transcriptionFormat = "json";
 
+    // ── Form: Canva ──
+    private string _canvaAccessToken = "";
+    private string _canvaExportFormat = "png";
+    private string _canvaBrandTemplate = "";
+    private string _canvaDesignType = "doc";
+
+    // ── Edit: Canva config ──
+    private string _editCanvaAccessToken = "";
+    private string _editCanvaExportFormat = "png";
+    private string _editCanvaBrandTemplate = "";
+    private string _editCanvaDesignType = "doc";
+
+    // ── Create: pending files ──
+    private List<IBrowserFile> _createPendingFiles = [];
+
+    // ── Edit: Module files ──
+    private List<ModuleFileResponse> _editModuleFiles = [];
+    private bool _uploadingFiles;
+    private string? _fileUploadError;
+
     // ── Model catalog ──
     private record ModelInfo(string Id, string DisplayName, string Provider, string[] Types, string[] Capabilities, string Description, string? MaxContext = null);
 
     private static readonly ModelInfo[] AllModels =
     [
         // ─── OpenAI: Chat / Text (GPT-5.x) ───
-        new("gpt-5.2",          "GPT-5.2",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Ultimo modelo flagship. Razonamiento avanzado multi-nivel.", "400K"),
+        new("gpt-5.4",          "GPT-5.4",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Ultimo modelo flagship. 1M contexto. Razonamiento multi-nivel.", "1M"),
+        new("gpt-5.4-pro",      "GPT-5.4 Pro",       "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Version Pro. Mas preciso, usa mas compute para pensar.", "1M"),
+        new("gpt-5.2",          "GPT-5.2",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo anterior. Razonamiento avanzado multi-nivel.", "400K"),
         new("gpt-5.1",          "GPT-5.1",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5.1 con vision y razonamiento.", "400K"),
         new("gpt-5",            "GPT-5",             "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5 potente y versatil.", "400K"),
         new("gpt-5-mini",       "GPT-5 Mini",        "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "GPT-5 version rapida y economica.", "400K"),
@@ -696,6 +888,10 @@ else if (!_loading)
         new("leonardo-phoenix-0.9",          "Leonardo Phoenix 0.9","LeonardoAI", ["Image"], ["image-generation"], "Version anterior de Phoenix, estable y probada."),
         new("leonardo-flux-dev",             "Leonardo Flux Dev",   "LeonardoAI", ["Image"], ["image-generation"], "Modelo Flux Dev. Buena calidad con tiempo razonable."),
         new("leonardo-flux-schnell",         "Leonardo Flux Schnell","LeonardoAI", ["Image"], ["image-generation"], "Modelo Flux Schnell. Generacion ultra rapida."),
+
+        // ─── Canva: Design ───
+        new("canva-design",    "Canva Design",    "Canva", ["Design"], ["design-creation","export"],           "Crea disenos en blanco y exporta en PNG, JPG, PDF o PPTX."),
+        new("canva-autofill",  "Canva Autofill",  "Canva", ["Design"], ["design-creation","autofill","export"], "Autofill de brand templates con datos del pipeline."),
     ];
 
     // ── Available types per provider ──
@@ -715,6 +911,7 @@ else if (!_loading)
                 "Video"         => "Generacion de video",
                 "Audio"         => "Audio (TTS)",
                 "Transcription" => "Transcripcion (STT)",
+                "Design"        => "Diseno (Canva)",
                 _               => t
             }))
             .ToList();
@@ -738,9 +935,16 @@ else if (!_loading)
 
     private string[] GetImageSizes()
     {
-        return _model switch
+        return GetImageSizesForModel(_model);
+    }
+
+    private static string[] GetImageSizesForModel(string model)
+    {
+        return model switch
         {
-            "dall-e-3" or "gpt-image-1" or "gpt-image-1.5" => ["1024x1024", "1024x1792", "1792x1024"],
+            _ when model.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase)
+                => ["auto", "1024x1024", "1536x1024", "1024x1536"],
+            "dall-e-3" => ["1024x1024", "1024x1792", "1792x1024"],
             "dall-e-2" => ["256x256", "512x512", "1024x1024"],
             _ => ["1024x1024"]
         };
@@ -761,6 +965,14 @@ else if (!_loading)
         _moduleType = e.Value?.ToString() ?? "";
         _model = "";
         ResetConfig();
+    }
+
+    private void OnModelChanged(ChangeEventArgs e)
+    {
+        _model = e.Value?.ToString() ?? "";
+        // Set size default based on model: gpt-image defaults to "auto" (preserves input dimensions)
+        var sizes = GetImageSizesForModel(_model);
+        _imageSize = sizes[0];
     }
 
     private void ResetConfig()
@@ -785,6 +997,10 @@ else if (!_loading)
         _ttsSpeed = 1.0;
         _transcriptionLang = "";
         _transcriptionFormat = "json";
+        _canvaAccessToken = "";
+        _canvaExportFormat = "png";
+        _canvaBrandTemplate = "";
+        _canvaDesignType = "doc";
     }
 
     // ── Build config JSON ──
@@ -855,6 +1071,17 @@ else if (!_loading)
             if (_transcriptionFormat != "json")
                 parts.Add($"\"response_format\":\"{_transcriptionFormat}\"");
         }
+        else if (_moduleType == "Design" && _provider == "Canva")
+        {
+            if (!string.IsNullOrWhiteSpace(_canvaAccessToken))
+                parts.Add($"\"accessToken\":{System.Text.Json.JsonSerializer.Serialize(_canvaAccessToken)}");
+            if (_canvaExportFormat != "png")
+                parts.Add($"\"exportFormat\":\"{_canvaExportFormat}\"");
+            if (!string.IsNullOrWhiteSpace(_canvaBrandTemplate))
+                parts.Add($"\"brandTemplateId\":{System.Text.Json.JsonSerializer.Serialize(_canvaBrandTemplate)}");
+            if (_canvaDesignType != "doc")
+                parts.Add($"\"designType\":\"{_canvaDesignType}\"");
+        }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
     }
@@ -887,9 +1114,20 @@ else if (!_loading)
             Guid? keyId = Guid.TryParse(_apiKeyId, out var id) ? id : null;
             var config = BuildConfigJson();
             var req = new CreateAiModuleRequest(_name, _desc, _provider, _moduleType, _model, keyId, config);
-            var (ok, error) = await Api.CreateModuleAsync(req);
+            var (ok, error, moduleId) = await Api.CreateModuleAsync(req);
             if (ok)
             {
+                if (moduleId.HasValue && _createPendingFiles.Count > 0)
+                {
+                    using var content = new MultipartFormDataContent();
+                    foreach (var file in _createPendingFiles)
+                    {
+                        var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
+                        content.Add(new StreamContent(stream), "files", file.Name);
+                    }
+                    await Api.UploadModuleFilesAsync(moduleId.Value, content);
+                }
+                _createPendingFiles.Clear();
                 _name = ""; _desc = ""; _model = ""; _apiKeyId = "";
                 ResetConfig();
                 _modules = await Api.GetModulesAsync();
@@ -933,7 +1171,7 @@ else if (!_loading)
         catch (Exception ex) { _error = $"Error al cambiar API Key: {ex.Message}"; }
     }
 
-    private void ToggleEditConfig(AiModuleResponse module)
+    private async Task ToggleEditConfig(AiModuleResponse module)
     {
         if (_editingModuleId == module.Id)
         {
@@ -956,6 +1194,10 @@ else if (!_loading)
         _editLeoWidth = 1024;
         _editLeoHeight = 1024;
         _editLeoPresetStyle = "DYNAMIC";
+        _editCanvaAccessToken = "";
+        _editCanvaExportFormat = "png";
+        _editCanvaBrandTemplate = "";
+        _editCanvaDesignType = "doc";
 
         if (!string.IsNullOrWhiteSpace(module.Configuration))
         {
@@ -983,9 +1225,63 @@ else if (!_loading)
                 if (root.TryGetProperty("duration", out var vdur)) _editVideoDuration = vdur.GetString() ?? "8";
                 if (root.TryGetProperty("resolution", out var vres)) _editVideoResolution = vres.GetString() ?? "720p";
                 if (root.TryGetProperty("personGeneration", out var vpg)) _editVideoPersonGeneration = vpg.GetString() ?? "allow_adult";
+                if (root.TryGetProperty("accessToken", out var cat)) _editCanvaAccessToken = cat.GetString() ?? "";
+                if (root.TryGetProperty("exportFormat", out var cef)) _editCanvaExportFormat = cef.GetString() ?? "png";
+                if (root.TryGetProperty("brandTemplateId", out var cbt)) _editCanvaBrandTemplate = cbt.GetString() ?? "";
+                if (root.TryGetProperty("designType", out var cdt)) _editCanvaDesignType = cdt.GetString() ?? "doc";
             }
             catch { }
         }
+
+        // Load module files
+        _editModuleFiles = [];
+        _fileUploadError = null;
+        try { _editModuleFiles = await Api.GetModuleFilesAsync(module.Id); } catch { }
+    }
+
+    private async Task OnModuleFilesSelected(InputFileChangeEventArgs e)
+    {
+        if (_editingModuleId is null) return;
+        _fileUploadError = null;
+        _uploadingFiles = true;
+        StateHasChanged();
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            foreach (var file in e.GetMultipleFiles(10))
+            {
+                var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024); // 50MB
+                content.Add(new StreamContent(stream), "files", file.Name);
+            }
+
+            var uploaded = await Api.UploadModuleFilesAsync(_editingModuleId.Value, content);
+            _editModuleFiles.InsertRange(0, uploaded);
+        }
+        catch (Exception ex) { _fileUploadError = $"Error al subir: {ex.Message}"; }
+        _uploadingFiles = false;
+    }
+
+    private void OnCreateFilesSelected(InputFileChangeEventArgs e)
+    {
+        _createPendingFiles.AddRange(e.GetMultipleFiles(10));
+    }
+
+    private async Task DeleteModuleFile(Guid fileId, Guid moduleId)
+    {
+        try
+        {
+            await Api.DeleteModuleFileAsync(fileId);
+            _editModuleFiles.RemoveAll(f => f.Id == fileId);
+        }
+        catch { }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
     }
 
     private async Task SaveConfig(AiModuleResponse module)
@@ -1064,6 +1360,17 @@ else if (!_loading)
             parts.Add($"\"voice\":\"{_editTtsVoice}\"");
             if (_editTtsSpeed != 1.0)
                 parts.Add($"\"speed\":{_editTtsSpeed}");
+        }
+        else if (moduleType == "Design" && providerType == "Canva")
+        {
+            if (!string.IsNullOrWhiteSpace(_editCanvaAccessToken))
+                parts.Add($"\"accessToken\":{System.Text.Json.JsonSerializer.Serialize(_editCanvaAccessToken)}");
+            if (_editCanvaExportFormat != "png")
+                parts.Add($"\"exportFormat\":\"{_editCanvaExportFormat}\"");
+            if (!string.IsNullOrWhiteSpace(_editCanvaBrandTemplate))
+                parts.Add($"\"brandTemplateId\":{System.Text.Json.JsonSerializer.Serialize(_editCanvaBrandTemplate)}");
+            if (_editCanvaDesignType != "doc")
+                parts.Add($"\"designType\":\"{_editCanvaDesignType}\"");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;

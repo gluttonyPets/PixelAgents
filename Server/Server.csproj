@@ -13,6 +13,7 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.0" />
     <PackageReference Include="Google.GenAI" Version="1.2.0" />
     <PackageReference Include="OpenAI" Version="2.9.1" />
+    <PackageReference Include="Cronos" Version="0.8.4" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
   </ItemGroup>
 

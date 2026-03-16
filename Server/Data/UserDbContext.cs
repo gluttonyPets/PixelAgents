@@ -15,6 +15,8 @@ namespace Server.Data
         public DbSet<StepExecution> StepExecutions => Set<StepExecution>();
         public DbSet<ExecutionFile> ExecutionFiles => Set<ExecutionFile>();
         public DbSet<ExecutionLog> ExecutionLogs => Set<ExecutionLog>();
+        public DbSet<ProjectSchedule> ProjectSchedules => Set<ProjectSchedule>();
+        public DbSet<ModuleFile> ModuleFiles => Set<ModuleFile>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -58,13 +60,14 @@ namespace Server.Data
                 e.Property(x => x.WhatsAppConfig).HasColumnType("text");
                 e.Property(x => x.TelegramConfig).HasColumnType("text");
                 e.Property(x => x.InstagramConfig).HasColumnType("text");
-                e.Property(x => x.CanvaConfig).HasColumnType("text");
+
             });
 
             // ── ProjectModule ──
             modelBuilder.Entity<ProjectModule>(e =>
             {
                 e.HasKey(x => x.Id);
+                e.Property(x => x.BranchId).IsRequired().HasMaxLength(100).HasDefaultValue("main");
                 e.Property(x => x.StepName).HasMaxLength(200);
                 e.Property(x => x.InputMapping).HasColumnType("text");
                 e.Property(x => x.Configuration).HasColumnType("text");
@@ -80,7 +83,7 @@ namespace Server.Data
                     .HasForeignKey(x => x.AiModuleId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                e.HasIndex(x => new { x.ProjectId, x.StepOrder }).IsUnique();
+                e.HasIndex(x => new { x.ProjectId, x.BranchId, x.StepOrder }).IsUnique();
             });
 
             // ── ProjectExecution ──
@@ -97,6 +100,7 @@ namespace Server.Data
 
                 e.HasIndex(x => x.ProjectId);
                 e.Property(x => x.PausedStepData).HasColumnType("text");
+                e.Property(x => x.PausedBranches).HasColumnType("text");
                 e.Property(x => x.UserInput).HasColumnType("text");
             });
 
@@ -120,6 +124,24 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Restrict);
 
                 e.HasIndex(x => new { x.ExecutionId, x.StepOrder });
+            });
+
+            // ── ProjectSchedule ──
+            modelBuilder.Entity<ProjectSchedule>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.CronExpression).IsRequired().HasMaxLength(100);
+                e.Property(x => x.TimeZone).IsRequired().HasMaxLength(100).HasDefaultValue("UTC");
+                e.Property(x => x.UserInput).HasColumnType("text");
+                e.Property(x => x.IsEnabled).HasDefaultValue(true);
+
+                e.HasOne(x => x.Project)
+                    .WithMany()
+                    .HasForeignKey(x => x.ProjectId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => x.ProjectId);
+                e.HasIndex(x => new { x.IsEnabled, x.NextRunAt });
             });
 
             // ── ExecutionLog ──
@@ -153,6 +175,22 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
 
                 e.HasIndex(x => x.StepExecutionId);
+            });
+
+            // ── ModuleFile ──
+            modelBuilder.Entity<ModuleFile>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.FileName).IsRequired().HasMaxLength(500);
+                e.Property(x => x.ContentType).IsRequired().HasMaxLength(100);
+                e.Property(x => x.FilePath).IsRequired().HasMaxLength(1000);
+
+                e.HasOne(x => x.AiModule)
+                    .WithMany(m => m.Files)
+                    .HasForeignKey(x => x.AiModuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => x.AiModuleId);
             });
         }
     }

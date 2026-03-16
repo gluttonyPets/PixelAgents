@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Server;
 using Server.Data;
@@ -61,6 +62,7 @@ builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
+builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
 builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
@@ -143,6 +145,11 @@ using (var scope = app.Services.CreateScope())
         // Migration: add State column for existing tables
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""State"" varchar(50) NOT NULL DEFAULT 'waiting'");
+        // Migration: add BranchId column for branch-aware interaction
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100)");
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""WhatsAppCorrelations"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100)");
     }
     catch { }
 }
@@ -158,6 +165,56 @@ static async Task<UserDbContext?> ResolveTenantDb(
     var dbName = claims.FirstOrDefault(c => c.Type == "db_name")?.Value;
     if (dbName is null) return null;
     return factory.Create(dbName);
+}
+
+/// <summary>
+/// Resolves the full disk path for an execution file, trying multiple strategies
+/// to handle legacy absolute paths, relative paths, and path changes across deployments.
+/// Returns null if the file cannot be found on disk.
+/// </summary>
+static string? ResolveFilePath(string mediaRoot, string workspacePath, string filePath, ILogger logger)
+{
+    // Strategy 1: workspace is relative — combine with mediaRoot
+    if (!Path.IsPathRooted(workspacePath))
+    {
+        var candidate = Path.Combine(mediaRoot, workspacePath, filePath);
+        if (File.Exists(candidate)) return candidate;
+        logger.LogWarning("File not found (relative workspace): {Path}", candidate);
+    }
+    else
+    {
+        // Strategy 2: workspace is absolute (legacy) — try as-is
+        var candidate = Path.Combine(workspacePath, filePath);
+        if (File.Exists(candidate)) return candidate;
+        logger.LogWarning("File not found (absolute workspace): {Path}", candidate);
+
+        // Strategy 3: extract relative part after "GeneratedMedia" and re-root
+        var separator = $"GeneratedMedia{Path.DirectorySeparatorChar}";
+        var altSeparator = "GeneratedMedia/"; // handle Linux paths in Windows DB or vice versa
+        var idx = workspacePath.IndexOf(separator, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) idx = workspacePath.IndexOf(altSeparator, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) idx = workspacePath.IndexOf("GeneratedMedia\\", StringComparison.OrdinalIgnoreCase);
+
+        if (idx >= 0)
+        {
+            var relative = workspacePath[(idx + "GeneratedMedia".Length + 1)..];
+            var candidate2 = Path.Combine(mediaRoot, relative, filePath);
+            if (File.Exists(candidate2))
+            {
+                logger.LogInformation("File found via re-rooted path: {Path}", candidate2);
+                return candidate2;
+            }
+            logger.LogWarning("File not found (re-rooted): {Path}", candidate2);
+        }
+    }
+
+    // Strategy 4: try filePath directly under mediaRoot (flat structure fallback)
+    var flat = Path.Combine(mediaRoot, filePath);
+    if (File.Exists(flat)) return flat;
+
+    logger.LogError("Execution file not found anywhere. WorkspacePath={Workspace}, FilePath={File}, MediaRoot={Root}",
+        workspacePath, filePath, mediaRoot);
+    return null;
 }
 
 // ==================== Auth Endpoints ====================
@@ -421,6 +478,130 @@ app.MapDelete("/api/modules/{id}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+// ==================== Module File Endpoints ====================
+
+app.MapPost("/api/modules/{moduleId}/files", async (
+    Guid moduleId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var module = await db.AiModules.FindAsync(moduleId);
+    if (module is null) return Results.NotFound();
+
+    var form = await ctx.Request.ReadFormAsync();
+    var files = form.Files;
+    if (files.Count == 0) return Results.BadRequest("No se adjuntaron archivos");
+
+    var claims = await um.GetClaimsAsync((await um.GetUserAsync(ctx.User))!);
+    var tenantDbName = claims.First(c => c.Type == "db_name").Value;
+    var storageDir = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia", tenantDbName, "module-files", moduleId.ToString());
+    Directory.CreateDirectory(storageDir);
+
+    var result = new List<ModuleFileResponse>();
+
+    foreach (var file in files)
+    {
+        var id = Guid.NewGuid();
+        var ext = Path.GetExtension(file.FileName);
+        var storedName = $"{id}{ext}";
+        var fullPath = Path.Combine(storageDir, storedName);
+
+        await using (var stream = new FileStream(fullPath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        var moduleFile = new ModuleFile
+        {
+            Id = id,
+            AiModuleId = moduleId,
+            FileName = file.FileName,
+            ContentType = file.ContentType,
+            FilePath = Path.Combine(tenantDbName, "module-files", moduleId.ToString(), storedName),
+            FileSize = file.Length,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        db.ModuleFiles.Add(moduleFile);
+        result.Add(new ModuleFileResponse(moduleFile.Id, moduleFile.AiModuleId, module.Name,
+            moduleFile.FileName, moduleFile.ContentType, moduleFile.FileSize, moduleFile.CreatedAt));
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(result);
+}).RequireAuthorization().DisableAntiforgery();
+
+app.MapGet("/api/modules/{moduleId}/files", async (
+    Guid moduleId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var files = await db.ModuleFiles
+        .Where(f => f.AiModuleId == moduleId)
+        .OrderByDescending(f => f.CreatedAt)
+        .Select(f => new ModuleFileResponse(f.Id, f.AiModuleId, f.AiModule.Name,
+            f.FileName, f.ContentType, f.FileSize, f.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(files);
+}).RequireAuthorization();
+
+app.MapGet("/api/module-files", async (
+    HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var files = await db.ModuleFiles
+        .Include(f => f.AiModule)
+        .OrderByDescending(f => f.CreatedAt)
+        .Select(f => new ModuleFileResponse(f.Id, f.AiModuleId, f.AiModule.Name,
+            f.FileName, f.ContentType, f.FileSize, f.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(files);
+}).RequireAuthorization();
+
+app.MapGet("/api/module-files/{fileId}/download", async (
+    Guid fileId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var file = await db.ModuleFiles.FindAsync(fileId);
+    if (file is null) return Results.NotFound();
+
+    var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia", file.FilePath);
+    if (!File.Exists(fullPath)) return Results.NotFound("Archivo no encontrado en disco");
+
+    var bytes = await File.ReadAllBytesAsync(fullPath);
+    return Results.File(bytes, file.ContentType, file.FileName);
+}).RequireAuthorization();
+
+app.MapDelete("/api/module-files/{fileId}", async (
+    Guid fileId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var file = await db.ModuleFiles.FindAsync(fileId);
+    if (file is null) return Results.NotFound();
+
+    var fullPath = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia", file.FilePath);
+    if (File.Exists(fullPath)) File.Delete(fullPath);
+
+    db.ModuleFiles.Remove(file);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
 // ==================== Project Endpoints ====================
 
 app.MapPost("/api/projects", async (
@@ -479,7 +660,8 @@ app.MapGet("/api/projects/{id}", async (
     var modules = project.ProjectModules.Select(pm =>
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
             pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
-            pm.InputMapping, pm.Configuration, pm.IsActive)).ToList();
+            pm.InputMapping, pm.Configuration, pm.IsActive,
+            pm.BranchId, pm.BranchFromStep)).ToList();
 
     return Results.Ok(new ProjectDetailResponse(
         project.Id, project.Name, project.Description, project.Context,
@@ -521,6 +703,61 @@ app.MapDelete("/api/projects/{id}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+app.MapPost("/api/projects/{id}/duplicate", async (
+    Guid id, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var source = await db.Projects
+        .Include(p => p.ProjectModules)
+            .ThenInclude(pm => pm.AiModule)
+        .FirstOrDefaultAsync(p => p.Id == id);
+
+    if (source is null) return Results.NotFound();
+
+    var newProject = new Project
+    {
+        Id = Guid.NewGuid(),
+        Name = source.Name + " (copia)",
+        Description = source.Description,
+        Context = source.Context,
+        WhatsAppConfig = source.WhatsAppConfig,
+        TelegramConfig = source.TelegramConfig,
+        InstagramConfig = source.InstagramConfig,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    db.Projects.Add(newProject);
+
+    foreach (var pm in source.ProjectModules)
+    {
+        db.ProjectModules.Add(new ProjectModule
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = newProject.Id,
+            AiModuleId = pm.AiModuleId,
+            StepOrder = pm.StepOrder,
+            StepName = pm.StepName,
+            InputMapping = pm.InputMapping,
+            Configuration = pm.Configuration,
+            IsActive = pm.IsActive,
+            BranchId = pm.BranchId,
+            BranchFromStep = pm.BranchFromStep,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/projects/{newProject.Id}",
+        new ProjectResponse(newProject.Id, newProject.Name, newProject.Description,
+            newProject.Context, newProject.CreatedAt, newProject.UpdatedAt));
+}).RequireAuthorization();
+
 // ==================== ProjectModule (Pipeline) Endpoints ====================
 
 app.MapPost("/api/projects/{projectId}/modules", async (
@@ -542,6 +779,8 @@ app.MapPost("/api/projects/{projectId}/modules", async (
         ProjectId = projectId,
         AiModuleId = req.AiModuleId,
         StepOrder = req.StepOrder,
+        BranchId = req.BranchId,
+        BranchFromStep = req.BranchFromStep,
         StepName = req.StepName,
         InputMapping = req.InputMapping,
         Configuration = req.Configuration,
@@ -556,7 +795,8 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
             module.ModuleType, module.ModelName, pm.StepOrder, pm.StepName,
-            pm.InputMapping, pm.Configuration, pm.IsActive));
+            pm.InputMapping, pm.Configuration, pm.IsActive,
+            pm.BranchId, pm.BranchFromStep));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/modules/{id}", async (
@@ -581,7 +821,28 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
         pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
-        pm.InputMapping, pm.Configuration, pm.IsActive));
+        pm.InputMapping, pm.Configuration, pm.IsActive,
+        pm.BranchId, pm.BranchFromStep));
+}).RequireAuthorization();
+
+app.MapDelete("/api/projects/{projectId}/branches/{branchId}", async (
+    Guid projectId, string branchId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    if (branchId == "main") return Results.BadRequest(new { error = "No se puede eliminar la rama principal" });
+
+    var branchModules = await db.ProjectModules
+        .Where(x => x.ProjectId == projectId && x.BranchId == branchId)
+        .ToListAsync();
+
+    if (branchModules.Count == 0) return Results.NotFound();
+
+    db.ProjectModules.RemoveRange(branchModules);
+    await db.SaveChangesAsync();
+    return Results.Ok();
 }).RequireAuthorization();
 
 app.MapPost("/api/projects/{projectId}/modules/swap", async (
@@ -635,17 +896,40 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
         db.StepExecutions.RemoveRange(stepExecutions);
 
     var removedOrder = pm.StepOrder;
+    var removedBranch = pm.BranchId;
     db.ProjectModules.Remove(pm);
     await db.SaveChangesAsync();
 
-    // Renumber remaining steps so there are no gaps
+    // Renumber remaining steps in the SAME branch only
     var remaining = await db.ProjectModules
-        .Where(x => x.ProjectId == projectId && x.StepOrder > removedOrder)
+        .Where(x => x.ProjectId == projectId && x.BranchId == removedBranch && x.StepOrder > removedOrder)
         .OrderBy(x => x.StepOrder)
         .ToListAsync();
     foreach (var r in remaining)
         r.StepOrder--;
-    if (remaining.Count > 0)
+
+    // If we deleted a main-branch step, update BranchFromStep on branches that forked from it or later
+    if (removedBranch == "main")
+    {
+        var branchModules = await db.ProjectModules
+            .Where(x => x.ProjectId == projectId && x.BranchFromStep.HasValue)
+            .ToListAsync();
+        foreach (var bm in branchModules)
+        {
+            if (bm.BranchFromStep == removedOrder)
+            {
+                // Branch forked from deleted step — move fork point up one step
+                bm.BranchFromStep = removedOrder > 1 ? removedOrder - 1 : 1;
+            }
+            else if (bm.BranchFromStep > removedOrder)
+            {
+                // Branch forked from a later step — shift down to match renumbering
+                bm.BranchFromStep--;
+            }
+        }
+    }
+
+    if (remaining.Count > 0 || removedBranch == "main")
         await db.SaveChangesAsync();
 
     return Results.NoContent();
@@ -656,7 +940,8 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
 app.MapPost("/api/projects/{projectId}/execute", async (
     Guid projectId, ExecuteProjectRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    IPipelineExecutor executor, ExecutionCancellationService cancellation) =>
+    ExecutionCancellationService cancellation,
+    IHubContext<ExecutionHub> hub) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -667,39 +952,57 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 
     var ct = cancellation.Register(projectId);
 
-    try
+    // Fire-and-forget: run pipeline in background, return immediately
+    _ = Task.Run(async () =>
     {
-        var execution = await executor.ExecuteAsync(projectId, req.UserInput, db, tenantDbName, ct);
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var bgFactory = scope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
+            await using var bgDb = bgFactory.Create(tenantDbName);
+            var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
-        var exec = await db.ProjectExecutions
-            .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
-                .ThenInclude(s => s.Files)
-            .Include(e => e.StepExecutions)
-                .ThenInclude(s => s.ProjectModule)
-                    .ThenInclude(pm => pm.AiModule)
-            .FirstAsync(e => e.Id == execution.Id);
+            var execution = await executor.ExecuteAsync(projectId, req.UserInput, bgDb, tenantDbName, ct);
 
-        var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
-            new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                s.ProjectModule.AiModule.Name, s.StepOrder,
-                s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                s.CreatedAt, s.CompletedAt, s.EstimatedCost,
-                s.Files.Select(f => new ExecutionFileResponse(
-                    f.Id, f.FileName, f.ContentType, f.FilePath,
-                    f.Direction, f.FileSize, f.CreatedAt)).ToList()
-            )).ToList();
+            // Load full result for client
+            var exec = await bgDb.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                    .ThenInclude(s => s.Files)
+                .Include(e => e.StepExecutions)
+                    .ThenInclude(s => s.ProjectModule)
+                        .ThenInclude(pm => pm.AiModule)
+                .FirstAsync(e => e.Id == execution.Id);
 
-        cancellation.Remove(projectId);
+            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+                new StepExecutionResponse(s.Id, s.ProjectModuleId,
+                    s.ProjectModule.AiModule.Name, s.StepOrder,
+                    s.Status, s.InputData, s.OutputData, s.ErrorMessage,
+                    s.CreatedAt, s.CompletedAt, s.EstimatedCost,
+                    s.Files.Select(f => new ExecutionFileResponse(
+                        f.Id, f.FileName, f.ContentType, f.FilePath,
+                        f.Direction, f.FileSize, f.CreatedAt)).ToList()
+                )).ToList();
 
-        return Results.Ok(new ExecutionDetailResponse(
-            exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
-    }
-    catch (Exception ex)
-    {
-        cancellation.Remove(projectId);
-        return Results.BadRequest(new { error = ex.Message });
-    }
+            var detail = new ExecutionDetailResponse(
+                exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+
+            // Notify client via SignalR
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionCompleted", detail);
+        }
+        catch (Exception ex)
+        {
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionFailed", ex.Message);
+        }
+        finally
+        {
+            cancellation.Remove(projectId);
+        }
+    });
+
+    return Results.Accepted(value: new { message = "Ejecucion iniciada" });
 }).RequireAuthorization();
 
 app.MapGet("/api/projects/{projectId}/executions", async (
@@ -772,7 +1075,8 @@ app.MapGet("/api/executions/{executionId}/logs", async (
 app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     Guid executionId, RetryFromStepRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    IPipelineExecutor executor, ExecutionCancellationService cancellation) =>
+    ExecutionCancellationService cancellation,
+    IHubContext<ExecutionHub> hub) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -781,39 +1085,66 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     var userClaims = await um.GetClaimsAsync(user!);
     var tenantDbName = userClaims.First(c => c.Type == "db_name").Value;
 
+    Guid projectId;
     try
     {
-        var projectId = await db.ProjectExecutions.Where(e => e.Id == executionId).Select(e => e.ProjectId).FirstAsync();
-        var ct = cancellation.Register(projectId);
-        var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, db, tenantDbName, ct);
-        cancellation.Remove(projectId);
-
-        var exec = await db.ProjectExecutions
-            .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
-                .ThenInclude(s => s.Files)
-            .Include(e => e.StepExecutions)
-                .ThenInclude(s => s.ProjectModule)
-                    .ThenInclude(pm => pm.AiModule)
-            .FirstAsync(e => e.Id == execution.Id);
-
-        var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
-            new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                s.ProjectModule.AiModule.Name, s.StepOrder,
-                s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                s.CreatedAt, s.CompletedAt, s.EstimatedCost,
-                s.Files.Select(f => new ExecutionFileResponse(
-                    f.Id, f.FileName, f.ContentType, f.FilePath,
-                    f.Direction, f.FileSize, f.CreatedAt)).ToList()
-            )).ToList();
-
-        return Results.Ok(new ExecutionDetailResponse(
-            exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
+        projectId = await db.ProjectExecutions.Where(e => e.Id == executionId).Select(e => e.ProjectId).FirstAsync();
     }
-    catch (Exception ex)
+    catch
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.NotFound(new { error = "Ejecucion no encontrada" });
     }
+
+    var ct = cancellation.Register(projectId);
+
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var bgFactory = scope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
+            await using var bgDb = bgFactory.Create(tenantDbName);
+            var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
+
+            var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, bgDb, tenantDbName, ct);
+
+            var exec = await bgDb.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                    .ThenInclude(s => s.Files)
+                .Include(e => e.StepExecutions)
+                    .ThenInclude(s => s.ProjectModule)
+                        .ThenInclude(pm => pm.AiModule)
+                .FirstAsync(e => e.Id == execution.Id);
+
+            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+                new StepExecutionResponse(s.Id, s.ProjectModuleId,
+                    s.ProjectModule.AiModule.Name, s.StepOrder,
+                    s.Status, s.InputData, s.OutputData, s.ErrorMessage,
+                    s.CreatedAt, s.CompletedAt, s.EstimatedCost,
+                    s.Files.Select(f => new ExecutionFileResponse(
+                        f.Id, f.FileName, f.ContentType, f.FilePath,
+                        f.Direction, f.FileSize, f.CreatedAt)).ToList()
+                )).ToList();
+
+            var detail = new ExecutionDetailResponse(
+                exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionCompleted", detail);
+        }
+        catch (Exception ex)
+        {
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionFailed", ex.Message);
+        }
+        finally
+        {
+            cancellation.Remove(projectId);
+        }
+    });
+
+    return Results.Accepted(value: new { message = "Reintento iniciado" });
 }).RequireAuthorization();
 
 // Cancel a running pipeline execution
@@ -827,7 +1158,8 @@ app.MapPost("/api/projects/{projectId}/cancel", (
 // Download execution file
 app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     Guid executionId, Guid fileId, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IWebHostEnvironment env, ILogger<Program> logger) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -841,8 +1173,9 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
             f.StepExecution.ExecutionId == executionId);
     if (file is null) return Results.NotFound();
 
-    var fullPath = Path.Combine(exec.WorkspacePath, file.FilePath);
-    if (!File.Exists(fullPath)) return Results.NotFound("Archivo no encontrado en disco");
+    var mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
+    var fullPath = ResolveFilePath(mediaRoot, exec.WorkspacePath, file.FilePath, logger);
+    if (fullPath is null) return Results.NotFound("Archivo no encontrado en disco");
 
     var bytes = await File.ReadAllBytesAsync(fullPath);
     return Results.File(bytes, file.ContentType, file.FileName);
@@ -850,7 +1183,8 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
 
 // Public file endpoint for external services (e.g., Buffer) that cannot authenticate
 app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async (
-    string tenant, Guid executionId, Guid fileId, string fileName, ITenantDbContextFactory factory) =>
+    string tenant, Guid executionId, Guid fileId, string fileName,
+    ITenantDbContextFactory factory, IWebHostEnvironment env, ILogger<Program> logger) =>
 {
     UserDbContext db;
     try { db = factory.Create(tenant); }
@@ -867,13 +1201,121 @@ app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async
                 f.StepExecution.ExecutionId == executionId);
         if (file is null) return Results.NotFound();
 
-        var fullPath = Path.Combine(exec.WorkspacePath, file.FilePath);
-        if (!File.Exists(fullPath)) return Results.NotFound();
+        var mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
+        var fullPath = ResolveFilePath(mediaRoot, exec.WorkspacePath, file.FilePath, logger);
+        if (fullPath is null) return Results.NotFound();
 
         var bytes = await File.ReadAllBytesAsync(fullPath);
         return Results.File(bytes, file.ContentType, file.FileName);
     }
 });
+
+// ==================== Schedule Endpoints ====================
+
+app.MapGet("/api/projects/{projectId:guid}/schedule", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var schedule = await db.ProjectSchedules
+        .FirstOrDefaultAsync(s => s.ProjectId == projectId);
+
+    if (schedule is null) return Results.Ok((ScheduleResponse?)null);
+
+    return Results.Ok(new ScheduleResponse(
+        schedule.Id, schedule.ProjectId, schedule.IsEnabled,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.LastRunAt, schedule.NextRunAt,
+        schedule.CreatedAt, schedule.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{projectId:guid}/schedule", async (
+    Guid projectId, CreateScheduleRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    // Only one schedule per project
+    var existing = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == projectId);
+    if (existing is not null)
+        return Results.BadRequest(new { error = "Este proyecto ya tiene una programacion. Usa PUT para actualizarla." });
+
+    var now = DateTime.UtcNow;
+    var nextRun = Server.Services.Scheduler.SchedulerBackgroundService.ComputeNextRun(
+        req.CronExpression, req.TimeZone, now);
+
+    var schedule = new ProjectSchedule
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = projectId,
+        IsEnabled = true,
+        CronExpression = req.CronExpression,
+        TimeZone = req.TimeZone,
+        UserInput = req.UserInput,
+        NextRunAt = nextRun,
+        CreatedAt = now,
+        UpdatedAt = now
+    };
+
+    db.ProjectSchedules.Add(schedule);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new ScheduleResponse(
+        schedule.Id, schedule.ProjectId, schedule.IsEnabled,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.LastRunAt, schedule.NextRunAt,
+        schedule.CreatedAt, schedule.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/schedule", async (
+    Guid projectId, UpdateScheduleRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var schedule = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == projectId);
+    if (schedule is null) return Results.NotFound();
+
+    var now = DateTime.UtcNow;
+
+    schedule.CronExpression = req.CronExpression;
+    schedule.TimeZone = req.TimeZone;
+    schedule.UserInput = req.UserInput;
+    schedule.IsEnabled = req.IsEnabled;
+    schedule.NextRunAt = req.IsEnabled
+        ? Server.Services.Scheduler.SchedulerBackgroundService.ComputeNextRun(req.CronExpression, req.TimeZone, now)
+        : null;
+    schedule.UpdatedAt = now;
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new ScheduleResponse(
+        schedule.Id, schedule.ProjectId, schedule.IsEnabled,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.LastRunAt, schedule.NextRunAt,
+        schedule.CreatedAt, schedule.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapDelete("/api/projects/{projectId:guid}/schedule", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var schedule = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == projectId);
+    if (schedule is null) return Results.NotFound();
+
+    db.ProjectSchedules.Remove(schedule);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { message = "Programacion eliminada" });
+}).RequireAuthorization();
 
 // ==================== WhatsApp Config Endpoints ====================
 
@@ -974,7 +1416,11 @@ app.MapPost("/api/webhooks/whatsapp", async (
 
     try
     {
-        await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
+        if (!string.IsNullOrWhiteSpace(correlation.BranchId))
+            await executor.ResumeFromBranchInteractionAsync(
+                correlation.ExecutionId, correlation.BranchId, text, db, correlation.TenantDbName);
+        else
+            await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
         correlation.IsResolved = true;
         await coreDb.SaveChangesAsync();
     }
@@ -1149,59 +1595,6 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
 
     await db.SaveChangesAsync();
     return Results.Ok(new { message = "Configuracion Buffer guardada" });
-}).RequireAuthorization();
-
-// ==================== Canva Config Endpoints ====================
-
-app.MapGet("/api/projects/{projectId:guid}/canva-config", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(project.CanvaConfig))
-        return Results.Ok(new CanvaConfigDto("", null));
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<CanvaConfigDto>(project.CanvaConfig);
-    return Results.Ok(config);
-}).RequireAuthorization();
-
-app.MapPut("/api/projects/{projectId:guid}/canva-config", async (
-    Guid projectId, CanvaConfigDto dto, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    project.CanvaConfig = System.Text.Json.JsonSerializer.Serialize(dto);
-    project.UpdatedAt = DateTime.UtcNow;
-
-    // Ensure the Canva Publish sentinel module exists
-    var hasCanvaPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "canva");
-    if (!hasCanvaPublish)
-    {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "Canva Publish",
-            Description = "Crea y exporta disenos via Canva (autofill de brand templates o diseno nuevo).",
-            ProviderType = "System",
-            ModuleType = "Publish",
-            ModelName = "canva",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-    }
-
-    await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Configuracion Canva guardada" });
 }).RequireAuthorization();
 
 // ==================== Telegram Webhook Endpoint ====================

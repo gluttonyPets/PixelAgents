@@ -60,10 +60,28 @@ namespace Server.Services.Ai
         {
             var client = new AnthropicClient(context.ApiKey);
 
-            var messages = new List<Message>
+            var messages = new List<Message>();
+            if (context.InputFiles is { Count: > 0 })
             {
-                new Message(RoleType.User, context.Input)
-            };
+                var contentBlocks = new List<ContentBase>();
+                foreach (var fileBytes in context.InputFiles)
+                {
+                    contentBlocks.Add(new ImageContent
+                    {
+                        Source = new ImageSource
+                        {
+                            MediaType = "image/png",
+                            Data = Convert.ToBase64String(fileBytes)
+                        }
+                    });
+                }
+                contentBlocks.Add(new TextContent { Text = context.Input });
+                messages.Add(new Message { Role = RoleType.User, Content = contentBlocks });
+            }
+            else
+            {
+                messages.Add(new Message(RoleType.User, context.Input));
+            }
 
             var parameters = new MessageParameters
             {
@@ -74,11 +92,13 @@ namespace Server.Services.Ai
             };
 
             var systemParts = new List<string>();
+            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
+                systemParts.Add($"[INSTRUCCION PRINCIPAL - Esta es tu directiva prioritaria, sigue estas instrucciones por encima de cualquier otra regla]\n{sp}");
             systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
-            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
-                systemParts.Add(sp);
+            if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
+                systemParts.Add(context.PreviousExecutionsSummary);
             parameters.System = new List<SystemMessage> { new SystemMessage(string.Join("\n\n", systemParts)) };
 
             if (context.Configuration.TryGetValue("temperature", out var temp))

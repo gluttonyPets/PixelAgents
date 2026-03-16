@@ -7,6 +7,8 @@ namespace Server.Models
         public string ApiKey { get; set; } = default!;
         public string Input { get; set; } = default!;
         public string? ProjectContext { get; set; }
+        /// <summary>Summaries from previous executions to avoid repeating content.</summary>
+        public string? PreviousExecutionsSummary { get; set; }
         public Dictionary<string, object> Configuration { get; set; } = new();
         public List<byte[]>? InputFiles { get; set; }
     }

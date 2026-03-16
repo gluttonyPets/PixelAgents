@@ -31,12 +31,13 @@ namespace Server.Models
         List<ProjectModuleResponse> Modules);
 
     // ── ProjectModule ──
-    public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration);
+    public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration, string BranchId = "main", int? BranchFromStep = null);
     public record UpdateProjectModuleRequest(int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
     public record SwapStepOrderRequest(Guid ModuleIdA, Guid ModuleIdB);
     public record ProjectModuleResponse(
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
-        int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
+        int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,
+        string BranchId, int? BranchFromStep);
 
     // ── Execution ──
     public record ExecuteProjectRequest(string? UserInput);
@@ -69,6 +70,16 @@ namespace Server.Models
     // ── Instagram (Buffer) ──
     public record BufferConfigDto(string ApiKey, string ChannelId);
 
-    // ── Canva ──
-    public record CanvaConfigDto(string AccessToken, string? BrandTemplateId);
+    // ── Module Files ──
+    public record ModuleFileResponse(
+        Guid Id, Guid AiModuleId, string ModuleName,
+        string FileName, string ContentType, long FileSize, DateTime CreatedAt);
+
+    // ── Schedule ──
+    public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput);
+    public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled);
+    public record ScheduleResponse(
+        Guid Id, Guid ProjectId, bool IsEnabled, string CronExpression, string TimeZone,
+        string? UserInput, DateTime? LastRunAt, DateTime? NextRunAt,
+        DateTime CreatedAt, DateTime UpdatedAt);
 }

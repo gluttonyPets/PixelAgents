@@ -7,6 +7,7 @@ namespace Server.Models
         public string TenantDbName { get; set; } = default!;
         public string RecipientNumber { get; set; } = default!;
         public int StepOrder { get; set; }
+        public string? BranchId { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsResolved { get; set; }
     }

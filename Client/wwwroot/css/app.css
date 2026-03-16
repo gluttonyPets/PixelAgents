@@ -304,6 +304,69 @@ tr:hover td {
     flex-wrap: wrap;
 }
 
+.step-input-details {
+    margin: 0.4rem 0;
+}
+.step-input-summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--accent);
+    user-select: none;
+    padding: 0.2rem 0;
+}
+.step-input-summary:hover {
+    text-decoration: underline;
+}
+.step-input-content {
+    margin-top: 0.3rem;
+}
+.step-input-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 0.4rem 0 0.15rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.step-input-label:first-child {
+    margin-top: 0;
+}
+.step-input-block {
+    white-space: pre-wrap;
+    font-size: 0.8rem;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 0.3rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    padding: 0.5rem 0.6rem;
+}
+
+.file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-bottom: 0.5rem;
+}
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+}
+.file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .image-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -415,6 +478,281 @@ tr:hover td {
     color: var(--text-muted);
     font-style: italic;
 }
+
+/* ═══════════ Pipeline Flow Visual ═══════════ */
+
+.pipeline-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 1rem 0;
+    align-self: stretch;
+}
+
+.pipeline-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.step-card-v2 {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    width: 340px;
+    transition: border-color 0.2s;
+}
+.step-card-v2:hover { border-color: var(--accent); }
+.step-card-v2.editing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.step-card-v2.branch-step { width: 280px; }
+
+.step-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.3rem;
+}
+
+.step-number {
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.step-title {
+    flex: 1;
+    font-weight: 600;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.step-card-meta {
+    display: flex;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+}
+
+.step-card-edit {
+    margin-top: 0.4rem;
+}
+
+.step-card-actions {
+    display: flex;
+    gap: 0.2rem;
+    margin-top: 0.4rem;
+    justify-content: flex-end;
+}
+
+.btn-xs {
+    padding: 0.1rem 0.4rem;
+    font-size: 0.65rem;
+    line-height: 1.4;
+    border-radius: 4px;
+}
+
+.step-connector {
+    width: 2px;
+    height: 28px;
+    background: var(--border);
+    margin: 0 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fork-btn {
+    position: absolute;
+    left: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    padding: 0 0.3rem;
+    line-height: 1.2;
+    opacity: 0;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+}
+.step-connector:hover .fork-btn { opacity: 1; }
+
+/* Branch layout — fork visual */
+.pipeline-fork {
+    width: 100%;
+    margin: 0.3rem 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    align-self: stretch;
+}
+
+.fork-junction {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-card);
+    box-shadow: 0 0 0 2px var(--accent);
+    z-index: 1;
+}
+
+/* Vertical line from junction to horizontal bar */
+.fork-junction + .fork-lines {
+    width: 2px;
+    height: 1.2rem;
+    background: var(--accent);
+    opacity: 0.4;
+}
+
+/* Connector line between branch step cards */
+.branch-connector {
+    width: 2px;
+    height: 14px;
+    background: var(--border);
+}
+
+.pipeline-branches {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: center;
+    gap: 2rem;
+    position: relative;
+    padding-top: 1.2rem;
+    margin-top: 0.3rem;
+    width: 100%;
+}
+
+/* Horizontal connector line spanning all branches */
+.pipeline-branches::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 15%;
+    right: 15%;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.4;
+}
+
+.pipeline-branch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    position: relative;
+    padding-top: 0.8rem;
+    min-width: 280px;
+}
+
+/* Vertical connector from horizontal bar to branch header */
+.pipeline-branch::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 0.8rem;
+    background: var(--accent);
+    opacity: 0.5;
+}
+
+/* Branch side indicators */
+.pipeline-branch.branch-main .branch-header,
+.pipeline-branch.branch-main .branch-header.branch-header-main {
+    background: var(--accent);
+}
+.pipeline-branch.branch-fork .branch-header {
+    background: #8b5cf6;
+}
+
+/* Fork branch colored connector */
+.pipeline-branch.branch-fork::before {
+    background: #8b5cf6;
+}
+
+.branch-header {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: var(--accent);
+    color: #fff;
+    padding: 0.2rem 0.8rem;
+    border-radius: 14px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+.branch-name {
+    text-transform: capitalize;
+}
+
+.branch-add-step {
+    margin-top: 0.3rem;
+    font-size: 0.65rem;
+    opacity: 0.7;
+}
+.branch-add-step:hover { opacity: 1; }
+
+.btn-outline {
+    background: transparent;
+    border: 1px dashed var(--border);
+    color: var(--text-muted);
+}
+.btn-outline:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Module group layout */
+.module-group { margin-bottom: 1.5rem; }
+.module-group-header {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0; border-bottom: 2px solid var(--border);
+    margin-bottom: 0.5rem;
+}
+.module-group-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.8rem; height: 1.8rem; border-radius: 0.4rem;
+    font-weight: 700; font-size: 0.85rem;
+    color: #fff;
+}
+.module-group[data-type="Text"]        .module-group-icon { background: #3b82f6; }
+.module-group[data-type="Image"]       .module-group-icon { background: #8b5cf6; }
+.module-group[data-type="Video"]       .module-group-icon { background: #ec4899; }
+.module-group[data-type="Audio"]       .module-group-icon { background: #f97316; }
+.module-group[data-type="Interaction"] .module-group-icon { background: #f59e0b; color: #000; }
+.module-group[data-type="Publish"]     .module-group-icon { background: #22c55e; }
+.module-group[data-type="Design"]      .module-group-icon { background: #06b6d4; }
+.module-group-title { margin: 0; font-size: 1rem; font-weight: 600; }
+.module-group-count { font-size: 0.7rem; padding: 0.15rem 0.5rem; }
+.module-group table { margin-top: 0; }
+
+/* Badge variants for module types */
+.badge-text { background: #3b82f6; color: #fff; }
+.badge-image { background: #8b5cf6; color: #fff; }
+.badge-video { background: #ec4899; color: #fff; }
+.badge-audio { background: #f97316; color: #fff; }
+.badge-interaction { background: #f59e0b; color: #000; }
+.badge-publish { background: #22c55e; color: #fff; }
+.badge-design { background: #06b6d4; color: #fff; }
+.badge-info { background: var(--accent); color: #fff; }
 
 .log-retry-btn {
     flex-shrink: 0;
@@ -544,6 +882,451 @@ a.link:hover { text-decoration: underline; }
     white-space: pre-wrap;
     word-break: break-all;
     max-height: 30vh;
+}
+
+/* ── Project Header ── */
+.project-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.8rem;
+    padding-bottom: 0.8rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.project-header-info { flex: 1; min-width: 0; }
+
+.project-title {
+    margin: 0 0 0.2rem;
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.project-meta {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.project-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    flex-shrink: 0;
+}
+
+/* Integration status pills */
+.integration-pills {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.15rem 0.45rem;
+    border-radius: 10px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.pill-on {
+    background: rgba(76, 175, 80, 0.2);
+    color: var(--success);
+}
+
+.pill-off {
+    background: rgba(136, 136, 136, 0.1);
+    color: #555;
+}
+
+.btn-icon {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius);
+    font-size: 1.1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.btn-icon:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: rgba(108, 99, 255, 0.08);
+}
+
+/* Context bar */
+.context-bar {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    padding: 0.5rem 0.8rem;
+    background: rgba(108, 99, 255, 0.04);
+    border: 1px solid rgba(108, 99, 255, 0.12);
+    border-radius: var(--radius);
+    margin-bottom: 1rem;
+    font-size: 0.82rem;
+}
+
+.context-label {
+    font-weight: 600;
+    color: var(--accent);
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.context-text {
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Tabs ── */
+.tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 1.2rem;
+}
+
+.tab {
+    padding: 0.6rem 1.2rem;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.tab:hover {
+    color: var(--text);
+}
+
+.tab-active {
+    color: var(--accent);
+}
+
+.tab-active::after {
+    content: "";
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent);
+    border-radius: 2px 2px 0 0;
+}
+
+.tab-count {
+    background: rgba(108, 99, 255, 0.15);
+    color: var(--accent);
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.05rem 0.4rem;
+    border-radius: 8px;
+}
+
+.tab-content {
+    animation: fadeIn 0.15s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+}
+
+.empty-state-icon {
+    font-size: 2.5rem;
+    display: block;
+    margin-bottom: 0.5rem;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 0.2rem 0;
+}
+
+/* Execute card */
+.execute-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem;
+    margin-bottom: 1rem;
+}
+
+/* ── Settings Modal ── */
+.settings-modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 92%;
+    max-width: 680px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.settings-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.2rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-modal-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.settings-tab-bar {
+    display: flex;
+    gap: 0;
+    padding: 0 1.2rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.settings-tab {
+    padding: 0.55rem 1rem;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.15s;
+}
+
+.settings-tab:hover {
+    color: var(--text);
+}
+
+.settings-tab-active {
+    color: var(--accent);
+}
+
+.settings-tab-active::after {
+    content: "";
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent);
+}
+
+.settings-modal-body {
+    padding: 1.2rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.settings-block {
+    margin-bottom: 1.5rem;
+}
+
+.settings-block:last-child {
+    margin-bottom: 0;
+}
+
+.settings-block-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.8rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-block-header strong {
+    font-size: 0.92rem;
+}
+
+/* ── Shared ── */
+.badge-muted {
+    background: rgba(136, 136, 136, 0.15);
+    color: var(--text-muted);
+}
+
+.btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 0.5rem 1rem;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--text-muted);
+}
+
+/* Schedule status */
+.schedule-status {
+    display: flex;
+    gap: 1.5rem;
+    padding: 0.6rem 0.8rem;
+    background: rgba(108, 99, 255, 0.06);
+    border: 1px solid rgba(108, 99, 255, 0.15);
+    border-radius: var(--radius);
+    margin-bottom: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.schedule-status-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    font-size: 0.82rem;
+}
+
+.schedule-status-item span {
+    font-size: 0.72rem;
+}
+
+/* Project grid & cards */
+.project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.project-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    position: relative;
+}
+
+.project-card:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 12px rgba(108, 99, 255, 0.15);
+}
+
+.project-card-body {
+    padding: 1rem 1rem 0.6rem;
+    cursor: pointer;
+}
+
+.project-card-title {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.3rem;
+    color: var(--text);
+}
+
+.project-card-desc {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 0.3rem;
+}
+
+.project-card-context {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+    font-style: italic;
+    margin-bottom: 0.3rem;
+}
+
+.project-card-date {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.project-card-actions {
+    display: flex;
+    border-top: 1px solid var(--border);
+}
+
+.project-action-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    transition: background 0.15s, color 0.15s;
+    border-right: 1px solid var(--border);
+}
+
+.project-action-btn:last-child {
+    border-right: none;
+}
+
+.project-action-btn.action-edit:hover {
+    background: rgba(108, 99, 255, 0.1);
+    color: var(--accent);
+}
+
+.project-action-btn.action-duplicate:hover {
+    background: rgba(76, 175, 80, 0.1);
+    color: var(--success);
+}
+
+.project-action-btn.action-delete:hover {
+    background: rgba(244, 67, 54, 0.1);
+    color: #f44336;
+}
+
+.project-card-edit {
+    padding: 1rem;
+}
+
+.project-card-edit .form-group {
+    margin-bottom: 0.5rem;
+}
+
+.project-card-edit label {
+    font-size: 0.75rem;
+    margin-bottom: 0.15rem;
+}
+
+.project-card-edit input,
+.project-card-edit textarea {
+    font-size: 0.85rem;
+    padding: 0.35rem 0.5rem;
+}
+
+.project-card-edit-actions {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
 }
 
 /* Utility */

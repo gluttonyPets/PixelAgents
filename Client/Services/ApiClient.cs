@@ -78,11 +78,15 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<AiModuleResponse>>() ?? [];
     }
 
-    public async Task<(bool Ok, string? Error)> CreateModuleAsync(CreateAiModuleRequest req)
+    public async Task<(bool Ok, string? Error, Guid? ModuleId)> CreateModuleAsync(CreateAiModuleRequest req)
     {
         var resp = await SendAsync(HttpMethod.Post, "/api/modules", req);
-        if (resp.IsSuccessStatusCode) return (true, null);
-        return (false, await ReadErrorAsync(resp));
+        if (resp.IsSuccessStatusCode)
+        {
+            var created = await resp.Content.ReadFromJsonAsync<AiModuleResponse>();
+            return (true, null, created?.Id);
+        }
+        return (false, await ReadErrorAsync(resp), null);
     }
 
     public async Task<(bool Ok, string? Error)> UpdateModuleApiKeyAsync(Guid moduleId, AiModuleResponse current, Guid? newApiKeyId)
@@ -144,6 +148,37 @@ public class ApiClient
         await SendAsync(HttpMethod.Delete, $"/api/modules/{id}");
     }
 
+    // ── Module Files ──
+
+    public async Task<List<ModuleFileResponse>> UploadModuleFilesAsync(Guid moduleId, MultipartFormDataContent content)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/modules/{moduleId}/files");
+        request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
+        request.Content = content;
+        var resp = await _http.SendAsync(request);
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
+    }
+
+    public async Task<List<ModuleFileResponse>> GetModuleFilesAsync(Guid moduleId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/modules/{moduleId}/files");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
+    }
+
+    public async Task<List<ModuleFileResponse>> GetAllModuleFilesAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/module-files");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
+    }
+
+    public async Task DeleteModuleFileAsync(Guid fileId)
+    {
+        await SendAsync(HttpMethod.Delete, $"/api/module-files/{fileId}");
+    }
+
     // ── Projects ──
 
     public async Task<List<ProjectResponse>> GetProjectsAsync()
@@ -170,6 +205,20 @@ public class ApiClient
     public async Task DeleteProjectAsync(Guid id)
     {
         await SendAsync(HttpMethod.Delete, $"/api/projects/{id}");
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateProjectAsync(Guid id, UpdateProjectRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{id}", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task<ProjectResponse?> DuplicateProjectAsync(Guid id)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{id}/duplicate");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<ProjectResponse>();
     }
 
     // ── ProjectModules (Pipeline) ──
@@ -203,17 +252,23 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    public async Task<(bool Ok, string? Error)> DeleteBranchAsync(Guid projectId, string branchId)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/branches/{branchId}");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Executions ──
 
-    public async Task<(bool Ok, ExecutionDetailResponse? Result, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput)
+    public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute", new ExecuteProjectRequest(userInput));
-        if (!resp.IsSuccessStatusCode)
+        if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
-            return (false, null, await ReadErrorAsync(resp));
+            return (false, await ReadErrorAsync(resp));
         }
-        var result = await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
-        return (true, result, null);
+        return (true, null);
     }
 
     public async Task<List<ExecutionResponse>> GetExecutionsAsync(Guid projectId)
@@ -237,18 +292,17 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ExecutionLogResponse>>();
     }
 
-    public async Task<(bool Ok, ExecutionDetailResponse? Result, string? Error)> RetryFromStepAsync(
+    public async Task<(bool Ok, string? Error)> RetryFromStepAsync(
         Guid executionId, int stepOrder, string? comment)
     {
         var resp = await SendAsync(HttpMethod.Post,
             $"/api/executions/{executionId}/retry-from-step",
             new RetryFromStepRequest(stepOrder, comment));
-        if (!resp.IsSuccessStatusCode)
+        if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
-            return (false, null, await ReadErrorAsync(resp));
+            return (false, await ReadErrorAsync(resp));
         }
-        var result = await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
-        return (true, result, null);
+        return (true, null);
     }
 
     public async Task<bool> CancelExecutionAsync(Guid projectId)
@@ -358,18 +412,36 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
-    // ── Canva Config ──
+    // ── Schedule ──
 
-    public async Task<CanvaConfigDto?> GetCanvaConfigAsync(Guid projectId)
+    public async Task<ScheduleResponse?> GetScheduleAsync(Guid projectId)
     {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/canva-config");
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/schedule");
         if (!resp.IsSuccessStatusCode) return null;
-        return await resp.Content.ReadFromJsonAsync<CanvaConfigDto>();
+        return await resp.Content.ReadFromJsonAsync<ScheduleResponse>();
     }
 
-    public async Task<(bool Ok, string? Error)> SaveCanvaConfigAsync(Guid projectId, CanvaConfigDto dto)
+    public async Task<(bool Ok, ScheduleResponse? Result, string? Error)> CreateScheduleAsync(Guid projectId, CreateScheduleRequest req)
     {
-        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/canva-config", dto);
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/schedule", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<ScheduleResponse>();
+        return (true, result, null);
+    }
+
+    public async Task<(bool Ok, ScheduleResponse? Result, string? Error)> UpdateScheduleAsync(Guid projectId, UpdateScheduleRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/schedule", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<ScheduleResponse>();
+        return (true, result, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteScheduleAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/schedule");
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }

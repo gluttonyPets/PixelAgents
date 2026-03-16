@@ -63,11 +63,13 @@ namespace Server.Services.Ai
             var client = new Client(apiKey: context.ApiKey);
 
             var systemParts = new List<string>();
+            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
+                systemParts.Add($"[INSTRUCCION PRINCIPAL - Esta es tu directiva prioritaria, sigue estas instrucciones por encima de cualquier otra regla]\n{sp}");
             systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
-            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
-                systemParts.Add(sp);
+            if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
+                systemParts.Add(context.PreviousExecutionsSummary);
 
             var config = new GenerateContentConfig
             {
@@ -82,11 +84,35 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
                 config.MaxOutputTokens = Convert.ToInt32(maxTok);
 
-            var response = await client.Models.GenerateContentAsync(
-                model: context.ModelName,
-                contents: context.Input,
-                config: config
-            );
+            GenerateContentResponse response;
+            if (context.InputFiles is { Count: > 0 })
+            {
+                var parts = new List<Part> { new Part { Text = context.Input } };
+                foreach (var fileBytes in context.InputFiles)
+                {
+                    parts.Add(new Part
+                    {
+                        InlineData = new Blob
+                        {
+                            MimeType = "image/png",
+                            Data = fileBytes
+                        }
+                    });
+                }
+                response = await client.Models.GenerateContentAsync(
+                    model: context.ModelName,
+                    contents: new Content { Parts = parts, Role = "user" },
+                    config: config
+                );
+            }
+            else
+            {
+                response = await client.Models.GenerateContentAsync(
+                    model: context.ModelName,
+                    contents: context.Input,
+                    config: config
+                );
+            }
 
             var text = response.Candidates?[0].Content?.Parts?[0].Text
                 ?? throw new InvalidOperationException("Gemini no devolvio texto en la respuesta");
@@ -116,6 +142,11 @@ namespace Server.Services.Ai
             var imageModel = context.ModelName;
 
             var prompt = context.Input;
+
+            // Include systemPrompt from module config (e.g. branding instructions for image-to-image editing)
+            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
+                prompt = string.IsNullOrWhiteSpace(prompt) ? sp : $"{sp}\n\n{prompt}";
+
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
 
@@ -126,19 +157,54 @@ namespace Server.Services.Ai
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
+            // Read aspect ratio from module configuration (same pattern as GenerateVideoAsync)
+            var aspectRatio = "1:1";
+            if (context.Configuration.TryGetValue("aspectRatio", out var ar) && ar is string arStr)
+                aspectRatio = arStr;
+
             var config = new GenerateContentConfig
             {
                 ResponseModalities = ["IMAGE"],
+                ImageConfig = new ImageConfig
+                {
+                    AspectRatio = aspectRatio,
+                },
             };
 
             const int maxRetries = 2;
             for (int attempt = 0; attempt <= maxRetries; attempt++)
             {
-                var response = await client.Models.GenerateContentAsync(
-                    model: imageModel,
-                    contents: prompt,
-                    config: config
-                );
+                GenerateContentResponse response;
+
+                if (context.InputFiles is { Count: > 0 })
+                {
+                    // Image editing: pass input images alongside the prompt
+                    var inputParts = new List<Part> { new Part { Text = prompt } };
+                    foreach (var fileBytes in context.InputFiles)
+                    {
+                        inputParts.Add(new Part
+                        {
+                            InlineData = new Blob
+                            {
+                                MimeType = "image/png",
+                                Data = fileBytes
+                            }
+                        });
+                    }
+                    response = await client.Models.GenerateContentAsync(
+                        model: imageModel,
+                        contents: new Content { Parts = inputParts, Role = "user" },
+                        config: config
+                    );
+                }
+                else
+                {
+                    response = await client.Models.GenerateContentAsync(
+                        model: imageModel,
+                        contents: prompt,
+                        config: config
+                    );
+                }
 
                 if (response.Candidates is null || response.Candidates.Count == 0)
                 {
@@ -214,22 +280,14 @@ namespace Server.Services.Ai
             };
 
             // If an input image is provided (image-to-video), add it
-            // Only veo-3.1 preview models support image input on the Gemini API
             if (context.InputFiles is not null && context.InputFiles.Count > 0)
             {
-                if (!modelName.Contains("veo-3.1"))
+                var imageBytes = context.InputFiles[0];
+                instance["image"] = new Dictionary<string, object>
                 {
-                    // Model doesn't support image input — ignore the image, generate from prompt only
-                }
-                else
-                {
-                    var imageBytes = context.InputFiles[0];
-                    instance["image"] = new Dictionary<string, object>
-                    {
-                        ["bytesBase64Encoded"] = Convert.ToBase64String(imageBytes),
-                        ["mimeType"] = "image/png"
-                    };
-                }
+                    ["bytesBase64Encoded"] = Convert.ToBase64String(imageBytes),
+                    ["mimeType"] = "image/png"
+                };
             }
 
             // Build parameters
