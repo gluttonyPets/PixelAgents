@@ -378,16 +378,14 @@ else
                                     .Distinct()
                                     .OrderBy(b => b)
                                     .ToList();
-                                var pendingBranch = _stepBranchId != "main" && !existingBranches.Contains(_stepBranchId)
-                                    ? _stepBranchId : null;
                             }
                             @foreach (var b in existingBranches)
                             {
                                 <option value="@b">@b</option>
                             }
-                            @if (pendingBranch is not null)
+                            @foreach (var pb in _pendingBranches.Where(pb => !existingBranches.Contains(pb.BranchId)))
                             {
-                                <option value="@pendingBranch">@pendingBranch (nueva)</option>
+                                <option value="@pb.BranchId">@pb.BranchId (nueva)</option>
                             }
                         </select>
                     </div>
@@ -1366,6 +1364,7 @@ else
     private string _newBranchName = "";
     private bool _showAddBranch = false;
     private int _addBranchFromStep = 0;
+    private List<(string BranchId, int FromStep)> _pendingBranches = new();
 
     // Video step
     private string _videoSource = "prompt";
@@ -1846,7 +1845,7 @@ else
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig, _stepBranchId, _stepBranchFromStep);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _stepBranchId = "main"; _stepBranchFromStep = null; await LoadAll(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _stepBranchId = "main"; _stepBranchFromStep = null; await LoadAll(); CleanPendingBranches(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
@@ -1968,11 +1967,23 @@ else
     {
         if (string.IsNullOrWhiteSpace(_newBranchName)) return;
         var branchId = _newBranchName.Trim().ToLowerInvariant().Replace(" ", "-");
+        if (!_pendingBranches.Any(pb => pb.BranchId == branchId))
+            _pendingBranches.Add((branchId, _addBranchFromStep));
         _stepBranchId = branchId;
         _stepBranchFromStep = _addBranchFromStep;
         _stepOrder = 1;
         _inputMapping = $"{{\"source\":\"step\",\"stepOrder\":{_addBranchFromStep}}}";
         _showAddBranch = false;
+    }
+
+    private void CleanPendingBranches()
+    {
+        var existing = (_project?.Modules ?? new())
+            .Where(m => m.BranchId != "main")
+            .Select(m => m.BranchId)
+            .Distinct()
+            .ToHashSet();
+        _pendingBranches.RemoveAll(pb => existing.Contains(pb.BranchId));
     }
 
     private void OnBranchSelectChanged(ChangeEventArgs e)
@@ -1995,9 +2006,21 @@ else
                 .Where(m => m.BranchId == selected)
                 .OrderBy(m => m.StepOrder)
                 .ToList();
-            _stepBranchFromStep = branchModules.FirstOrDefault()?.BranchFromStep;
-            _stepOrder = branchModules.Count + 1;
-            _inputMapping = "{\"source\":\"previous\",\"field\":\"text\"}";
+
+            if (branchModules.Count > 0)
+            {
+                _stepBranchFromStep = branchModules.First().BranchFromStep;
+                _stepOrder = branchModules.Count + 1;
+            }
+            else
+            {
+                var pending = _pendingBranches.FirstOrDefault(pb => pb.BranchId == selected);
+                _stepBranchFromStep = pending.FromStep;
+                _stepOrder = 1;
+            }
+            _inputMapping = _stepOrder == 1
+                ? $"{{\"source\":\"step\",\"stepOrder\":{_stepBranchFromStep}}}"
+                : "{\"source\":\"previous\",\"field\":\"text\"}";
         }
     }
 
