@@ -144,6 +144,11 @@ using (var scope = app.Services.CreateScope())
         // Migration: add State column for existing tables
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""State"" varchar(50) NOT NULL DEFAULT 'waiting'");
+        // Migration: add BranchId column for branch-aware interaction
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100)");
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""WhatsAppCorrelations"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100)");
     }
     catch { }
 }
@@ -1286,7 +1291,11 @@ app.MapPost("/api/webhooks/whatsapp", async (
 
     try
     {
-        await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
+        if (!string.IsNullOrWhiteSpace(correlation.BranchId))
+            await executor.ResumeFromBranchInteractionAsync(
+                correlation.ExecutionId, correlation.BranchId, text, db, correlation.TenantDbName);
+        else
+            await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
         correlation.IsResolved = true;
         await coreDb.SaveChangesAsync();
     }

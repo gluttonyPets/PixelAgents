@@ -84,6 +84,9 @@ namespace Server.Services
             // ── Pipeline branching support ──
             RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100) NOT NULL DEFAULT 'main'");
             RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""BranchFromStep"" integer");
+            // ── Branch interaction pause support ──
+            RunSafe(ctx, @"ALTER TABLE ""ProjectExecutions"" ADD COLUMN IF NOT EXISTS ""PausedBranches"" text");
+
             RunSafe(ctx, @"DROP INDEX IF EXISTS ""IX_ProjectModules_ProjectId_StepOrder""");
             RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectModules_ProjectId_BranchId_StepOrder"" ON ""ProjectModules"" (""ProjectId"", ""BranchId"", ""StepOrder"")");
         }

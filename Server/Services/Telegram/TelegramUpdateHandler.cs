@@ -175,8 +175,16 @@ namespace Server.Services.Telegram
                     return;
                 }
 
-                // Default: resume pipeline
-                await _executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
+                // Default: resume pipeline (branch-aware)
+                if (!string.IsNullOrWhiteSpace(correlation.BranchId))
+                {
+                    await _executor.ResumeFromBranchInteractionAsync(
+                        correlation.ExecutionId, correlation.BranchId, text, db, correlation.TenantDbName);
+                }
+                else
+                {
+                    await _executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
+                }
                 correlation.IsResolved = true;
                 await _coreDb.SaveChangesAsync();
             }

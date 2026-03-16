@@ -748,269 +748,27 @@ namespace Server.Services.Ai
                     await _logger.LogAsync(projectId, executionId, "info",
                         $"Iniciando rama '{branchId}' (bifurcacion desde paso {pm.StepOrder}, {branchSteps.Count} pasos)");
 
-                    var branchFailed = false;
+                    var branchResult = await ExecuteBranchStepsAsync(
+                        project, execution, branchId, branchSteps, userInput,
+                        stepResults, stepOutputs, stepModuleTypes,
+                        workspacePath, previousSummaryContext, db, tenantDbName, ct);
 
-                    for (var bi = 0; bi < branchSteps.Count; bi++)
+                    if (branchResult == BranchResult.Cancelled)
                     {
-                        var bpm = branchSteps[bi];
-                        var nextBranchModule = bi + 1 < branchSteps.Count ? branchSteps[bi + 1] : null;
-
-                        if (ct.IsCancellationRequested)
-                        {
-                            execution.Status = "Cancelled";
-                            execution.CompletedAt = DateTime.UtcNow;
-                            await db.SaveChangesAsync();
-                            return execution;
-                        }
-
-                        var branchStepExec = new StepExecution
-                        {
-                            Id = Guid.NewGuid(),
-                            ExecutionId = executionId,
-                            ProjectModuleId = bpm.Id,
-                            StepOrder = bpm.StepOrder,
-                            Status = "Running",
-                            CreatedAt = DateTime.UtcNow,
-                        };
-                        db.StepExecutions.Add(branchStepExec);
+                        execution.Status = "Cancelled";
+                        execution.CompletedAt = DateTime.UtcNow;
                         await db.SaveChangesAsync();
-
-                        try
-                        {
-                            var bStepName = bpm.StepName ?? bpm.AiModule.Name;
-                            await _logger.LogAsync(projectId, executionId, "info",
-                                $"[{branchId}] Ejecutando paso {bpm.StepOrder}: {bStepName} ({bpm.AiModule.ProviderType}/{bpm.AiModule.ModelName})",
-                                bpm.StepOrder, bStepName);
-
-                            var bConfig = MergeConfiguration(bpm.AiModule.Configuration, bpm.Configuration);
-
-                            // Interaction steps in branches
-                            if (IsInteractionStep(bpm.AiModule))
-                            {
-                                var shouldPause = await HandleInteractionStepAsync(
-                                    project, execution, branchStepExec, bpm, userInput,
-                                    stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                                if (shouldPause) return execution;
-                                branchStepExec.Status = "Completed";
-                                branchStepExec.CompletedAt = DateTime.UtcNow;
-                                await db.SaveChangesAsync();
-                                continue;
-                            }
-
-                            // Publish steps in branches
-                            if (IsPublishStep(bpm.AiModule))
-                            {
-                                await HandlePublishStepAsync(
-                                    project, execution, branchStepExec, bpm,
-                                    stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                                continue;
-                            }
-
-                            // Design steps in branches
-                            if (IsDesignStep(bpm.AiModule))
-                            {
-                                await HandleCanvaPublishStepAsync(
-                                    project, execution, branchStepExec, bpm,
-                                    stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                                continue;
-                            }
-
-                            var bApiKey = bpm.AiModule.ApiKey?.EncryptedKey
-                                ?? throw new InvalidOperationException($"[{branchId}] Paso {bpm.StepOrder}: ApiKey no configurada");
-                            var bProvider = _registry.GetProvider(bpm.AiModule.ProviderType)
-                                ?? throw new InvalidOperationException($"[{branchId}] Paso {bpm.StepOrder}: Proveedor no disponible");
-
-                            var bInputs = ResolveInputs(bpm, userInput, stepResults, stepOutputs, bpm.AiModule.ModuleType, bpm.AiModule.ModelName);
-
-                            if (bpm.AiModule.ModuleType == "Text")
-                            {
-                                if (nextBranchModule is not null)
-                                {
-                                    var nml = InputAdapter.GetMaxPromptLength(nextBranchModule.AiModule.ModelName);
-                                    var rule = $"\n\nREGLA DE LONGITUD: maximo {nml} caracteres por item.";
-                                    if (bConfig.TryGetValue("systemPrompt", out var bex) && bex is string bs)
-                                        bConfig["systemPrompt"] = bs + rule;
-                                    else
-                                        bConfig["systemPrompt"] = rule;
-                                }
-                                InjectImageCountRule(bConfig);
-
-                                var bCtx = new AiExecutionContext
-                                {
-                                    ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
-                                    ApiKey = bApiKey, Input = bInputs[0], ProjectContext = project.Context,
-                                    PreviousExecutionsSummary = previousSummaryContext, Configuration = bConfig,
-                                    InputFiles = await LoadModuleFilesAsync(bpm, db),
-                                };
-
-                                var bResult = await bProvider.ExecuteAsync(bCtx);
-                                stepResults[bpm.StepOrder] = bResult;
-                                stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
-                                branchStepExec.EstimatedCost += bResult.EstimatedCost;
-
-                                if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en texto");
-
-                                var bOutput = OutputSchemaHelper.ParseTextOutput(bResult.TextOutput ?? "", bResult.Metadata);
-                                stepOutputs[bpm.StepOrder] = bOutput;
-
-                                var bDir = Path.Combine(workspacePath, $"branch_{branchId}_step_{bpm.StepOrder}");
-                                Directory.CreateDirectory(bDir);
-                                await File.WriteAllTextAsync(Path.Combine(bDir, "output.json"), bResult.TextOutput ?? "");
-                                db.ExecutionFiles.Add(new ExecutionFile
-                                {
-                                    Id = Guid.NewGuid(), StepExecutionId = branchStepExec.Id,
-                                    FileName = "output.json", ContentType = "application/json",
-                                    FilePath = Path.Combine($"branch_{branchId}_step_{bpm.StepOrder}", "output.json"),
-                                    Direction = "Output",
-                                    FileSize = System.Text.Encoding.UTF8.GetByteCount(bResult.TextOutput ?? ""),
-                                    CreatedAt = DateTime.UtcNow,
-                                });
-                                branchStepExec.OutputData = JsonSerializer.Serialize(bOutput);
-                            }
-                            else if (bpm.AiModule.ModuleType == "Image")
-                            {
-                                var bImgPrompt = "";
-                                if (bConfig.TryGetValue("imagePrompt", out var bip))
-                                    bImgPrompt = bip is JsonElement bipEl ? bipEl.GetString() ?? "" : bip?.ToString() ?? "";
-                                if (!string.IsNullOrWhiteSpace(bImgPrompt))
-                                    bInputs = new List<string> { bImgPrompt };
-
-                                List<byte[]>? bPrevFiles = null;
-                                if (bpm.InputMapping is not null)
-                                {
-                                    var bMap = JsonSerializer.Deserialize<JsonElement>(bpm.InputMapping);
-                                    if (bMap.TryGetProperty("field", out var bf) && bf.GetString() == "file")
-                                    {
-                                        var bPrevOrd = stepOutputs.Keys.Where(k => k < bpm.StepOrder)
-                                            .OrderByDescending(k => k).FirstOrDefault();
-                                        // Fallback to fork source step for first branch step
-                                        if (!stepOutputs.ContainsKey(bPrevOrd) && bpm.BranchFromStep.HasValue)
-                                            bPrevOrd = bpm.BranchFromStep.Value;
-                                        if (stepOutputs.TryGetValue(bPrevOrd, out var bPrev) && bPrev.Files.Count > 0)
-                                        {
-                                            bPrevFiles = new List<byte[]>();
-                                            foreach (var pf in bPrev.Files.Where(f => f.ContentType.StartsWith("image/")))
-                                            {
-                                                var pfPath = Path.Combine(workspacePath, $"branch_{branchId}_step_{bPrevOrd}", pf.FileName);
-                                                if (!File.Exists(pfPath))
-                                                    pfPath = Path.Combine(workspacePath, $"step_{bPrevOrd}", pf.FileName);
-                                                if (File.Exists(pfPath))
-                                                    bPrevFiles.Add(await File.ReadAllBytesAsync(pfPath));
-                                            }
-                                        }
-                                    }
-                                }
-
-                                var bOutputFiles = new List<OutputFile>();
-                                for (var bi2 = 0; bi2 < bInputs.Count; bi2++)
-                                {
-                                    var bSingle = bInputs[bi2];
-                                    var bMaxLen = InputAdapter.GetMaxPromptLength(bpm.AiModule.ModelName);
-                                    if (bSingle.Length > bMaxLen) bSingle = InputAdapter.TruncateAtWord(bSingle, bMaxLen);
-
-                                    var bImgCtx = new AiExecutionContext
-                                    {
-                                        ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
-                                        ApiKey = bApiKey, Input = bSingle, ProjectContext = project.Context,
-                                        Configuration = bConfig,
-                                        InputFiles = bPrevFiles is { Count: > 0 } ? bPrevFiles : await LoadModuleFilesAsync(bpm, db),
-                                    };
-
-                                    var bResult = await bProvider.ExecuteAsync(bImgCtx);
-                                    branchStepExec.EstimatedCost += bResult.EstimatedCost;
-                                    if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en imagen");
-
-                                    if (bResult.FileOutput is not null)
-                                    {
-                                        var bDir = Path.Combine(workspacePath, $"branch_{branchId}_step_{bpm.StepOrder}");
-                                        Directory.CreateDirectory(bDir);
-                                        var ext = GetExtension(bResult.ContentType ?? "application/octet-stream");
-                                        var fn = bInputs.Count > 1 ? $"output_{bi2 + 1}{ext}" : $"output{ext}";
-                                        await File.WriteAllBytesAsync(Path.Combine(bDir, fn), bResult.FileOutput);
-
-                                        var ef = new ExecutionFile
-                                        {
-                                            Id = Guid.NewGuid(), StepExecutionId = branchStepExec.Id,
-                                            FileName = fn, ContentType = bResult.ContentType ?? "application/octet-stream",
-                                            FilePath = Path.Combine($"branch_{branchId}_step_{bpm.StepOrder}", fn),
-                                            Direction = "Output", FileSize = bResult.FileOutput.Length,
-                                            CreatedAt = DateTime.UtcNow,
-                                        };
-                                        db.ExecutionFiles.Add(ef);
-                                        bOutputFiles.Add(new OutputFile { FileId = ef.Id, FileName = fn, ContentType = ef.ContentType, FileSize = ef.FileSize });
-                                    }
-                                    stepResults[bpm.StepOrder] = bResult;
-                                }
-
-                                stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
-                                var bImgOutput = OutputSchemaHelper.BuildImageOutput(bOutputFiles, bpm.AiModule.ModelName);
-                                stepOutputs[bpm.StepOrder] = bImgOutput;
-                                branchStepExec.OutputData = JsonSerializer.Serialize(bImgOutput);
-                                await db.SaveChangesAsync();
-                            }
-                            else if (bpm.AiModule.ModuleType == "Video")
-                            {
-                                var bVideoPrompt = "";
-                                if (bConfig.TryGetValue("videoPrompt", out var bvp))
-                                    bVideoPrompt = bvp is JsonElement bvpEl ? bvpEl.GetString() ?? "" : bvp?.ToString() ?? "";
-                                if (string.IsNullOrWhiteSpace(bVideoPrompt))
-                                    throw new InvalidOperationException($"[{branchId}] Prompt de video obligatorio");
-
-                                var bVidCtx = new AiExecutionContext
-                                {
-                                    ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
-                                    ApiKey = bApiKey, Input = bVideoPrompt,
-                                    ProjectContext = project.Context, Configuration = bConfig,
-                                };
-                                var bResult = await bProvider.ExecuteAsync(bVidCtx);
-                                stepResults[bpm.StepOrder] = bResult;
-                                stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
-                                branchStepExec.EstimatedCost += bResult.EstimatedCost;
-                                if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en video");
-
-                                if (bResult.FileOutput is not null)
-                                {
-                                    var bDir = Path.Combine(workspacePath, $"branch_{branchId}_step_{bpm.StepOrder}");
-                                    Directory.CreateDirectory(bDir);
-                                    var ext = GetExtension(bResult.ContentType ?? "video/mp4");
-                                    var fn = $"output{ext}";
-                                    await File.WriteAllBytesAsync(Path.Combine(bDir, fn), bResult.FileOutput);
-                                    db.ExecutionFiles.Add(new ExecutionFile
-                                    {
-                                        Id = Guid.NewGuid(), StepExecutionId = branchStepExec.Id,
-                                        FileName = fn, ContentType = bResult.ContentType ?? "video/mp4",
-                                        FilePath = Path.Combine($"branch_{branchId}_step_{bpm.StepOrder}", fn),
-                                        Direction = "Output", FileSize = bResult.FileOutput.Length,
-                                        CreatedAt = DateTime.UtcNow,
-                                    });
-                                }
-                                var bVidOutput = new StepOutput { Type = "video" };
-                                stepOutputs[bpm.StepOrder] = bVidOutput;
-                                branchStepExec.OutputData = JsonSerializer.Serialize(bVidOutput);
-                                await db.SaveChangesAsync();
-                            }
-
-                            branchStepExec.Status = "Completed";
-                            branchStepExec.CompletedAt = DateTime.UtcNow;
-                            await db.SaveChangesAsync();
-                        }
-                        catch (Exception bex)
-                        {
-                            await _logger.LogAsync(projectId, executionId, "error",
-                                $"[{branchId}] Error: {bex.Message}", bpm.StepOrder, bpm.StepName ?? bpm.AiModule.Name);
-                            branchStepExec.Status = "Failed";
-                            branchStepExec.ErrorMessage = bex.Message;
-                            branchStepExec.CompletedAt = DateTime.UtcNow;
-                            await db.SaveChangesAsync();
-                            branchFailed = true;
-                            break;
-                        }
+                        return execution;
                     }
 
-                    await _logger.LogAsync(projectId, executionId, branchFailed ? "warning" : "success",
-                        branchFailed
-                            ? $"Rama '{branchId}' fallo — continuando con otras ramas"
-                            : $"Rama '{branchId}' completada correctamente");
+                    var branchLevel = branchResult == BranchResult.Failed ? "warning"
+                        : branchResult == BranchResult.Paused ? "info" : "success";
+                    var branchMsg = branchResult == BranchResult.Failed
+                        ? $"Rama '{branchId}' fallo — continuando con otras ramas"
+                        : branchResult == BranchResult.Paused
+                            ? $"Rama '{branchId}' pausada esperando respuesta del usuario"
+                            : $"Rama '{branchId}' completada correctamente";
+                    await _logger.LogAsync(projectId, executionId, branchLevel, branchMsg);
                 }
             }
 
@@ -1769,13 +1527,15 @@ Datos de la ejecucion:
 
         // ── Interaction step handler (supports Telegram and WhatsApp) ──
         // Returns true if the pipeline should pause (waiting for response), false if it should continue.
+        // When branchId is non-null, only that branch pauses — the main pipeline keeps running.
         private async Task<bool> HandleInteractionStepAsync(
             Project project, ProjectExecution execution, StepExecution stepExecution,
             ProjectModule pm, string? userInput,
             Dictionary<int, AiResult> stepResults,
             Dictionary<int, StepOutput> stepOutputs,
             Dictionary<int, string> stepModuleTypes,
-            UserDbContext db, string tenantDbName)
+            UserDbContext db, string tenantDbName,
+            string? branchId = null)
         {
             var stepName = pm.StepName ?? pm.AiModule.Name;
 
@@ -1817,6 +1577,9 @@ Datos de la ejecucion:
 
             var previousText = "";
             var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
+            // Fallback to fork source step for first branch step
+            if (!stepOutputs.ContainsKey(prevOrder) && !stepResults.ContainsKey(prevOrder) && pm.BranchFromStep.HasValue)
+                prevOrder = pm.BranchFromStep.Value;
             if (stepOutputs.TryGetValue(prevOrder, out var prevOutput))
                 previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
             else if (stepResults.TryGetValue(prevOrder, out var prevResult))
@@ -1950,12 +1713,29 @@ Datos de la ejecucion:
                 StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
             };
 
-            execution.PausedAtStepOrder = pm.StepOrder;
-            execution.PausedStepData = JsonSerializer.Serialize(pauseState);
-            execution.Status = "WaitingForInput";
-
             stepExecution.Status = "WaitingForInput";
             stepExecution.InputData = JsonSerializer.Serialize(new { message });
+
+            if (branchId is not null)
+            {
+                // Branch pause: save to PausedBranches without blocking main pipeline
+                var branchPause = new PausedBranchState
+                {
+                    BranchId = branchId,
+                    PausedAtStepOrder = pm.StepOrder,
+                    PauseData = pauseState,
+                };
+                var existingBranches = DeserializePausedBranches(execution.PausedBranches);
+                existingBranches.Add(branchPause);
+                execution.PausedBranches = JsonSerializer.Serialize(existingBranches);
+            }
+            else
+            {
+                // Main pipeline pause: block execution
+                execution.PausedAtStepOrder = pm.StepOrder;
+                execution.PausedStepData = JsonSerializer.Serialize(pauseState);
+                execution.Status = "WaitingForInput";
+            }
             await db.SaveChangesAsync();
 
             // 7. Create correlation for webhook resolution
@@ -1968,6 +1748,7 @@ Datos de la ejecucion:
                     TenantDbName = tenantDbName,
                     ChatId = tgConfig!.ChatId,
                     StepOrder = pm.StepOrder,
+                    BranchId = branchId,
                     CreatedAt = DateTime.UtcNow,
                     IsResolved = false,
                 });
@@ -1981,15 +1762,17 @@ Datos de la ejecucion:
                     TenantDbName = tenantDbName,
                     RecipientNumber = waConfig!.RecipientNumber,
                     StepOrder = pm.StepOrder,
+                    BranchId = branchId,
                     CreatedAt = DateTime.UtcNow,
                     IsResolved = false,
                 });
             }
             await _coreDb.SaveChangesAsync();
 
+            var branchLabel = branchId is not null ? $" [rama '{branchId}']" : "";
             await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Esperando respuesta de {channelName}...", pm.StepOrder, stepName);
-            return true; // pipeline paused, waiting for user response
+                $"Esperando respuesta de {channelName}...{branchLabel}", pm.StepOrder, stepName);
+            return true; // caller should pause (branch or main)
         }
 
         public async Task<ProjectExecution> ResumeFromInteractionAsync(
@@ -2366,6 +2149,287 @@ Datos de la ejecucion:
             public Dictionary<string, string> StepModuleTypes { get; set; } = new();
         }
 
+        // State for a single paused branch
+        private class PausedBranchState
+        {
+            public string BranchId { get; set; } = default!;
+            public int PausedAtStepOrder { get; set; }
+            public PausedPipelineState PauseData { get; set; } = new();
+        }
+
+        private static List<PausedBranchState> DeserializePausedBranches(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return new List<PausedBranchState>();
+            try { return JsonSerializer.Deserialize<List<PausedBranchState>>(json) ?? new List<PausedBranchState>(); }
+            catch { return new List<PausedBranchState>(); }
+        }
+
+        private enum BranchResult { Completed, Failed, Paused, Cancelled }
+
+        /// <summary>
+        /// Executes a list of branch steps. Shared by initial execution and resume-after-interaction.
+        /// </summary>
+        private async Task<BranchResult> ExecuteBranchStepsAsync(
+            Project project, ProjectExecution execution, string branchId,
+            List<ProjectModule> branchSteps, string? userInput,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            string workspacePath, string? previousSummaryContext,
+            UserDbContext db, string tenantDbName, CancellationToken ct)
+        {
+            for (var bi = 0; bi < branchSteps.Count; bi++)
+            {
+                var bpm = branchSteps[bi];
+                var nextBranchModule = bi + 1 < branchSteps.Count ? branchSteps[bi + 1] : null;
+
+                if (ct.IsCancellationRequested) return BranchResult.Cancelled;
+
+                var branchStepExec = new StepExecution
+                {
+                    Id = Guid.NewGuid(),
+                    ExecutionId = execution.Id,
+                    ProjectModuleId = bpm.Id,
+                    StepOrder = bpm.StepOrder,
+                    Status = "Running",
+                    CreatedAt = DateTime.UtcNow,
+                };
+                db.StepExecutions.Add(branchStepExec);
+                await db.SaveChangesAsync();
+
+                try
+                {
+                    var bStepName = bpm.StepName ?? bpm.AiModule.Name;
+                    await _logger.LogAsync(project.Id, execution.Id, "info",
+                        $"[{branchId}] Ejecutando paso {bpm.StepOrder}: {bStepName} ({bpm.AiModule.ProviderType}/{bpm.AiModule.ModelName})",
+                        bpm.StepOrder, bStepName);
+
+                    var bConfig = MergeConfiguration(bpm.AiModule.Configuration, bpm.Configuration);
+
+                    // Interaction steps in branches — pause only the branch
+                    if (IsInteractionStep(bpm.AiModule))
+                    {
+                        var shouldPause = await HandleInteractionStepAsync(
+                            project, execution, branchStepExec, bpm, userInput,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName,
+                            branchId: branchId);
+                        if (shouldPause) return BranchResult.Paused;
+                        branchStepExec.Status = "Completed";
+                        branchStepExec.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        continue;
+                    }
+
+                    // Publish steps in branches
+                    if (IsPublishStep(bpm.AiModule))
+                    {
+                        await HandlePublishStepAsync(
+                            project, execution, branchStepExec, bpm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // Design steps in branches
+                    if (IsDesignStep(bpm.AiModule))
+                    {
+                        await HandleCanvaPublishStepAsync(
+                            project, execution, branchStepExec, bpm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    var bApiKey = bpm.AiModule.ApiKey?.EncryptedKey
+                        ?? throw new InvalidOperationException($"[{branchId}] Paso {bpm.StepOrder}: ApiKey no configurada");
+                    var bProvider = _registry.GetProvider(bpm.AiModule.ProviderType)
+                        ?? throw new InvalidOperationException($"[{branchId}] Paso {bpm.StepOrder}: Proveedor no disponible");
+
+                    var bInputs = ResolveInputs(bpm, userInput, stepResults, stepOutputs, bpm.AiModule.ModuleType, bpm.AiModule.ModelName);
+
+                    if (bpm.AiModule.ModuleType == "Text")
+                    {
+                        if (nextBranchModule is not null)
+                        {
+                            var nml = InputAdapter.GetMaxPromptLength(nextBranchModule.AiModule.ModelName);
+                            var rule = $"\n\nREGLA DE LONGITUD: maximo {nml} caracteres por item.";
+                            if (bConfig.TryGetValue("systemPrompt", out var bex) && bex is string bs)
+                                bConfig["systemPrompt"] = bs + rule;
+                            else
+                                bConfig["systemPrompt"] = rule;
+                        }
+                        InjectImageCountRule(bConfig);
+
+                        var bCtx = new AiExecutionContext
+                        {
+                            ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
+                            ApiKey = bApiKey, Input = bInputs[0], ProjectContext = project.Context,
+                            PreviousExecutionsSummary = previousSummaryContext, Configuration = bConfig,
+                            InputFiles = await LoadModuleFilesAsync(bpm, db),
+                        };
+
+                        var bResult = await bProvider.ExecuteAsync(bCtx);
+                        stepResults[bpm.StepOrder] = bResult;
+                        stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
+                        branchStepExec.EstimatedCost += bResult.EstimatedCost;
+
+                        if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en texto");
+
+                        var bOutput = OutputSchemaHelper.ParseTextOutput(bResult.TextOutput ?? "", bResult.Metadata);
+                        stepOutputs[bpm.StepOrder] = bOutput;
+
+                        var bDir = Path.Combine(workspacePath, $"branch_{branchId}_step_{bpm.StepOrder}");
+                        Directory.CreateDirectory(bDir);
+                        await File.WriteAllTextAsync(Path.Combine(bDir, "output.json"), bResult.TextOutput ?? "");
+                        db.ExecutionFiles.Add(new ExecutionFile
+                        {
+                            Id = Guid.NewGuid(), StepExecutionId = branchStepExec.Id,
+                            FileName = "output.json", ContentType = "application/json",
+                            FilePath = Path.Combine($"branch_{branchId}_step_{bpm.StepOrder}", "output.json"),
+                            Direction = "Output",
+                            FileSize = System.Text.Encoding.UTF8.GetByteCount(bResult.TextOutput ?? ""),
+                            CreatedAt = DateTime.UtcNow,
+                        });
+                        branchStepExec.OutputData = JsonSerializer.Serialize(bOutput);
+                    }
+                    else if (bpm.AiModule.ModuleType == "Image")
+                    {
+                        var bImgPrompt = "";
+                        if (bConfig.TryGetValue("imagePrompt", out var bip))
+                            bImgPrompt = bip is JsonElement bipEl ? bipEl.GetString() ?? "" : bip?.ToString() ?? "";
+                        if (!string.IsNullOrWhiteSpace(bImgPrompt))
+                            bInputs = new List<string> { bImgPrompt };
+
+                        List<byte[]>? bPrevFiles = null;
+                        if (bpm.InputMapping is not null)
+                        {
+                            var bMap = JsonSerializer.Deserialize<JsonElement>(bpm.InputMapping);
+                            if (bMap.TryGetProperty("field", out var bf) && bf.GetString() == "file")
+                            {
+                                var bPrevOrd = stepOutputs.Keys.Where(k => k < bpm.StepOrder)
+                                    .OrderByDescending(k => k).FirstOrDefault();
+                                if (!stepOutputs.ContainsKey(bPrevOrd) && bpm.BranchFromStep.HasValue)
+                                    bPrevOrd = bpm.BranchFromStep.Value;
+                                if (stepOutputs.TryGetValue(bPrevOrd, out var bPrev) && bPrev.Files.Count > 0)
+                                {
+                                    bPrevFiles = new List<byte[]>();
+                                    foreach (var pf in bPrev.Files.Where(f => f.ContentType.StartsWith("image/")))
+                                    {
+                                        var pfPath = Path.Combine(workspacePath, $"branch_{branchId}_step_{bPrevOrd}", pf.FileName);
+                                        if (!File.Exists(pfPath))
+                                            pfPath = Path.Combine(workspacePath, $"step_{bPrevOrd}", pf.FileName);
+                                        if (File.Exists(pfPath))
+                                            bPrevFiles.Add(await File.ReadAllBytesAsync(pfPath));
+                                    }
+                                }
+                            }
+                        }
+
+                        var bOutputFiles = new List<OutputFile>();
+                        for (var bi2 = 0; bi2 < bInputs.Count; bi2++)
+                        {
+                            var bSingle = bInputs[bi2];
+                            var bMaxLen = InputAdapter.GetMaxPromptLength(bpm.AiModule.ModelName);
+                            if (bSingle.Length > bMaxLen) bSingle = InputAdapter.TruncateAtWord(bSingle, bMaxLen);
+
+                            var bImgCtx = new AiExecutionContext
+                            {
+                                ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
+                                ApiKey = bApiKey, Input = bSingle, ProjectContext = project.Context,
+                                Configuration = bConfig,
+                                InputFiles = bPrevFiles is { Count: > 0 } ? bPrevFiles : await LoadModuleFilesAsync(bpm, db),
+                            };
+
+                            var bResult = await bProvider.ExecuteAsync(bImgCtx);
+                            branchStepExec.EstimatedCost += bResult.EstimatedCost;
+                            if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en imagen");
+
+                            if (bResult.FileOutput is not null)
+                            {
+                                var bDir = Path.Combine(workspacePath, $"branch_{branchId}_step_{bpm.StepOrder}");
+                                Directory.CreateDirectory(bDir);
+                                var ext = GetExtension(bResult.ContentType ?? "application/octet-stream");
+                                var fn = bInputs.Count > 1 ? $"output_{bi2 + 1}{ext}" : $"output{ext}";
+                                await File.WriteAllBytesAsync(Path.Combine(bDir, fn), bResult.FileOutput);
+
+                                var ef = new ExecutionFile
+                                {
+                                    Id = Guid.NewGuid(), StepExecutionId = branchStepExec.Id,
+                                    FileName = fn, ContentType = bResult.ContentType ?? "application/octet-stream",
+                                    FilePath = Path.Combine($"branch_{branchId}_step_{bpm.StepOrder}", fn),
+                                    Direction = "Output", FileSize = bResult.FileOutput.Length,
+                                    CreatedAt = DateTime.UtcNow,
+                                };
+                                db.ExecutionFiles.Add(ef);
+                                bOutputFiles.Add(new OutputFile { FileId = ef.Id, FileName = fn, ContentType = ef.ContentType, FileSize = ef.FileSize });
+                            }
+                            stepResults[bpm.StepOrder] = bResult;
+                        }
+
+                        stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
+                        var bImgOutput = OutputSchemaHelper.BuildImageOutput(bOutputFiles, bpm.AiModule.ModelName);
+                        stepOutputs[bpm.StepOrder] = bImgOutput;
+                        branchStepExec.OutputData = JsonSerializer.Serialize(bImgOutput);
+                        await db.SaveChangesAsync();
+                    }
+                    else if (bpm.AiModule.ModuleType == "Video")
+                    {
+                        var bVideoPrompt = "";
+                        if (bConfig.TryGetValue("videoPrompt", out var bvp))
+                            bVideoPrompt = bvp is JsonElement bvpEl ? bvpEl.GetString() ?? "" : bvp?.ToString() ?? "";
+                        if (string.IsNullOrWhiteSpace(bVideoPrompt))
+                            throw new InvalidOperationException($"[{branchId}] Prompt de video obligatorio");
+
+                        var bVidCtx = new AiExecutionContext
+                        {
+                            ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
+                            ApiKey = bApiKey, Input = bVideoPrompt,
+                            ProjectContext = project.Context, Configuration = bConfig,
+                        };
+                        var bResult = await bProvider.ExecuteAsync(bVidCtx);
+                        stepResults[bpm.StepOrder] = bResult;
+                        stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
+                        branchStepExec.EstimatedCost += bResult.EstimatedCost;
+                        if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en video");
+
+                        if (bResult.FileOutput is not null)
+                        {
+                            var bDir = Path.Combine(workspacePath, $"branch_{branchId}_step_{bpm.StepOrder}");
+                            Directory.CreateDirectory(bDir);
+                            var ext = GetExtension(bResult.ContentType ?? "video/mp4");
+                            var fn = $"output{ext}";
+                            await File.WriteAllBytesAsync(Path.Combine(bDir, fn), bResult.FileOutput);
+                            db.ExecutionFiles.Add(new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(), StepExecutionId = branchStepExec.Id,
+                                FileName = fn, ContentType = bResult.ContentType ?? "video/mp4",
+                                FilePath = Path.Combine($"branch_{branchId}_step_{bpm.StepOrder}", fn),
+                                Direction = "Output", FileSize = bResult.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            });
+                        }
+                        var bVidOutput = new StepOutput { Type = "video" };
+                        stepOutputs[bpm.StepOrder] = bVidOutput;
+                        branchStepExec.OutputData = JsonSerializer.Serialize(bVidOutput);
+                        await db.SaveChangesAsync();
+                    }
+
+                    branchStepExec.Status = "Completed";
+                    branchStepExec.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
+                catch (Exception bex)
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "error",
+                        $"[{branchId}] Error: {bex.Message}", bpm.StepOrder, bpm.StepName ?? bpm.AiModule.Name);
+                    branchStepExec.Status = "Failed";
+                    branchStepExec.ErrorMessage = bex.Message;
+                    branchStepExec.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return BranchResult.Failed;
+                }
+            }
+            return BranchResult.Completed;
+        }
+
         private static async Task FailStep(StepExecution step, ProjectExecution execution, string error, UserDbContext db)
         {
             step.Status = "Failed";
@@ -2465,6 +2529,104 @@ Datos de la ejecucion:
                 config["systemPrompt"] = sp + imgRule;
             else
                 config["systemPrompt"] = imgRule;
+        }
+
+        // ── Resume a single branch that was paused for user interaction ──
+        public async Task<ProjectExecution> ResumeFromBranchInteractionAsync(
+            Guid executionId, string branchId, string responseText,
+            UserDbContext db, string tenantDbName, CancellationToken ct = default)
+        {
+            _logger = _baseLogger.WithDb(db);
+
+            var execution = await db.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .FirstOrDefaultAsync(e => e.Id == executionId)
+                ?? throw new InvalidOperationException("Ejecucion no encontrada");
+
+            var project = await db.Projects
+                .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
+                    .ThenInclude(pm => pm.AiModule)
+                        .ThenInclude(m => m.ApiKey)
+                .FirstOrDefaultAsync(p => p.Id == execution.ProjectId)
+                ?? throw new InvalidOperationException("Proyecto no encontrado");
+
+            // Find the paused branch
+            var pausedBranches = DeserializePausedBranches(execution.PausedBranches);
+            var branchPause = pausedBranches.FirstOrDefault(b => b.BranchId == branchId)
+                ?? throw new InvalidOperationException($"La rama '{branchId}' no esta pausada");
+
+            var pausedStep = branchPause.PausedAtStepOrder;
+            var pauseState = branchPause.PauseData;
+
+            // Restore step outputs & module types from pause state
+            var stepOutputs = new Dictionary<int, StepOutput>();
+            foreach (var kv in pauseState.StepOutputs)
+            {
+                if (int.TryParse(kv.Key, out var so))
+                    stepOutputs[so] = JsonSerializer.Deserialize<StepOutput>(kv.Value) ?? new StepOutput();
+            }
+            var stepModuleTypes = new Dictionary<int, string>();
+            foreach (var kv in pauseState.StepModuleTypes)
+            {
+                if (int.TryParse(kv.Key, out var so))
+                    stepModuleTypes[so] = kv.Value;
+            }
+            var stepResults = new Dictionary<int, AiResult>();
+
+            // Complete the interaction step with the response
+            var interactionStepExec = execution.StepExecutions
+                .FirstOrDefault(s => s.StepOrder == pausedStep && s.Status == "WaitingForInput");
+            if (interactionStepExec is not null)
+            {
+                var interactionOutput = new StepOutput
+                {
+                    Type = "text",
+                    Content = responseText,
+                    Summary = $"Respuesta del usuario (rama '{branchId}')",
+                    Items = [new OutputItem { Content = responseText, Label = "respuesta" }]
+                };
+                interactionStepExec.Status = "Completed";
+                interactionStepExec.OutputData = JsonSerializer.Serialize(interactionOutput);
+                interactionStepExec.CompletedAt = DateTime.UtcNow;
+                stepOutputs[pausedStep] = interactionOutput;
+                stepModuleTypes[pausedStep] = "Interaction";
+                stepResults[pausedStep] = AiResult.Ok(responseText, new Dictionary<string, object>());
+            }
+
+            // Remove this branch from the paused list
+            pausedBranches.RemoveAll(b => b.BranchId == branchId);
+            execution.PausedBranches = pausedBranches.Count > 0
+                ? JsonSerializer.Serialize(pausedBranches)
+                : null;
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                $"Respuesta recibida para rama '{branchId}': \"{responseText}\". Reanudando rama...");
+
+            // Get the branch modules that still need executing (after the paused step)
+            var branchSteps = project.ProjectModules
+                .Where(m => m.BranchId == branchId && m.StepOrder > pausedStep)
+                .OrderBy(m => m.StepOrder)
+                .ToList();
+
+            var workspacePath = execution.WorkspacePath;
+            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, project.Id, execution.Id);
+
+            var result = await ExecuteBranchStepsAsync(
+                project, execution, branchId, branchSteps, pauseState.UserInput,
+                stepResults, stepOutputs, stepModuleTypes,
+                workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+            if (result != BranchResult.Paused)
+            {
+                await _logger.LogAsync(project.Id, execution.Id,
+                    result == BranchResult.Completed ? "success" : "warning",
+                    result == BranchResult.Completed
+                        ? $"Rama '{branchId}' completada correctamente tras respuesta del usuario"
+                        : $"Rama '{branchId}' fallo tras respuesta del usuario");
+            }
+
+            return execution;
         }
 
         public async Task<ProjectExecution> AbortFromInteractionAsync(
