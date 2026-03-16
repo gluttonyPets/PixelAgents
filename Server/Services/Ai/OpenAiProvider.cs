@@ -1,3 +1,5 @@
+using System.Net.Http.Headers;
+using System.Text.Json;
 using OpenAI.Chat;
 using OpenAI.Images;
 using Server.Models;
@@ -211,49 +213,116 @@ namespace Server.Services.Ai
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
-            GeneratedImage generatedImage;
+            byte[] imageBytes;
+            string revisedPrompt = "";
 
-            if (context.InputFiles is { Count: > 0 } && isGptImage)
+            if (context.InputFiles is { Count: > 0 } && isGptImage && sizeStr == "auto")
             {
-                // Image editing: use the first input file as reference
+                // SDK doesn't support size="auto" (GeneratedImageSize only takes int,int).
+                // Use raw HttpClient to call the image edit API preserving input dimensions.
+                (imageBytes, revisedPrompt) = await CallImageEditRawAsync(
+                    context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration);
+            }
+            else if (context.InputFiles is { Count: > 0 } && isGptImage)
+            {
+                // Image editing with an explicit size the SDK supports
                 using var imageStream = new MemoryStream(context.InputFiles[0]);
-                var editOptions = new ImageEditOptions
-                {
-                    Size = options.Size,
-                };
+                var editOptions = new ImageEditOptions { Size = options.Size };
                 var editResult = await client.GenerateImageEditAsync(
                     imageStream, "input.png", prompt, editOptions);
-                generatedImage = editResult.Value;
+                var gi = editResult.Value;
+                revisedPrompt = gi.RevisedPrompt ?? "";
+                imageBytes = await ExtractImageBytesAsync(gi);
             }
             else
             {
                 var result = await client.GenerateImageAsync(prompt, options);
-                generatedImage = result.Value;
+                var gi = result.Value;
+                revisedPrompt = gi.RevisedPrompt ?? "";
+                imageBytes = await ExtractImageBytesAsync(gi);
             }
 
-            byte[] imageBytes;
-            if (generatedImage.ImageBytes is not null && generatedImage.ImageBytes.ToArray().Length > 0)
-            {
-                imageBytes = generatedImage.ImageBytes.ToArray();
-            }
-            else if (!string.IsNullOrEmpty(generatedImage.ImageUri?.ToString()))
-            {
-                // gpt-image models return a URL — download the image
-                using var httpClient = new HttpClient();
-                imageBytes = await httpClient.GetByteArrayAsync(generatedImage.ImageUri);
-            }
-            else
-            {
+            if (imageBytes.Length == 0)
                 return AiResult.Fail("No se recibieron datos de imagen del modelo");
-            }
 
             var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
             {
                 ["model"] = context.ModelName,
-                ["revisedPrompt"] = generatedImage.RevisedPrompt ?? ""
+                ["revisedPrompt"] = revisedPrompt
             });
             imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName, context.Configuration);
             return imgResult;
+        }
+
+        /// <summary>
+        /// Extracts image bytes from a GeneratedImage (handles both inline bytes and URL).
+        /// </summary>
+        private static async Task<byte[]> ExtractImageBytesAsync(GeneratedImage gi)
+        {
+            if (gi.ImageBytes is not null && gi.ImageBytes.ToArray().Length > 0)
+                return gi.ImageBytes.ToArray();
+
+            if (!string.IsNullOrEmpty(gi.ImageUri?.ToString()))
+            {
+                using var http = new HttpClient();
+                return await http.GetByteArrayAsync(gi.ImageUri);
+            }
+
+            return Array.Empty<byte>();
+        }
+
+        /// <summary>
+        /// Calls the OpenAI image edit API directly via HttpClient to support size="auto",
+        /// which the SDK's GeneratedImageSize struct cannot represent.
+        /// </summary>
+        private static async Task<(byte[] ImageBytes, string RevisedPrompt)> CallImageEditRawAsync(
+            string apiKey, string model, byte[] inputImage, string prompt,
+            IDictionary<string, object> config)
+        {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(model), "model");
+            form.Add(new StringContent(prompt), "prompt");
+            form.Add(new StringContent("auto"), "size");
+
+            // Quality
+            if (config.TryGetValue("quality", out var q) && q is string qs && !string.IsNullOrWhiteSpace(qs))
+                form.Add(new StringContent(qs), "quality");
+
+            // Image file
+            var imageContent = new ByteArrayContent(inputImage);
+            imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+            form.Add(imageContent, "image[]", "input.png");
+
+            var response = await http.PostAsync("https://api.openai.com/v1/images/edits", form);
+            var json = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"OpenAI image edit failed ({response.StatusCode}): {json}");
+
+            using var doc = JsonDocument.Parse(json);
+            var data = doc.RootElement.GetProperty("data")[0];
+
+            var revisedPrompt = data.TryGetProperty("revised_prompt", out var rp) ? rp.GetString() ?? "" : "";
+
+            // gpt-image returns URL
+            if (data.TryGetProperty("url", out var urlProp))
+            {
+                var url = urlProp.GetString()!;
+                var bytes = await http.GetByteArrayAsync(url);
+                return (bytes, revisedPrompt);
+            }
+
+            // or base64
+            if (data.TryGetProperty("b64_json", out var b64Prop))
+            {
+                var bytes = Convert.FromBase64String(b64Prop.GetString()!);
+                return (bytes, revisedPrompt);
+            }
+
+            return (Array.Empty<byte>(), revisedPrompt);
         }
     }
 }
