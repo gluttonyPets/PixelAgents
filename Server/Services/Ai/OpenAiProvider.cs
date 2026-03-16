@@ -127,15 +127,18 @@ namespace Server.Services.Ai
             if (isGptImage)
             {
                 // gpt-image: 1024x1024, 1536x1024, 1024x1536, auto
-                // "auto" preserves input image dimensions in edit mode
-                options.Size = sizeStr switch
+                // "auto" (or unset) preserves input image dimensions in edit mode
+                if (sizeStr != "auto")
                 {
-                    "1024x1024" => GeneratedImageSize.W1024xH1024,
-                    "1536x1024" => new GeneratedImageSize(1536, 1024),
-                    "1024x1536" => new GeneratedImageSize(1024, 1536),
-                    "auto" => new GeneratedImageSize("auto"),
-                    _ => new GeneratedImageSize("auto")
-                };
+                    options.Size = sizeStr switch
+                    {
+                        "1024x1024" => GeneratedImageSize.W1024xH1024,
+                        "1536x1024" => new GeneratedImageSize(1536, 1024),
+                        "1024x1536" => new GeneratedImageSize(1024, 1536),
+                        _ => GeneratedImageSize.W1024xH1024
+                    };
+                }
+                // When "auto": don't set Size — the API defaults to auto for gpt-image
             }
             else if (isDallE2)
             {
