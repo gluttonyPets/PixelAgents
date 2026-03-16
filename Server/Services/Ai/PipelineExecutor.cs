@@ -883,6 +883,9 @@ namespace Server.Services.Ai
                                     {
                                         var bPrevOrd = stepOutputs.Keys.Where(k => k < bpm.StepOrder)
                                             .OrderByDescending(k => k).FirstOrDefault();
+                                        // Fallback to fork source step for first branch step
+                                        if (!stepOutputs.ContainsKey(bPrevOrd) && bpm.BranchFromStep.HasValue)
+                                            bPrevOrd = bpm.BranchFromStep.Value;
                                         if (stepOutputs.TryGetValue(bPrevOrd, out var bPrev) && bPrev.Files.Count > 0)
                                         {
                                             bPrevFiles = new List<byte[]>();
