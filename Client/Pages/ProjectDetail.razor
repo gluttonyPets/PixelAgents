@@ -361,19 +361,29 @@ else
 
             <!-- Add Step -->
             <div class="card" style="margin-top: 1rem;">
-                <h3 style="margin-top:0;">
-                    Agregar Paso
-                    @if (_stepBranchId != "main")
-                    {
-                        <span class="badge badge-info" style="margin-left:0.5rem;">Rama: @_stepBranchId</span>
-                        <button class="btn btn-xs" @onclick='() => { _stepBranchId = "main"; _stepBranchFromStep = null; }' style="margin-left:0.3rem;">&#x2715; Volver a main</button>
-                    }
-                </h3>
+                <h3 style="margin-top:0;">Agregar Paso</h3>
                 @if (_stepError is not null)
                 {
                     <div class="alert alert-error">@_stepError</div>
                 }
                 <div class="form-row">
+                    <div class="form-group">
+                        <label>Rama</label>
+                        <select value="@_stepBranchId" @onchange="OnBranchSelectChanged">
+                            <option value="main">Principal (main)</option>
+                            @{
+                                var allBranches = (_project?.Modules ?? new())
+                                    .Where(m => m.BranchId != "main")
+                                    .Select(m => m.BranchId)
+                                    .Distinct()
+                                    .OrderBy(b => b);
+                            }
+                            @foreach (var b in allBranches)
+                            {
+                                <option value="@b">@b</option>
+                            }
+                        </select>
+                    </div>
                     <div class="form-group">
                         <label>Modulo</label>
                         <select @bind="_stepModuleId">
@@ -1956,6 +1966,32 @@ else
         _stepOrder = 1;
         _inputMapping = $"{{\"source\":\"step\",\"stepOrder\":{_addBranchFromStep}}}";
         _showAddBranch = false;
+    }
+
+    private void OnBranchSelectChanged(ChangeEventArgs e)
+    {
+        var selected = e.Value?.ToString() ?? "main";
+        _stepBranchId = selected;
+
+        if (selected == "main")
+        {
+            _stepBranchFromStep = null;
+            var mainSteps = GetMainSteps();
+            _stepOrder = mainSteps.Count + 1;
+            _inputMapping = mainSteps.Count > 0
+                ? "{\"source\":\"previous\",\"field\":\"text\"}"
+                : "{\"source\":\"user\"}";
+        }
+        else
+        {
+            var branchModules = (_project?.Modules ?? new())
+                .Where(m => m.BranchId == selected)
+                .OrderBy(m => m.StepOrder)
+                .ToList();
+            _stepBranchFromStep = branchModules.FirstOrDefault()?.BranchFromStep;
+            _stepOrder = branchModules.Count + 1;
+            _inputMapping = "{\"source\":\"previous\",\"field\":\"text\"}";
+        }
     }
 
     private void StartAddStepToBranch(string branchId, int? branchFromStep, int nextOrder)
