@@ -129,6 +129,46 @@ else
                                         {
                                             <textarea @bind="_imagePrompt" rows="2" placeholder="Prompt de imagen (opcional)" style="width:100%; margin-top:0.3rem;"></textarea>
                                         }
+                                        @if (pm.ModuleType == "Video")
+                                        {
+                                            <textarea @bind="_videoPrompt" rows="2" placeholder="Prompt del video (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
+                                            <select class="select-inline" @bind="_videoSource" style="margin-top:0.3rem;">
+                                                <option value="prompt">Solo texto</option>
+                                                <option value="both">Imagen + prompt</option>
+                                            </select>
+                                        }
+                                        @if (pm.ModuleType == "Publish")
+                                        {
+                                            <textarea @bind="_publishCaption" rows="2" placeholder="Caption ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
+                                            <select class="select-inline" @bind="_publishType" style="margin-top:0.3rem;">
+                                                <option value="post">Post</option>
+                                                <option value="reel">Reel</option>
+                                                <option value="story">Story</option>
+                                            </select>
+                                        }
+                                        @if (pm.ModuleType == "Interaction")
+                                        {
+                                            <textarea @bind="_interactionTemplate" rows="2" placeholder="Mensaje ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
+                                            <select class="select-inline" @bind="_interactionMessageType" style="margin-top:0.3rem;">
+                                                <option value="combined">Texto + Imagenes</option>
+                                                <option value="text">Solo texto</option>
+                                                <option value="image">Solo imagenes</option>
+                                            </select>
+                                            <select class="select-inline" @bind="_interactionWaitForResponse" style="margin-top:0.3rem;">
+                                                <option value="true">Esperar respuesta</option>
+                                                <option value="false">Enviar y continuar</option>
+                                            </select>
+                                        }
+                                        @if (pm.ModuleType == "Design")
+                                        {
+                                            <input type="text" class="input-inline" @bind="_canvaDesignTitle" placeholder="Titulo del diseno" style="margin-top:0.3rem;" />
+                                            <select class="select-inline" @bind="_canvaExportFormat" style="margin-top:0.3rem;">
+                                                <option value="png">PNG</option>
+                                                <option value="jpg">JPG</option>
+                                                <option value="pdf">PDF</option>
+                                                <option value="pptx">PPTX</option>
+                                            </select>
+                                        }
                                     </div>
                                 }
                                 @if (!isEditing && pm.ModuleType == "Text" && nextPm is not null)
@@ -216,6 +256,46 @@ else
                                                             {
                                                                 <textarea @bind="_imagePrompt" rows="2" placeholder="Prompt de imagen (opcional)" style="width:100%; margin-top:0.3rem;"></textarea>
                                                             }
+                                                            @if (rpm.ModuleType == "Video")
+                                                            {
+                                                                <textarea @bind="_videoPrompt" rows="2" placeholder="Prompt del video (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                                <select class="select-inline" @bind="_videoSource" style="margin-top:0.3rem;">
+                                                                    <option value="prompt">Solo texto</option>
+                                                                    <option value="both">Imagen + prompt</option>
+                                                                </select>
+                                                            }
+                                                            @if (rpm.ModuleType == "Publish")
+                                                            {
+                                                                <textarea @bind="_publishCaption" rows="2" placeholder="Caption ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                                <select class="select-inline" @bind="_publishType" style="margin-top:0.3rem;">
+                                                                    <option value="post">Post</option>
+                                                                    <option value="reel">Reel</option>
+                                                                    <option value="story">Story</option>
+                                                                </select>
+                                                            }
+                                                            @if (rpm.ModuleType == "Interaction")
+                                                            {
+                                                                <textarea @bind="_interactionTemplate" rows="2" placeholder="Mensaje ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                                <select class="select-inline" @bind="_interactionMessageType" style="margin-top:0.3rem;">
+                                                                    <option value="combined">Texto + Imagenes</option>
+                                                                    <option value="text">Solo texto</option>
+                                                                    <option value="image">Solo imagenes</option>
+                                                                </select>
+                                                                <select class="select-inline" @bind="_interactionWaitForResponse" style="margin-top:0.3rem;">
+                                                                    <option value="true">Esperar respuesta</option>
+                                                                    <option value="false">Enviar y continuar</option>
+                                                                </select>
+                                                            }
+                                                            @if (rpm.ModuleType == "Design")
+                                                            {
+                                                                <input type="text" class="input-inline" @bind="_canvaDesignTitle" placeholder="Titulo del diseno" style="margin-top:0.3rem;" />
+                                                                <select class="select-inline" @bind="_canvaExportFormat" style="margin-top:0.3rem;">
+                                                                    <option value="png">PNG</option>
+                                                                    <option value="jpg">JPG</option>
+                                                                    <option value="pdf">PDF</option>
+                                                                    <option value="pptx">PPTX</option>
+                                                                </select>
+                                                            }
                                                         </div>
                                                     }
                                                     @if (!rIsEditing && rpm.ModuleType == "Text" && rNextPm is not null)
@@ -291,6 +371,50 @@ else
                                                                 <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
                                                                 <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
                                                             </select>
+                                                            @if (bpm.ModuleType == "Image")
+                                                            {
+                                                                <textarea @bind="_imagePrompt" rows="2" placeholder="Prompt de imagen (opcional)" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                            }
+                                                            @if (bpm.ModuleType == "Video")
+                                                            {
+                                                                <textarea @bind="_videoPrompt" rows="2" placeholder="Prompt del video (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                                <select class="select-inline" @bind="_videoSource" style="margin-top:0.3rem;">
+                                                                    <option value="prompt">Solo texto</option>
+                                                                    <option value="both">Imagen + prompt</option>
+                                                                </select>
+                                                            }
+                                                            @if (bpm.ModuleType == "Publish")
+                                                            {
+                                                                <textarea @bind="_publishCaption" rows="2" placeholder="Caption ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                                <select class="select-inline" @bind="_publishType" style="margin-top:0.3rem;">
+                                                                    <option value="post">Post</option>
+                                                                    <option value="reel">Reel</option>
+                                                                    <option value="story">Story</option>
+                                                                </select>
+                                                            }
+                                                            @if (bpm.ModuleType == "Interaction")
+                                                            {
+                                                                <textarea @bind="_interactionTemplate" rows="2" placeholder="Mensaje ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                                <select class="select-inline" @bind="_interactionMessageType" style="margin-top:0.3rem;">
+                                                                    <option value="combined">Texto + Imagenes</option>
+                                                                    <option value="text">Solo texto</option>
+                                                                    <option value="image">Solo imagenes</option>
+                                                                </select>
+                                                                <select class="select-inline" @bind="_interactionWaitForResponse" style="margin-top:0.3rem;">
+                                                                    <option value="true">Esperar respuesta</option>
+                                                                    <option value="false">Enviar y continuar</option>
+                                                                </select>
+                                                            }
+                                                            @if (bpm.ModuleType == "Design")
+                                                            {
+                                                                <input type="text" class="input-inline" @bind="_canvaDesignTitle" placeholder="Titulo del diseno" style="margin-top:0.3rem;" />
+                                                                <select class="select-inline" @bind="_canvaExportFormat" style="margin-top:0.3rem;">
+                                                                    <option value="png">PNG</option>
+                                                                    <option value="jpg">JPG</option>
+                                                                    <option value="pdf">PDF</option>
+                                                                    <option value="pptx">PPTX</option>
+                                                                </select>
+                                                            }
                                                         </div>
                                                     }
                                                     <div class="step-card-actions">
@@ -1859,10 +1983,20 @@ else
         _editInputMapping = pm.InputMapping ?? "{\"source\":\"user\"}";
         _editError = null;
 
-        // Load type-specific step config
+        // Reset all type-specific fields
         _imagePrompt = "";
         _videoPrompt = "";
         _videoSource = "prompt";
+        _publishCaption = "";
+        _publishType = "post";
+        _interactionTemplate = "";
+        _interactionMessageType = "combined";
+        _interactionWaitForResponse = "true";
+        _canvaExportFormat = "png";
+        _canvaDesignTitle = "";
+        _canvaStepBrandTemplateId = "";
+        _canvaDesignType = "doc";
+
         if (!string.IsNullOrWhiteSpace(pm.Configuration))
         {
             try
@@ -1876,6 +2010,24 @@ else
                         _videoPrompt = vpEl.GetString() ?? "";
                     if (cfg.TryGetValue("videoSource", out var vsEl))
                         _videoSource = vsEl.GetString() ?? "prompt";
+                    if (cfg.TryGetValue("caption", out var capEl))
+                        _publishCaption = capEl.GetString() ?? "";
+                    if (cfg.TryGetValue("publishType", out var ptEl))
+                        _publishType = ptEl.GetString() ?? "post";
+                    if (cfg.TryGetValue("messageTemplate", out var mtEl))
+                        _interactionTemplate = mtEl.GetString() ?? "";
+                    if (cfg.TryGetValue("messageType", out var mtyEl))
+                        _interactionMessageType = mtyEl.GetString() ?? "combined";
+                    if (cfg.TryGetValue("waitForResponse", out var wfrEl))
+                        _interactionWaitForResponse = wfrEl.ValueKind == JsonValueKind.True ? "true" : "false";
+                    if (cfg.TryGetValue("exportFormat", out var efEl))
+                        _canvaExportFormat = efEl.GetString() ?? "png";
+                    if (cfg.TryGetValue("designTitle", out var dtEl))
+                        _canvaDesignTitle = dtEl.GetString() ?? "";
+                    if (cfg.TryGetValue("brandTemplateId", out var btEl))
+                        _canvaStepBrandTemplateId = btEl.GetString() ?? "";
+                    if (cfg.TryGetValue("designType", out var dtyEl))
+                        _canvaDesignType = dtyEl.GetString() ?? "doc";
                 }
             }
             catch { /* ignore parse errors */ }
@@ -1898,15 +2050,51 @@ else
 
         try
         {
-            // Rebuild step config for Image/Video modules
-            var stepConfig = pm.Configuration;
-            if (pm.ModuleType == "Image" && !string.IsNullOrWhiteSpace(_imagePrompt))
+            // Rebuild step config based on module type
+            string? stepConfig = null;
+            if (pm.ModuleType == "Image")
             {
-                stepConfig = JsonSerializer.Serialize(new { imagePrompt = _imagePrompt.Trim() });
+                if (!string.IsNullOrWhiteSpace(_imagePrompt))
+                    stepConfig = JsonSerializer.Serialize(new { imagePrompt = _imagePrompt.Trim() });
             }
-            else if (pm.ModuleType == "Image" && string.IsNullOrWhiteSpace(_imagePrompt))
+            else if (pm.ModuleType == "Video")
             {
-                stepConfig = null;
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    videoSource = _videoSource,
+                    videoPrompt = _videoPrompt.Trim()
+                });
+            }
+            else if (pm.ModuleType == "Publish")
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption,
+                    publishType = _publishType
+                });
+            }
+            else if (pm.ModuleType == "Interaction")
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    messageTemplate = string.IsNullOrWhiteSpace(_interactionTemplate) ? "{previous_output}" : _interactionTemplate,
+                    messageType = _interactionMessageType,
+                    waitForResponse = _interactionWaitForResponse == "true"
+                });
+            }
+            else if (pm.ModuleType == "Design")
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    exportFormat = _canvaExportFormat,
+                    designTitle = _canvaDesignTitle,
+                    brandTemplateId = string.IsNullOrWhiteSpace(_canvaStepBrandTemplateId) ? (string?)null : _canvaStepBrandTemplateId,
+                    designType = _canvaDesignType
+                });
+            }
+            else
+            {
+                stepConfig = pm.Configuration; // preserve existing for unknown types
             }
 
             var req = new UpdateProjectModuleRequest(
