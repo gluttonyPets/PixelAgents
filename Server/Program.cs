@@ -1108,7 +1108,8 @@ app.MapPost("/api/projects/{projectId}/cancel", (
 // Download execution file
 app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     Guid executionId, Guid fileId, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IWebHostEnvironment env) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -1122,7 +1123,11 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
             f.StepExecution.ExecutionId == executionId);
     if (file is null) return Results.NotFound();
 
-    var fullPath = Path.Combine(exec.WorkspacePath, file.FilePath);
+    var mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
+    var workspaceAbsolute = Path.IsPathRooted(exec.WorkspacePath)
+        ? exec.WorkspacePath
+        : Path.Combine(mediaRoot, exec.WorkspacePath);
+    var fullPath = Path.Combine(workspaceAbsolute, file.FilePath);
     if (!File.Exists(fullPath)) return Results.NotFound("Archivo no encontrado en disco");
 
     var bytes = await File.ReadAllBytesAsync(fullPath);
@@ -1131,7 +1136,8 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
 
 // Public file endpoint for external services (e.g., Buffer) that cannot authenticate
 app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async (
-    string tenant, Guid executionId, Guid fileId, string fileName, ITenantDbContextFactory factory) =>
+    string tenant, Guid executionId, Guid fileId, string fileName,
+    ITenantDbContextFactory factory, IWebHostEnvironment env) =>
 {
     UserDbContext db;
     try { db = factory.Create(tenant); }
@@ -1148,7 +1154,11 @@ app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async
                 f.StepExecution.ExecutionId == executionId);
         if (file is null) return Results.NotFound();
 
-        var fullPath = Path.Combine(exec.WorkspacePath, file.FilePath);
+        var mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
+        var workspaceAbsolute = Path.IsPathRooted(exec.WorkspacePath)
+            ? exec.WorkspacePath
+            : Path.Combine(mediaRoot, exec.WorkspacePath);
+        var fullPath = Path.Combine(workspaceAbsolute, file.FilePath);
         if (!File.Exists(fullPath)) return Results.NotFound();
 
         var bytes = await File.ReadAllBytesAsync(fullPath);

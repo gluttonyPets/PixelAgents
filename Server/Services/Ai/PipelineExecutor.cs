@@ -42,6 +42,12 @@ namespace Server.Services.Ai
             _configuration = configuration;
         }
 
+        /// <summary>
+        /// Resolves a WorkspacePath (relative or legacy absolute) to an absolute disk path.
+        /// </summary>
+        private string ResolveWorkspacePath(string storedPath) =>
+            Path.IsPathRooted(storedPath) ? storedPath : Path.Combine(_mediaRoot, storedPath);
+
         private static bool IsInteractionStep(AiModule module) =>
             module.ModuleType == "Interaction" ||
             (module.ProviderType == "System" && (module.ModelName == "whatsapp" || module.ModelName == "telegram"));
@@ -112,14 +118,16 @@ namespace Server.Services.Ai
                     "Validacion pre-ejecucion fallida:\n" + string.Join("\n", errors));
 
             var executionId = Guid.NewGuid();
-            var workspacePath = Path.Combine(_mediaRoot, tenantDbName, projectId.ToString(), executionId.ToString());
+            // Store relative path so it survives app restarts / redeployments
+            var relativeWorkspace = Path.Combine(tenantDbName, projectId.ToString(), executionId.ToString());
+            var workspacePath = Path.Combine(_mediaRoot, relativeWorkspace);
 
             var execution = new ProjectExecution
             {
                 Id = executionId,
                 ProjectId = projectId,
                 Status = "Running",
-                WorkspacePath = workspacePath,
+                WorkspacePath = relativeWorkspace,
                 CreatedAt = DateTime.UtcNow,
                 UserInput = userInput,
             };
@@ -1430,13 +1438,12 @@ Datos de la ejecucion:
             // Save exported files
             if (canvaResult.IsSuccess && canvaResult.DownloadedFiles.Count > 0)
             {
-                var workspace = Path.Combine(_mediaRoot, execution.WorkspacePath);
+                var workspace = ResolveWorkspacePath(execution.WorkspacePath);
                 Directory.CreateDirectory(workspace);
 
                 foreach (var file in canvaResult.DownloadedFiles)
                 {
-                    var filePath = Path.Combine(execution.WorkspacePath, file.FileName);
-                    var fullPath = Path.Combine(_mediaRoot, filePath);
+                    var fullPath = Path.Combine(workspace, file.FileName);
                     await File.WriteAllBytesAsync(fullPath, file.Data);
 
                     db.ExecutionFiles.Add(new ExecutionFile
@@ -1445,7 +1452,7 @@ Datos de la ejecucion:
                         StepExecutionId = stepExecution.Id,
                         FileName = file.FileName,
                         ContentType = file.ContentType,
-                        FilePath = filePath,
+                        FilePath = file.FileName,
                         Direction = "output",
                         FileSize = file.Data.Length,
                         CreatedAt = DateTime.UtcNow
@@ -1660,7 +1667,7 @@ Datos de la ejecucion:
                 {
                     foreach (var file in prevStepExec.Files.Where(f => f.ContentType.StartsWith("image/")))
                     {
-                        var filePath = Path.Combine(execution.WorkspacePath, file.FilePath);
+                        var filePath = Path.Combine(ResolveWorkspacePath(execution.WorkspacePath), file.FilePath);
                         if (!System.IO.File.Exists(filePath)) continue;
 
                         var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
@@ -1852,7 +1859,7 @@ Datos de la ejecucion:
 
             // Continue execution from the step after the paused one
             var allModules = project.ProjectModules.ToList();
-            var workspacePath = execution.WorkspacePath;
+            var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
 
             // Load previous execution summaries for context
             var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, execution.ProjectId, execution.Id);
@@ -2609,7 +2616,7 @@ Datos de la ejecucion:
                 .OrderBy(m => m.StepOrder)
                 .ToList();
 
-            var workspacePath = execution.WorkspacePath;
+            var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
             var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, project.Id, execution.Id);
 
             var result = await ExecuteBranchStepsAsync(
@@ -2681,7 +2688,7 @@ Datos de la ejecucion:
                 .FirstOrDefaultAsync(p => p.Id == execution.ProjectId)
                 ?? throw new InvalidOperationException("Proyecto no encontrado");
 
-            var workspacePath = execution.WorkspacePath;
+            var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
 
             // ── Pre-flight: validate API keys for steps that will re-execute ──
             var retryModules = project.ProjectModules.Where(pm => pm.StepOrder >= fromStepOrder).ToList();
