@@ -167,6 +167,56 @@ static async Task<UserDbContext?> ResolveTenantDb(
     return factory.Create(dbName);
 }
 
+/// <summary>
+/// Resolves the full disk path for an execution file, trying multiple strategies
+/// to handle legacy absolute paths, relative paths, and path changes across deployments.
+/// Returns null if the file cannot be found on disk.
+/// </summary>
+static string? ResolveFilePath(string mediaRoot, string workspacePath, string filePath, ILogger logger)
+{
+    // Strategy 1: workspace is relative — combine with mediaRoot
+    if (!Path.IsPathRooted(workspacePath))
+    {
+        var candidate = Path.Combine(mediaRoot, workspacePath, filePath);
+        if (File.Exists(candidate)) return candidate;
+        logger.LogWarning("File not found (relative workspace): {Path}", candidate);
+    }
+    else
+    {
+        // Strategy 2: workspace is absolute (legacy) — try as-is
+        var candidate = Path.Combine(workspacePath, filePath);
+        if (File.Exists(candidate)) return candidate;
+        logger.LogWarning("File not found (absolute workspace): {Path}", candidate);
+
+        // Strategy 3: extract relative part after "GeneratedMedia" and re-root
+        var separator = $"GeneratedMedia{Path.DirectorySeparatorChar}";
+        var altSeparator = "GeneratedMedia/"; // handle Linux paths in Windows DB or vice versa
+        var idx = workspacePath.IndexOf(separator, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) idx = workspacePath.IndexOf(altSeparator, StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) idx = workspacePath.IndexOf("GeneratedMedia\\", StringComparison.OrdinalIgnoreCase);
+
+        if (idx >= 0)
+        {
+            var relative = workspacePath[(idx + "GeneratedMedia".Length + 1)..];
+            var candidate2 = Path.Combine(mediaRoot, relative, filePath);
+            if (File.Exists(candidate2))
+            {
+                logger.LogInformation("File found via re-rooted path: {Path}", candidate2);
+                return candidate2;
+            }
+            logger.LogWarning("File not found (re-rooted): {Path}", candidate2);
+        }
+    }
+
+    // Strategy 4: try filePath directly under mediaRoot (flat structure fallback)
+    var flat = Path.Combine(mediaRoot, filePath);
+    if (File.Exists(flat)) return flat;
+
+    logger.LogError("Execution file not found anywhere. WorkspacePath={Workspace}, FilePath={File}, MediaRoot={Root}",
+        workspacePath, filePath, mediaRoot);
+    return null;
+}
+
 // ==================== Auth Endpoints ====================
 
 app.MapPost("/api/auth/register", async (RegisterRequest req, IAccountService svc) =>
@@ -1109,7 +1159,7 @@ app.MapPost("/api/projects/{projectId}/cancel", (
 app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     Guid executionId, Guid fileId, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    IWebHostEnvironment env) =>
+    IWebHostEnvironment env, ILogger<Program> logger) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -1124,11 +1174,8 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     if (file is null) return Results.NotFound();
 
     var mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
-    var workspaceAbsolute = Path.IsPathRooted(exec.WorkspacePath)
-        ? exec.WorkspacePath
-        : Path.Combine(mediaRoot, exec.WorkspacePath);
-    var fullPath = Path.Combine(workspaceAbsolute, file.FilePath);
-    if (!File.Exists(fullPath)) return Results.NotFound("Archivo no encontrado en disco");
+    var fullPath = ResolveFilePath(mediaRoot, exec.WorkspacePath, file.FilePath, logger);
+    if (fullPath is null) return Results.NotFound("Archivo no encontrado en disco");
 
     var bytes = await File.ReadAllBytesAsync(fullPath);
     return Results.File(bytes, file.ContentType, file.FileName);
@@ -1137,7 +1184,7 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
 // Public file endpoint for external services (e.g., Buffer) that cannot authenticate
 app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async (
     string tenant, Guid executionId, Guid fileId, string fileName,
-    ITenantDbContextFactory factory, IWebHostEnvironment env) =>
+    ITenantDbContextFactory factory, IWebHostEnvironment env, ILogger<Program> logger) =>
 {
     UserDbContext db;
     try { db = factory.Create(tenant); }
@@ -1155,11 +1202,8 @@ app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async
         if (file is null) return Results.NotFound();
 
         var mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
-        var workspaceAbsolute = Path.IsPathRooted(exec.WorkspacePath)
-            ? exec.WorkspacePath
-            : Path.Combine(mediaRoot, exec.WorkspacePath);
-        var fullPath = Path.Combine(workspaceAbsolute, file.FilePath);
-        if (!File.Exists(fullPath)) return Results.NotFound();
+        var fullPath = ResolveFilePath(mediaRoot, exec.WorkspacePath, file.FilePath, logger);
+        if (fullPath is null) return Results.NotFound();
 
         var bytes = await File.ReadAllBytesAsync(fullPath);
         return Results.File(bytes, file.ContentType, file.FileName);
