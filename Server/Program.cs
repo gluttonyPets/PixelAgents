@@ -846,17 +846,40 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
         db.StepExecutions.RemoveRange(stepExecutions);
 
     var removedOrder = pm.StepOrder;
+    var removedBranch = pm.BranchId;
     db.ProjectModules.Remove(pm);
     await db.SaveChangesAsync();
 
-    // Renumber remaining steps so there are no gaps
+    // Renumber remaining steps in the SAME branch only
     var remaining = await db.ProjectModules
-        .Where(x => x.ProjectId == projectId && x.StepOrder > removedOrder)
+        .Where(x => x.ProjectId == projectId && x.BranchId == removedBranch && x.StepOrder > removedOrder)
         .OrderBy(x => x.StepOrder)
         .ToListAsync();
     foreach (var r in remaining)
         r.StepOrder--;
-    if (remaining.Count > 0)
+
+    // If we deleted a main-branch step, update BranchFromStep on branches that forked from it or later
+    if (removedBranch == "main")
+    {
+        var branchModules = await db.ProjectModules
+            .Where(x => x.ProjectId == projectId && x.BranchFromStep.HasValue)
+            .ToListAsync();
+        foreach (var bm in branchModules)
+        {
+            if (bm.BranchFromStep == removedOrder)
+            {
+                // Branch forked from deleted step — move fork point up one step
+                bm.BranchFromStep = removedOrder > 1 ? removedOrder - 1 : 1;
+            }
+            else if (bm.BranchFromStep > removedOrder)
+            {
+                // Branch forked from a later step — shift down to match renumbering
+                bm.BranchFromStep--;
+            }
+        }
+    }
+
+    if (remaining.Count > 0 || removedBranch == "main")
         await db.SaveChangesAsync();
 
     return Results.NoContent();
