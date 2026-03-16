@@ -55,6 +55,7 @@ builder.Services.AddSingleton<IAiProvider, OpenAiProvider>();
 builder.Services.AddSingleton<IAiProvider, AnthropicProvider>();
 builder.Services.AddSingleton<IAiProvider, LeonardoProvider>();
 builder.Services.AddSingleton<IAiProvider, GeminiProvider>();
+builder.Services.AddSingleton<IAiProvider, PexelsProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddHttpClient<Server.Services.WhatsApp.WhatsAppService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();

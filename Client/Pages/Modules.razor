@@ -21,6 +21,7 @@
             <option value="Google">Google (Gemini)</option>
             <option value="LeonardoAI">Leonardo AI</option>
             <option value="Canva">Canva</option>
+            <option value="Pexels">Pexels (Video gratuito)</option>
         </select>
     </div>
 
@@ -310,6 +311,64 @@
                         </select>
                     </div>
                 }
+            }
+            else if (_moduleType == "VideoSearch" && _provider == "Pexels")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Orientacion</label>
+                        <select @bind="_pexelsOrientation">
+                            <option value="landscape">Paisaje</option>
+                            <option value="portrait">Retrato</option>
+                            <option value="square">Cuadrado</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Tamano minimo</label>
+                        <select @bind="_pexelsSize">
+                            <option value="large">Grande (4K)</option>
+                            <option value="medium">Medio (Full HD)</option>
+                            <option value="small">Pequeno (HD)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Calidad preferida</label>
+                        <select @bind="_pexelsQuality">
+                            <option value="hd">HD</option>
+                            <option value="sd">SD</option>
+                            <option value="uhd">UHD (4K)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Idioma de busqueda</label>
+                        <select @bind="_pexelsLocale">
+                            <option value="es-ES">Espanol</option>
+                            <option value="en-US">Ingles</option>
+                            <option value="fr-FR">Frances</option>
+                            <option value="de-DE">Aleman</option>
+                            <option value="pt-BR">Portugues</option>
+                            <option value="it-IT">Italiano</option>
+                            <option value="ja-JP">Japones</option>
+                            <option value="zh-CN">Chino</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Duracion minima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
+                        <input type="number" min="0" @bind="_pexelsMinDuration" />
+                    </div>
+                    <div class="form-group">
+                        <label>Duracion maxima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
+                        <input type="number" min="0" @bind="_pexelsMaxDuration" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Resultados por pagina <span class="text-sm text-muted">(1-80)</span></label>
+                    <input type="number" min="1" max="80" @bind="_pexelsPerPage" />
+                </div>
             }
             else if (_moduleType == "Embeddings")
             {
@@ -630,6 +689,64 @@
                                         </div>
                                     </div>
                                 }
+                                else if (m.ModuleType == "VideoSearch" && m.ProviderType == "Pexels")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Orientacion</label>
+                                            <select @bind="_editPexelsOrientation">
+                                                <option value="landscape">Paisaje</option>
+                                                <option value="portrait">Retrato</option>
+                                                <option value="square">Cuadrado</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Tamano minimo</label>
+                                            <select @bind="_editPexelsSize">
+                                                <option value="large">Grande (4K)</option>
+                                                <option value="medium">Medio (Full HD)</option>
+                                                <option value="small">Pequeno (HD)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Calidad preferida</label>
+                                            <select @bind="_editPexelsQuality">
+                                                <option value="hd">HD</option>
+                                                <option value="sd">SD</option>
+                                                <option value="uhd">UHD (4K)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Idioma de busqueda</label>
+                                            <select @bind="_editPexelsLocale">
+                                                <option value="es-ES">Espanol</option>
+                                                <option value="en-US">Ingles</option>
+                                                <option value="fr-FR">Frances</option>
+                                                <option value="de-DE">Aleman</option>
+                                                <option value="pt-BR">Portugues</option>
+                                                <option value="it-IT">Italiano</option>
+                                                <option value="ja-JP">Japones</option>
+                                                <option value="zh-CN">Chino</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Duracion minima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
+                                            <input type="number" min="0" @bind="_editPexelsMinDuration" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Duracion maxima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
+                                            <input type="number" min="0" @bind="_editPexelsMaxDuration" />
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Resultados por pagina <span class="text-sm text-muted">(1-80)</span></label>
+                                        <input type="number" min="1" max="80" @bind="_editPexelsPerPage" />
+                                    </div>
+                                }
                                 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
                                 {
                                     <div class="form-group">
@@ -706,7 +823,7 @@
                                     </div>
                                 }
 
-                                @if (m.ModuleType is "Text" or "Image" or "Audio" or "Video" or "Design")
+                                @if (m.ModuleType is "Text" or "Image" or "Audio" or "Video" or "Design" or "VideoSearch")
                                 {
                                     <button class="btn btn-primary btn-sm" @onclick="() => SaveConfig(m)" disabled="@_editConfigSaving">
                                         @(_editConfigSaving ? "Guardando..." : "Guardar")
@@ -740,6 +857,7 @@ else if (!_loading)
         ("Interaction", "Interaccion",           "C"),
         ("Publish",     "Publicacion",           "P"),
         ("Design",      "Diseno",                "D"),
+        ("VideoSearch", "Busqueda de video",     "S"),
     ];
 
     private List<ModuleGroup> GetModuleGroups()
@@ -836,6 +954,24 @@ else if (!_loading)
     // ── Form: audio TTS ──
     private string _ttsVoice = "alloy";
     private double _ttsSpeed = 1.0;
+
+    // ── Form: Pexels VideoSearch ──
+    private string _pexelsOrientation = "landscape";
+    private string _pexelsSize = "medium";
+    private string _pexelsQuality = "hd";
+    private string _pexelsLocale = "es-ES";
+    private int _pexelsMinDuration = 0;
+    private int _pexelsMaxDuration = 0;
+    private int _pexelsPerPage = 15;
+
+    // ── Edit: Pexels VideoSearch config ──
+    private string _editPexelsOrientation = "landscape";
+    private string _editPexelsSize = "medium";
+    private string _editPexelsQuality = "hd";
+    private string _editPexelsLocale = "es-ES";
+    private int _editPexelsMinDuration = 0;
+    private int _editPexelsMaxDuration = 0;
+    private int _editPexelsPerPage = 15;
 
     // ── Form: transcription ──
     private string _transcriptionLang = "";
@@ -957,6 +1093,9 @@ else if (!_loading)
         // ─── Canva: Design ───
         new("canva-design",    "Canva Design",    "Canva", ["Design"], ["design-creation","export"],           "Crea disenos en blanco y exporta en PNG, JPG, PDF o PPTX."),
         new("canva-autofill",  "Canva Autofill",  "Canva", ["Design"], ["design-creation","autofill","export"], "Autofill de brand templates con datos del pipeline."),
+
+        // ─── Pexels: Video Search (free) ───
+        new("pexels-video",    "Pexels Video Search", "Pexels", ["VideoSearch"], ["video-search","free"], "Busca videos de stock gratuitos en Pexels. Sin coste. Ideal para pipelines."),
     ];
 
     // ── Available types per provider ──
@@ -977,6 +1116,7 @@ else if (!_loading)
                 "Audio"         => "Audio (TTS)",
                 "Transcription" => "Transcripcion (STT)",
                 "Design"        => "Diseno (Canva)",
+                "VideoSearch"   => "Busqueda de video (stock)",
                 _               => t
             }))
             .ToList();
@@ -1068,6 +1208,13 @@ else if (!_loading)
         _canvaExportFormat = "png";
         _canvaBrandTemplate = "";
         _canvaDesignType = "doc";
+        _pexelsOrientation = "landscape";
+        _pexelsSize = "medium";
+        _pexelsQuality = "hd";
+        _pexelsLocale = "es-ES";
+        _pexelsMinDuration = 0;
+        _pexelsMaxDuration = 0;
+        _pexelsPerPage = 15;
     }
 
     // ── Build config JSON ──
@@ -1155,6 +1302,23 @@ else if (!_loading)
                 parts.Add($"\"brandTemplateId\":{System.Text.Json.JsonSerializer.Serialize(_canvaBrandTemplate)}");
             if (_canvaDesignType != "doc")
                 parts.Add($"\"designType\":\"{_canvaDesignType}\"");
+        }
+        else if (_moduleType == "VideoSearch" && _provider == "Pexels")
+        {
+            if (_pexelsOrientation != "landscape")
+                parts.Add($"\"orientation\":\"{_pexelsOrientation}\"");
+            if (_pexelsSize != "medium")
+                parts.Add($"\"size\":\"{_pexelsSize}\"");
+            if (_pexelsQuality != "hd")
+                parts.Add($"\"preferredQuality\":\"{_pexelsQuality}\"");
+            if (_pexelsLocale != "es-ES")
+                parts.Add($"\"locale\":\"{_pexelsLocale}\"");
+            if (_pexelsMinDuration > 0)
+                parts.Add($"\"minDuration\":{_pexelsMinDuration}");
+            if (_pexelsMaxDuration > 0)
+                parts.Add($"\"maxDuration\":{_pexelsMaxDuration}");
+            if (_pexelsPerPage != 15)
+                parts.Add($"\"perPage\":{_pexelsPerPage}");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
@@ -1309,6 +1473,13 @@ else if (!_loading)
                 if (root.TryGetProperty("exportFormat", out var cef)) _editCanvaExportFormat = cef.GetString() ?? "png";
                 if (root.TryGetProperty("brandTemplateId", out var cbt)) _editCanvaBrandTemplate = cbt.GetString() ?? "";
                 if (root.TryGetProperty("designType", out var cdt)) _editCanvaDesignType = cdt.GetString() ?? "doc";
+                if (root.TryGetProperty("orientation", out var por)) _editPexelsOrientation = por.GetString() ?? "landscape";
+                if (root.TryGetProperty("size", out var psz2) && psz2.GetString() is "large" or "medium" or "small") _editPexelsSize = psz2.GetString()!;
+                if (root.TryGetProperty("preferredQuality", out var ppq)) _editPexelsQuality = ppq.GetString() ?? "hd";
+                if (root.TryGetProperty("locale", out var ploc)) _editPexelsLocale = ploc.GetString() ?? "es-ES";
+                if (root.TryGetProperty("minDuration", out var pmd)) _editPexelsMinDuration = pmd.GetInt32();
+                if (root.TryGetProperty("maxDuration", out var pmxd)) _editPexelsMaxDuration = pmxd.GetInt32();
+                if (root.TryGetProperty("perPage", out var ppp)) _editPexelsPerPage = ppp.GetInt32();
             }
             catch { }
         }
@@ -1458,6 +1629,23 @@ else if (!_loading)
                 parts.Add($"\"brandTemplateId\":{System.Text.Json.JsonSerializer.Serialize(_editCanvaBrandTemplate)}");
             if (_editCanvaDesignType != "doc")
                 parts.Add($"\"designType\":\"{_editCanvaDesignType}\"");
+        }
+        else if (moduleType == "VideoSearch" && providerType == "Pexels")
+        {
+            if (_editPexelsOrientation != "landscape")
+                parts.Add($"\"orientation\":\"{_editPexelsOrientation}\"");
+            if (_editPexelsSize != "medium")
+                parts.Add($"\"size\":\"{_editPexelsSize}\"");
+            if (_editPexelsQuality != "hd")
+                parts.Add($"\"preferredQuality\":\"{_editPexelsQuality}\"");
+            if (_editPexelsLocale != "es-ES")
+                parts.Add($"\"locale\":\"{_editPexelsLocale}\"");
+            if (_editPexelsMinDuration > 0)
+                parts.Add($"\"minDuration\":{_editPexelsMinDuration}");
+            if (_editPexelsMaxDuration > 0)
+                parts.Add($"\"maxDuration\":{_editPexelsMaxDuration}");
+            if (_editPexelsPerPage != 15)
+                parts.Add($"\"perPage\":{_editPexelsPerPage}");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;

@@ -182,6 +182,11 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
+        /// Estimates cost for a video search (e.g. Pexels). Always free.
+        /// </summary>
+        public static decimal EstimateVideoSearchCost(string modelName) => 0m;
+
+        /// <summary>
         /// Estimates cost for a video generation based on duration in seconds.
         /// </summary>
         public static decimal EstimateVideoCost(string modelName, int durationSeconds = 8)

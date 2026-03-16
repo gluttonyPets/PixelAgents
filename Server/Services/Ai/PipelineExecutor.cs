@@ -658,6 +658,89 @@ namespace Server.Services.Ai
                             $"Video generado correctamente ({result.Metadata.GetValueOrDefault("duration", "?")}s)",
                             pm.StepOrder, stepName);
                     }
+                    else if (pm.AiModule.ModuleType == "VideoSearch")
+                    {
+                        // VideoSearch modules: use input from previous step or user input as search query
+                        var searchQuery = inputs[0];
+                        if (string.IsNullOrWhiteSpace(searchQuery))
+                        {
+                            await FailStep(stepExecution, execution, "VideoSearch: no se proporciono texto de busqueda", db);
+                            return execution;
+                        }
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Buscando video en Pexels: '{searchQuery[..Math.Min(searchQuery.Length, 100)]}'",
+                            pm.StepOrder, stepName);
+
+                        var searchContext = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = searchQuery,
+                            ProjectContext = project.Context,
+                            Configuration = config,
+                        };
+
+                        var result = await provider.ExecuteAsync(searchContext);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
+
+                        if (!result.Success)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                $"Error en busqueda de video: {result.Error}", pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        var outputFiles = new List<OutputFile>();
+
+                        if (result.FileOutput is not null)
+                        {
+                            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            Directory.CreateDirectory(stepDir);
+
+                            var ext = GetExtension(result.ContentType ?? "video/mp4");
+                            var fileName = $"output{ext}";
+                            var filePath = Path.Combine(stepDir, fileName);
+                            await File.WriteAllBytesAsync(filePath, result.FileOutput);
+
+                            var execFile = new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(),
+                                StepExecutionId = stepExecution.Id,
+                                FileName = fileName,
+                                ContentType = result.ContentType ?? "video/mp4",
+                                FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                Direction = "Output",
+                                FileSize = result.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            };
+                            db.ExecutionFiles.Add(execFile);
+
+                            outputFiles.Add(new OutputFile
+                            {
+                                FileId = execFile.Id,
+                                FileName = fileName,
+                                ContentType = execFile.ContentType,
+                                FileSize = execFile.FileSize
+                            });
+                        }
+
+                        var videoOutput = OutputSchemaHelper.BuildVideoOutput(outputFiles, pm.AiModule.ModelName, result.Metadata);
+                        stepOutputs[pm.StepOrder] = videoOutput;
+                        stepExecution.OutputData = JsonSerializer.Serialize(videoOutput);
+                        await db.SaveChangesAsync();
+
+                        var pexelsQuery = result.Metadata.GetValueOrDefault("query", "?");
+                        var pexelsTotal = result.Metadata.GetValueOrDefault("totalResults", 0);
+                        var pexelsPhotographer = result.Metadata.GetValueOrDefault("photographer", "");
+                        await _logger.LogAsync(projectId, executionId, "success",
+                            $"Video encontrado en Pexels (query='{pexelsQuery}', {pexelsTotal} resultados, por {pexelsPhotographer})",
+                            pm.StepOrder, stepName);
+                    }
                     else
                     {
                         // Generic fallback for other module types (Audio, Transcription, etc.)
@@ -2416,6 +2499,48 @@ Datos de la ejecucion:
                         var bVidOutput = new StepOutput { Type = "video" };
                         stepOutputs[bpm.StepOrder] = bVidOutput;
                         branchStepExec.OutputData = JsonSerializer.Serialize(bVidOutput);
+                        await db.SaveChangesAsync();
+                    }
+                    else if (bpm.AiModule.ModuleType == "VideoSearch")
+                    {
+                        var bSearchQuery = bInputs[0];
+                        if (string.IsNullOrWhiteSpace(bSearchQuery))
+                            throw new InvalidOperationException($"[{branchId}] Texto de busqueda obligatorio para VideoSearch");
+
+                        var bSearchCtx = new AiExecutionContext
+                        {
+                            ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
+                            ApiKey = bApiKey, Input = bSearchQuery,
+                            ProjectContext = project.Context, Configuration = bConfig,
+                        };
+                        var bResult = await bProvider.ExecuteAsync(bSearchCtx);
+                        stepResults[bpm.StepOrder] = bResult;
+                        stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
+                        branchStepExec.EstimatedCost += bResult.EstimatedCost;
+                        if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en busqueda de video");
+
+                        var bSearchFiles = new List<OutputFile>();
+                        if (bResult.FileOutput is not null)
+                        {
+                            var bDir = Path.Combine(workspacePath, $"branch_{branchId}_step_{bpm.StepOrder}");
+                            Directory.CreateDirectory(bDir);
+                            var ext = GetExtension(bResult.ContentType ?? "video/mp4");
+                            var fn = $"output{ext}";
+                            await File.WriteAllBytesAsync(Path.Combine(bDir, fn), bResult.FileOutput);
+                            var ef = new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(), StepExecutionId = branchStepExec.Id,
+                                FileName = fn, ContentType = bResult.ContentType ?? "video/mp4",
+                                FilePath = Path.Combine($"branch_{branchId}_step_{bpm.StepOrder}", fn),
+                                Direction = "Output", FileSize = bResult.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            };
+                            db.ExecutionFiles.Add(ef);
+                            bSearchFiles.Add(new OutputFile { FileId = ef.Id, FileName = fn, ContentType = ef.ContentType, FileSize = ef.FileSize });
+                        }
+                        var bSearchOutput = OutputSchemaHelper.BuildVideoOutput(bSearchFiles, bpm.AiModule.ModelName, bResult.Metadata);
+                        stepOutputs[bpm.StepOrder] = bSearchOutput;
+                        branchStepExec.OutputData = JsonSerializer.Serialize(bSearchOutput);
                         await db.SaveChangesAsync();
                     }
 
