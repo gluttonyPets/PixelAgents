@@ -1329,6 +1329,69 @@ a.link:hover { text-decoration: underline; }
     margin-top: 0.5rem;
 }
 
+/* History cards */
+.history-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 0.5rem;
+    overflow: hidden;
+}
+.history-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.6rem 0.8rem;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.history-card-header:hover { background: var(--surface); }
+.history-card-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+.history-card-prompt {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.history-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+.history-expand-icon {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+.history-card-body {
+    border-top: 1px solid var(--border);
+    padding: 0.6rem 0.8rem;
+}
+.history-step-preview {
+    margin-bottom: 0.5rem;
+}
+.history-step-preview:last-child { margin-bottom: 0; }
+.history-image-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+}
+.history-image-item { flex-shrink: 0; }
+.history-image-thumb {
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
 /* Utility */
 .mt-1 { margin-top: 0.5rem; }
 .mb-1 { margin-bottom: 0.5rem; }

@@ -21,6 +21,8 @@ services:
       - postgres
     ports:
       - "${APP_PORT:-8080}:80"
+    volumes:
+      - media:/app/GeneratedMedia
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       # Force HTTP only (no HTTPS certificate needed behind nginx)
@@ -36,3 +38,4 @@ services:
 
 volumes:
   pgdata:
+  media:
