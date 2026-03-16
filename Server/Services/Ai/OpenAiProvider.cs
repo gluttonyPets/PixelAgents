@@ -218,10 +218,11 @@ namespace Server.Services.Ai
 
             if (context.InputFiles is { Count: > 0 } && isGptImage && sizeStr == "auto")
             {
-                // SDK doesn't support size="auto" (GeneratedImageSize only takes int,int).
-                // Use raw HttpClient to call the image edit API preserving input dimensions.
+                // "auto" doesn't reliably preserve aspect ratio — detect input dimensions
+                // and pick the closest supported gpt-image size instead.
+                var bestSize = DetectBestGptImageSize(context.InputFiles[0]);
                 (imageBytes, revisedPrompt) = await CallImageEditRawAsync(
-                    context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration);
+                    context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration, bestSize);
             }
             else if (context.InputFiles is { Count: > 0 } && isGptImage)
             {
@@ -272,12 +273,109 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// Calls the OpenAI image edit API directly via HttpClient to support size="auto",
-        /// which the SDK's GeneratedImageSize struct cannot represent.
+        /// Detects the aspect ratio of an input image and returns the closest
+        /// supported gpt-image size string (e.g. "1024x1536" for portrait).
+        /// Falls back to "auto" if dimensions cannot be read.
+        /// </summary>
+        private static string DetectBestGptImageSize(byte[] imageBytes)
+        {
+            try
+            {
+                var (w, h) = ReadImageDimensions(imageBytes);
+                if (w <= 0 || h <= 0) return "auto";
+
+                var ratio = (double)w / h;
+
+                // Supported sizes: 1024x1024 (1.0), 1536x1024 (1.5), 1024x1536 (0.667)
+                // Pick the closest aspect ratio
+                var candidates = new (string Size, double Ratio)[]
+                {
+                    ("1024x1024", 1.0),
+                    ("1536x1024", 1.5),    // landscape 3:2
+                    ("1024x1536", 0.6667), // portrait 2:3
+                };
+
+                var best = candidates[0];
+                var bestDiff = double.MaxValue;
+                foreach (var c in candidates)
+                {
+                    var diff = Math.Abs(ratio - c.Ratio);
+                    if (diff < bestDiff) { bestDiff = diff; best = c; }
+                }
+                return best.Size;
+            }
+            catch
+            {
+                return "auto";
+            }
+        }
+
+        /// <summary>
+        /// Reads width and height from a PNG or JPEG image header without loading the full image.
+        /// </summary>
+        private static (int Width, int Height) ReadImageDimensions(byte[] data)
+        {
+            if (data.Length < 24) return (0, 0);
+
+            // PNG: bytes 0-7 = signature, IHDR chunk at byte 16: width(4) height(4)
+            if (data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
+            {
+                var w = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+                var h = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+                return (w, h);
+            }
+
+            // JPEG: scan for SOF0 (0xFF 0xC0) or SOF2 (0xFF 0xC2) marker
+            if (data[0] == 0xFF && data[1] == 0xD8)
+            {
+                int i = 2;
+                while (i + 9 < data.Length)
+                {
+                    if (data[i] != 0xFF) { i++; continue; }
+                    var marker = data[i + 1];
+                    if (marker == 0xC0 || marker == 0xC2)
+                    {
+                        var h = (data[i + 5] << 8) | data[i + 6];
+                        var w = (data[i + 7] << 8) | data[i + 8];
+                        return (w, h);
+                    }
+                    // Skip to next marker
+                    var len = (data[i + 2] << 8) | data[i + 3];
+                    i += 2 + len;
+                }
+            }
+
+            // WebP: RIFF header, 'WEBP' at byte 8, VP8 at byte 12
+            if (data.Length > 30 && data[0] == 0x52 && data[1] == 0x49 && data[2] == 0x46 && data[3] == 0x46
+                && data[8] == 0x57 && data[9] == 0x45 && data[10] == 0x42 && data[11] == 0x50)
+            {
+                // VP8L (lossless)
+                if (data[12] == 0x56 && data[13] == 0x50 && data[14] == 0x38 && data[15] == 0x4C && data.Length > 25)
+                {
+                    var bits = (uint)data[21] | ((uint)data[22] << 8) | ((uint)data[23] << 16) | ((uint)data[24] << 24);
+                    var w = (int)(bits & 0x3FFF) + 1;
+                    var h = (int)((bits >> 14) & 0x3FFF) + 1;
+                    return (w, h);
+                }
+                // VP8 (lossy) — frame header at byte 23+
+                if (data[12] == 0x56 && data[13] == 0x50 && data[14] == 0x38 && data[15] == 0x20 && data.Length > 29)
+                {
+                    var w = (data[26] | (data[27] << 8)) & 0x3FFF;
+                    var h = (data[28] | (data[29] << 8)) & 0x3FFF;
+                    return (w, h);
+                }
+            }
+
+            return (0, 0);
+        }
+
+        /// <summary>
+        /// Calls the OpenAI image edit API directly via HttpClient,
+        /// passing an explicit size to preserve aspect ratio from the input image.
         /// </summary>
         private static async Task<(byte[] ImageBytes, string RevisedPrompt)> CallImageEditRawAsync(
             string apiKey, string model, byte[] inputImage, string prompt,
-            IDictionary<string, object> config)
+            IDictionary<string, object> config, string sizeOverride = "auto")
         {
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
@@ -285,7 +383,7 @@ namespace Server.Services.Ai
             using var form = new MultipartFormDataContent();
             form.Add(new StringContent(model), "model");
             form.Add(new StringContent(prompt), "prompt");
-            form.Add(new StringContent("auto"), "size");
+            form.Add(new StringContent(sizeOverride), "size");
 
             // Quality
             if (config.TryGetValue("quality", out var q) && q is string qs && !string.IsNullOrWhiteSpace(qs))
