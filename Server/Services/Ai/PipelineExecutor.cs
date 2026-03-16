@@ -1065,6 +1065,12 @@ namespace Server.Services.Ai
                     var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
                         .OrderByDescending(k => k).FirstOrDefault();
 
+                    // If no previous step found in branch outputs, fall back to the main step
+                    // this branch forked from (first step of a branch has no prior sibling)
+                    if (!stepOutputs.ContainsKey(prevOrder) && !stepResults.ContainsKey(prevOrder)
+                        && pm.BranchFromStep.HasValue)
+                        prevOrder = pm.BranchFromStep.Value;
+
                     // Check if previous step has structured items
                     if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Items.Count > 0)
                     {
