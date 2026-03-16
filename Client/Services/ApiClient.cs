@@ -261,15 +261,14 @@ public class ApiClient
 
     // ── Executions ──
 
-    public async Task<(bool Ok, ExecutionDetailResponse? Result, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput)
+    public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute", new ExecuteProjectRequest(userInput));
-        if (!resp.IsSuccessStatusCode)
+        if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
-            return (false, null, await ReadErrorAsync(resp));
+            return (false, await ReadErrorAsync(resp));
         }
-        var result = await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
-        return (true, result, null);
+        return (true, null);
     }
 
     public async Task<List<ExecutionResponse>> GetExecutionsAsync(Guid projectId)
@@ -293,18 +292,17 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ExecutionLogResponse>>();
     }
 
-    public async Task<(bool Ok, ExecutionDetailResponse? Result, string? Error)> RetryFromStepAsync(
+    public async Task<(bool Ok, string? Error)> RetryFromStepAsync(
         Guid executionId, int stepOrder, string? comment)
     {
         var resp = await SendAsync(HttpMethod.Post,
             $"/api/executions/{executionId}/retry-from-step",
             new RetryFromStepRequest(stepOrder, comment));
-        if (!resp.IsSuccessStatusCode)
+        if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
-            return (false, null, await ReadErrorAsync(resp));
+            return (false, await ReadErrorAsync(resp));
         }
-        var result = await resp.Content.ReadFromJsonAsync<ExecutionDetailResponse>();
-        return (true, result, null);
+        return (true, null);
     }
 
     public async Task<bool> CancelExecutionAsync(Guid projectId)

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Server;
 using Server.Data;
@@ -866,7 +867,8 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
 app.MapPost("/api/projects/{projectId}/execute", async (
     Guid projectId, ExecuteProjectRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    IPipelineExecutor executor, ExecutionCancellationService cancellation) =>
+    ExecutionCancellationService cancellation,
+    IHubContext<ExecutionHub> hub) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -877,39 +879,57 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 
     var ct = cancellation.Register(projectId);
 
-    try
+    // Fire-and-forget: run pipeline in background, return immediately
+    _ = Task.Run(async () =>
     {
-        var execution = await executor.ExecuteAsync(projectId, req.UserInput, db, tenantDbName, ct);
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var bgFactory = scope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
+            await using var bgDb = bgFactory.Create(tenantDbName);
+            var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
-        var exec = await db.ProjectExecutions
-            .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
-                .ThenInclude(s => s.Files)
-            .Include(e => e.StepExecutions)
-                .ThenInclude(s => s.ProjectModule)
-                    .ThenInclude(pm => pm.AiModule)
-            .FirstAsync(e => e.Id == execution.Id);
+            var execution = await executor.ExecuteAsync(projectId, req.UserInput, bgDb, tenantDbName, ct);
 
-        var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
-            new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                s.ProjectModule.AiModule.Name, s.StepOrder,
-                s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                s.CreatedAt, s.CompletedAt, s.EstimatedCost,
-                s.Files.Select(f => new ExecutionFileResponse(
-                    f.Id, f.FileName, f.ContentType, f.FilePath,
-                    f.Direction, f.FileSize, f.CreatedAt)).ToList()
-            )).ToList();
+            // Load full result for client
+            var exec = await bgDb.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                    .ThenInclude(s => s.Files)
+                .Include(e => e.StepExecutions)
+                    .ThenInclude(s => s.ProjectModule)
+                        .ThenInclude(pm => pm.AiModule)
+                .FirstAsync(e => e.Id == execution.Id);
 
-        cancellation.Remove(projectId);
+            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+                new StepExecutionResponse(s.Id, s.ProjectModuleId,
+                    s.ProjectModule.AiModule.Name, s.StepOrder,
+                    s.Status, s.InputData, s.OutputData, s.ErrorMessage,
+                    s.CreatedAt, s.CompletedAt, s.EstimatedCost,
+                    s.Files.Select(f => new ExecutionFileResponse(
+                        f.Id, f.FileName, f.ContentType, f.FilePath,
+                        f.Direction, f.FileSize, f.CreatedAt)).ToList()
+                )).ToList();
 
-        return Results.Ok(new ExecutionDetailResponse(
-            exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
-    }
-    catch (Exception ex)
-    {
-        cancellation.Remove(projectId);
-        return Results.BadRequest(new { error = ex.Message });
-    }
+            var detail = new ExecutionDetailResponse(
+                exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+
+            // Notify client via SignalR
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionCompleted", detail);
+        }
+        catch (Exception ex)
+        {
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionFailed", ex.Message);
+        }
+        finally
+        {
+            cancellation.Remove(projectId);
+        }
+    });
+
+    return Results.Accepted(value: new { message = "Ejecucion iniciada" });
 }).RequireAuthorization();
 
 app.MapGet("/api/projects/{projectId}/executions", async (
@@ -982,7 +1002,8 @@ app.MapGet("/api/executions/{executionId}/logs", async (
 app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     Guid executionId, RetryFromStepRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    IPipelineExecutor executor, ExecutionCancellationService cancellation) =>
+    ExecutionCancellationService cancellation,
+    IHubContext<ExecutionHub> hub) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -991,39 +1012,66 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     var userClaims = await um.GetClaimsAsync(user!);
     var tenantDbName = userClaims.First(c => c.Type == "db_name").Value;
 
+    Guid projectId;
     try
     {
-        var projectId = await db.ProjectExecutions.Where(e => e.Id == executionId).Select(e => e.ProjectId).FirstAsync();
-        var ct = cancellation.Register(projectId);
-        var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, db, tenantDbName, ct);
-        cancellation.Remove(projectId);
-
-        var exec = await db.ProjectExecutions
-            .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
-                .ThenInclude(s => s.Files)
-            .Include(e => e.StepExecutions)
-                .ThenInclude(s => s.ProjectModule)
-                    .ThenInclude(pm => pm.AiModule)
-            .FirstAsync(e => e.Id == execution.Id);
-
-        var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
-            new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                s.ProjectModule.AiModule.Name, s.StepOrder,
-                s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                s.CreatedAt, s.CompletedAt, s.EstimatedCost,
-                s.Files.Select(f => new ExecutionFileResponse(
-                    f.Id, f.FileName, f.ContentType, f.FilePath,
-                    f.Direction, f.FileSize, f.CreatedAt)).ToList()
-            )).ToList();
-
-        return Results.Ok(new ExecutionDetailResponse(
-            exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-            exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
+        projectId = await db.ProjectExecutions.Where(e => e.Id == executionId).Select(e => e.ProjectId).FirstAsync();
     }
-    catch (Exception ex)
+    catch
     {
-        return Results.BadRequest(new { error = ex.Message });
+        return Results.NotFound(new { error = "Ejecucion no encontrada" });
     }
+
+    var ct = cancellation.Register(projectId);
+
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var bgFactory = scope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
+            await using var bgDb = bgFactory.Create(tenantDbName);
+            var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
+
+            var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, bgDb, tenantDbName, ct);
+
+            var exec = await bgDb.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                    .ThenInclude(s => s.Files)
+                .Include(e => e.StepExecutions)
+                    .ThenInclude(s => s.ProjectModule)
+                        .ThenInclude(pm => pm.AiModule)
+                .FirstAsync(e => e.Id == execution.Id);
+
+            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+                new StepExecutionResponse(s.Id, s.ProjectModuleId,
+                    s.ProjectModule.AiModule.Name, s.StepOrder,
+                    s.Status, s.InputData, s.OutputData, s.ErrorMessage,
+                    s.CreatedAt, s.CompletedAt, s.EstimatedCost,
+                    s.Files.Select(f => new ExecutionFileResponse(
+                        f.Id, f.FileName, f.ContentType, f.FilePath,
+                        f.Direction, f.FileSize, f.CreatedAt)).ToList()
+                )).ToList();
+
+            var detail = new ExecutionDetailResponse(
+                exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionCompleted", detail);
+        }
+        catch (Exception ex)
+        {
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionFailed", ex.Message);
+        }
+        finally
+        {
+            cancellation.Remove(projectId);
+        }
+    });
+
+    return Results.Accepted(value: new { message = "Reintento iniciado" });
 }).RequireAuthorization();
 
 // Cancel a running pipeline execution

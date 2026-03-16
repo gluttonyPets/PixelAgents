@@ -1586,6 +1586,24 @@ else
             InvokeAsync(StateHasChanged);
         });
 
+        _hubConnection.On<ExecutionDetailResponse>("ExecutionCompleted", result =>
+        {
+            _result = result;
+            _executing = false;
+            InvokeAsync(async () =>
+            {
+                _executions = await Api.GetExecutionsAsync(ProjectId);
+                StateHasChanged();
+            });
+        });
+
+        _hubConnection.On<string>("ExecutionFailed", error =>
+        {
+            _execError = error;
+            _executing = false;
+            InvokeAsync(StateHasChanged);
+        });
+
         try
         {
             await _hubConnection.StartAsync();
@@ -2240,12 +2258,11 @@ else
 
         try
         {
-            var (ok, result, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput);
-            if (ok) { _result = result; _executions = await Api.GetExecutionsAsync(ProjectId); }
-            else _execError = error;
+            var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput);
+            if (!ok) { _execError = error; _executing = false; }
+            // On success, _executing stays true — SignalR ExecutionCompleted/ExecutionFailed will update UI
         }
-        catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; }
-        _executing = false;
+        catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; _executing = false; }
     }
 
     private async Task CancelExecution()
@@ -2296,20 +2313,20 @@ else
         try
         {
             var commentToSend = string.IsNullOrWhiteSpace(_retryComment) ? null : _retryComment;
-            var (ok, result, error) = await Api.RetryFromStepAsync(_result.Id, stepOrder, commentToSend);
+            var (ok, error) = await Api.RetryFromStepAsync(_result.Id, stepOrder, commentToSend);
             if (ok)
             {
-                _result = result;
                 _retryStepOrder = null;
                 _retryComment = "";
+                // SignalR ExecutionCompleted will update _result
             }
             else
             {
                 _retryError = error;
+                _executing = false;
             }
         }
-        catch (Exception ex) { _retryError = $"Error de conexion: {ex.Message}"; }
-        _executing = false;
+        catch (Exception ex) { _retryError = $"Error de conexion: {ex.Message}"; _executing = false; }
     }
 
     private async Task RetryFromLog(int stepOrder)
@@ -2321,12 +2338,11 @@ else
 
         try
         {
-            var (ok, result, error) = await Api.RetryFromStepAsync(_result.Id, stepOrder, null);
-            if (ok) _result = result;
-            else _execError = error;
+            var (ok, error) = await Api.RetryFromStepAsync(_result.Id, stepOrder, null);
+            if (!ok) { _execError = error; _executing = false; }
+            // SignalR ExecutionCompleted will update _result and set _executing = false
         }
-        catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; }
-        _executing = false;
+        catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; _executing = false; }
     }
 
     private void ClearLog()
