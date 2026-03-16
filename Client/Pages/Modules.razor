@@ -249,6 +249,34 @@
                     </div>
                 </div>
             }
+            else if (_moduleType == "Video" && _provider == "OpenAI")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Resolucion</label>
+                        <select @bind="_soraSize">
+                            <option value="1280x720">1280x720 (Paisaje 720p)</option>
+                            <option value="720x1280">720x1280 (Retrato 720p)</option>
+                            @if (_model.Contains("pro"))
+                            {
+                                <option value="1920x1080">1920x1080 (Paisaje 1080p)</option>
+                                <option value="1080x1920">1080x1920 (Retrato 1080p)</option>
+                            }
+                            <option value="480x480">480x480 (Cuadrado)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Duracion (segundos)</label>
+                        <select @bind="_soraDuration">
+                            <option value="5">5s</option>
+                            <option value="8">8s</option>
+                            <option value="10">10s</option>
+                            <option value="16">16s</option>
+                            <option value="20">20s</option>
+                        </select>
+                    </div>
+                </div>
+            }
             else if (_moduleType == "Design" && _provider == "Canva")
             {
                 <div class="form-group">
@@ -557,6 +585,31 @@
                                         </div>
                                     </div>
                                 }
+                                else if (m.ModuleType == "Video" && m.ProviderType == "OpenAI")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Resolucion</label>
+                                            <select @bind="_editSoraSize">
+                                                <option value="1280x720">1280x720 (Paisaje 720p)</option>
+                                                <option value="720x1280">720x1280 (Retrato 720p)</option>
+                                                <option value="1920x1080">1920x1080 (Paisaje 1080p)</option>
+                                                <option value="1080x1920">1080x1920 (Retrato 1080p)</option>
+                                                <option value="480x480">480x480 (Cuadrado)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Duracion (segundos)</label>
+                                            <select @bind="_editSoraDuration">
+                                                <option value="5">5s</option>
+                                                <option value="8">8s</option>
+                                                <option value="10">10s</option>
+                                                <option value="16">16s</option>
+                                                <option value="20">20s</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                }
                                 else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
                                 {
                                     <div class="form-row">
@@ -766,11 +819,19 @@ else if (!_loading)
     private string _videoResolution = "720p";
     private string _videoPersonGeneration = "allow_adult";
 
-    // ── Edit: video config ──
+    // ── Edit: video config (Google Veo) ──
     private string _editVideoAspectRatio = "16:9";
     private string _editVideoDuration = "8";
     private string _editVideoResolution = "720p";
     private string _editVideoPersonGeneration = "allow_adult";
+
+    // ── Form: video (OpenAI Sora) ──
+    private string _soraSize = "1280x720";
+    private string _soraDuration = "8";
+
+    // ── Edit: video config (OpenAI Sora) ──
+    private string _editSoraSize = "1280x720";
+    private string _editSoraDuration = "8";
 
     // ── Form: audio TTS ──
     private string _ttsVoice = "alloy";
@@ -883,6 +944,10 @@ else if (!_loading)
         new("veo-3.0-fast-generate-001", "Veo 3.0 Fast",         "Google", ["Video"], ["video-generation"], "Veo 3 rapido. Menor latencia. Solo texto."),
         new("veo-2.0-generate-001",     "Veo 2.0",               "Google", ["Video"], ["video-generation"], "Veo 2. Hasta 8s, 720p. Solo texto."),
 
+        // ─── OpenAI: Video Generation (Sora 2) ───
+        new("sora-2",     "Sora 2",     "OpenAI", ["Video"], ["video-generation"], "Rapido y flexible. Ideal para iteracion y borradores. Hasta 20s, 720p."),
+        new("sora-2-pro", "Sora 2 Pro", "OpenAI", ["Video"], ["video-generation"], "Alta calidad cinematografica. Hasta 20s, 1080p. Soporta imagen como entrada."),
+
         // ─── Leonardo AI: Image Generation ───
         new("leonardo-phoenix",              "Leonardo Phoenix 1.0","LeonardoAI", ["Image"], ["image-generation"], "Modelo flagship de Leonardo. Alta calidad y versatilidad."),
         new("leonardo-phoenix-0.9",          "Leonardo Phoenix 0.9","LeonardoAI", ["Image"], ["image-generation"], "Version anterior de Phoenix, estable y probada."),
@@ -993,6 +1058,8 @@ else if (!_loading)
         _videoDuration = "8";
         _videoResolution = "720p";
         _videoPersonGeneration = "allow_adult";
+        _soraSize = "1280x720";
+        _soraDuration = "8";
         _ttsVoice = "alloy";
         _ttsSpeed = 1.0;
         _transcriptionLang = "";
@@ -1052,6 +1119,13 @@ else if (!_loading)
                 parts.Add($"\"resolution\":\"{_videoResolution}\"");
             if (_videoPersonGeneration != "allow_adult")
                 parts.Add($"\"personGeneration\":\"{_videoPersonGeneration}\"");
+        }
+        else if (_moduleType == "Video" && _provider == "OpenAI")
+        {
+            if (_soraSize != "1280x720")
+                parts.Add($"\"size\":\"{_soraSize}\"");
+            if (_soraDuration != "8")
+                parts.Add($"\"duration\":\"{_soraDuration}\"");
         }
         else if (_moduleType == "Embeddings")
         {
@@ -1222,9 +1296,15 @@ else if (!_loading)
                     _editVideoAspectRatio = ar.GetString() ?? "16:9";
                 }
                 if (root.TryGetProperty("numberOfImages", out var ni)) _editGeminiImageCount = ni.GetInt32();
-                if (root.TryGetProperty("duration", out var vdur)) _editVideoDuration = vdur.GetString() ?? "8";
+                if (root.TryGetProperty("duration", out var vdur))
+                {
+                    _editVideoDuration = vdur.GetString() ?? "8";
+                    _editSoraDuration = vdur.GetString() ?? "8";
+                }
                 if (root.TryGetProperty("resolution", out var vres)) _editVideoResolution = vres.GetString() ?? "720p";
                 if (root.TryGetProperty("personGeneration", out var vpg)) _editVideoPersonGeneration = vpg.GetString() ?? "allow_adult";
+                if (root.TryGetProperty("size", out var soraSize) && soraSize.GetString()?.Contains("x") == true)
+                    _editSoraSize = soraSize.GetString() ?? "1280x720";
                 if (root.TryGetProperty("accessToken", out var cat)) _editCanvaAccessToken = cat.GetString() ?? "";
                 if (root.TryGetProperty("exportFormat", out var cef)) _editCanvaExportFormat = cef.GetString() ?? "png";
                 if (root.TryGetProperty("brandTemplateId", out var cbt)) _editCanvaBrandTemplate = cbt.GetString() ?? "";
@@ -1354,6 +1434,13 @@ else if (!_loading)
                 parts.Add($"\"resolution\":\"{_editVideoResolution}\"");
             if (_editVideoPersonGeneration != "allow_adult")
                 parts.Add($"\"personGeneration\":\"{_editVideoPersonGeneration}\"");
+        }
+        else if (moduleType == "Video" && providerType == "OpenAI")
+        {
+            if (_editSoraSize != "1280x720")
+                parts.Add($"\"size\":\"{_editSoraSize}\"");
+            if (_editSoraDuration != "8")
+                parts.Add($"\"duration\":\"{_editSoraDuration}\"");
         }
         else if (moduleType == "Audio")
         {

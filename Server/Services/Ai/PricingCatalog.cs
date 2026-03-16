@@ -60,12 +60,17 @@ namespace Server.Services.Ai
                 ["leonardo-flux-schnell"]  = 0.021m,
             };
 
-        // ── Video models: price per second (Gemini Developer API) ──
+        // ── Video models: price per second ──
         private static readonly Dictionary<string, decimal> VideoPerSecondPrices =
             new(StringComparer.OrdinalIgnoreCase)
             {
+                // Google Veo
                 ["veo-2"]               = 0.35m,
                 ["veo-3.1-generate-preview"] = 0.50m,
+
+                // OpenAI Sora ($0.10/s for 720p — approximate for higher res)
+                ["sora-2"]     = 0.10m,
+                ["sora-2-pro"] = 0.10m,
             };
 
         // ── DALL-E 3 detailed pricing by quality+size ──

@@ -9,7 +9,7 @@ namespace Server.Services.Ai
     public class OpenAiProvider : IAiProvider
     {
         public string ProviderType => "OpenAI";
-        public IEnumerable<string> SupportedModuleTypes => new[] { "Text", "Image" };
+        public IEnumerable<string> SupportedModuleTypes => new[] { "Text", "Image", "Video" };
 
         public async Task<AiResult> ExecuteAsync(AiExecutionContext context)
         {
@@ -19,6 +19,7 @@ namespace Server.Services.Ai
                 {
                     "Text" => await GenerateTextAsync(context),
                     "Image" => await GenerateImageAsync(context),
+                    "Video" => await GenerateVideoAsync(context),
                     _ => AiResult.Fail($"ModuleType '{context.ModuleType}' no soportado por OpenAI")
                 };
             }
@@ -367,6 +368,115 @@ namespace Server.Services.Ai
             }
 
             return (0, 0);
+        }
+
+        /// <summary>
+        /// Generates a video using OpenAI Sora (sora-2 / sora-2-pro).
+        /// Uses the async Videos API: POST /v1/videos → poll GET /v1/videos/{id} → GET /v1/videos/{id}/content.
+        /// Supports text-to-video and image-to-video (via input_reference).
+        /// </summary>
+        private async Task<AiResult> GenerateVideoAsync(AiExecutionContext context)
+        {
+            var modelName = context.ModelName;
+
+            // Read configuration
+            var size = "1280x720";
+            var seconds = "8";
+
+            if (context.Configuration.TryGetValue("size", out var sz) && sz is string szStr)
+                size = szStr;
+            if (context.Configuration.TryGetValue("duration", out var dur))
+                seconds = dur?.ToString() ?? "8";
+
+            var videoPrompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.Input}";
+            if (!string.IsNullOrWhiteSpace(context.ProjectContext))
+                videoPrompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{context.Input}";
+
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
+
+            // Build multipart form (works for both text-to-video and image-to-video)
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(modelName), "model");
+            form.Add(new StringContent(videoPrompt), "prompt");
+            form.Add(new StringContent(size), "size");
+            form.Add(new StringContent(seconds), "seconds");
+
+            // Image-to-video: attach input_reference
+            if (context.InputFiles is { Count: > 0 })
+            {
+                var imageContent = new ByteArrayContent(context.InputFiles[0]);
+                imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                form.Add(imageContent, "input_reference", "input.png");
+            }
+
+            var submitResp = await http.PostAsync("https://api.openai.com/v1/videos", form);
+            var submitJson = await submitResp.Content.ReadAsStringAsync();
+
+            if (!submitResp.IsSuccessStatusCode)
+                return AiResult.Fail($"OpenAI Sora HTTP {(int)submitResp.StatusCode}: {submitJson}");
+
+            var submitDoc = JsonDocument.Parse(submitJson);
+            if (!submitDoc.RootElement.TryGetProperty("id", out var idEl))
+                return AiResult.Fail("OpenAI Sora: respuesta inesperada, no se encontro 'id'");
+
+            var videoId = idEl.GetString()!;
+
+            // Poll for completion (up to ~8 min)
+            const int maxAttempts = 96;   // 96 * 5s = 480s = 8 min
+            const int pollIntervalMs = 5000;
+
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                await Task.Delay(pollIntervalMs);
+
+                using var pollRequest = new HttpRequestMessage(HttpMethod.Get, $"https://api.openai.com/v1/videos/{videoId}");
+                pollRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
+
+                var pollResp = await http.SendAsync(pollRequest);
+                if (!pollResp.IsSuccessStatusCode)
+                    continue;
+
+                var pollJson = await pollResp.Content.ReadAsStringAsync();
+                var pollDoc = JsonDocument.Parse(pollJson);
+
+                var status = pollDoc.RootElement.TryGetProperty("status", out var statusEl)
+                    ? statusEl.GetString() ?? ""
+                    : "";
+
+                if (status == "failed")
+                {
+                    var errorMsg = pollDoc.RootElement.TryGetProperty("error", out var errEl)
+                        ? (errEl.TryGetProperty("message", out var msgEl) ? msgEl.GetString() : errEl.GetRawText())
+                        : "Error desconocido";
+                    return AiResult.Fail($"OpenAI Sora error: {errorMsg}");
+                }
+
+                if (status != "completed")
+                    continue;
+
+                // Download video content
+                using var dlRequest = new HttpRequestMessage(HttpMethod.Get, $"https://api.openai.com/v1/videos/{videoId}/content");
+                dlRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
+
+                var dlResp = await http.SendAsync(dlRequest);
+                if (!dlResp.IsSuccessStatusCode)
+                    return AiResult.Fail($"OpenAI Sora: error descargando video (HTTP {(int)dlResp.StatusCode})");
+
+                var videoBytes = await dlResp.Content.ReadAsByteArrayAsync();
+
+                var durationSec = int.TryParse(seconds, out var ds) ? ds : 8;
+                var vidResult = AiResult.OkFile(videoBytes, "video/mp4", new Dictionary<string, object>
+                {
+                    ["model"] = modelName,
+                    ["duration"] = seconds,
+                    ["size"] = size
+                });
+                vidResult.EstimatedCost = PricingCatalog.EstimateVideoCost(modelName, durationSec);
+                return vidResult;
+            }
+
+            return AiResult.Fail($"Timeout esperando generacion de video de OpenAI Sora (>{maxAttempts * pollIntervalMs / 1000}s)");
         }
 
         /// <summary>
