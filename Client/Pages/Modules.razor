@@ -44,7 +44,7 @@
         <!-- Step 3: Model (filtered by provider + type) -->
         <div class="form-group">
             <label>Modelo</label>
-            <select @bind="_model">
+            <select value="@_model" @onchange="OnModelChanged">
                 <option value="">-- Seleccionar modelo --</option>
                 @foreach (var m in GetAvailableModels())
                 {
@@ -943,7 +943,7 @@ else if (!_loading)
         return model switch
         {
             _ when model.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase)
-                => ["1024x1024", "1536x1024", "1024x1536", "auto"],
+                => ["auto", "1024x1024", "1536x1024", "1024x1536"],
             "dall-e-3" => ["1024x1024", "1024x1792", "1792x1024"],
             "dall-e-2" => ["256x256", "512x512", "1024x1024"],
             _ => ["1024x1024"]
@@ -965,6 +965,14 @@ else if (!_loading)
         _moduleType = e.Value?.ToString() ?? "";
         _model = "";
         ResetConfig();
+    }
+
+    private void OnModelChanged(ChangeEventArgs e)
+    {
+        _model = e.Value?.ToString() ?? "";
+        // Set size default based on model: gpt-image defaults to "auto" (preserves input dimensions)
+        var sizes = GetImageSizesForModel(_model);
+        _imageSize = sizes[0];
     }
 
     private void ResetConfig()

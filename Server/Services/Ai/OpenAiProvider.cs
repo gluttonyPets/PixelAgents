@@ -120,42 +120,44 @@ namespace Server.Services.Ai
             var isDallE2 = context.ModelName.Equals("dall-e-2", StringComparison.OrdinalIgnoreCase);
 
             // Size: each model family supports different sizes
-            if (context.Configuration.TryGetValue("size", out var size) && size is string sizeStr)
+            var sizeStr = "auto"; // default for gpt-image
+            if (context.Configuration.TryGetValue("size", out var size) && size is string s)
+                sizeStr = s;
+
+            if (isGptImage)
             {
-                if (isGptImage)
+                // gpt-image: 1024x1024, 1536x1024, 1024x1536, auto
+                // "auto" preserves input image dimensions in edit mode
+                options.Size = sizeStr switch
                 {
-                    // gpt-image: 1024x1024, 1536x1024, 1024x1536, auto
-                    options.Size = sizeStr switch
-                    {
-                        "1024x1024" => GeneratedImageSize.W1024xH1024,
-                        "1536x1024" => new GeneratedImageSize(1536, 1024),
-                        "1024x1536" => new GeneratedImageSize(1024, 1536),
-                        "auto" => new GeneratedImageSize("auto"),
-                        _ => GeneratedImageSize.W1024xH1024
-                    };
-                }
-                else if (isDallE2)
+                    "1024x1024" => GeneratedImageSize.W1024xH1024,
+                    "1536x1024" => new GeneratedImageSize(1536, 1024),
+                    "1024x1536" => new GeneratedImageSize(1024, 1536),
+                    "auto" => new GeneratedImageSize("auto"),
+                    _ => new GeneratedImageSize("auto")
+                };
+            }
+            else if (isDallE2)
+            {
+                // dall-e-2: 256x256, 512x512, 1024x1024
+                options.Size = sizeStr switch
                 {
-                    // dall-e-2: 256x256, 512x512, 1024x1024
-                    options.Size = sizeStr switch
-                    {
-                        "256x256" => GeneratedImageSize.W256xH256,
-                        "512x512" => GeneratedImageSize.W512xH512,
-                        "1024x1024" => GeneratedImageSize.W1024xH1024,
-                        _ => GeneratedImageSize.W1024xH1024
-                    };
-                }
-                else
+                    "256x256" => GeneratedImageSize.W256xH256,
+                    "512x512" => GeneratedImageSize.W512xH512,
+                    "1024x1024" => GeneratedImageSize.W1024xH1024,
+                    _ => GeneratedImageSize.W1024xH1024
+                };
+            }
+            else if (context.Configuration.ContainsKey("size"))
+            {
+                // dall-e-3: 1024x1024, 1792x1024, 1024x1792
+                options.Size = sizeStr switch
                 {
-                    // dall-e-3: 1024x1024, 1792x1024, 1024x1792
-                    options.Size = sizeStr switch
-                    {
-                        "1024x1024" => GeneratedImageSize.W1024xH1024,
-                        "1792x1024" => GeneratedImageSize.W1792xH1024,
-                        "1024x1792" => GeneratedImageSize.W1024xH1792,
-                        _ => GeneratedImageSize.W1024xH1024
-                    };
-                }
+                    "1024x1024" => GeneratedImageSize.W1024xH1024,
+                    "1792x1024" => GeneratedImageSize.W1792xH1024,
+                    "1024x1792" => GeneratedImageSize.W1024xH1792,
+                    _ => GeneratedImageSize.W1024xH1024
+                };
             }
 
             // Quality: dall-e-2 doesn't support quality; gpt-image uses different values
