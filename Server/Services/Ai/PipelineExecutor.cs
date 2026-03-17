@@ -60,6 +60,9 @@ namespace Server.Services.Ai
             module.ModuleType == "Design" ||
             module.ProviderType == "Canva";
 
+        private static bool IsOrchestratorStep(AiModule module) =>
+            module.ModuleType == "Orchestrator";
+
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
@@ -87,7 +90,7 @@ namespace Server.Services.Ai
 
                 // Interaction and Publish steps don't need API key validation
                 // Also skip modules without ApiKeyId (e.g. system modules) — they have their own validation
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -215,6 +218,17 @@ namespace Server.Services.Ai
                         await HandleCanvaPublishStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // ── Orchestrator step: generate plan, pause for review ──
+                    if (IsOrchestratorStep(pm.AiModule))
+                    {
+                        var shouldPause = await HandleOrchestratorStepAsync(
+                            project, execution, stepExecution, pm, userInput,
+                            stepResults, stepOutputs, stepModuleTypes,
+                            workspacePath, previousSummaryContext, db, tenantDbName, ct);
+                        if (shouldPause) return execution;
                         continue;
                     }
 
@@ -2231,6 +2245,690 @@ Datos de la ejecucion:
             return execution;
         }
 
+        // ═══════════ ORCHESTRATOR ═══════════
+
+        /// <summary>
+        /// Handles an orchestrator step: calls the AI to generate a task plan,
+        /// then pauses for user review (first time) or auto-continues if already approved.
+        /// </summary>
+        private async Task<bool> HandleOrchestratorStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm, string? userInput,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            string workspacePath, string? previousSummaryContext,
+            UserDbContext db, string tenantDbName, CancellationToken ct)
+        {
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                $"Orquestador: analizando tareas necesarias...", pm.StepOrder, stepName);
+
+            // 1. Load ALL modules in the project (not just pipeline) so the orchestrator knows its tools
+            var allProjectModules = await db.ProjectModules
+                .Where(m => m.ProjectId == project.Id && m.IsActive && m.Id != pm.Id)
+                .Include(m => m.AiModule)
+                .ToListAsync();
+
+            // Also load standalone modules (not assigned to this project but available)
+            var allAiModules = await db.AiModules
+                .Include(m => m.ApiKey)
+                .Where(m => m.IsEnabled)
+                .ToListAsync();
+
+            // Build available module list: prefer project-assigned modules, also include all enabled modules
+            var seenModuleIds = new HashSet<Guid>();
+            var availableModules = new List<AvailableModule>();
+
+            foreach (var projMod in allProjectModules)
+            {
+                if (IsInteractionStep(projMod.AiModule) || IsPublishStep(projMod.AiModule)
+                    || IsDesignStep(projMod.AiModule) || IsOrchestratorStep(projMod.AiModule))
+                    continue;
+
+                if (seenModuleIds.Add(projMod.AiModule.Id))
+                {
+                    availableModules.Add(new AvailableModule
+                    {
+                        ModuleId = projMod.AiModule.Id.ToString(),
+                        Name = projMod.AiModule.Name,
+                        ModuleType = projMod.AiModule.ModuleType,
+                        Provider = projMod.AiModule.ProviderType,
+                        Model = projMod.AiModule.ModelName,
+                        Description = projMod.AiModule.Description ?? "",
+                    });
+                }
+            }
+
+            // Add unassigned but enabled modules
+            foreach (var aiMod in allAiModules)
+            {
+                if (seenModuleIds.Add(aiMod.Id) && aiMod.ApiKey is not null)
+                {
+                    if (aiMod.ModuleType == "Interaction" || aiMod.ModuleType == "Publish"
+                        || aiMod.ModuleType == "Design" || aiMod.ModuleType == "Orchestrator")
+                        continue;
+
+                    availableModules.Add(new AvailableModule
+                    {
+                        ModuleId = aiMod.Id.ToString(),
+                        Name = aiMod.Name,
+                        ModuleType = aiMod.ModuleType,
+                        Provider = aiMod.ProviderType,
+                        Model = aiMod.ModelName,
+                        Description = aiMod.Description ?? "",
+                    });
+                }
+            }
+
+            if (availableModules.Count == 0)
+            {
+                await FailStep(stepExecution, execution, "Orquestador: no hay modulos disponibles para asignar tareas", db);
+                return false;
+            }
+
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                $"Orquestador: {availableModules.Count} modulos disponibles", pm.StepOrder, stepName);
+
+            // 2. Load previous feedback if any
+            OrchestratorFeedback? feedback = null;
+            var orchConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+            if (orchConfig.TryGetValue("orchestratorFeedback", out var fbVal))
+            {
+                try
+                {
+                    var fbJson = fbVal is JsonElement el ? el.GetRawText() : fbVal?.ToString();
+                    if (fbJson is not null)
+                        feedback = JsonSerializer.Deserialize<OrchestratorFeedback>(fbJson,
+                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                }
+                catch { /* ignore parse errors */ }
+            }
+
+            // 3. Resolve input from previous step
+            var input = userInput ?? "";
+            if (pm.InputMapping is not null)
+            {
+                var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, "Text", pm.AiModule.ModelName);
+                input = string.Join("\n\n", inputs);
+            }
+
+            // 4. Call the AI to generate the plan
+            var orchestratorApiKey = pm.AiModule.ApiKey?.EncryptedKey;
+            if (string.IsNullOrEmpty(orchestratorApiKey))
+            {
+                await FailStep(stepExecution, execution, "Orquestador: API Key no configurada", db);
+                return false;
+            }
+
+            var provider = _registry.GetProvider(pm.AiModule.ProviderType);
+            if (provider is null)
+            {
+                await FailStep(stepExecution, execution, $"Orquestador: proveedor '{pm.AiModule.ProviderType}' no disponible", db);
+                return false;
+            }
+
+            var systemPrompt = OrchestratorSchemaHelper.BuildOrchestratorPrompt(
+                availableModules, feedback, project.Context);
+
+            var aiContext = new AiExecutionContext
+            {
+                ModuleType = "Text",
+                ModelName = pm.AiModule.ModelName,
+                ApiKey = orchestratorApiKey,
+                Input = $"Analyze the following input and create a task plan:\n\n{input}",
+                ProjectContext = project.Context,
+                PreviousExecutionsSummary = previousSummaryContext,
+                Configuration = new Dictionary<string, object>
+                {
+                    ["systemPrompt"] = systemPrompt,
+                    ["temperature"] = 0.3f,
+                },
+            };
+
+            var result = await provider.ExecuteAsync(aiContext);
+            stepExecution.EstimatedCost += result.EstimatedCost;
+
+            if (!result.Success)
+            {
+                await _logger.LogAsync(project.Id, execution.Id, "error",
+                    $"Orquestador: error al generar plan: {result.Error}", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, result.Error!, db);
+                return false;
+            }
+
+            // 5. Parse the plan
+            var plan = OrchestratorSchemaHelper.ParsePlan(result.TextOutput ?? "");
+            if (plan is null)
+            {
+                await _logger.LogAsync(project.Id, execution.Id, "error",
+                    $"Orquestador: el modelo no genero un plan JSON valido", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, "El orquestador no genero un plan valido", db);
+                return false;
+            }
+
+            // 6. Validate plan
+            var validationErrors = OrchestratorSchemaHelper.ValidatePlan(plan, availableModules);
+            if (validationErrors.Count > 0)
+            {
+                var errMsg = "Plan invalido:\n" + string.Join("\n", validationErrors);
+                await _logger.LogAsync(project.Id, execution.Id, "error", errMsg, pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, errMsg, db);
+                return false;
+            }
+
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                $"Orquestador: plan generado con {plan.Tasks.Count} tarea(s): {plan.Summary}", pm.StepOrder, stepName);
+
+            // Save the plan as step output
+            var planJson = JsonSerializer.Serialize(plan, new JsonSerializerOptions { WriteIndented = true });
+            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+            Directory.CreateDirectory(stepDir);
+            await File.WriteAllTextAsync(Path.Combine(stepDir, "plan.json"), planJson);
+
+            var planFile = new ExecutionFile
+            {
+                Id = Guid.NewGuid(),
+                StepExecutionId = stepExecution.Id,
+                FileName = "plan.json",
+                ContentType = "application/json",
+                FilePath = Path.Combine($"step_{pm.StepOrder}", "plan.json"),
+                Direction = "Output",
+                FileSize = System.Text.Encoding.UTF8.GetByteCount(planJson),
+                CreatedAt = DateTime.UtcNow,
+            };
+            db.ExecutionFiles.Add(planFile);
+
+            stepExecution.OutputData = planJson;
+            stepExecution.InputData = JsonSerializer.Serialize(new { input, availableModuleCount = availableModules.Count });
+
+            // 7. Decide: pause for review or auto-continue
+            bool autoApproved = feedback is { Approved: true };
+
+            if (autoApproved)
+            {
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"Orquestador: plan auto-aprobado (feedback previo validado)", pm.StepOrder, stepName);
+
+                // Execute the sub-tasks immediately
+                await ExecuteOrchestratorPlanAsync(
+                    project, execution, stepExecution, pm, plan,
+                    stepResults, stepOutputs, stepModuleTypes,
+                    workspacePath, previousSummaryContext, db, tenantDbName, ct);
+                return false; // don't pause, continue pipeline
+            }
+
+            // Pause for user review
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                $"Orquestador: esperando revision del plan...", pm.StepOrder, stepName);
+
+            var pauseState = new PausedPipelineState
+            {
+                UserInput = userInput,
+                StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value)),
+                StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+            };
+
+            stepExecution.Status = "WaitingForReview";
+            execution.PausedAtStepOrder = pm.StepOrder;
+            execution.PausedStepData = JsonSerializer.Serialize(pauseState);
+            execution.Status = "WaitingForReview";
+            await db.SaveChangesAsync();
+
+            return true; // pause pipeline
+        }
+
+        /// <summary>
+        /// Executes the sub-tasks in an approved orchestrator plan.
+        /// Each task calls the assigned module's provider directly.
+        /// </summary>
+        private async Task ExecuteOrchestratorPlanAsync(
+            Project project, ProjectExecution execution, StepExecution orchestratorStep,
+            ProjectModule orchestratorPm, OrchestratorPlan plan,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            string workspacePath, string? previousSummaryContext,
+            UserDbContext db, string tenantDbName, CancellationToken ct)
+        {
+            var stepName = orchestratorPm.StepName ?? orchestratorPm.AiModule.Name;
+            var orchestratorOutputItems = new List<OutputItem>();
+            var orchestratorOutputFiles = new List<OutputFile>();
+            decimal totalSubCost = 0;
+
+            foreach (var task in plan.Tasks.OrderBy(t => t.Order))
+            {
+                if (ct.IsCancellationRequested) break;
+
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"Orquestador [{task.TaskId}]: {task.Description} (modulo: {task.ModuleName})",
+                    orchestratorPm.StepOrder, stepName);
+
+                // Load the target module
+                var targetModule = await db.AiModules
+                    .Include(m => m.ApiKey)
+                    .FirstOrDefaultAsync(m => m.Id == Guid.Parse(task.ModuleId));
+
+                if (targetModule is null)
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "error",
+                        $"Orquestador [{task.TaskId}]: modulo {task.ModuleId} no encontrado", orchestratorPm.StepOrder, stepName);
+                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: modulo no encontrado", Label = task.TaskId });
+                    continue;
+                }
+
+                if (targetModule.ApiKey is null || string.IsNullOrEmpty(targetModule.ApiKey.EncryptedKey))
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "error",
+                        $"Orquestador [{task.TaskId}]: modulo '{targetModule.Name}' no tiene API Key", orchestratorPm.StepOrder, stepName);
+                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: API Key no configurada", Label = task.TaskId });
+                    continue;
+                }
+
+                var provider = _registry.GetProvider(targetModule.ProviderType);
+                if (provider is null)
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "error",
+                        $"Orquestador [{task.TaskId}]: proveedor '{targetModule.ProviderType}' no disponible", orchestratorPm.StepOrder, stepName);
+                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: proveedor no disponible", Label = task.TaskId });
+                    continue;
+                }
+
+                var moduleConfig = !string.IsNullOrEmpty(targetModule.Configuration)
+                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(targetModule.Configuration) ?? new()
+                    : new Dictionary<string, object>();
+
+                // Truncate input if needed for image/video models
+                var taskInput = task.Input;
+                if (targetModule.ModuleType is "Image" or "Video" or "VideoSearch")
+                {
+                    var maxLen = InputAdapter.GetMaxPromptLength(targetModule.ModelName);
+                    if (taskInput.Length > maxLen)
+                        taskInput = InputAdapter.TruncateAtWord(taskInput, maxLen);
+                }
+
+                var aiContext = new AiExecutionContext
+                {
+                    ModuleType = targetModule.ModuleType,
+                    ModelName = targetModule.ModelName,
+                    ApiKey = targetModule.ApiKey.EncryptedKey,
+                    Input = taskInput,
+                    ProjectContext = project.Context,
+                    PreviousExecutionsSummary = previousSummaryContext,
+                    Configuration = moduleConfig,
+                };
+
+                try
+                {
+                    var result = await provider.ExecuteAsync(aiContext);
+                    totalSubCost += result.EstimatedCost;
+
+                    if (!result.Success)
+                    {
+                        await _logger.LogAsync(project.Id, execution.Id, "error",
+                            $"Orquestador [{task.TaskId}]: error: {result.Error}", orchestratorPm.StepOrder, stepName);
+                        orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {result.Error}", Label = task.TaskId });
+                        continue;
+                    }
+
+                    // Handle text output
+                    if (result.TextOutput is not null)
+                    {
+                        var parsed = OutputSchemaHelper.ParseTextOutput(result.TextOutput);
+                        orchestratorOutputItems.Add(new OutputItem
+                        {
+                            Content = parsed.Content ?? result.TextOutput,
+                            Label = $"{task.TaskId}: {task.Description}"
+                        });
+
+                        await _logger.LogAsync(project.Id, execution.Id, "success",
+                            $"Orquestador [{task.TaskId}]: texto generado", orchestratorPm.StepOrder, stepName);
+                    }
+
+                    // Handle file output
+                    if (result.FileOutput is not null)
+                    {
+                        var taskDir = Path.Combine(workspacePath, $"step_{orchestratorPm.StepOrder}", task.TaskId);
+                        Directory.CreateDirectory(taskDir);
+
+                        var ext = GetExtension(result.ContentType ?? "application/octet-stream");
+                        var fileName = $"output{ext}";
+                        var filePath = Path.Combine(taskDir, fileName);
+                        await File.WriteAllBytesAsync(filePath, result.FileOutput);
+
+                        var execFile = new ExecutionFile
+                        {
+                            Id = Guid.NewGuid(),
+                            StepExecutionId = orchestratorStep.Id,
+                            FileName = $"{task.TaskId}_{fileName}",
+                            ContentType = result.ContentType ?? "application/octet-stream",
+                            FilePath = Path.Combine($"step_{orchestratorPm.StepOrder}", task.TaskId, fileName),
+                            Direction = "Output",
+                            FileSize = result.FileOutput.Length,
+                            CreatedAt = DateTime.UtcNow,
+                        };
+                        db.ExecutionFiles.Add(execFile);
+
+                        orchestratorOutputFiles.Add(new OutputFile
+                        {
+                            FileId = execFile.Id,
+                            FileName = execFile.FileName,
+                            ContentType = execFile.ContentType,
+                            FileSize = execFile.FileSize,
+                        });
+
+                        await _logger.LogAsync(project.Id, execution.Id, "success",
+                            $"Orquestador [{task.TaskId}]: archivo generado ({result.ContentType}, {result.FileOutput.Length} bytes)",
+                            orchestratorPm.StepOrder, stepName);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "error",
+                        $"Orquestador [{task.TaskId}]: excepcion: {ex.Message}", orchestratorPm.StepOrder, stepName);
+                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {ex.Message}", Label = task.TaskId });
+                }
+            }
+
+            // Build combined output
+            var combinedOutput = new StepOutput
+            {
+                Type = "orchestrator",
+                Title = plan.Summary,
+                Content = $"Plan ejecutado: {plan.Tasks.Count} tareas, {orchestratorOutputItems.Count} resultados",
+                Summary = plan.Summary,
+                Items = orchestratorOutputItems,
+                Files = orchestratorOutputFiles,
+            };
+
+            orchestratorStep.EstimatedCost += totalSubCost;
+            orchestratorStep.OutputData = JsonSerializer.Serialize(combinedOutput);
+            orchestratorStep.Status = "Completed";
+            orchestratorStep.CompletedAt = DateTime.UtcNow;
+
+            stepOutputs[orchestratorPm.StepOrder] = combinedOutput;
+            stepModuleTypes[orchestratorPm.StepOrder] = "Orchestrator";
+
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(project.Id, execution.Id, "success",
+                $"Orquestador: todas las tareas completadas (costo sub-tareas: ${totalSubCost:F4})",
+                orchestratorPm.StepOrder, stepName);
+        }
+
+        /// <summary>
+        /// Resume pipeline after user reviews the orchestrator plan.
+        /// If approved, executes the sub-tasks and continues the pipeline.
+        /// If rejected with comment, stores feedback and marks as failed.
+        /// </summary>
+        public async Task<ProjectExecution> ResumeFromOrchestratorAsync(
+            Guid executionId, bool approved, string? comment,
+            UserDbContext db, string tenantDbName, CancellationToken ct = default)
+        {
+            _logger = _baseLogger.WithDb(db);
+
+            var execution = await db.ProjectExecutions
+                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .FirstOrDefaultAsync(e => e.Id == executionId && e.Status == "WaitingForReview")
+                ?? throw new InvalidOperationException("Ejecucion no encontrada o no esta esperando revision");
+
+            var project = await db.Projects
+                .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
+                    .ThenInclude(pm => pm.AiModule)
+                        .ThenInclude(m => m.ApiKey)
+                .FirstOrDefaultAsync(p => p.Id == execution.ProjectId)
+                ?? throw new InvalidOperationException("Proyecto no encontrado");
+
+            var pausedStep = execution.PausedAtStepOrder
+                ?? throw new InvalidOperationException("No hay paso pausado registrado");
+
+            var orchestratorPm = project.ProjectModules.FirstOrDefault(pm => pm.StepOrder == pausedStep)
+                ?? throw new InvalidOperationException($"Paso {pausedStep} no encontrado en el proyecto");
+
+            var orchestratorStepExec = execution.StepExecutions
+                .FirstOrDefault(s => s.ProjectModuleId == orchestratorPm.Id && s.Status == "WaitingForReview")
+                ?? throw new InvalidOperationException("StepExecution del orquestador no encontrada");
+
+            // Load the plan from step output
+            var plan = OrchestratorSchemaHelper.ParsePlan(orchestratorStepExec.OutputData ?? "")
+                ?? throw new InvalidOperationException("No se pudo leer el plan del orquestador");
+
+            // Store feedback on the ProjectModule
+            var pmConfig = !string.IsNullOrEmpty(orchestratorPm.Configuration)
+                ? JsonSerializer.Deserialize<Dictionary<string, object>>(orchestratorPm.Configuration) ?? new()
+                : new Dictionary<string, object>();
+
+            OrchestratorFeedback feedback;
+            if (pmConfig.TryGetValue("orchestratorFeedback", out var existingFb))
+            {
+                try
+                {
+                    var fbJson = existingFb is JsonElement el ? el.GetRawText() : existingFb?.ToString();
+                    feedback = JsonSerializer.Deserialize<OrchestratorFeedback>(fbJson ?? "{}",
+                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+                }
+                catch { feedback = new OrchestratorFeedback(); }
+            }
+            else
+            {
+                feedback = new OrchestratorFeedback();
+            }
+
+            if (!string.IsNullOrWhiteSpace(comment))
+            {
+                feedback.Comments.Add(new OrchestratorComment
+                {
+                    Text = comment.Trim(),
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+
+            if (approved)
+            {
+                feedback.Approved = true;
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    "Orquestador: plan aprobado por el usuario" +
+                    (!string.IsNullOrWhiteSpace(comment) ? $" con comentario: {comment}" : ""),
+                    pausedStep, orchestratorPm.StepName ?? orchestratorPm.AiModule.Name);
+            }
+            else
+            {
+                feedback.Approved = false;
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"Orquestador: plan rechazado. Comentario: {comment ?? "(sin comentario)"}",
+                    pausedStep, orchestratorPm.StepName ?? orchestratorPm.AiModule.Name);
+            }
+
+            // Save feedback to ProjectModule.Configuration
+            pmConfig["orchestratorFeedback"] = JsonSerializer.Deserialize<JsonElement>(
+                JsonSerializer.Serialize(feedback));
+            orchestratorPm.Configuration = JsonSerializer.Serialize(pmConfig);
+            await db.SaveChangesAsync();
+
+            if (!approved)
+            {
+                // Mark execution as failed so user can re-run
+                orchestratorStepExec.Status = "Rejected";
+                orchestratorStepExec.ErrorMessage = comment ?? "Plan rechazado por el usuario";
+                orchestratorStepExec.CompletedAt = DateTime.UtcNow;
+
+                execution.PausedAtStepOrder = null;
+                execution.PausedStepData = null;
+                execution.Status = "Failed";
+                execution.CompletedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(project.Id, execution.Id, "warning",
+                    "Pipeline detenido: plan del orquestador rechazado. El comentario se aplicara en la proxima ejecucion.");
+                return execution;
+            }
+
+            // Approved — execute the sub-tasks
+            var pauseState = JsonSerializer.Deserialize<PausedPipelineState>(execution.PausedStepData ?? "{}")
+                ?? new PausedPipelineState();
+
+            // Restore previous step outputs
+            var stepOutputs = new Dictionary<int, StepOutput>();
+            var stepModuleTypes = new Dictionary<int, string>();
+            var stepResults = new Dictionary<int, AiResult>();
+
+            foreach (var kv in pauseState.StepOutputs)
+            {
+                if (int.TryParse(kv.Key, out var key))
+                    stepOutputs[key] = JsonSerializer.Deserialize<StepOutput>(kv.Value) ?? new();
+            }
+            foreach (var kv in pauseState.StepModuleTypes)
+            {
+                if (int.TryParse(kv.Key, out var key))
+                    stepModuleTypes[key] = kv.Value;
+            }
+
+            var relativeWorkspace = execution.WorkspacePath;
+            var workspacePath = ResolveWorkspacePath(relativeWorkspace);
+            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, project.Id, execution.Id);
+
+            execution.Status = "Running";
+            execution.PausedAtStepOrder = null;
+            execution.PausedStepData = null;
+            await db.SaveChangesAsync();
+
+            await ExecuteOrchestratorPlanAsync(
+                project, execution, orchestratorStepExec, orchestratorPm, plan,
+                stepResults, stepOutputs, stepModuleTypes,
+                workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+            // Continue with remaining pipeline steps after orchestrator
+            var allModules = project.ProjectModules.ToList();
+            var mainModules = allModules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList();
+            var remainingSteps = mainModules.Where(m => m.StepOrder > pausedStep).ToList();
+
+            if (remainingSteps.Count > 0)
+            {
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"Continuando pipeline con {remainingSteps.Count} paso(s) restantes...");
+
+                // Continue the pipeline from the next step
+                var branchModules = allModules.Where(m => m.BranchId != "main")
+                    .GroupBy(m => m.BranchId)
+                    .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
+
+                for (var mi = 0; mi < remainingSteps.Count; mi++)
+                {
+                    var pm = remainingSteps[mi];
+                    var nextModule = mi + 1 < remainingSteps.Count ? remainingSteps[mi + 1] : null;
+
+                    if (ct.IsCancellationRequested)
+                    {
+                        execution.Status = "Cancelled";
+                        execution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        return execution;
+                    }
+
+                    var stepExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = execution.Id,
+                        ProjectModuleId = pm.Id,
+                        StepOrder = pm.StepOrder,
+                        Status = "Running",
+                        CreatedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(stepExec);
+                    await db.SaveChangesAsync();
+
+                    try
+                    {
+                        // Delegate to the appropriate step handler
+                        if (IsInteractionStep(pm.AiModule))
+                        {
+                            var shouldPause = await HandleInteractionStepAsync(
+                                project, execution, stepExec, pm, pauseState.UserInput,
+                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                            if (shouldPause) return execution;
+                            continue;
+                        }
+                        if (IsPublishStep(pm.AiModule))
+                        {
+                            await HandlePublishStepAsync(project, execution, stepExec, pm,
+                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                            continue;
+                        }
+                        if (IsDesignStep(pm.AiModule))
+                        {
+                            await HandleCanvaPublishStepAsync(project, execution, stepExec, pm,
+                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                            continue;
+                        }
+
+                        // For regular AI steps, use generic execution
+                        var apiKey = pm.AiModule.ApiKey?.EncryptedKey
+                            ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
+                        var prov = _registry.GetProvider(pm.AiModule.ProviderType)
+                            ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Proveedor no disponible");
+
+                        var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+                        var inputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs,
+                            pm.AiModule.ModuleType, pm.AiModule.ModelName);
+
+                        var ctx = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = inputs[0],
+                            ProjectContext = project.Context,
+                            PreviousExecutionsSummary = previousSummaryContext,
+                            Configuration = config,
+                        };
+
+                        var result = await prov.ExecuteAsync(ctx);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExec.EstimatedCost += result.EstimatedCost;
+
+                        if (!result.Success)
+                        {
+                            await FailStep(stepExec, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        if (result.TextOutput is not null)
+                        {
+                            var stepOutput = OutputSchemaHelper.ParseTextOutput(result.TextOutput, result.Metadata);
+                            stepOutputs[pm.StepOrder] = stepOutput;
+                            stepExec.OutputData = JsonSerializer.Serialize(stepOutput);
+                        }
+
+                        stepExec.Status = "Completed";
+                        stepExec.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        stepExec.Status = "Failed";
+                        stepExec.ErrorMessage = ex.Message;
+                        stepExec.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        execution.Status = "Failed";
+                        execution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        return execution;
+                    }
+                }
+            }
+
+            execution.Status = "Completed";
+            execution.CompletedAt = DateTime.UtcNow;
+            execution.TotalEstimatedCost = await db.StepExecutions
+                .Where(s => s.ExecutionId == execution.Id)
+                .SumAsync(s => s.EstimatedCost);
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(project.Id, execution.Id, "success", "Pipeline completado correctamente");
+            return execution;
+        }
+
         // Serializable pause state
         private class PausedPipelineState
         {
@@ -2824,7 +3522,7 @@ Datos de la ejecucion:
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))

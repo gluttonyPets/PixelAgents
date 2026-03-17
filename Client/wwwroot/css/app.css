@@ -1027,6 +1027,71 @@ a.link:hover { text-decoration: underline; }
     margin-top: 0.4rem;
 }
 
+/* ── Orchestrator ── */
+.orchestrator-plan {
+    margin-top: 0.5rem;
+}
+
+.orchestrator-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.orchestrator-task-item {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--radius);
+    font-size: 0.82rem;
+    align-items: baseline;
+}
+.orchestrator-task-item.task-ok {
+    background: rgba(76, 175, 80, 0.06);
+    border: 1px solid rgba(76, 175, 80, 0.15);
+}
+.orchestrator-task-item.task-error {
+    background: rgba(244, 67, 54, 0.06);
+    border: 1px solid rgba(244, 67, 54, 0.15);
+}
+.task-label {
+    font-weight: 600;
+    color: var(--accent);
+    flex-shrink: 0;
+    min-width: 80px;
+}
+.task-content {
+    color: var(--text);
+}
+
+.orchestrator-review {
+    margin-top: 0.8rem;
+    padding: 0.8rem;
+    background: rgba(108, 99, 255, 0.04);
+    border: 1px solid rgba(108, 99, 255, 0.15);
+    border-radius: var(--radius);
+}
+
+.orchestrator-plan-table {
+    width: 100%;
+    font-size: 0.8rem;
+    border-collapse: collapse;
+    margin-bottom: 0.5rem;
+}
+.orchestrator-plan-table th {
+    text-align: left;
+    padding: 0.3rem 0.5rem;
+    border-bottom: 2px solid var(--border);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+.orchestrator-plan-table td {
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
 /* ── Tabs ── */
 .tab-bar {
     display: flex;

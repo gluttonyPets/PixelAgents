@@ -101,11 +101,11 @@
         <fieldset class="config-fieldset">
             <legend>Configuracion</legend>
 
-            @if (_moduleType == "Text")
+            @if (_moduleType is "Text" or "Orchestrator")
             {
                 <div class="form-group">
-                    <label>System Prompt</label>
-                    <textarea @bind="_systemPrompt" rows="3" placeholder="Ej: Eres un asistente experto en..."></textarea>
+                    <label>System Prompt @(_moduleType == "Orchestrator" ? "(se combina con instrucciones del orquestador)" : "")</label>
+                    <textarea @bind="_systemPrompt" rows="3" placeholder="@(_moduleType == "Orchestrator" ? "Ej: Prioriza videos de stock sobre generacion. Maximo 5 tareas por plan." : "Ej: Eres un asistente experto en...")"></textarea>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -418,7 +418,7 @@
             }
         </fieldset>
 
-        @if (_moduleType is "Text" or "Image")
+        @if (_moduleType is "Text" or "Image" or "Orchestrator")
         {
             <div class="form-group">
                 <label>Archivos adjuntos <span class="text-sm text-muted">(@(_moduleType == "Image" ? "imagenes de referencia para edicion" : "imagenes, documentos, etc."))</span></label>
@@ -858,6 +858,7 @@ else if (!_loading)
         ("Publish",     "Publicacion",           "P"),
         ("Design",      "Diseno",                "D"),
         ("VideoSearch", "Busqueda de video",     "S"),
+        ("Orchestrator","Orquestador",           "O"),
     ];
 
     private List<ModuleGroup> GetModuleGroups()
@@ -1003,7 +1004,7 @@ else if (!_loading)
     private static readonly ModelInfo[] AllModels =
     [
         // ─── OpenAI: Chat / Text (GPT-5.x) ───
-        new("gpt-5.4",          "GPT-5.4",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Ultimo modelo flagship. 1M contexto. Razonamiento multi-nivel.", "1M"),
+        new("gpt-5.4",          "GPT-5.4",           "OpenAI", ["Text","Orchestrator"], ["text","vision","reasoning","streaming"], "Ultimo modelo flagship. 1M contexto. Razonamiento multi-nivel.", "1M"),
         new("gpt-5.4-pro",      "GPT-5.4 Pro",       "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Version Pro. Mas preciso, usa mas compute para pensar.", "1M"),
         new("gpt-5.2",          "GPT-5.2",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo anterior. Razonamiento avanzado multi-nivel.", "400K"),
         new("gpt-5.1",          "GPT-5.1",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5.1 con vision y razonamiento.", "400K"),
@@ -1017,8 +1018,8 @@ else if (!_loading)
         new("gpt-4.1-nano",     "GPT-4.1 Nano",      "OpenAI", ["Text"],        ["text","vision","streaming"],          "GPT-4.1 ultra rapido y economico.", "1M"),
 
         // ─── OpenAI: Chat / Text (GPT-4o legacy) ───
-        new("gpt-4o",           "GPT-4o",            "OpenAI", ["Text"],        ["text","vision","streaming"],          "Modelo anterior. Texto + vision.", "128K"),
-        new("gpt-4o-mini",      "GPT-4o Mini",       "OpenAI", ["Text"],        ["text","vision","streaming"],          "Version economica de GPT-4o.", "128K"),
+        new("gpt-4o",           "GPT-4o",            "OpenAI", ["Text","Orchestrator"], ["text","vision","streaming"],          "Modelo anterior. Texto + vision.", "128K"),
+        new("gpt-4o-mini",      "GPT-4o Mini",       "OpenAI", ["Text","Orchestrator"], ["text","vision","streaming"],          "Version economica de GPT-4o.", "128K"),
 
         // ─── OpenAI: Reasoning (o-series) ───
         new("o3",               "o3",                "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo de razonamiento avanzado.", "200K"),
@@ -1045,12 +1046,12 @@ else if (!_loading)
 
         // ─── Anthropic: Chat / Text (Claude 4.6) ───
         new("claude-opus-4-6",             "Claude Opus 4.6",     "Anthropic", ["Text"], ["text","vision","streaming"], "El mas capaz. Razonamiento adaptativo.", "200K"),
-        new("claude-sonnet-4-6",           "Claude Sonnet 4.6",   "Anthropic", ["Text"], ["text","vision","streaming"], "Equilibrio rendimiento/velocidad. Razonamiento adaptativo.", "200K"),
+        new("claude-sonnet-4-6",           "Claude Sonnet 4.6",   "Anthropic", ["Text","Orchestrator"], ["text","vision","streaming"], "Equilibrio rendimiento/velocidad. Razonamiento adaptativo.", "200K"),
 
         // ─── Anthropic: Chat / Text (Claude 4.5) ───
         new("claude-opus-4-5-20251124",    "Claude Opus 4.5",     "Anthropic", ["Text"], ["text","vision","streaming"], "Generacion anterior flagship.", "200K"),
         new("claude-sonnet-4-5-20250929",  "Claude Sonnet 4.5",   "Anthropic", ["Text"], ["text","vision","streaming"], "Generacion anterior. Buen balance.", "200K"),
-        new("claude-haiku-4-5-20251001",   "Claude Haiku 4.5",    "Anthropic", ["Text"], ["text","vision","streaming"], "Rapido y economico.", "200K"),
+        new("claude-haiku-4-5-20251001",   "Claude Haiku 4.5",    "Anthropic", ["Text","Orchestrator"], ["text","vision","streaming"], "Rapido y economico.", "200K"),
 
         // ─── Anthropic: Chat / Text (Claude 4) ───
         new("claude-opus-4-1-20250805",    "Claude Opus 4.1",     "Anthropic", ["Text"], ["text","vision","streaming"], "Muy capaz en tareas complejas.", "200K"),
@@ -1060,7 +1061,7 @@ else if (!_loading)
         new("claude-3-5-haiku-20241022",   "Claude 3.5 Haiku",    "Anthropic", ["Text"], ["text","vision","streaming"], "Ultra rapido y economico.", "200K"),
 
         // ─── Google: Chat / Text (Gemini 2.x) ───
-        new("gemini-2.5-flash",     "Gemini 2.5 Flash",     "Google", ["Text"], ["text","vision","streaming"], "Modelo rapido con razonamiento. Ultimo Gemini.", "1M"),
+        new("gemini-2.5-flash",     "Gemini 2.5 Flash",     "Google", ["Text","Orchestrator"], ["text","vision","streaming"], "Modelo rapido con razonamiento. Ultimo Gemini.", "1M"),
         new("gemini-2.5-pro",       "Gemini 2.5 Pro",       "Google", ["Text"], ["text","vision","streaming"], "Modelo avanzado con razonamiento profundo.", "1M"),
         new("gemini-2.0-flash-lite","Gemini 2.0 Flash Lite", "Google", ["Text"], ["text","vision","streaming"], "Gemini 2.0 ultra rapido y economico.", "1M"),
 
@@ -1117,6 +1118,7 @@ else if (!_loading)
                 "Transcription" => "Transcripcion (STT)",
                 "Design"        => "Diseno (Canva)",
                 "VideoSearch"   => "Busqueda de video (stock)",
+                "Orchestrator"  => "Orquestador de pipeline",
                 _               => t
             }))
             .ToList();
@@ -1222,7 +1224,7 @@ else if (!_loading)
     {
         var parts = new List<string>();
 
-        if (_moduleType == "Text")
+        if (_moduleType is "Text" or "Orchestrator")
         {
             if (!string.IsNullOrWhiteSpace(_systemPrompt))
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
@@ -1563,7 +1565,7 @@ else if (!_loading)
     {
         var parts = new List<string>();
 
-        if (moduleType == "Text")
+        if (moduleType is "Text" or "Orchestrator")
         {
             if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");

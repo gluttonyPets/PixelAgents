@@ -187,7 +187,7 @@ Reglas de contenido (OBLIGATORIAS):
             };
         }
 
-        private static string ExtractJson(string text)
+        public static string ExtractJson(string text)
         {
             var trimmed = text.Trim();
 

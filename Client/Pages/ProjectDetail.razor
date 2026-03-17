@@ -1005,6 +1005,115 @@ else
                                                 </div>
                                             }
                                         }
+                                        else if (parsed?.Type == "orchestrator")
+                                        {
+                                            <div class="orchestrator-plan">
+                                                <p class="text-sm" style="color: var(--accent); margin-bottom: 0.5rem; font-weight: 600;">
+                                                    Plan del orquestador: @parsed.Summary
+                                                </p>
+                                                @if (parsed.Items is not null && parsed.Items.Count > 0)
+                                                {
+                                                    <div class="orchestrator-tasks">
+                                                        @foreach (var item in parsed.Items)
+                                                        {
+                                                            var isError = item.Content?.StartsWith("ERROR:") == true;
+                                                            <div class="orchestrator-task-item @(isError ? "task-error" : "task-ok")">
+                                                                <span class="task-label">@(item.Label ?? "Tarea")</span>
+                                                                <span class="task-content">@item.Content</span>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+                                                @if (parsed.Files is not null && parsed.Files.Count > 0)
+                                                {
+                                                    <div class="orchestrator-files mt-1">
+                                                        @foreach (var f in parsed.Files)
+                                                        {
+                                                            var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
+                                                            <div style="margin: 0.3rem 0;">
+                                                                @if (f.ContentType.StartsWith("image/"))
+                                                                {
+                                                                    <img src="@fileUrl" alt="@f.FileName" style="max-width: 200px; border-radius: 6px;" crossorigin="use-credentials" />
+                                                                }
+                                                                else if (f.ContentType.StartsWith("video/"))
+                                                                {
+                                                                    <video controls style="max-width: 300px; border-radius: 6px;" crossorigin="use-credentials">
+                                                                        <source src="@fileUrl" type="@f.ContentType" />
+                                                                    </video>
+                                                                }
+                                                                <div class="file-info">
+                                                                    <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
+                                                                        @f.FileName
+                                                                    </a>
+                                                                    <span class="text-sm text-muted">(@(f.FileSize / 1024) KB)</span>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+
+                                            @* Show review panel if waiting for review *@
+                                            @if (step.Status == "WaitingForReview")
+                                            {
+                                                <div class="orchestrator-review">
+                                                    <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem;">Revision del plan</h4>
+
+                                                    @* Parse plan JSON to show tasks *@
+                                                    @{
+                                                        var planTasks = TryParseOrchestratorPlan(step.OutputData);
+                                                    }
+                                                    @if (planTasks is not null)
+                                                    {
+                                                        <table class="orchestrator-plan-table">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>#</th>
+                                                                    <th>Tarea</th>
+                                                                    <th>Modulo</th>
+                                                                    <th>Input</th>
+                                                                    <th>Razon</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @foreach (var t in planTasks)
+                                                                {
+                                                                    <tr>
+                                                                        <td>@t.Order</td>
+                                                                        <td>@t.Description</td>
+                                                                        <td><span class="badge badge-info">@t.ModuleName</span></td>
+                                                                        <td class="text-sm">@(t.Input.Length > 120 ? t.Input[..120] + "..." : t.Input)</td>
+                                                                        <td class="text-sm text-muted">@t.Reason</td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
+                                                    }
+
+                                                    <div class="form-group" style="margin-top: 0.5rem;">
+                                                        <label class="text-sm">Comentario (se aplicara en futuras ejecuciones)</label>
+                                                        <textarea @bind="_orchestratorComment" rows="2"
+                                                                  placeholder="Ej: No uses generacion de video, prioriza Pexels. Anade mas escenas de producto..."
+                                                                  style="font-size: 0.85rem;"></textarea>
+                                                    </div>
+                                                    @if (_orchestratorError is not null)
+                                                    {
+                                                        <div class="alert alert-error" style="font-size: 0.8rem;">@_orchestratorError</div>
+                                                    }
+                                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.4rem;">
+                                                        <button class="btn btn-success btn-sm" @onclick="() => ReviewOrchestrator(true)" disabled="@_orchestratorReviewing">
+                                                            @(_orchestratorReviewing ? "Aprobando..." : "Aprobar y ejecutar")
+                                                        </button>
+                                                        <button class="btn btn-danger btn-sm" @onclick="() => ReviewOrchestrator(false)" disabled="@_orchestratorReviewing">
+                                                            Rechazar
+                                                        </button>
+                                                    </div>
+                                                    <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                                                        Al aprobar, las futuras ejecuciones seran autonomas. Si rechazas, tu comentario se guardara para la proxima ejecucion.
+                                                    </p>
+                                                </div>
+                                            }
+                                        }
                                         else
                                         {
                                             <!-- Fallback: raw output for old executions or unknown types -->
@@ -1603,6 +1712,11 @@ else
     private int? _retryStepOrder;
     private string _retryComment = "";
     private string? _retryError;
+
+    // Orchestrator review
+    private string _orchestratorComment = "";
+    private bool _orchestratorReviewing;
+    private string? _orchestratorError;
 
     // Telegram config
     private string _tgBotToken = "";
@@ -2526,6 +2640,81 @@ else
         catch (Exception ex) { _retryError = $"Error de conexion: {ex.Message}"; _executing = false; }
     }
 
+    private async Task ReviewOrchestrator(bool approved)
+    {
+        if (_result is null) return;
+        _orchestratorError = null;
+        _orchestratorReviewing = true;
+
+        try
+        {
+            var comment = string.IsNullOrWhiteSpace(_orchestratorComment) ? null : _orchestratorComment;
+            var (ok, error) = await Api.OrchestratorReviewAsync(_result.Id, approved, comment);
+            if (ok)
+            {
+                _orchestratorComment = "";
+                if (approved)
+                {
+                    _executing = true;
+                    _logEntries.Clear();
+                    StartPolling();
+                }
+                else
+                {
+                    // Rejected: reload to show updated status
+                    _result = await Api.GetExecutionDetailAsync(_result.Id);
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            else
+            {
+                _orchestratorError = error;
+            }
+        }
+        catch (Exception ex) { _orchestratorError = $"Error de conexion: {ex.Message}"; }
+        _orchestratorReviewing = false;
+    }
+
+    private List<OrchestratorTaskDto>? TryParseOrchestratorPlan(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("tasks", out var tasksEl)) return null;
+
+            var tasks = new List<OrchestratorTaskDto>();
+            foreach (var t in tasksEl.EnumerateArray())
+            {
+                tasks.Add(new OrchestratorTaskDto
+                {
+                    TaskId = t.TryGetProperty("taskId", out var tid) ? tid.GetString() ?? "" : "",
+                    Description = t.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+                    ModuleId = t.TryGetProperty("moduleId", out var mid) ? mid.GetString() ?? "" : "",
+                    ModuleName = t.TryGetProperty("moduleName", out var mn) ? mn.GetString() ?? "" : "",
+                    ModuleType = t.TryGetProperty("moduleType", out var mt) ? mt.GetString() ?? "" : "",
+                    Input = t.TryGetProperty("input", out var inp) ? inp.GetString() ?? "" : "",
+                    Order = t.TryGetProperty("order", out var ord) ? ord.GetInt32() : 0,
+                    Reason = t.TryGetProperty("reason", out var r) ? r.GetString() ?? "" : "",
+                });
+            }
+            return tasks;
+        }
+        catch { return null; }
+    }
+
+    private class OrchestratorTaskDto
+    {
+        public string TaskId { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string ModuleId { get; set; } = "";
+        public string ModuleName { get; set; } = "";
+        public string ModuleType { get; set; } = "";
+        public string Input { get; set; } = "";
+        public int Order { get; set; }
+        public string Reason { get; set; } = "";
+    }
+
     private async Task RetryFromLog(int stepOrder)
     {
         if (_result is null) return;
@@ -2645,6 +2834,8 @@ else
         "Failed" => "badge-danger",
         "Running" => "badge-warning",
         "WaitingForInput" => "badge-info",
+        "WaitingForReview" => "badge-info",
+        "Rejected" => "badge-danger",
         "Cancelled" => "badge-warning",
         _ => "badge-info"
     };

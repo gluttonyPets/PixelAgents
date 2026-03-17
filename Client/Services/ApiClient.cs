@@ -305,6 +305,19 @@ public class ApiClient
         return (true, null);
     }
 
+    public async Task<(bool Ok, string? Error)> OrchestratorReviewAsync(
+        Guid executionId, bool approved, string? comment)
+    {
+        var resp = await SendAsync(HttpMethod.Post,
+            $"/api/executions/{executionId}/orchestrator-review",
+            new OrchestratorReviewRequest(approved, comment));
+        if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
+        {
+            return (false, await ReadErrorAsync(resp));
+        }
+        return (true, null);
+    }
+
     public async Task<bool> CancelExecutionAsync(Guid projectId)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/cancel");
