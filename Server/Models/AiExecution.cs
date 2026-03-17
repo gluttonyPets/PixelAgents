@@ -11,6 +11,9 @@ namespace Server.Models
         public string? PreviousExecutionsSummary { get; set; }
         public Dictionary<string, object> Configuration { get; set; } = new();
         public List<byte[]>? InputFiles { get; set; }
+        /// <summary>When true, providers skip the default OutputSchema JSON instructions.
+        /// Used by the orchestrator which provides its own JSON response format.</summary>
+        public bool SkipOutputSchema { get; set; }
     }
 
     public class AiResult

@@ -2379,6 +2379,7 @@ Datos de la ejecucion:
                 Input = $"Analyze the following input and create a task plan:\n\n{input}",
                 ProjectContext = project.Context,
                 PreviousExecutionsSummary = previousSummaryContext,
+                SkipOutputSchema = true,
                 Configuration = new Dictionary<string, object>
                 {
                     ["systemPrompt"] = systemPrompt,

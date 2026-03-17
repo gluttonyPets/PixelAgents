@@ -94,7 +94,8 @@ namespace Server.Services.Ai
             var systemParts = new List<string>();
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
                 systemParts.Add($"[INSTRUCCION PRINCIPAL - Esta es tu directiva prioritaria, sigue estas instrucciones por encima de cualquier otra regla]\n{sp}");
-            systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
+            if (!context.SkipOutputSchema)
+                systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
             if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
