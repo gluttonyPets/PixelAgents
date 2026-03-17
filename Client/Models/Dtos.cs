@@ -27,8 +27,11 @@ public record CreateProjectRequest(string Name, string? Description, string? Con
 public record UpdateProjectRequest(string Name, string? Description, string? Context);
 public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt);
 public record ProjectDetailResponse(
-    Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt,
-    List<ProjectModuleResponse> Modules);
+    Guid Id, string Name, string? Description, DateTime CreatedAt, DateTime UpdatedAt,
+    List<ProjectModuleResponse> Modules)
+{
+    public string? Context { get; set; }
+}
 
 // ── ProjectModule ──
 public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration, string BranchId = "main", int? BranchFromStep = null);

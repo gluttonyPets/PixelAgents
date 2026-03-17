@@ -992,6 +992,39 @@ a.link:hover { text-decoration: underline; }
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 1;
+}
+
+.context-edit-icon {
+    color: var(--text-muted);
+    opacity: 0;
+    transition: opacity 0.15s;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+.context-bar:hover .context-edit-icon { opacity: 0.7; }
+
+.context-bar-editing {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.context-edit-input {
+    width: 100%;
+    resize: vertical;
+    font-size: 0.85rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    color: var(--text);
+    font-family: inherit;
+}
+
+.context-edit-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
 }
 
 /* ── Tabs ── */

@@ -38,13 +38,35 @@ else
         </div>
     </div>
 
-    <!-- Project Context (always visible if exists) -->
-    @if (!string.IsNullOrWhiteSpace(_project.Context))
+    <!-- Project Context (editable) -->
+    @if (_editingContext)
     {
-        <div class="context-bar">
+        <div class="context-bar context-bar-editing">
+            <span class="context-label">Contexto</span>
+            @if (_contextError is not null)
+            {
+                <div class="alert alert-error" style="margin:0 0 4px 0;font-size:.85rem;">@_contextError</div>
+            }
+            <textarea class="context-edit-input" @bind="_contextDraft" rows="3" placeholder="Escribe el contexto del proyecto..."></textarea>
+            <div class="context-edit-actions">
+                <button class="btn btn-primary btn-sm" @onclick="SaveContext" disabled="@_contextSaving">
+                    @(_contextSaving ? "Guardando..." : "Guardar")
+                </button>
+                <button class="btn btn-sm" @onclick="CancelContextEdit">Cancelar</button>
+            </div>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(_project.Context))
+    {
+        <div class="context-bar" @onclick="StartContextEdit" style="cursor:pointer;" title="Clic para editar">
             <span class="context-label">Contexto</span>
             <span class="context-text">@_project.Context</span>
+            <span class="context-edit-icon">&#x270E;</span>
         </div>
+    }
+    else
+    {
+        <button class="btn btn-sm" style="margin-bottom:8px;" @onclick="StartContextEdit">+ Agregar contexto</button>
     }
 
     <!-- ═══════════ TABS ═══════════ -->
@@ -1561,6 +1583,12 @@ else
     private Guid? _expandedExecId;
     private ExecutionDetailResponse? _expandedExecDetail;
 
+    // Edit context
+    private bool _editingContext;
+    private string _contextDraft = "";
+    private bool _contextSaving;
+    private string? _contextError;
+
     // Edit step
     private Guid? _editingPmId;
     private string _editStepName = "";
@@ -1781,6 +1809,41 @@ else
         }
         catch { }
         _loading = false;
+    }
+
+    private void StartContextEdit()
+    {
+        _contextDraft = _project?.Context ?? "";
+        _contextError = null;
+        _editingContext = true;
+    }
+
+    private void CancelContextEdit()
+    {
+        _editingContext = false;
+        _contextError = null;
+    }
+
+    private async Task SaveContext()
+    {
+        _contextError = null;
+        _contextSaving = true;
+        try
+        {
+            var req = new UpdateProjectRequest(_project!.Name, _project.Description, _contextDraft.Trim());
+            var (ok, error) = await Api.UpdateProjectAsync(ProjectId, req);
+            if (ok)
+            {
+                _project.Context = _contextDraft.Trim();
+                _editingContext = false;
+            }
+            else
+            {
+                _contextError = error ?? "Error al guardar el contexto";
+            }
+        }
+        catch (Exception ex) { _contextError = $"Error de conexion: {ex.Message}"; }
+        _contextSaving = false;
     }
 
     private async Task SaveTelegramConfig()
