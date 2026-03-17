@@ -2505,6 +2505,11 @@ Datos de la ejecucion:
                     $"Orquestador [{task.TaskId}]: {task.Description} (modulo: {task.ModuleName})",
                     orchestratorPm.StepOrder, stepName);
 
+                // Broadcast task started
+                await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
+                    task.TaskId, task.Description, task.ModuleName, task.ModuleType,
+                    task.Order, "running", null, null, null, DateTime.UtcNow));
+
                 // Load the target module
                 var targetModule = await db.AiModules
                     .Include(m => m.ApiKey)
@@ -2514,6 +2519,9 @@ Datos de la ejecucion:
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "error",
                         $"Orquestador [{task.TaskId}]: modulo {task.ModuleId} no encontrado", orchestratorPm.StepOrder, stepName);
+                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
+                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
+                        task.Order, "error", null, null, "Modulo no encontrado", DateTime.UtcNow));
                     orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: modulo no encontrado", Label = task.TaskId });
                     continue;
                 }
@@ -2522,6 +2530,9 @@ Datos de la ejecucion:
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "error",
                         $"Orquestador [{task.TaskId}]: modulo '{targetModule.Name}' no tiene API Key", orchestratorPm.StepOrder, stepName);
+                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
+                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
+                        task.Order, "error", null, null, "API Key no configurada", DateTime.UtcNow));
                     orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: API Key no configurada", Label = task.TaskId });
                     continue;
                 }
@@ -2531,6 +2542,9 @@ Datos de la ejecucion:
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "error",
                         $"Orquestador [{task.TaskId}]: proveedor '{targetModule.ProviderType}' no disponible", orchestratorPm.StepOrder, stepName);
+                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
+                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
+                        task.Order, "error", null, null, "Proveedor no disponible", DateTime.UtcNow));
                     orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: proveedor no disponible", Label = task.TaskId });
                     continue;
                 }
@@ -2568,6 +2582,9 @@ Datos de la ejecucion:
                     {
                         await _logger.LogAsync(project.Id, execution.Id, "error",
                             $"Orquestador [{task.TaskId}]: error: {result.Error}", orchestratorPm.StepOrder, stepName);
+                        await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
+                            task.TaskId, task.Description, task.ModuleName, task.ModuleType,
+                            task.Order, "error", null, null, result.Error, DateTime.UtcNow));
                         orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {result.Error}", Label = task.TaskId });
                         continue;
                     }
@@ -2622,11 +2639,22 @@ Datos de la ejecucion:
                             $"Orquestador [{task.TaskId}]: archivo generado ({result.ContentType}, {result.FileOutput.Length} bytes)",
                             orchestratorPm.StepOrder, stepName);
                     }
+
+                    // Broadcast task completed
+                    var fileUrl = result.FileOutput is not null
+                        ? Path.Combine($"step_{orchestratorPm.StepOrder}", task.TaskId, $"output{GetExtension(result.ContentType ?? "application/octet-stream")}")
+                        : null;
+                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
+                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
+                        task.Order, "completed", fileUrl, result.ContentType, null, DateTime.UtcNow));
                 }
                 catch (Exception ex)
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "error",
                         $"Orquestador [{task.TaskId}]: excepcion: {ex.Message}", orchestratorPm.StepOrder, stepName);
+                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
+                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
+                        task.Order, "error", null, null, ex.Message, DateTime.UtcNow));
                     orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {ex.Message}", Label = task.TaskId });
                 }
             }

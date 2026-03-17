@@ -1230,6 +1230,97 @@ a.link:hover { text-decoration: underline; }
     background: rgba(0, 0, 0, 0.05);
 }
 
+/* ── Orchestrator Task Progress Cards ── */
+.orch-progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+.orch-progress-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.9rem;
+    padding: 0.5rem 0;
+}
+.orch-progress-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.6rem;
+}
+.orch-task-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.7rem 0.8rem;
+    background: var(--bg-card);
+    font-size: 0.82rem;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+.orch-task-running {
+    border-color: rgba(108, 99, 255, 0.5);
+    box-shadow: 0 0 8px rgba(108, 99, 255, 0.15);
+}
+.orch-task-completed {
+    border-color: rgba(34, 197, 94, 0.4);
+}
+.orch-task-error {
+    border-color: rgba(239, 68, 68, 0.4);
+}
+.orch-task-card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+}
+.orch-task-status-icon {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    margin-top: 0.1rem;
+}
+.orch-task-card-info {
+    flex: 1;
+    min-width: 0;
+}
+.orch-task-card-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    font-weight: 500;
+    line-height: 1.3;
+}
+.orch-task-order {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+.orch-task-card-meta {
+    display: flex;
+    gap: 0.3rem;
+    margin-top: 0.3rem;
+    flex-wrap: wrap;
+}
+.orch-task-error-msg {
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: #ef4444;
+    padding: 0.3rem 0.5rem;
+    background: rgba(239, 68, 68, 0.08);
+    border-radius: 4px;
+}
+.orch-task-file-badge {
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding: 0.2rem 0.5rem;
+    background: rgba(34, 197, 94, 0.08);
+    border-radius: 4px;
+    display: inline-block;
+}
+
 /* ── Tabs ── */
 .tab-bar {
     display: flex;

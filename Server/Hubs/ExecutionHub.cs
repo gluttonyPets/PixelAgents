@@ -25,10 +25,25 @@ namespace Server.Hubs
         DateTime Timestamp
     );
 
+    public record OrchestratorTaskProgressEntry(
+        string TaskId,
+        string Description,
+        string ModuleName,
+        string ModuleType,
+        int Order,
+        string Status,        // "running", "completed", "error"
+        string? FileUrl,      // relative file path if produced
+        string? ContentType,  // mime type of file
+        string? ErrorMessage,
+        DateTime Timestamp
+    );
+
     public interface IExecutionLogger
     {
         Task LogAsync(Guid projectId, Guid executionId, string level, string message,
             int? stepOrder = null, string? stepName = null);
+
+        Task LogTaskProgressAsync(Guid projectId, OrchestratorTaskProgressEntry progress);
 
         /// <summary>
         /// Returns a wrapper that persists all logs to the given DB context.
@@ -53,6 +68,12 @@ namespace Server.Hubs
         }
 
         public IExecutionLogger WithDb(UserDbContext db) => new SignalRExecutionLogger(_hub, db);
+
+        public async Task LogTaskProgressAsync(Guid projectId, OrchestratorTaskProgressEntry progress)
+        {
+            await _hub.Clients.Group(projectId.ToString())
+                .SendAsync("OrchestratorTaskProgress", progress);
+        }
 
         public async Task LogAsync(Guid projectId, Guid executionId, string level, string message,
             int? stepOrder = null, string? stepName = null)

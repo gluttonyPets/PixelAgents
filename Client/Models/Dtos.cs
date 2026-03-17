@@ -67,6 +67,12 @@ public record ExecutionFileResponse(
 public record ExecutionLogResponse(
     string Level, string Message, int? StepOrder, string? StepName, DateTime Timestamp);
 
+// ── Orchestrator Task Progress ──
+public record OrchestratorTaskProgressEntry(
+    string TaskId, string Description, string ModuleName, string ModuleType,
+    int Order, string Status, string? FileUrl, string? ContentType,
+    string? ErrorMessage, DateTime Timestamp);
+
 // ── WhatsApp ──
 public record WhatsAppConfigDto(string PhoneNumberId, string AccessToken,
     string RecipientNumber, string WebhookVerifyToken);
