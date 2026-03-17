@@ -1092,6 +1092,144 @@ a.link:hover { text-decoration: underline; }
     vertical-align: top;
 }
 
+/* ── Orchestrator Review Modal ── */
+.orchestrator-modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 94%;
+    max-width: 780px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.orchestrator-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.8rem 1.2rem;
+    border-bottom: 1px solid var(--border);
+}
+.orchestrator-modal-body {
+    padding: 1rem 1.2rem;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+.orchestrator-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding: 0.7rem 1.2rem;
+    border-top: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.1);
+}
+.orchestrator-summary {
+    font-size: 0.85rem;
+    padding: 0.6rem 0.8rem;
+    background: rgba(108, 99, 255, 0.06);
+    border-left: 3px solid rgba(108, 99, 255, 0.4);
+    border-radius: 4px;
+}
+.orchestrator-tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 40vh;
+    overflow-y: auto;
+}
+.orchestrator-task-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.6rem 0.8rem;
+    background: rgba(0, 0, 0, 0.1);
+    font-size: 0.82rem;
+}
+.task-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.task-order {
+    font-weight: 700;
+    color: var(--primary);
+    font-size: 0.8rem;
+    min-width: 1.5rem;
+}
+.task-desc {
+    flex: 1;
+    font-weight: 500;
+}
+.task-card-input {
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.35;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.task-card-reason {
+    margin-top: 0.2rem;
+    font-size: 0.72rem;
+    font-style: italic;
+}
+/* Chat */
+.orchestrator-chat {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.orchestrator-chat-messages {
+    max-height: 120px;
+    overflow-y: auto;
+    padding: 0.5rem 0.7rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+.chat-msg {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+}
+.chat-msg-system {
+    justify-content: flex-start;
+}
+.chat-msg-user {
+    justify-content: flex-end;
+}
+.chat-msg-text {
+    padding: 0.35rem 0.6rem;
+    border-radius: 8px;
+    max-width: 80%;
+    line-height: 1.3;
+}
+.chat-msg-system .chat-msg-text {
+    background: rgba(108, 99, 255, 0.08);
+    color: var(--text-secondary);
+}
+.chat-msg-user .chat-msg-text {
+    background: var(--primary);
+    color: #fff;
+}
+.chat-msg-time {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+}
+.orchestrator-chat-input {
+    display: flex;
+    gap: 0.4rem;
+    padding: 0.5rem 0.7rem;
+    border-top: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.05);
+}
+
 /* ── Tabs ── */
 .tab-bar {
     display: flex;

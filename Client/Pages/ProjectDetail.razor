@@ -1612,6 +1612,92 @@ else
     }
 }
 
+<!-- ═══════════ ORCHESTRATOR REVIEW MODAL ═══════════ -->
+@if (_showOrchestratorModal && _result is not null)
+{
+    <div class="modal-overlay" @onclick="() => {}">
+        <div class="orchestrator-modal" @onclick:stopPropagation="true">
+            <div class="orchestrator-modal-header">
+                <h3 style="margin: 0; font-size: 1rem;">Revision del plan del orquestador</h3>
+                <button class="btn-icon" @onclick="CloseOrchestratorModal">&#x2715;</button>
+            </div>
+
+            <div class="orchestrator-modal-body">
+                @if (!string.IsNullOrWhiteSpace(_orchestratorModalSummary))
+                {
+                    <div class="orchestrator-summary">
+                        <strong>Resumen:</strong> @_orchestratorModalSummary
+                    </div>
+                }
+
+                @if (_orchestratorModalTasks is not null)
+                {
+                    <div class="orchestrator-tasks-list">
+                        @foreach (var task in _orchestratorModalTasks.OrderBy(t => t.Order))
+                        {
+                            <div class="orchestrator-task-card">
+                                <div class="task-card-header">
+                                    <span class="task-order">#@task.Order</span>
+                                    <span class="task-desc">@task.Description</span>
+                                    <span class="badge badge-info">@task.ModuleName</span>
+                                    <span class="badge" style="font-size: 0.65rem; background: var(--border);">@task.ModuleType</span>
+                                </div>
+                                <div class="task-card-input">
+                                    <span class="text-muted" style="font-size: 0.75rem;">Prompt:</span>
+                                    @task.Input
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(task.Reason))
+                                {
+                                    <div class="task-card-reason text-muted">@task.Reason</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Chat section -->
+                <div class="orchestrator-chat">
+                    <div class="orchestrator-chat-messages">
+                        @if (_orchestratorChat.Count == 0)
+                        {
+                            <div class="text-muted text-sm" style="text-align: center; padding: 1rem;">
+                                Puedes aprobar el plan o dejar un comentario para ajustarlo en la proxima ejecucion.
+                            </div>
+                        }
+                        @foreach (var msg in _orchestratorChat)
+                        {
+                            <div class="chat-msg @(msg.IsSystem ? "chat-msg-system" : "chat-msg-user")">
+                                <span class="chat-msg-text">@msg.Text</span>
+                                <span class="chat-msg-time">@msg.Time.ToString("HH:mm")</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="orchestrator-chat-input">
+                        <textarea @bind="_orchestratorComment" rows="2"
+                                  placeholder="Escribe un comentario para ajustar el plan..."
+                                  style="flex: 1; font-size: 0.85rem;"></textarea>
+                    </div>
+                </div>
+
+                @if (_orchestratorError is not null)
+                {
+                    <div class="alert alert-error" style="font-size: 0.8rem; margin-top: 0.5rem;">@_orchestratorError</div>
+                }
+            </div>
+
+            <div class="orchestrator-modal-footer">
+                <button class="btn btn-danger btn-sm" @onclick="() => ReviewOrchestratorModal(false)" disabled="@_orchestratorReviewing">
+                    Rechazar
+                </button>
+                <button class="btn btn-success btn-sm" @onclick="() => ReviewOrchestratorModal(true)" disabled="@_orchestratorReviewing">
+                    @(_orchestratorReviewing ? "Aprobando..." : "Aprobar y ejecutar")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 <!-- Buffer API Debug Modal -->
 @if (_showBufferDebug)
 {
@@ -1717,6 +1803,10 @@ else
     private string _orchestratorComment = "";
     private bool _orchestratorReviewing;
     private string? _orchestratorError;
+    private bool _showOrchestratorModal;
+    private List<OrchestratorTaskDto>? _orchestratorModalTasks;
+    private string? _orchestratorModalSummary;
+    private List<OrchestratorChatMessage> _orchestratorChat = new();
 
     // Telegram config
     private string _tgBotToken = "";
@@ -1814,6 +1904,15 @@ else
             });
         });
 
+        _hubConnection.On<ExecutionDetailResponse>("OrchestratorWaitingForReview", result =>
+        {
+            InvokeAsync(() =>
+            {
+                OpenOrchestratorModal(result);
+                StateHasChanged();
+            });
+        });
+
         _hubConnection.On<string>("ExecutionFailed", error =>
         {
             _execError = error;
@@ -1852,15 +1951,33 @@ else
                 // Still running — nothing to do
                 if (latest.Status == "Running") return;
 
-                // Execution finished — load full detail
-                var detail = await Api.GetExecutionDetailAsync(latest.Id);
-                if (detail is not null)
+                // Orchestrator waiting for review — open modal
+                if (latest.Status == "WaitingForReview")
                 {
-                    _result = detail;
-                    _executing = false;
-                    _executions = execs;
-                    StopPolling();
-                    await InvokeAsync(StateHasChanged);
+                    var detail = await Api.GetExecutionDetailAsync(latest.Id);
+                    if (detail is not null)
+                    {
+                        _executions = execs;
+                        await InvokeAsync(() =>
+                        {
+                            OpenOrchestratorModal(detail);
+                            StateHasChanged();
+                        });
+                    }
+                    return;
+                }
+
+                // Execution finished — load full detail
+                {
+                    var detail = await Api.GetExecutionDetailAsync(latest.Id);
+                    if (detail is not null)
+                    {
+                        _result = detail;
+                        _executing = false;
+                        _executions = execs;
+                        StopPolling();
+                        await InvokeAsync(StateHasChanged);
+                    }
                 }
             }
             catch { /* poll failed, will retry next interval */ }
@@ -2576,6 +2693,12 @@ else
                 _logEntries = logs.Select(l => new LogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
             }
             _activeTab = "execute";
+
+            // Auto-open orchestrator modal if execution is waiting for review
+            if (_result?.Status == "WaitingForReview")
+            {
+                OpenOrchestratorModal(_result);
+            }
         }
         catch { }
     }
@@ -2713,6 +2836,118 @@ else
         public string Input { get; set; } = "";
         public int Order { get; set; }
         public string Reason { get; set; } = "";
+    }
+
+    private class OrchestratorChatMessage
+    {
+        public string Text { get; set; } = "";
+        public DateTime Time { get; set; }
+        public bool IsSystem { get; set; }
+    }
+
+    private void OpenOrchestratorModal(ExecutionDetailResponse detail)
+    {
+        _result = detail;
+        _executing = false;
+        StopPolling();
+
+        // Find the WaitingForReview step and parse its plan
+        var reviewStep = detail.Steps.FirstOrDefault(s => s.Status == "WaitingForReview");
+        if (reviewStep is null) return;
+
+        _orchestratorModalTasks = TryParseOrchestratorPlan(reviewStep.OutputData);
+        _orchestratorModalSummary = TryParseOrchestratorSummary(reviewStep.OutputData);
+        _orchestratorComment = "";
+        _orchestratorError = null;
+        _orchestratorChat.Clear();
+        _orchestratorChat.Add(new OrchestratorChatMessage
+        {
+            Text = $"Plan generado con {_orchestratorModalTasks?.Count ?? 0} tarea(s). Revisa el detalle arriba.",
+            Time = DateTime.Now,
+            IsSystem = true,
+        });
+        _showOrchestratorModal = true;
+        _activeTab = "execute";
+    }
+
+    private string? TryParseOrchestratorSummary(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+            return doc.RootElement.TryGetProperty("summary", out var s) ? s.GetString() : null;
+        }
+        catch { return null; }
+    }
+
+    private void CloseOrchestratorModal()
+    {
+        _showOrchestratorModal = false;
+    }
+
+    private async Task ReviewOrchestratorModal(bool approved)
+    {
+        if (_result is null) return;
+        _orchestratorError = null;
+        _orchestratorReviewing = true;
+
+        try
+        {
+            var comment = string.IsNullOrWhiteSpace(_orchestratorComment) ? null : _orchestratorComment;
+
+            // Add user message to chat
+            if (!string.IsNullOrWhiteSpace(comment))
+            {
+                _orchestratorChat.Add(new OrchestratorChatMessage
+                {
+                    Text = comment,
+                    Time = DateTime.Now,
+                    IsSystem = false,
+                });
+            }
+
+            var (ok, error) = await Api.OrchestratorReviewAsync(_result.Id, approved, comment);
+            if (ok)
+            {
+                _orchestratorComment = "";
+                if (approved)
+                {
+                    _orchestratorChat.Add(new OrchestratorChatMessage
+                    {
+                        Text = "Plan aprobado. Ejecutando tareas...",
+                        Time = DateTime.Now,
+                        IsSystem = true,
+                    });
+                    _showOrchestratorModal = false;
+                    _executing = true;
+                    _logEntries.Clear();
+                    StartPolling();
+                }
+                else
+                {
+                    _orchestratorChat.Add(new OrchestratorChatMessage
+                    {
+                        Text = "Plan rechazado. Tu comentario se guardara para la proxima ejecucion.",
+                        Time = DateTime.Now,
+                        IsSystem = true,
+                    });
+                    // Reload to show updated status
+                    _result = await Api.GetExecutionDetailAsync(_result.Id);
+                    _executions = await Api.GetExecutionsAsync(ProjectId);
+                    // Keep modal open briefly so user sees the chat, then close
+                    await Task.Delay(1500);
+                    _showOrchestratorModal = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            else
+            {
+                _orchestratorError = error;
+            }
+        }
+        catch (Exception ex) { _orchestratorError = $"Error de conexion: {ex.Message}"; }
+        _orchestratorReviewing = false;
     }
 
     private async Task RetryFromLog(int stepOrder)

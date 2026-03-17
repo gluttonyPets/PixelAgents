@@ -988,9 +988,17 @@ app.MapPost("/api/projects/{projectId}/execute", async (
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
                 exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
 
-            // Notify client via SignalR
-            await hub.Clients.Group(projectId.ToString())
-                .SendAsync("ExecutionCompleted", detail);
+            // Notify client via SignalR — use specific event for orchestrator review
+            if (exec.Status == "WaitingForReview")
+            {
+                await hub.Clients.Group(projectId.ToString())
+                    .SendAsync("OrchestratorWaitingForReview", detail);
+            }
+            else
+            {
+                await hub.Clients.Group(projectId.ToString())
+                    .SendAsync("ExecutionCompleted", detail);
+            }
         }
         catch (Exception ex)
         {
@@ -1131,8 +1139,16 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
                 exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
 
-            await hub.Clients.Group(projectId.ToString())
-                .SendAsync("ExecutionCompleted", detail);
+            if (exec.Status == "WaitingForReview")
+            {
+                await hub.Clients.Group(projectId.ToString())
+                    .SendAsync("OrchestratorWaitingForReview", detail);
+            }
+            else
+            {
+                await hub.Clients.Group(projectId.ToString())
+                    .SendAsync("ExecutionCompleted", detail);
+            }
         }
         catch (Exception ex)
         {
