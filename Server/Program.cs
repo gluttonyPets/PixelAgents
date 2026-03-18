@@ -967,7 +967,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 
             // Load full result for client
             var exec = await bgDb.ProjectExecutions
-                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .Include(e => e.StepExecutions)
                     .ThenInclude(s => s.Files)
                 .Include(e => e.StepExecutions)
                     .ThenInclude(s => s.ProjectModule)
@@ -1039,7 +1039,7 @@ app.MapGet("/api/executions/{id}", async (
     if (db is null) return Results.Unauthorized();
 
     var exec = await db.ProjectExecutions
-        .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+        .Include(e => e.StepExecutions)
             .ThenInclude(s => s.Files)
         .Include(e => e.StepExecutions)
             .ThenInclude(s => s.ProjectModule)
@@ -1118,7 +1118,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
             var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, bgDb, tenantDbName, ct);
 
             var exec = await bgDb.ProjectExecutions
-                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .Include(e => e.StepExecutions)
                     .ThenInclude(s => s.Files)
                 .Include(e => e.StepExecutions)
                     .ThenInclude(s => s.ProjectModule)
@@ -1203,7 +1203,7 @@ app.MapPost("/api/executions/{executionId}/orchestrator-review", async (
                 executionId, req.Approved, req.Comment, bgDb, tenantDbName, ct);
 
             var exec = await bgDb.ProjectExecutions
-                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .Include(e => e.StepExecutions)
                     .ThenInclude(s => s.Files)
                 .Include(e => e.StepExecutions)
                     .ThenInclude(s => s.ProjectModule)

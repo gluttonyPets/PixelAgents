@@ -3535,7 +3535,7 @@ Datos de la ejecucion:
             _logger = _baseLogger.WithDb(db);
 
             var execution = await db.ProjectExecutions
-                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
+                .Include(e => e.StepExecutions)
                     .ThenInclude(s => s.Files)
                 .Include(e => e.StepExecutions)
                     .ThenInclude(s => s.ProjectModule)
