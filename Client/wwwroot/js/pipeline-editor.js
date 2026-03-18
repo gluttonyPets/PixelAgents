@@ -1,261 +1,181 @@
-// Pipeline visual editor - JS Interop for drag & connect
+// Pipeline visual editor — Drawflow wrapper for Blazor interop
 window.pipelineEditor = {
+    _editor: null,
     _dotNetRef: null,
-    _canvas: null,
-    _dragging: null,        // { nodeId, offsetX, offsetY }
-    _connecting: null,       // { fromModuleId, fromPort, startX, startY }
-    _tempLine: null,         // SVG line element for temp connection
-    _panning: null,          // { startX, startY, scrollLeft, scrollTop }
+    _portMap: {},       // drawflowNodeId → { inputs: [portId...], outputs: [portId...] }
+    _moduleMap: {},     // drawflowNodeId → moduleId (guid string)
+    _reverseMap: {},    // moduleId → drawflowNodeId
+    _suppressEvents: false, // true while bulk-loading to avoid feedback loops
 
-    _getZoom: function () {
-        return parseFloat(getComputedStyle(document.body).zoom) || 1;
-    },
+    init: function (dotNetRef, containerId) {
+        var container = document.getElementById(containerId);
+        if (!container) return;
 
-    init: function (dotNetRef, canvasId) {
+        this._editor = new Drawflow(container);
+        this._editor.reroute = true;
+        this._editor.reroute_fix_curvature = true;
+        this._editor.force_first_input = false;
+        this._editor.start();
         this._dotNetRef = dotNetRef;
-        this._canvas = document.getElementById(canvasId);
-        if (!this._canvas) return;
 
-        // Prevent context menu on canvas
-        this._canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-        // Mouse move on canvas (for drag, connect & pan)
-        this._canvas.addEventListener('mousemove', e => this._onMouseMove(e));
-        this._canvas.addEventListener('mouseup', e => this._onMouseUp(e));
-
-        // Pan: mousedown on empty canvas area
-        this._canvas.addEventListener('mousedown', e => {
-            if (this._dragging || this._connecting) return;
-            const target = e.target;
-            // Only start pan on canvas background, not on nodes/ports/connections
-            if (target.closest('.pipeline-node') || target.closest('[data-port-id]') || target.closest('path')) return;
-            this._panning = {
-                startX: e.clientX,
-                startY: e.clientY,
-                scrollLeft: this._canvas.scrollLeft,
-                scrollTop: this._canvas.scrollTop
-            };
-            this._canvas.classList.add('panning');
-            e.preventDefault();
+        this._editor.on('nodeMoved', id => {
+            if (this._suppressEvents) return;
+            var info = this._editor.getNodeFromId(id);
+            var moduleId = this._moduleMap[id];
+            if (moduleId && info)
+                this._dotNetRef.invokeMethodAsync('OnNodeMoved', moduleId, info.pos_x, info.pos_y);
         });
 
-        // Touch support
-        this._canvas.addEventListener('touchstart', e => {
-            if (this._dragging || this._connecting) return;
-            const target = e.target;
-            if (target.closest('.pipeline-node') || target.closest('[data-port-id]') || target.closest('path')) return;
-            const touch = e.touches[0];
-            this._panning = {
-                startX: touch.clientX,
-                startY: touch.clientY,
-                scrollLeft: this._canvas.scrollLeft,
-                scrollTop: this._canvas.scrollTop
-            };
-            this._canvas.classList.add('panning');
-        }, { passive: false });
+        this._editor.on('connectionCreated', conn => {
+            if (this._suppressEvents) return;
+            var fromPorts = this._portMap[conn.output_id];
+            var toPorts = this._portMap[conn.input_id];
+            if (!fromPorts || !toPorts) return;
+            var fromIdx = parseInt(conn.output_class.replace('output_', '')) - 1;
+            var toIdx = parseInt(conn.input_class.replace('input_', '')) - 1;
+            var fromPortId = fromPorts.outputs[fromIdx];
+            var toPortId = toPorts.inputs[toIdx];
+            var fromModuleId = this._moduleMap[conn.output_id];
+            var toModuleId = this._moduleMap[conn.input_id];
+            if (fromPortId && toPortId)
+                this._dotNetRef.invokeMethodAsync('OnConnectionMade', fromModuleId, fromPortId, toModuleId, toPortId);
+        });
 
-        this._canvas.addEventListener('touchmove', e => {
-            if (this._panning) {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const zoom = this._getZoom();
-                this._canvas.scrollLeft = this._panning.scrollLeft - (touch.clientX - this._panning.startX) / zoom;
-                this._canvas.scrollTop = this._panning.scrollTop - (touch.clientY - this._panning.startY) / zoom;
-                return;
-            }
-            if (this._dragging || this._connecting) {
-                e.preventDefault();
-                const touch = e.touches[0];
-                this._onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
-            }
-        }, { passive: false });
+        this._editor.on('connectionRemoved', conn => {
+            if (this._suppressEvents) return;
+            var fromPorts = this._portMap[conn.output_id];
+            var toPorts = this._portMap[conn.input_id];
+            if (!fromPorts || !toPorts) return;
+            var fromIdx = parseInt(conn.output_class.replace('output_', '')) - 1;
+            var toIdx = parseInt(conn.input_class.replace('input_', '')) - 1;
+            var fromPortId = fromPorts.outputs[fromIdx];
+            var toPortId = toPorts.inputs[toIdx];
+            var fromModuleId = this._moduleMap[conn.output_id];
+            var toModuleId = this._moduleMap[conn.input_id];
+            if (fromPortId && toPortId)
+                this._dotNetRef.invokeMethodAsync('OnConnectionRemoved', fromModuleId, fromPortId, toModuleId, toPortId);
+        });
 
-        this._canvas.addEventListener('touchend', e => {
-            if (this._panning) {
-                this._panning = null;
-                this._canvas.classList.remove('panning');
-                return;
-            }
-            this._onMouseUp(e);
+        this._editor.on('nodeSelected', id => {
+            var moduleId = this._moduleMap[id];
+            if (moduleId) this._dotNetRef.invokeMethodAsync('OnNodeSelected', moduleId);
+        });
+
+        this._editor.on('nodeUnselected', () => {
+            this._dotNetRef.invokeMethodAsync('OnNodeDeselected');
         });
     },
 
-    startNodeDrag: function (nodeId, clientX, clientY) {
-        const node = document.querySelector(`[data-node-id="${nodeId}"]`);
-        if (!node) return;
-        this._dragging = {
-            nodeId: nodeId,
-            offsetX: clientX - node.getBoundingClientRect().left,
-            offsetY: clientY - node.getBoundingClientRect().top
-        };
-        node.classList.add('dragging');
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y) {
+        if (!this._editor) return -1;
+        var inputPorts = JSON.parse(inputPortsJson);
+        var outputPorts = JSON.parse(outputPortsJson);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, inputPorts, outputPorts);
+        var nodeId = this._editor.addNode(
+            moduleId, inputPorts.length, outputPorts.length,
+            x, y, 'df-type-' + moduleType.toLowerCase(),
+            { moduleId: moduleId }, html
+        );
+        this._portMap[nodeId] = { inputs: inputPorts.map(p => p.id), outputs: outputPorts.map(p => p.id) };
+        this._moduleMap[nodeId] = moduleId;
+        this._reverseMap[moduleId] = nodeId;
+        return nodeId;
     },
 
-    startConnection: function (moduleId, portId, isInput, clientX, clientY) {
-        const canvasRect = this._canvas.getBoundingClientRect();
-        const zoom = this._getZoom();
-        this._connecting = {
-            moduleId: moduleId,
-            portId: portId,
-            isInput: isInput,
-            startX: (clientX - canvasRect.left) / zoom + this._canvas.scrollLeft,
-            startY: (clientY - canvasRect.top) / zoom + this._canvas.scrollTop
-        };
-
-        // Create temp SVG line
-        const svg = this._canvas.querySelector('.pipeline-svg');
-        if (svg) {
-            this._tempLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            this._tempLine.setAttribute('class', 'temp-connection');
-            this._tempLine.setAttribute('fill', 'none');
-            this._tempLine.setAttribute('stroke', '#6c63ff');
-            this._tempLine.setAttribute('stroke-width', '2');
-            this._tempLine.setAttribute('stroke-dasharray', '6 3');
-            svg.appendChild(this._tempLine);
-        }
-    },
-
-    getPortCenter: function (moduleId, portId) {
-        const port = document.querySelector(`[data-module-id="${moduleId}"][data-port-id="${portId}"]`);
-        if (!port || !this._canvas) return null;
-        const canvasRect = this._canvas.getBoundingClientRect();
-        const portRect = port.getBoundingClientRect();
-        const zoom = this._getZoom();
-        return {
-            x: (portRect.left + portRect.width / 2 - canvasRect.left) / zoom + this._canvas.scrollLeft,
-            y: (portRect.top + portRect.height / 2 - canvasRect.top) / zoom + this._canvas.scrollTop
-        };
-    },
-
-    _onMouseMove: function (e) {
-        if (!this._canvas) return;
-        const zoom = this._getZoom();
-
-        // Canvas panning
-        if (this._panning) {
-            this._canvas.scrollLeft = this._panning.scrollLeft - (e.clientX - this._panning.startX) / zoom;
-            this._canvas.scrollTop = this._panning.scrollTop - (e.clientY - this._panning.startY) / zoom;
-            return;
-        }
-
-        const canvasRect = this._canvas.getBoundingClientRect();
-        const mx = (e.clientX - canvasRect.left) / zoom + this._canvas.scrollLeft;
-        const my = (e.clientY - canvasRect.top) / zoom + this._canvas.scrollTop;
-
-        // Node dragging
-        if (this._dragging) {
-            const x = (e.clientX - canvasRect.left - this._dragging.offsetX) / zoom + this._canvas.scrollLeft;
-            const y = (e.clientY - canvasRect.top - this._dragging.offsetY) / zoom + this._canvas.scrollTop;
-            const node = document.querySelector(`[data-node-id="${this._dragging.nodeId}"]`);
-            if (node) {
-                node.style.left = Math.max(0, x) + 'px';
-                node.style.top = Math.max(0, y) + 'px';
-            }
-            // Notify Blazor of position change (throttled)
-            if (!this._dragThrottle) {
-                this._dragThrottle = setTimeout(() => {
-                    this._dotNetRef.invokeMethodAsync('OnNodeMoved', this._dragging.nodeId, Math.max(0, x), Math.max(0, y));
-                    this._dragThrottle = null;
-                }, 30);
-            }
-            return;
-        }
-
-        // Connection dragging
-        if (this._connecting && this._tempLine) {
-            const sx = this._connecting.startX;
-            const sy = this._connecting.startY;
-            const dx = Math.abs(mx - sx) * 0.5;
-            const path = this._connecting.isInput
-                ? `M${mx},${my} C${mx + dx},${my} ${sx - dx},${sy} ${sx},${sy}`
-                : `M${sx},${sy} C${sx + dx},${sy} ${mx - dx},${my} ${mx},${my}`;
-            this._tempLine.setAttribute('d', path);
-
-            // Highlight compatible ports
-            this._highlightCompatiblePorts(e.clientX, e.clientY);
+    addConnection: function (fromModuleId, fromPortId, toModuleId, toPortId) {
+        if (!this._editor) return;
+        var fromNodeId = this._reverseMap[fromModuleId];
+        var toNodeId = this._reverseMap[toModuleId];
+        if (fromNodeId === undefined || toNodeId === undefined) return;
+        var fromPorts = this._portMap[fromNodeId];
+        var toPorts = this._portMap[toNodeId];
+        if (!fromPorts || !toPorts) return;
+        var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
+        var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
+        if (fromIdx > 0 && toIdx > 0) {
+            this._suppressEvents = true;
+            try {
+                this._editor.addConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
+            } catch (e) { /* connection may already exist */ }
+            this._suppressEvents = false;
         }
     },
 
-    _onMouseUp: function (e) {
-        // End panning (don't return — also check _dragging in case both were active)
-        if (this._panning) {
-            this._panning = null;
-            this._canvas.classList.remove('panning');
-        }
-
-        // End node drag
-        if (this._dragging) {
-            const node = document.querySelector(`[data-node-id="${this._dragging.nodeId}"]`);
-            if (node) node.classList.remove('dragging');
-            // Final position notification
-            const canvasRect = this._canvas.getBoundingClientRect();
-            const zoom = this._getZoom();
-            const clientX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0;
-            const clientY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY) || 0;
-            const x = (clientX - canvasRect.left - this._dragging.offsetX) / zoom + this._canvas.scrollLeft;
-            const y = (clientY - canvasRect.top - this._dragging.offsetY) / zoom + this._canvas.scrollTop;
-            this._dotNetRef.invokeMethodAsync('OnNodeMoved', this._dragging.nodeId, Math.max(0, x), Math.max(0, y));
-            this._dragging = null;
-            if (this._dragThrottle) { clearTimeout(this._dragThrottle); this._dragThrottle = null; }
-            return;
-        }
-
-        // End connection drag
-        if (this._connecting) {
-            // Check if we're over a port
-            const clientX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0;
-            const clientY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY) || 0;
-            const target = document.elementFromPoint(clientX, clientY);
-            const portEl = target?.closest('[data-port-id]');
-
-            if (portEl) {
-                const targetModuleId = portEl.getAttribute('data-module-id');
-                const targetPortId = portEl.getAttribute('data-port-id');
-                const targetIsInput = portEl.getAttribute('data-port-input') === 'true';
-
-                // Must connect output -> input (or input -> output)
-                if (targetIsInput !== this._connecting.isInput && targetModuleId !== this._connecting.moduleId) {
-                    const fromModule = this._connecting.isInput ? targetModuleId : this._connecting.moduleId;
-                    const fromPort = this._connecting.isInput ? targetPortId : this._connecting.portId;
-                    const toModule = this._connecting.isInput ? this._connecting.moduleId : targetModuleId;
-                    const toPort = this._connecting.isInput ? this._connecting.portId : targetPortId;
-                    this._dotNetRef.invokeMethodAsync('OnConnectionMade', fromModule, fromPort, toModule, toPort);
-                }
-            }
-
-            // Clean up temp line
-            if (this._tempLine) {
-                this._tempLine.remove();
-                this._tempLine = null;
-            }
-            this._connecting = null;
-            this._clearPortHighlights();
+    removeNodeByModuleId: function (moduleId) {
+        if (!this._editor) return;
+        var nodeId = this._reverseMap[moduleId];
+        if (nodeId !== undefined) {
+            this._suppressEvents = true;
+            this._editor.removeNodeId('node-' + nodeId);
+            delete this._portMap[nodeId];
+            delete this._moduleMap[nodeId];
+            delete this._reverseMap[moduleId];
+            this._suppressEvents = false;
         }
     },
 
-    _highlightCompatiblePorts: function (clientX, clientY) {
-        // Simple: highlight all ports of opposite direction
-        const allPorts = this._canvas.querySelectorAll('[data-port-id]');
-        allPorts.forEach(p => {
-            const isInput = p.getAttribute('data-port-input') === 'true';
-            if (isInput !== this._connecting.isInput && p.getAttribute('data-module-id') !== this._connecting.moduleId) {
-                p.classList.add('port-compatible');
-            } else {
-                p.classList.remove('port-compatible');
-            }
-        });
+    updateNodePosition: function (moduleId, x, y) {
+        if (!this._editor) return;
+        var nodeId = this._reverseMap[moduleId];
+        if (nodeId === undefined) return;
+        var el = document.querySelector('#node-' + nodeId);
+        if (el) {
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            this._editor.drawflow.drawflow.Home.data[nodeId].pos_x = x;
+            this._editor.drawflow.drawflow.Home.data[nodeId].pos_y = y;
+            this._editor.updateConnectionNodes('node-' + nodeId);
+        }
     },
 
-    _clearPortHighlights: function () {
-        const allPorts = this._canvas.querySelectorAll('[data-port-id]');
-        allPorts.forEach(p => p.classList.remove('port-compatible'));
+    setSuppressEvents: function (suppress) {
+        this._suppressEvents = suppress;
+    },
+
+    clear: function () {
+        if (this._editor) {
+            this._suppressEvents = true;
+            this._editor.clear();
+            this._suppressEvents = false;
+        }
+        this._portMap = {};
+        this._moduleMap = {};
+        this._reverseMap = {};
+    },
+
+    _buildNodeHtml: function (name, type, color, icon, inputs, outputs) {
+        var html = '<div class="df-node-content">';
+        html += '<div class="df-node-header" style="background:' + color + '">';
+        html += '<span class="df-node-icon">' + icon + '</span>';
+        html += '<span class="df-node-title" title="' + name + '">' + name + '</span>';
+        html += '<span class="df-node-badge">' + type + '</span>';
+        html += '</div>';
+        html += '<div class="df-node-ports">';
+        for (var i = 0; i < inputs.length; i++) {
+            html += '<div class="df-port-label input" data-port="' + (i + 1) + '">';
+            html += '<span class="df-port-dot" style="color:' + inputs[i].color + '">&#x25CF;</span> ';
+            html += inputs[i].label;
+            if (inputs[i].required) html += ' <span class="df-port-req">*</span>';
+            html += '</div>';
+        }
+        for (var j = 0; j < outputs.length; j++) {
+            html += '<div class="df-port-label output" data-port="' + (j + 1) + '">';
+            html += outputs[j].label;
+            html += ' <span class="df-port-dot" style="color:' + outputs[j].color + '">&#x25CF;</span>';
+            html += '</div>';
+        }
+        html += '</div></div>';
+        return html;
     },
 
     dispose: function () {
+        if (this._editor) {
+            this._editor.clear();
+            this._editor = null;
+        }
         this._dotNetRef = null;
-        this._canvas = null;
-        this._dragging = null;
-        this._connecting = null;
-        this._panning = null;
+        this._portMap = {};
+        this._moduleMap = {};
+        this._reverseMap = {};
     }
 };

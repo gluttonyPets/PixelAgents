@@ -1846,97 +1846,94 @@ a.link:hover { text-decoration: underline; }
     color: var(--text-muted);
 }
 
-/* ── Canvas area ── */
-.pipeline-canvas {
+/* ── Drawflow canvas wrapper ── */
+.pipeline-canvas-wrapper {
     flex: 1;
     position: relative;
     overflow: hidden;
-    cursor: grab;
 }
 
-.pipeline-canvas.panning {
-    cursor: grabbing;
-}
-
-.pipeline-canvas-inner {
-    position: relative;
-    background:
-        radial-gradient(circle, var(--border) 1px, transparent 1px);
-    background-size: 24px 24px;
-    width: 4000px;
-    height: 3000px;
-    min-width: 100%;
-    min-height: 100%;
-}
-
-.pipeline-svg {
-    position: absolute;
-    top: 0;
-    left: 0;
+.drawflow-container {
     width: 100%;
     height: 100%;
-    pointer-events: none;
-    z-index: 1;
 }
 
-.pipeline-svg path {
-    pointer-events: stroke;
-    cursor: pointer;
+/* ── Drawflow theme overrides (dark mode) ── */
+.drawflow {
+    background:
+        radial-gradient(circle, var(--border) 1px, transparent 1px) !important;
+    background-size: 24px 24px !important;
 }
 
-.pipeline-svg path:hover {
-    stroke-width: 3.5 !important;
-    filter: brightness(1.3);
+.drawflow .drawflow-node {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+    padding: 0 !important;
+    min-width: 200px;
+    color: var(--text) !important;
 }
 
-.temp-connection {
-    pointer-events: none !important;
-    opacity: 0.7;
+.drawflow .drawflow-node:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
 }
 
-/* ── Node card ── */
-.pipeline-node {
-    position: absolute;
-    width: 220px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    z-index: 2;
-    transition: box-shadow 0.15s;
-    user-select: none;
+.drawflow .drawflow-node.selected {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 2px rgba(108,99,255,0.3), 0 4px 16px rgba(0,0,0,0.4) !important;
 }
 
-.pipeline-node:hover {
-    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+.drawflow .drawflow-node .input,
+.drawflow .drawflow-node .output {
+    background: var(--bg-card) !important;
+    border: 2px solid var(--text-muted) !important;
+    width: 14px !important;
+    height: 14px !important;
+    transition: transform 0.15s, background 0.15s;
 }
 
-.pipeline-node.dragging {
-    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-    z-index: 10;
-    opacity: 0.92;
+.drawflow .drawflow-node .input:hover,
+.drawflow .drawflow-node .output:hover {
+    transform: scale(1.35);
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
 }
 
-.pipeline-node.selected {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(108,99,255,0.3), 0 4px 16px rgba(0,0,0,0.4);
+.drawflow .connection .main-path {
+    stroke: var(--accent) !important;
+    stroke-width: 2.5 !important;
 }
 
-.node-header {
+.drawflow .connection .main-path:hover {
+    stroke-width: 4 !important;
+}
+
+.drawflow > .drawflow-delete {
+    background: var(--danger) !important;
+    border: none !important;
+    color: #fff !important;
+}
+
+/* ── Drawflow node content (custom HTML inside nodes) ── */
+.df-node-content {
+    min-width: 180px;
+}
+
+.df-node-header {
     padding: 0.4rem 0.6rem;
     border-radius: 9px 9px 0 0;
     display: flex;
     align-items: center;
     gap: 0.4rem;
     cursor: grab;
-    position: relative;
 }
 
-.node-header-icon {
+.df-node-icon {
     font-size: 0.85rem;
 }
 
-.node-header-title {
+.df-node-title {
     flex: 1;
     font-size: 0.78rem;
     font-weight: 600;
@@ -1946,7 +1943,7 @@ a.link:hover { text-decoration: underline; }
     text-overflow: ellipsis;
 }
 
-.node-header-badge {
+.df-node-badge {
     font-size: 0.6rem;
     padding: 1px 5px;
     border-radius: 3px;
@@ -1954,15 +1951,35 @@ a.link:hover { text-decoration: underline; }
     color: rgba(255,255,255,0.85);
 }
 
-.node-header-actions {
-    display: flex;
-    gap: 2px;
+.df-node-ports {
+    padding: 0.2rem 0.5rem 0.4rem;
 }
 
+.df-port-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 0.1rem 0;
+    white-space: nowrap;
+}
+
+.df-port-label.output {
+    text-align: right;
+}
+
+.df-port-dot {
+    font-size: 0.6rem;
+}
+
+.df-port-req {
+    color: var(--danger);
+    font-size: 0.6rem;
+}
+
+/* Keep node-btn for inspector */
 .node-btn {
     background: transparent;
     border: none;
-    color: rgba(255,255,255,0.6);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 0.7rem;
     padding: 2px 4px;
@@ -1970,146 +1987,12 @@ a.link:hover { text-decoration: underline; }
 }
 
 .node-btn:hover {
-    color: #fff;
-    background: rgba(255,255,255,0.15);
-}
-
-/* ── Node ports section ── */
-.node-ports {
-    padding: 0.3rem 0;
-}
-
-.node-port-row {
-    display: flex;
-    align-items: center;
-    padding: 0.15rem 0;
-    position: relative;
-    min-height: 24px;
-}
-
-.node-port-row.input {
-    padding-left: 0;
-    padding-right: 0.6rem;
-}
-
-.node-port-row.output {
-    padding-left: 0.6rem;
-    padding-right: 0;
-    justify-content: flex-end;
-}
-
-/* ── Port circle (connector dot) ── */
-.node-port {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    border: 2px solid;
-    background: var(--bg-card);
-    cursor: crosshair;
-    flex-shrink: 0;
-    transition: transform 0.15s, background 0.15s;
-    z-index: 3;
-    position: relative;
-}
-
-.node-port:hover {
-    transform: scale(1.35);
-    background: currentColor;
-}
-
-.node-port.connected {
-    background: currentColor;
-}
-
-.node-port.port-compatible {
-    animation: port-pulse 0.8s infinite;
-}
-
-@keyframes port-pulse {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.5); }
-}
-
-.node-port.input-port {
-    margin-left: -8px;
-}
-
-.node-port.output-port {
-    margin-right: -8px;
-}
-
-.port-label {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    padding: 0 0.4rem;
-    white-space: nowrap;
-}
-
-.port-label.required::after {
-    content: " *";
-    color: var(--danger);
-}
-
-.port-type-tag {
-    font-size: 0.55rem;
-    padding: 0 3px;
-    border-radius: 2px;
-    opacity: 0.7;
-    margin: 0 2px;
-}
-
-/* ── Node config section (Json2Video scenes) ── */
-.node-config {
-    padding: 0.3rem 0.6rem;
-    border-top: 1px solid var(--border);
-    font-size: 0.75rem;
-}
-
-.node-config-row {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    margin: 0.2rem 0;
-}
-
-.node-config-row label {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-
-.node-config-row input,
-.node-config-row select {
-    flex: 1;
-    font-size: 0.7rem;
-    padding: 0.15rem 0.3rem;
-    background: var(--bg-input);
-    border: 1px solid var(--border);
-    border-radius: 3px;
     color: var(--text);
-    max-width: 70px;
+    background: rgba(255,255,255,0.1);
 }
 
-/* ── Connection cables ── */
-.connection-cable {
-    fill: none;
-    stroke-width: 2.5;
-    transition: stroke-width 0.15s;
-}
-
-.connection-cable:hover {
-    stroke-width: 4;
-}
-
-.connection-delete-zone {
-    fill: none;
-    stroke: transparent;
-    stroke-width: 16;
-    cursor: pointer;
-}
-
-/* ── Empty canvas state ── */
-.canvas-empty-state {
+/* ── Empty canvas overlay ── */
+.canvas-empty-overlay {
     position: absolute;
     top: 50%;
     left: 50%;
@@ -2117,6 +2000,7 @@ a.link:hover { text-decoration: underline; }
     text-align: center;
     color: var(--text-muted);
     pointer-events: none;
+    z-index: 5;
 }
 
 .canvas-empty-state-icon {
@@ -2126,7 +2010,7 @@ a.link:hover { text-decoration: underline; }
     opacity: 0.4;
 }
 
-.canvas-empty-state p {
+.canvas-empty-overlay p {
     font-size: 0.9rem;
     margin: 0.2rem 0;
 }
