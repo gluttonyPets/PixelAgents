@@ -1103,19 +1103,16 @@ else
                                 </div>
                                 @* Render orchestrator subtasks as child cards *@
                                 @{
-                                    var orchOutput = TryParseOutput(step.OutputData);
+                                    var orchOutput2 = TryParseOutput(step.OutputData);
+                                    var isLive2 = _executing && _orchestratorActiveTasks is not null && _orchestratorActiveTasks.Count > 0 && step.Status == "WaitingForReview";
+                                    var showChildren = (orchOutput2?.Type == "orchestrator" && step.Status == "Completed") || isLive2;
+                                    var orchTasks2 = showChildren && !isLive2 ? TryParseOrchestratorMetaTasks(orchOutput2) : null;
                                 }
-                                @if (orchOutput?.Type == "orchestrator" && step.Status == "Completed"
-                                    || (_executing && _orchestratorActiveTasks is not null && _orchestratorActiveTasks.Count > 0
-                                        && step.Status == "WaitingForReview"))
+                                @if (showChildren && (isLive2 || (orchTasks2 is not null && orchTasks2.Count > 0)))
                                 {
-                                    var isLive = _executing && _orchestratorActiveTasks is not null;
-                                    var orchTasks = isLive ? null : TryParseOrchestratorMetaTasks(orchOutput);
-                                    @if (isLive || (orchTasks is not null && orchTasks.Count > 0))
-                                    {
                                         <div class="orch-children-wrapper">
                                             <div class="orch-children-line"></div>
-                                            @if (isLive)
+                                            @if (isLive2)
                                             {
                                                 <div class="orch-progress-header" style="margin-bottom: 0.3rem;">
                                                     <span class="spinner" style="width: 0.9rem; height: 0.9rem;"></span>
@@ -1126,7 +1123,7 @@ else
                                                 </div>
                                             }
                                             <div class="orch-children-cards">
-                                                @if (isLive)
+                                                @if (isLive2)
                                                 {
                                                     @foreach (var lt in _orchestratorActiveTasks!.OrderBy(t => t.Order))
                                                     {
@@ -1172,10 +1169,10 @@ else
                                                 }
                                                 else
                                                 {
-                                                    @foreach (var ot in orchTasks!)
+                                                    @foreach (var ot in orchTasks2!)
                                                     {
-                                                        var taskItem = orchOutput!.Items?.FirstOrDefault(i => i.Label?.StartsWith(ot.TaskId + ":") == true);
-                                                        var taskFiles = orchOutput.Files?.Where(f => f.FileName.StartsWith(ot.TaskId + "_")).ToList();
+                                                        var taskItem = orchOutput2!.Items?.FirstOrDefault(i => i.Label?.StartsWith(ot.TaskId + ":") == true);
+                                                        var taskFiles = orchOutput2.Files?.Where(f => f.FileName.StartsWith(ot.TaskId + "_")).ToList();
                                                         var isError = taskItem?.Content?.StartsWith("ERROR:") == true;
                                                         <div class="orch-child-card @(isError ? "orch-child-error" : "orch-child-ok")">
                                                             <div class="orch-child-header">
@@ -1240,7 +1237,6 @@ else
                                                 }
                                             </div>
                                         </div>
-                                    }
                                 }
                             }
                         }
