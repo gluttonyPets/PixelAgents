@@ -90,7 +90,6 @@ body {
     flex: 1;
     padding: 2rem;
     overflow-y: auto;
-    max-width: 1000px;
 }
 
 h2 {
