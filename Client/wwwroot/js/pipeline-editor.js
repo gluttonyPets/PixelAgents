@@ -7,6 +7,10 @@ window.pipelineEditor = {
     _tempLine: null,         // SVG line element for temp connection
     _panning: null,          // { startX, startY, scrollLeft, scrollTop }
 
+    _getZoom: function () {
+        return parseFloat(getComputedStyle(document.body).zoom) || 1;
+    },
+
     init: function (dotNetRef, canvasId) {
         this._dotNetRef = dotNetRef;
         this._canvas = document.getElementById(canvasId);
@@ -54,8 +58,9 @@ window.pipelineEditor = {
             if (this._panning) {
                 e.preventDefault();
                 const touch = e.touches[0];
-                this._canvas.scrollLeft = this._panning.scrollLeft - (touch.clientX - this._panning.startX);
-                this._canvas.scrollTop = this._panning.scrollTop - (touch.clientY - this._panning.startY);
+                const zoom = this._getZoom();
+                this._canvas.scrollLeft = this._panning.scrollLeft - (touch.clientX - this._panning.startX) / zoom;
+                this._canvas.scrollTop = this._panning.scrollTop - (touch.clientY - this._panning.startY) / zoom;
                 return;
             }
             if (this._dragging || this._connecting) {
@@ -78,24 +83,23 @@ window.pipelineEditor = {
     startNodeDrag: function (nodeId, clientX, clientY) {
         const node = document.querySelector(`[data-node-id="${nodeId}"]`);
         if (!node) return;
-        const canvasRect = this._canvas.getBoundingClientRect();
-        const nodeRect = node.getBoundingClientRect();
         this._dragging = {
             nodeId: nodeId,
-            offsetX: clientX - nodeRect.left,
-            offsetY: clientY - nodeRect.top
+            offsetX: clientX - node.getBoundingClientRect().left,
+            offsetY: clientY - node.getBoundingClientRect().top
         };
         node.classList.add('dragging');
     },
 
     startConnection: function (moduleId, portId, isInput, clientX, clientY) {
         const canvasRect = this._canvas.getBoundingClientRect();
+        const zoom = this._getZoom();
         this._connecting = {
             moduleId: moduleId,
             portId: portId,
             isInput: isInput,
-            startX: clientX - canvasRect.left + this._canvas.scrollLeft,
-            startY: clientY - canvasRect.top + this._canvas.scrollTop
+            startX: (clientX - canvasRect.left) / zoom + this._canvas.scrollLeft,
+            startY: (clientY - canvasRect.top) / zoom + this._canvas.scrollTop
         };
 
         // Create temp SVG line
@@ -116,30 +120,32 @@ window.pipelineEditor = {
         if (!port || !this._canvas) return null;
         const canvasRect = this._canvas.getBoundingClientRect();
         const portRect = port.getBoundingClientRect();
+        const zoom = this._getZoom();
         return {
-            x: portRect.left + portRect.width / 2 - canvasRect.left + this._canvas.scrollLeft,
-            y: portRect.top + portRect.height / 2 - canvasRect.top + this._canvas.scrollTop
+            x: (portRect.left + portRect.width / 2 - canvasRect.left) / zoom + this._canvas.scrollLeft,
+            y: (portRect.top + portRect.height / 2 - canvasRect.top) / zoom + this._canvas.scrollTop
         };
     },
 
     _onMouseMove: function (e) {
         if (!this._canvas) return;
+        const zoom = this._getZoom();
 
         // Canvas panning
         if (this._panning) {
-            this._canvas.scrollLeft = this._panning.scrollLeft - (e.clientX - this._panning.startX);
-            this._canvas.scrollTop = this._panning.scrollTop - (e.clientY - this._panning.startY);
+            this._canvas.scrollLeft = this._panning.scrollLeft - (e.clientX - this._panning.startX) / zoom;
+            this._canvas.scrollTop = this._panning.scrollTop - (e.clientY - this._panning.startY) / zoom;
             return;
         }
 
         const canvasRect = this._canvas.getBoundingClientRect();
-        const mx = e.clientX - canvasRect.left + this._canvas.scrollLeft;
-        const my = e.clientY - canvasRect.top + this._canvas.scrollTop;
+        const mx = (e.clientX - canvasRect.left) / zoom + this._canvas.scrollLeft;
+        const my = (e.clientY - canvasRect.top) / zoom + this._canvas.scrollTop;
 
         // Node dragging
         if (this._dragging) {
-            const x = e.clientX - canvasRect.left + this._canvas.scrollLeft - this._dragging.offsetX;
-            const y = e.clientY - canvasRect.top + this._canvas.scrollTop - this._dragging.offsetY;
+            const x = (e.clientX - canvasRect.left - this._dragging.offsetX) / zoom + this._canvas.scrollLeft;
+            const y = (e.clientY - canvasRect.top - this._dragging.offsetY) / zoom + this._canvas.scrollTop;
             const node = document.querySelector(`[data-node-id="${this._dragging.nodeId}"]`);
             if (node) {
                 node.style.left = Math.max(0, x) + 'px';
@@ -171,11 +177,10 @@ window.pipelineEditor = {
     },
 
     _onMouseUp: function (e) {
-        // End panning
+        // End panning (don't return — also check _dragging in case both were active)
         if (this._panning) {
             this._panning = null;
             this._canvas.classList.remove('panning');
-            return;
         }
 
         // End node drag
@@ -184,10 +189,11 @@ window.pipelineEditor = {
             if (node) node.classList.remove('dragging');
             // Final position notification
             const canvasRect = this._canvas.getBoundingClientRect();
+            const zoom = this._getZoom();
             const clientX = e.clientX || (e.changedTouches && e.changedTouches[0].clientX) || 0;
             const clientY = e.clientY || (e.changedTouches && e.changedTouches[0].clientY) || 0;
-            const x = clientX - canvasRect.left + this._canvas.scrollLeft - this._dragging.offsetX;
-            const y = clientY - canvasRect.top + this._canvas.scrollTop - this._dragging.offsetY;
+            const x = (clientX - canvasRect.left - this._dragging.offsetX) / zoom + this._canvas.scrollLeft;
+            const y = (clientY - canvasRect.top - this._dragging.offsetY) / zoom + this._canvas.scrollTop;
             this._dotNetRef.invokeMethodAsync('OnNodeMoved', this._dragging.nodeId, Math.max(0, x), Math.max(0, y));
             this._dragging = null;
             if (this._dragThrottle) { clearTimeout(this._dragThrottle); this._dragThrottle = null; }
