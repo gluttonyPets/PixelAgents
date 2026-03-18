@@ -1101,29 +1101,23 @@ else
                                         }
                                     }
                                 </div>
-                                @* Render orchestrator subtasks as child cards *@
-                                @{
-                                    var orchOutput2 = TryParseOutput(step.OutputData);
-                                    var isLive2 = _executing && _orchestratorActiveTasks is not null && _orchestratorActiveTasks.Count > 0 && step.Status == "WaitingForReview";
-                                    var showChildren = (orchOutput2?.Type == "orchestrator" && step.Status == "Completed") || isLive2;
-                                    var orchTasks2 = showChildren && !isLive2 ? TryParseOrchestratorMetaTasks(orchOutput2) : null;
-                                }
-                                @if (showChildren && (isLive2 || (orchTasks2 is not null && orchTasks2.Count > 0)))
+                                @if (ShouldShowOrchChildren(step))
                                 {
-                                        <div class="orch-children-wrapper">
-                                            <div class="orch-children-line"></div>
-                                            @if (isLive2)
-                                            {
-                                                <div class="orch-progress-header" style="margin-bottom: 0.3rem;">
-                                                    <span class="spinner" style="width: 0.9rem; height: 0.9rem;"></span>
-                                                    <span class="text-sm" style="font-weight: 600;">Ejecutando subtareas</span>
-                                                    <span class="text-muted text-sm">
-                                                        @(_orchestratorTaskStatus.Count(kv => kv.Value.Status == "completed"))/@_orchestratorActiveTasks!.Count
-                                                    </span>
-                                                </div>
-                                            }
-                                            <div class="orch-children-cards">
-                                                @if (isLive2)
+                                    var isLiveOrch = _executing && _orchestratorActiveTasks is not null && _orchestratorActiveTasks.Count > 0 && step.Status == "WaitingForReview";
+                                    <div class="orch-children-wrapper">
+                                        <div class="orch-children-line"></div>
+                                        @if (isLiveOrch)
+                                        {
+                                            <div class="orch-progress-header" style="margin-bottom: 0.3rem;">
+                                                <span class="spinner" style="width: 0.9rem; height: 0.9rem;"></span>
+                                                <span class="text-sm" style="font-weight: 600;">Ejecutando subtareas</span>
+                                                <span class="text-muted text-sm">
+                                                    @(_orchestratorTaskStatus.Count(kv => kv.Value.Status == "completed"))/@_orchestratorActiveTasks!.Count
+                                                </span>
+                                            </div>
+                                        }
+                                        <div class="orch-children-cards">
+                                            @if (isLiveOrch)
                                                 {
                                                     @foreach (var lt in _orchestratorActiveTasks!.OrderBy(t => t.Order))
                                                     {
@@ -1169,10 +1163,12 @@ else
                                                 }
                                                 else
                                                 {
-                                                    @foreach (var ot in orchTasks2!)
+                                                    var completedOrchOutput = TryParseOutput(step.OutputData);
+                                                    var completedOrchTasks = TryParseOrchestratorMetaTasks(completedOrchOutput);
+                                                    @foreach (var ot in completedOrchTasks!)
                                                     {
-                                                        var taskItem = orchOutput2!.Items?.FirstOrDefault(i => i.Label?.StartsWith(ot.TaskId + ":") == true);
-                                                        var taskFiles = orchOutput2.Files?.Where(f => f.FileName.StartsWith(ot.TaskId + "_")).ToList();
+                                                        var taskItem = completedOrchOutput!.Items?.FirstOrDefault(i => i.Label?.StartsWith(ot.TaskId + ":") == true);
+                                                        var taskFiles = completedOrchOutput.Files?.Where(f => f.FileName.StartsWith(ot.TaskId + "_")).ToList();
                                                         var isError = taskItem?.Content?.StartsWith("ERROR:") == true;
                                                         <div class="orch-child-card @(isError ? "orch-child-error" : "orch-child-ok")">
                                                             <div class="orch-child-header">
@@ -2928,6 +2924,17 @@ else
         }
         catch (Exception ex) { _orchestratorError = $"Error de conexion: {ex.Message}"; }
         _orchestratorReviewing = false;
+    }
+
+    private bool ShouldShowOrchChildren(StepExecutionResponse step)
+    {
+        var isLive = _executing && _orchestratorActiveTasks is not null && _orchestratorActiveTasks.Count > 0 && step.Status == "WaitingForReview";
+        if (isLive) return true;
+        if (step.Status != "Completed") return false;
+        var output = TryParseOutput(step.OutputData);
+        if (output?.Type != "orchestrator") return false;
+        var tasks = TryParseOrchestratorMetaTasks(output);
+        return tasks is not null && tasks.Count > 0;
     }
 
     private List<OrchestratorTaskDto>? TryParseOrchestratorMetaTasks(StepOutputDto? output)
