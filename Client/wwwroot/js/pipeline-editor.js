@@ -160,11 +160,12 @@ window.pipelineEditor = {
         var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
         var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
         if (fromIdx > 0 && toIdx > 0) {
+            var wasSuppressed = this._suppressEvents;
             this._suppressEvents = true;
             try {
                 this._editor.removeSingleConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
             } catch (e) { }
-            this._suppressEvents = false;
+            this._suppressEvents = wasSuppressed;
         }
     },
 
@@ -174,9 +175,10 @@ window.pipelineEditor = {
 
     clear: function () {
         if (this._editor) {
+            var wasSuppressed = this._suppressEvents;
             this._suppressEvents = true;
             this._editor.clear();
-            this._suppressEvents = false;
+            this._suppressEvents = wasSuppressed;
         }
         this._portMap = {};
         this._moduleMap = {};
