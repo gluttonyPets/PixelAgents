@@ -792,80 +792,6 @@ else
                                 </div>
                             }
 
-                            @* Real-time orchestrator task progress cards *@
-                            @if (_executing && _orchestratorActiveTasks is not null && _orchestratorActiveTasks.Count > 0)
-                            {
-                                <div class="orch-progress-container">
-                                    <div class="orch-progress-header">
-                                        <span class="spinner" style="width: 1rem; height: 1rem;"></span>
-                                        <strong>Ejecutando plan del orquestador</strong>
-                                        <span class="text-muted text-sm">
-                                            @(_orchestratorTaskStatus.Count(kv => kv.Value.Status == "completed"))/@_orchestratorActiveTasks.Count tareas
-                                        </span>
-                                    </div>
-                                    <div class="orch-progress-cards">
-                                        @foreach (var task in _orchestratorActiveTasks.OrderBy(t => t.Order))
-                                        {
-                                            var state = _orchestratorTaskStatus.GetValueOrDefault(task.TaskId);
-                                            var status = state?.Status ?? "pending";
-                                            <div class="orch-task-card orch-task-@status" @key="task.TaskId">
-                                                <div class="orch-task-card-top">
-                                                    <div class="orch-task-status-icon">
-                                                        @if (status == "running")
-                                                        {
-                                                            <span class="spinner" style="width: 0.9rem; height: 0.9rem;"></span>
-                                                        }
-                                                        else if (status == "completed")
-                                                        {
-                                                            <span style="color: #22c55e; font-size: 1rem;">&#x2714;</span>
-                                                        }
-                                                        else if (status == "error")
-                                                        {
-                                                            <span style="color: #ef4444; font-size: 1rem;">&#x2718;</span>
-                                                        }
-                                                        else
-                                                        {
-                                                            <span style="color: var(--text-muted); font-size: 0.85rem;">&#x25CB;</span>
-                                                        }
-                                                    </div>
-                                                    <div class="orch-task-card-info">
-                                                        <div class="orch-task-card-title">
-                                                            <span class="orch-task-order">#@task.Order</span>
-                                                            <span>@task.Description</span>
-                                                        </div>
-                                                        <div class="orch-task-card-meta">
-                                                            <span class="badge badge-info" style="font-size: 0.65rem;">@task.ModuleName</span>
-                                                            <span class="badge" style="font-size: 0.6rem; background: var(--border);">@task.ModuleType</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                @if (status == "error" && state?.ErrorMessage is not null)
-                                                {
-                                                    <div class="orch-task-error-msg">@state.ErrorMessage</div>
-                                                }
-                                                @if (status == "completed" && state?.FileUrl is not null)
-                                                {
-                                                    <div class="orch-task-file-badge">
-                                                        @if (state.ContentType?.StartsWith("image/") == true)
-                                                        {
-                                                            <span>&#x1F5BC; Imagen generada</span>
-                                                        }
-                                                        else if (state.ContentType?.StartsWith("video/") == true)
-                                                        {
-                                                            <span>&#x1F3AC; Video generado</span>
-                                                        }
-                                                        else
-                                                        {
-                                                            <span>&#x1F4C4; Archivo generado</span>
-                                                        }
-                                                    </div>
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-                                </div>
-                            }
-
                             @foreach (var step in _result.Steps.OrderBy(s => s.StepOrder))
                             {
                                 <div class="step-card">
@@ -1081,51 +1007,11 @@ else
                                         }
                                         else if (parsed?.Type == "orchestrator")
                                         {
-                                            <div class="orchestrator-plan">
-                                                <p class="text-sm" style="color: var(--accent); margin-bottom: 0.5rem; font-weight: 600;">
-                                                    Plan del orquestador: @parsed.Summary
-                                                </p>
-                                                @if (parsed.Items is not null && parsed.Items.Count > 0)
-                                                {
-                                                    <div class="orchestrator-tasks">
-                                                        @foreach (var item in parsed.Items)
-                                                        {
-                                                            var isError = item.Content?.StartsWith("ERROR:") == true;
-                                                            <div class="orchestrator-task-item @(isError ? "task-error" : "task-ok")">
-                                                                <span class="task-label">@(item.Label ?? "Tarea")</span>
-                                                                <span class="task-content">@item.Content</span>
-                                                            </div>
-                                                        }
-                                                    </div>
-                                                }
-                                                @if (parsed.Files is not null && parsed.Files.Count > 0)
-                                                {
-                                                    <div class="orchestrator-files mt-1">
-                                                        @foreach (var f in parsed.Files)
-                                                        {
-                                                            var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
-                                                            <div style="margin: 0.3rem 0;">
-                                                                @if (f.ContentType.StartsWith("image/"))
-                                                                {
-                                                                    <img src="@fileUrl" alt="@f.FileName" style="max-width: 200px; border-radius: 6px;" crossorigin="use-credentials" />
-                                                                }
-                                                                else if (f.ContentType.StartsWith("video/"))
-                                                                {
-                                                                    <video controls style="max-width: 300px; border-radius: 6px;" crossorigin="use-credentials">
-                                                                        <source src="@fileUrl" type="@f.ContentType" />
-                                                                    </video>
-                                                                }
-                                                                <div class="file-info">
-                                                                    <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
-                                                                        @f.FileName
-                                                                    </a>
-                                                                    <span class="text-sm text-muted">(@(f.FileSize / 1024) KB)</span>
-                                                                </div>
-                                                            </div>
-                                                        }
-                                                    </div>
-                                                }
-                                            </div>
+                                            @* Orchestrator renders its subtasks as child cards below *@
+                                            <p class="text-sm" style="color: var(--accent); margin-bottom: 0.3rem; font-weight: 500;">
+                                                @parsed.Summary
+                                            </p>
+                                            <p class="text-sm text-muted">@parsed.Content</p>
 
                                             @* Show review panel if waiting for review *@
                                             @if (step.Status == "WaitingForReview")
@@ -1215,6 +1101,147 @@ else
                                         }
                                     }
                                 </div>
+                                @* Render orchestrator subtasks as child cards *@
+                                @{
+                                    var orchOutput = TryParseOutput(step.OutputData);
+                                }
+                                @if (orchOutput?.Type == "orchestrator" && step.Status == "Completed"
+                                    || (_executing && _orchestratorActiveTasks is not null && _orchestratorActiveTasks.Count > 0
+                                        && step.Status == "WaitingForReview"))
+                                {
+                                    var isLive = _executing && _orchestratorActiveTasks is not null;
+                                    var orchTasks = isLive ? null : TryParseOrchestratorMetaTasks(orchOutput);
+                                    @if (isLive || (orchTasks is not null && orchTasks.Count > 0))
+                                    {
+                                        <div class="orch-children-wrapper">
+                                            <div class="orch-children-line"></div>
+                                            @if (isLive)
+                                            {
+                                                <div class="orch-progress-header" style="margin-bottom: 0.3rem;">
+                                                    <span class="spinner" style="width: 0.9rem; height: 0.9rem;"></span>
+                                                    <span class="text-sm" style="font-weight: 600;">Ejecutando subtareas</span>
+                                                    <span class="text-muted text-sm">
+                                                        @(_orchestratorTaskStatus.Count(kv => kv.Value.Status == "completed"))/@_orchestratorActiveTasks!.Count
+                                                    </span>
+                                                </div>
+                                            }
+                                            <div class="orch-children-cards">
+                                                @if (isLive)
+                                                {
+                                                    @foreach (var lt in _orchestratorActiveTasks!.OrderBy(t => t.Order))
+                                                    {
+                                                        var liveState = _orchestratorTaskStatus.GetValueOrDefault(lt.TaskId);
+                                                        var liveStatus = liveState?.Status ?? "pending";
+                                                        var liveCardClass = liveStatus == "error" ? "orch-child-error"
+                                                            : liveStatus == "completed" ? "orch-child-ok"
+                                                            : liveStatus == "running" ? "orch-child-running"
+                                                            : "orch-child-pending";
+                                                        <div class="orch-child-card @liveCardClass" @key="lt.TaskId">
+                                                            <div class="orch-child-header">
+                                                                <span class="orch-child-status-icon">
+                                                                    @if (liveStatus == "running")
+                                                                    {
+                                                                        <span class="spinner" style="width: 0.8rem; height: 0.8rem;"></span>
+                                                                    }
+                                                                    else if (liveStatus == "completed")
+                                                                    {
+                                                                        <span style="color: #22c55e;">&#x2714;</span>
+                                                                    }
+                                                                    else if (liveStatus == "error")
+                                                                    {
+                                                                        <span style="color: #ef4444;">&#x2718;</span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span style="color: var(--text-muted);">&#x25CB;</span>
+                                                                    }
+                                                                </span>
+                                                                <span class="orch-child-order">#@lt.Order</span>
+                                                                <span class="orch-child-desc">@lt.Description</span>
+                                                            </div>
+                                                            <div class="orch-child-meta">
+                                                                <span class="badge badge-info" style="font-size: 0.65rem;">@lt.ModuleName</span>
+                                                                <span class="badge" style="font-size: 0.6rem; background: var(--border);">@lt.ModuleType</span>
+                                                            </div>
+                                                            @if (liveStatus == "error" && liveState?.ErrorMessage is not null)
+                                                            {
+                                                                <div class="orch-child-content" style="color: #ef4444;">@liveState.ErrorMessage</div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var ot in orchTasks!)
+                                                    {
+                                                        var taskItem = orchOutput!.Items?.FirstOrDefault(i => i.Label?.StartsWith(ot.TaskId + ":") == true);
+                                                        var taskFiles = orchOutput.Files?.Where(f => f.FileName.StartsWith(ot.TaskId + "_")).ToList();
+                                                        var isError = taskItem?.Content?.StartsWith("ERROR:") == true;
+                                                        <div class="orch-child-card @(isError ? "orch-child-error" : "orch-child-ok")">
+                                                            <div class="orch-child-header">
+                                                                <span class="orch-child-status-icon">
+                                                                    @if (isError)
+                                                                    {
+                                                                        <span style="color: #ef4444;">&#x2718;</span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <span style="color: #22c55e;">&#x2714;</span>
+                                                                    }
+                                                                </span>
+                                                                <span class="orch-child-order">#@ot.Order</span>
+                                                                <span class="orch-child-desc">@ot.Description</span>
+                                                            </div>
+                                                            <div class="orch-child-meta">
+                                                                <span class="badge badge-info" style="font-size: 0.65rem;">@ot.ModuleName</span>
+                                                                <span class="badge" style="font-size: 0.6rem; background: var(--border);">@ot.ModuleType</span>
+                                                                @if (isError)
+                                                                {
+                                                                    <span class="badge" style="font-size: 0.6rem; background: rgba(239,68,68,0.2); color: #ef4444;">Error</span>
+                                                                }
+                                                            </div>
+                                                            @if (taskItem is not null)
+                                                            {
+                                                                <div class="orch-child-content">
+                                                                    @if (isError)
+                                                                    {
+                                                                        <span style="color: #ef4444;">@taskItem.Content</span>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        @(taskItem.Content!.Length > 200 ? taskItem.Content[..200] + "..." : taskItem.Content)
+                                                                    }
+                                                                </div>
+                                                            }
+                                                            @if (taskFiles is not null && taskFiles.Count > 0)
+                                                            {
+                                                                <div class="orch-child-files">
+                                                                    @foreach (var f in taskFiles)
+                                                                    {
+                                                                        var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
+                                                                        @if (f.ContentType.StartsWith("image/"))
+                                                                        {
+                                                                            <img src="@fileUrl" alt="@f.FileName" class="orch-child-img" crossorigin="use-credentials" />
+                                                                        }
+                                                                        else if (f.ContentType.StartsWith("video/"))
+                                                                        {
+                                                                            <video controls class="orch-child-video" crossorigin="use-credentials">
+                                                                                <source src="@fileUrl" type="@f.ContentType" />
+                                                                            </video>
+                                                                        }
+                                                                        <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.3rem;">
+                                                                            @f.FileName
+                                                                        </a>
+                                                                    }
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                }
                             }
                         }
                         else if (_executing)
@@ -2905,6 +2932,30 @@ else
         }
         catch (Exception ex) { _orchestratorError = $"Error de conexion: {ex.Message}"; }
         _orchestratorReviewing = false;
+    }
+
+    private List<OrchestratorTaskDto>? TryParseOrchestratorMetaTasks(StepOutputDto? output)
+    {
+        if (output?.Metadata is null) return null;
+        try
+        {
+            if (!output.Metadata.TryGetValue("tasks", out var tasksObj)) return null;
+            var tasksEl = (System.Text.Json.JsonElement)tasksObj;
+            var tasks = new List<OrchestratorTaskDto>();
+            foreach (var t in tasksEl.EnumerateArray())
+            {
+                tasks.Add(new OrchestratorTaskDto
+                {
+                    TaskId = t.TryGetProperty("taskId", out var tid) ? tid.GetString() ?? "" : "",
+                    Description = t.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+                    ModuleName = t.TryGetProperty("moduleName", out var mn) ? mn.GetString() ?? "" : "",
+                    ModuleType = t.TryGetProperty("moduleType", out var mt) ? mt.GetString() ?? "" : "",
+                    Order = t.TryGetProperty("order", out var ord) ? ord.GetInt32() : 0,
+                });
+            }
+            return tasks.OrderBy(t => t.Order).ToList();
+        }
+        catch { return null; }
     }
 
     private List<OrchestratorTaskDto>? TryParseOrchestratorPlan(string? json)

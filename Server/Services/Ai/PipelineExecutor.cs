@@ -2668,6 +2668,17 @@ Datos de la ejecucion:
                 Summary = plan.Summary,
                 Items = orchestratorOutputItems,
                 Files = orchestratorOutputFiles,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["tasks"] = plan.Tasks.Select(t => new Dictionary<string, object>
+                    {
+                        ["taskId"] = t.TaskId,
+                        ["description"] = t.Description,
+                        ["moduleName"] = t.ModuleName,
+                        ["moduleType"] = t.ModuleType,
+                        ["order"] = t.Order,
+                    }).ToList()
+                }
             };
 
             orchestratorStep.EstimatedCost += totalSubCost;

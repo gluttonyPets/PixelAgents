@@ -1230,95 +1230,122 @@ a.link:hover { text-decoration: underline; }
     background: rgba(0, 0, 0, 0.05);
 }
 
-/* ── Orchestrator Task Progress Cards ── */
-.orch-progress-container {
+/* ── Orchestrator Child Cards (completed subtasks) ── */
+.orch-children-wrapper {
+    position: relative;
+    margin-left: 1.2rem;
+    padding-left: 1rem;
+    margin-top: 0.3rem;
+    margin-bottom: 0.5rem;
+}
+.orch-children-line {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--accent), rgba(108, 99, 255, 0.15));
+    border-radius: 2px;
+}
+.orch-children-cards {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-}
-.orch-progress-header {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    font-size: 0.9rem;
-    padding: 0.5rem 0;
-}
-.orch-progress-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 0.6rem;
-}
-.orch-task-card {
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 0.7rem 0.8rem;
-    background: var(--bg-card);
-    font-size: 0.82rem;
-    transition: border-color 0.3s, box-shadow 0.3s;
-}
-.orch-task-running {
-    border-color: rgba(108, 99, 255, 0.5);
-    box-shadow: 0 0 8px rgba(108, 99, 255, 0.15);
-}
-.orch-task-completed {
-    border-color: rgba(34, 197, 94, 0.4);
-}
-.orch-task-error {
-    border-color: rgba(239, 68, 68, 0.4);
-}
-.orch-task-card-top {
-    display: flex;
-    align-items: flex-start;
     gap: 0.5rem;
 }
-.orch-task-status-icon {
+.orch-child-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.6rem 0.8rem;
+    background: var(--bg-card);
+    font-size: 0.82rem;
+    position: relative;
+    transition: border-color 0.2s;
+}
+.orch-child-card::before {
+    content: "";
+    position: absolute;
+    left: -1rem;
+    top: 0.85rem;
+    width: 0.8rem;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.4;
+}
+.orch-child-ok {
+    border-left: 3px solid rgba(34, 197, 94, 0.5);
+}
+.orch-child-error {
+    border-left: 3px solid rgba(239, 68, 68, 0.5);
+}
+.orch-child-running {
+    border-left: 3px solid rgba(108, 99, 255, 0.6);
+    box-shadow: 0 0 6px rgba(108, 99, 255, 0.12);
+}
+.orch-child-pending {
+    border-left: 3px solid var(--border);
+    opacity: 0.65;
+}
+.orch-child-status-icon {
     flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.4rem;
-    height: 1.4rem;
-    margin-top: 0.1rem;
+    font-size: 0.8rem;
+    line-height: 1;
 }
-.orch-task-card-info {
-    flex: 1;
-    min-width: 0;
-}
-.orch-task-card-title {
+.orch-child-header {
     display: flex;
     align-items: baseline;
-    gap: 0.3rem;
+    gap: 0.4rem;
     font-weight: 500;
-    line-height: 1.3;
+    margin-bottom: 0.25rem;
 }
-.orch-task-order {
+.orch-child-order {
     font-weight: 700;
     color: var(--primary);
     font-size: 0.75rem;
     flex-shrink: 0;
 }
-.orch-task-card-meta {
+.orch-child-desc {
+    flex: 1;
+    min-width: 0;
+}
+.orch-child-meta {
     display: flex;
     gap: 0.3rem;
-    margin-top: 0.3rem;
     flex-wrap: wrap;
+    margin-bottom: 0.3rem;
 }
-.orch-task-error-msg {
-    margin-top: 0.4rem;
-    font-size: 0.75rem;
-    color: #ef4444;
-    padding: 0.3rem 0.5rem;
-    background: rgba(239, 68, 68, 0.08);
-    border-radius: 4px;
-}
-.orch-task-file-badge {
-    margin-top: 0.4rem;
-    font-size: 0.75rem;
+.orch-child-content {
+    font-size: 0.78rem;
     color: var(--text-secondary);
-    padding: 0.2rem 0.5rem;
-    background: rgba(34, 197, 94, 0.08);
-    border-radius: 4px;
-    display: inline-block;
+    line-height: 1.35;
+    margin-top: 0.2rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.orch-child-files {
+    margin-top: 0.4rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: flex-end;
+}
+.orch-child-img {
+    max-width: 180px;
+    max-height: 120px;
+    border-radius: 6px;
+    object-fit: cover;
+}
+.orch-child-video {
+    max-width: 240px;
+    border-radius: 6px;
+}
+
+/* ── Orchestrator Progress Header (live execution) ── */
+.orch-progress-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.85rem;
+    padding: 0.3rem 0;
 }
 
 /* ── Tabs ── */
