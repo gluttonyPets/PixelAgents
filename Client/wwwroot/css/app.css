@@ -897,6 +897,11 @@ a.link:hover { text-decoration: underline; }
     overflow: hidden;
 }
 
+/* When project layout is active, prevent parent from scrolling */
+.main-content:has(.project-page-layout) {
+    overflow: hidden;
+}
+
 .project-header {
     display: flex;
     align-items: center;
