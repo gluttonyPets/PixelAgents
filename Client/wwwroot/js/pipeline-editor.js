@@ -98,11 +98,13 @@ window.pipelineEditor = {
         var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
         var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
         if (fromIdx > 0 && toIdx > 0) {
+            var wasSuppressed = this._suppressEvents;
             this._suppressEvents = true;
             try {
                 this._editor.addConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
+                console.log('[Drawflow] addConnection OK:', fromModuleId, fromPortId, '->', toModuleId, toPortId);
             } catch (e) { console.warn('[Drawflow] addConnection error:', e); }
-            this._suppressEvents = false;
+            this._suppressEvents = wasSuppressed;
         } else {
             console.warn('[Drawflow] addConnection: port not found', {
                 fromPortId: fromPortId, outputs: fromPorts.outputs,

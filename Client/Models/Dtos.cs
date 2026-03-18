@@ -28,11 +28,12 @@ public record UpdateProjectRequest(string Name, string? Description, string? Con
 public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt);
 public record ProjectDetailResponse(
     Guid Id, string Name, string? Description, DateTime CreatedAt, DateTime UpdatedAt,
-    List<ProjectModuleResponse> Modules)
+    List<ProjectModuleResponse> Modules,
+    string? GraphLayout = null,
+    List<ModuleConnectionResponse>? Connections = null)
 {
+    // Context needs to be mutable (set after save)
     public string? Context { get; set; }
-    public string? GraphLayout { get; set; }
-    public List<ModuleConnectionResponse>? Connections { get; set; }
 }
 
 // ── ProjectModule ──
