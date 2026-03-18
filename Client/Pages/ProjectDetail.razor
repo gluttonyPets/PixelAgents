@@ -2117,6 +2117,7 @@ else
 
             // Load connections from DB (positions are already on each module)
             _projectConnections = _project?.Connections ?? new();
+            Console.WriteLine($"[ProjectDetail] LoadAll: project.Connections={_project?.Connections?.Count ?? -1}, _projectConnections={_projectConnections.Count}");
         }
         catch { }
         _loading = false;
