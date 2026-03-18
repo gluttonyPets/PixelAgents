@@ -757,13 +757,24 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
-                        // VideoEdit modules: use input from previous step as script/config,
-                        // optionally collect video file URLs from previous VideoSearch steps
-                        var editInput = inputs[0];
+                        // VideoEdit modules: prefer videoPrompt from step config (set in UI),
+                        // fallback to input from previous step
+                        var editInput = "";
+                        if (config.TryGetValue("videoPrompt", out var vp2))
+                            editInput = vp2 is JsonElement vp2El ? vp2El.GetString() ?? "" : vp2?.ToString() ?? "";
+                        if (string.IsNullOrWhiteSpace(editInput))
+                            editInput = inputs[0];
                         if (string.IsNullOrWhiteSpace(editInput))
                         {
-                            await FailStep(stepExecution, execution, "VideoEdit: no se proporciono input para edicion de video", db);
+                            await FailStep(stepExecution, execution, "VideoEdit: no se proporciono guion de video (videoPrompt)", db);
                             return execution;
+                        }
+
+                        // Merge subtitleLanguage from step config into module config
+                        if (config.TryGetValue("subtitleLanguage", out var sl))
+                        {
+                            var slStr = sl is JsonElement slEl ? slEl.GetString() ?? "es" : sl?.ToString() ?? "es";
+                            config["subtitleLanguage"] = slStr;
                         }
 
                         // Collect video URLs from previous VideoSearch steps to pass in config

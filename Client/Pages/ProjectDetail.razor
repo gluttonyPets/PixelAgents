@@ -159,6 +159,10 @@ else
                                                 <option value="both">Imagen + prompt</option>
                                             </select>
                                         }
+                                        @if (pm.ModuleType == "VideoEdit")
+                                        {
+                                            <textarea @bind="_videoPrompt" rows="2" placeholder="Guion / texto de voz (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
+                                        }
                                         @if (pm.ModuleType == "Publish")
                                         {
                                             <textarea @bind="_publishCaption" rows="2" placeholder="Caption ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
@@ -286,6 +290,10 @@ else
                                                                     <option value="both">Imagen + prompt</option>
                                                                 </select>
                                                             }
+                                                            @if (rpm.ModuleType == "VideoEdit")
+                                                            {
+                                                                <textarea @bind="_videoPrompt" rows="2" placeholder="Guion / texto de voz (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
+                                                            }
                                                             @if (rpm.ModuleType == "Publish")
                                                             {
                                                                 <textarea @bind="_publishCaption" rows="2" placeholder="Caption ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
@@ -404,6 +412,10 @@ else
                                                                     <option value="prompt">Solo texto</option>
                                                                     <option value="both">Imagen + prompt</option>
                                                                 </select>
+                                                            }
+                                                            @if (bpm.ModuleType == "VideoEdit")
+                                                            {
+                                                                <textarea @bind="_videoPrompt" rows="2" placeholder="Guion / texto de voz (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
                                                             }
                                                             @if (bpm.ModuleType == "Publish")
                                                             {
@@ -669,6 +681,29 @@ else
                                 Image-to-video solo esta disponible con modelos Veo 3.1. Este modelo solo soporta texto.
                             </p>
                         }
+                    </div>
+                }
+
+                @if (selectedModule?.ModuleType == "VideoEdit")
+                {
+                    <div class="form-group" style="margin-top: 0.5rem;">
+                        <label>Guion / Texto de voz <span style="color: var(--danger);">*</span></label>
+                        <textarea @bind="_videoPrompt" rows="3"
+                            placeholder="Escribe el guion que se usara como voz en off y subtitulos..."></textarea>
+                        <p class="text-sm text-muted" style="margin-top: 0.3rem;">
+                            Este texto se convertira en voz (TTS) y subtitulos automaticos. Los videos de pasos anteriores (VideoSearch) se usan automaticamente.
+                        </p>
+                    </div>
+                    <div class="form-group" style="margin-top: 0.5rem;">
+                        <label>Idioma subtitulos</label>
+                        <select @bind="_j2vSubtitleLanguage">
+                            <option value="es">Espanol</option>
+                            <option value="en">Ingles</option>
+                            <option value="fr">Frances</option>
+                            <option value="de">Aleman</option>
+                            <option value="pt">Portugues</option>
+                            <option value="auto">Auto-detectar</option>
+                        </select>
                     </div>
                 }
 
@@ -1867,6 +1902,9 @@ else
     private string _videoSource = "prompt";
     private string _videoPrompt = "";
 
+    // VideoEdit step
+    private string _j2vSubtitleLanguage = "es";
+
     // History expansion
     private Guid? _expandedExecId;
     private ExecutionDetailResponse? _expandedExecDetail;
@@ -2511,9 +2549,23 @@ else
                     videoPrompt = _videoPrompt.Trim()
                 });
             }
+            if (mod?.ModuleType == "VideoEdit")
+            {
+                if (string.IsNullOrWhiteSpace(_videoPrompt))
+                {
+                    _stepError = "El guion del video es obligatorio.";
+                    _loading = false;
+                    return;
+                }
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    videoPrompt = _videoPrompt.Trim(),
+                    subtitleLanguage = _j2vSubtitleLanguage
+                });
+            }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig, _stepBranchId, _stepBranchFromStep);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _stepBranchId = "main"; _stepBranchFromStep = null; await LoadAll(); CleanPendingBranches(); }
+            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _j2vSubtitleLanguage = "es"; _stepBranchId = "main"; _stepBranchFromStep = null; await LoadAll(); CleanPendingBranches(); }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
@@ -2530,6 +2582,7 @@ else
         // Reset all type-specific fields
         _imagePrompt = "";
         _videoPrompt = "";
+        _j2vSubtitleLanguage = "es";
         _videoSource = "prompt";
         _publishCaption = "";
         _publishType = "post";
@@ -2554,6 +2607,8 @@ else
                         _videoPrompt = vpEl.GetString() ?? "";
                     if (cfg.TryGetValue("videoSource", out var vsEl))
                         _videoSource = vsEl.GetString() ?? "prompt";
+                    if (cfg.TryGetValue("subtitleLanguage", out var slEl))
+                        _j2vSubtitleLanguage = slEl.GetString() ?? "es";
                     if (cfg.TryGetValue("caption", out var capEl))
                         _publishCaption = capEl.GetString() ?? "";
                     if (cfg.TryGetValue("publishType", out var ptEl))
@@ -2634,6 +2689,14 @@ else
                     designTitle = _canvaDesignTitle,
                     brandTemplateId = string.IsNullOrWhiteSpace(_canvaStepBrandTemplateId) ? (string?)null : _canvaStepBrandTemplateId,
                     designType = _canvaDesignType
+                });
+            }
+            else if (pm.ModuleType == "VideoEdit")
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    videoPrompt = _videoPrompt.Trim(),
+                    subtitleLanguage = _j2vSubtitleLanguage
                 });
             }
             else

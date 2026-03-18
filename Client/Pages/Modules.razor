@@ -371,6 +371,71 @@
                     <input type="number" min="1" max="80" @bind="_pexelsPerPage" />
                 </div>
             }
+            else if (_moduleType == "VideoEdit" && _provider == "Json2Video")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Resolucion</label>
+                        <select @bind="_j2vResolution">
+                            <option value="full-hd">Full HD (1080p)</option>
+                            <option value="hd">HD (720p)</option>
+                            <option value="4k">4K</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Modelo de voz</label>
+                        <select @bind="_j2vVoiceModel">
+                            <option value="azure">Azure (gratis)</option>
+                            <option value="elevenlabs">ElevenLabs (premium)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Nombre de voz <span class="text-sm text-muted">(ej: es-ES-AlvaroNeural, en-US-EmmaMultilingualNeural)</span></label>
+                    <input type="text" @bind="_j2vVoiceName" placeholder="es-ES-AlvaroNeural" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Idioma subtitulos</label>
+                        <select @bind="_j2vSubtitleLanguage">
+                            <option value="es">Espanol</option>
+                            <option value="en">Ingles</option>
+                            <option value="fr">Frances</option>
+                            <option value="de">Aleman</option>
+                            <option value="pt">Portugues</option>
+                            <option value="it">Italiano</option>
+                            <option value="ja">Japones</option>
+                            <option value="zh">Chino</option>
+                            <option value="auto">Auto-detectar</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Estilo subtitulos</label>
+                        <select @bind="_j2vSubtitleStyle">
+                            <option value="boxed">Con fondo</option>
+                            <option value="classic">Solo texto</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tamano fuente <span class="text-sm text-muted">(90-150)</span></label>
+                        <input type="number" min="90" max="150" @bind="_j2vSubtitleFontSize" />
+                    </div>
+                    <div class="form-group">
+                        <label>Color palabra activa <span class="text-sm text-muted">(hex)</span></label>
+                        <input type="text" @bind="_j2vSubtitleWordColor" placeholder="#FFFF00" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label><input type="checkbox" @bind="_j2vEnableVoice" /> Habilitar voz (TTS)</label>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" @bind="_j2vEnableSubtitles" /> Habilitar subtitulos</label>
+                    </div>
+                </div>
+            }
             else if (_moduleType == "Embeddings")
             {
                 <div class="form-group">
@@ -748,6 +813,71 @@
                                         <input type="number" min="1" max="80" @bind="_editPexelsPerPage" />
                                     </div>
                                 }
+                                else if (m.ModuleType == "VideoEdit" && m.ProviderType == "Json2Video")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Resolucion</label>
+                                            <select @bind="_editJ2vResolution">
+                                                <option value="full-hd">Full HD (1080p)</option>
+                                                <option value="hd">HD (720p)</option>
+                                                <option value="4k">4K</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Modelo de voz</label>
+                                            <select @bind="_editJ2vVoiceModel">
+                                                <option value="azure">Azure (gratis)</option>
+                                                <option value="elevenlabs">ElevenLabs (premium)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Nombre de voz <span class="text-sm text-muted">(ej: es-ES-AlvaroNeural)</span></label>
+                                        <input type="text" @bind="_editJ2vVoiceName" placeholder="es-ES-AlvaroNeural" />
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Idioma subtitulos</label>
+                                            <select @bind="_editJ2vSubtitleLanguage">
+                                                <option value="es">Espanol</option>
+                                                <option value="en">Ingles</option>
+                                                <option value="fr">Frances</option>
+                                                <option value="de">Aleman</option>
+                                                <option value="pt">Portugues</option>
+                                                <option value="it">Italiano</option>
+                                                <option value="ja">Japones</option>
+                                                <option value="zh">Chino</option>
+                                                <option value="auto">Auto-detectar</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Estilo subtitulos</label>
+                                            <select @bind="_editJ2vSubtitleStyle">
+                                                <option value="boxed">Con fondo</option>
+                                                <option value="classic">Solo texto</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Tamano fuente <span class="text-sm text-muted">(90-150)</span></label>
+                                            <input type="number" min="90" max="150" @bind="_editJ2vSubtitleFontSize" />
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Color palabra activa <span class="text-sm text-muted">(hex)</span></label>
+                                            <input type="text" @bind="_editJ2vSubtitleWordColor" placeholder="#FFFF00" />
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label><input type="checkbox" @bind="_editJ2vEnableVoice" /> Habilitar voz (TTS)</label>
+                                        </div>
+                                        <div class="form-group">
+                                            <label><input type="checkbox" @bind="_editJ2vEnableSubtitles" /> Habilitar subtitulos</label>
+                                        </div>
+                                    </div>
+                                }
                                 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
                                 {
                                     <div class="form-group">
@@ -975,6 +1105,28 @@ else if (!_loading)
     private int _editPexelsMinDuration = 0;
     private int _editPexelsMaxDuration = 0;
     private int _editPexelsPerPage = 15;
+
+    // ── Form: Json2Video VideoEdit ──
+    private string _j2vResolution = "full-hd";
+    private bool _j2vEnableVoice = true;
+    private bool _j2vEnableSubtitles = true;
+    private string _j2vVoiceModel = "azure";
+    private string _j2vVoiceName = "es-ES-AlvaroNeural";
+    private string _j2vSubtitleLanguage = "es";
+    private string _j2vSubtitleStyle = "boxed";
+    private int _j2vSubtitleFontSize = 120;
+    private string _j2vSubtitleWordColor = "#FFFF00";
+
+    // ── Edit: Json2Video VideoEdit config ──
+    private string _editJ2vResolution = "full-hd";
+    private bool _editJ2vEnableVoice = true;
+    private bool _editJ2vEnableSubtitles = true;
+    private string _editJ2vVoiceModel = "azure";
+    private string _editJ2vVoiceName = "es-ES-AlvaroNeural";
+    private string _editJ2vSubtitleLanguage = "es";
+    private string _editJ2vSubtitleStyle = "boxed";
+    private int _editJ2vSubtitleFontSize = 120;
+    private string _editJ2vSubtitleWordColor = "#FFFF00";
 
     // ── Form: transcription ──
     private string _transcriptionLang = "";
@@ -1223,6 +1375,15 @@ else if (!_loading)
         _pexelsMinDuration = 0;
         _pexelsMaxDuration = 0;
         _pexelsPerPage = 15;
+        _j2vResolution = "full-hd";
+        _j2vEnableVoice = true;
+        _j2vEnableSubtitles = true;
+        _j2vVoiceModel = "azure";
+        _j2vVoiceName = "es-ES-AlvaroNeural";
+        _j2vSubtitleLanguage = "es";
+        _j2vSubtitleStyle = "boxed";
+        _j2vSubtitleFontSize = 120;
+        _j2vSubtitleWordColor = "#FFFF00";
     }
 
     // ── Build config JSON ──
@@ -1327,6 +1488,27 @@ else if (!_loading)
                 parts.Add($"\"maxDuration\":{_pexelsMaxDuration}");
             if (_pexelsPerPage != 15)
                 parts.Add($"\"perPage\":{_pexelsPerPage}");
+        }
+        else if (_moduleType == "VideoEdit" && _provider == "Json2Video")
+        {
+            if (_j2vResolution != "full-hd")
+                parts.Add($"\"resolution\":\"{_j2vResolution}\"");
+            if (!_j2vEnableVoice)
+                parts.Add("\"enableVoice\":false");
+            if (!_j2vEnableSubtitles)
+                parts.Add("\"enableSubtitles\":false");
+            if (_j2vVoiceModel != "azure")
+                parts.Add($"\"voiceModel\":\"{_j2vVoiceModel}\"");
+            if (_j2vVoiceName != "es-ES-AlvaroNeural")
+                parts.Add($"\"voiceName\":\"{_j2vVoiceName}\"");
+            if (_j2vSubtitleLanguage != "es")
+                parts.Add($"\"subtitleLanguage\":\"{_j2vSubtitleLanguage}\"");
+            if (_j2vSubtitleStyle != "boxed")
+                parts.Add($"\"subtitleStyle\":\"{_j2vSubtitleStyle}\"");
+            if (_j2vSubtitleFontSize != 120)
+                parts.Add($"\"subtitleFontSize\":{_j2vSubtitleFontSize}");
+            if (_j2vSubtitleWordColor != "#FFFF00")
+                parts.Add($"\"subtitleWordColor\":\"{_j2vSubtitleWordColor}\"");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
@@ -1488,6 +1670,16 @@ else if (!_loading)
                 if (root.TryGetProperty("minDuration", out var pmd)) _editPexelsMinDuration = pmd.GetInt32();
                 if (root.TryGetProperty("maxDuration", out var pmxd)) _editPexelsMaxDuration = pmxd.GetInt32();
                 if (root.TryGetProperty("perPage", out var ppp)) _editPexelsPerPage = ppp.GetInt32();
+                // Json2Video VideoEdit
+                if (root.TryGetProperty("resolution", out var j2vRes) && j2vRes.GetString() is "full-hd" or "hd" or "4k") _editJ2vResolution = j2vRes.GetString()!;
+                if (root.TryGetProperty("enableVoice", out var j2vEv)) _editJ2vEnableVoice = j2vEv.ValueKind != System.Text.Json.JsonValueKind.False;
+                if (root.TryGetProperty("enableSubtitles", out var j2vEs)) _editJ2vEnableSubtitles = j2vEs.ValueKind != System.Text.Json.JsonValueKind.False;
+                if (root.TryGetProperty("voiceModel", out var j2vVm)) _editJ2vVoiceModel = j2vVm.GetString() ?? "azure";
+                if (root.TryGetProperty("voiceName", out var j2vVn)) _editJ2vVoiceName = j2vVn.GetString() ?? "es-ES-AlvaroNeural";
+                if (root.TryGetProperty("subtitleLanguage", out var j2vSl)) _editJ2vSubtitleLanguage = j2vSl.GetString() ?? "es";
+                if (root.TryGetProperty("subtitleStyle", out var j2vSs)) _editJ2vSubtitleStyle = j2vSs.GetString() ?? "boxed";
+                if (root.TryGetProperty("subtitleFontSize", out var j2vSf)) _editJ2vSubtitleFontSize = j2vSf.GetInt32();
+                if (root.TryGetProperty("subtitleWordColor", out var j2vSw)) _editJ2vSubtitleWordColor = j2vSw.GetString() ?? "#FFFF00";
             }
             catch { }
         }
@@ -1654,6 +1846,27 @@ else if (!_loading)
                 parts.Add($"\"maxDuration\":{_editPexelsMaxDuration}");
             if (_editPexelsPerPage != 15)
                 parts.Add($"\"perPage\":{_editPexelsPerPage}");
+        }
+        else if (moduleType == "VideoEdit" && providerType == "Json2Video")
+        {
+            if (_editJ2vResolution != "full-hd")
+                parts.Add($"\"resolution\":\"{_editJ2vResolution}\"");
+            if (!_editJ2vEnableVoice)
+                parts.Add("\"enableVoice\":false");
+            if (!_editJ2vEnableSubtitles)
+                parts.Add("\"enableSubtitles\":false");
+            if (_editJ2vVoiceModel != "azure")
+                parts.Add($"\"voiceModel\":\"{_editJ2vVoiceModel}\"");
+            if (_editJ2vVoiceName != "es-ES-AlvaroNeural")
+                parts.Add($"\"voiceName\":\"{_editJ2vVoiceName}\"");
+            if (_editJ2vSubtitleLanguage != "es")
+                parts.Add($"\"subtitleLanguage\":\"{_editJ2vSubtitleLanguage}\"");
+            if (_editJ2vSubtitleStyle != "boxed")
+                parts.Add($"\"subtitleStyle\":\"{_editJ2vSubtitleStyle}\"");
+            if (_editJ2vSubtitleFontSize != 120)
+                parts.Add($"\"subtitleFontSize\":{_editJ2vSubtitleFontSize}");
+            if (_editJ2vSubtitleWordColor != "#FFFF00")
+                parts.Add($"\"subtitleWordColor\":\"{_editJ2vSubtitleWordColor}\"");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
