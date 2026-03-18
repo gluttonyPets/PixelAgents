@@ -2128,7 +2128,12 @@ else
             }
 
             // Sync connections from linear step order so visual view shows lines
-            SyncConnectionsFromStepOrder();
+            if (SyncConnectionsFromStepOrder())
+            {
+                // Persist the auto-generated connections so they survive reloads
+                var json = JsonSerializer.Serialize(_graph);
+                _ = Api.SaveGraphLayoutAsync(ProjectId, json);
+            }
         }
         catch { }
         _loading = false;
@@ -2180,53 +2185,67 @@ else
     /// <summary>
     /// Auto-generates Graph.Connections from the linear StepOrder / InputMapping
     /// so the visual canvas shows connection lines matching the linear view.
-    /// Only adds missing connections; never removes user-drawn ones.
+    /// Returns true if any new connections were added.
     /// </summary>
-    private void SyncConnectionsFromStepOrder()
+    private bool SyncConnectionsFromStepOrder()
     {
-        if (_project?.Modules is null || _project.Modules.Count == 0) return;
+        if (_project?.Modules is null || _project.Modules.Count == 0) return false;
 
+        int added = 0;
         var mainSteps = GetMainSteps();
 
-        for (int i = 1; i < mainSteps.Count; i++)
+        // Helper: try to add a connection between two modules if not already present
+        bool TryAddConnection(ProjectModuleResponse from, ProjectModuleResponse to)
         {
-            var current = mainSteps[i];
-            var previous = mainSteps[i - 1];
+            var fromPorts = ModulePortRegistry.GetPorts(from.ModuleType, "");
+            var toPorts = ModulePortRegistry.GetPorts(to.ModuleType, "");
+            var fromOutput = fromPorts.FirstOrDefault(p => !p.IsInput);
+            var toInput = toPorts.FirstOrDefault(p => p.IsInput);
+            if (fromOutput is null || toInput is null) return false;
 
-            // Only sync if this step takes input from the previous step
-            if (current.InputMapping is null || !current.InputMapping.Contains("\"previous\""))
-                continue;
+            // Skip if this exact connection already exists
+            if (_graph.Connections.Any(c =>
+                c.FromModuleId == from.Id && c.FromPort == fromOutput.Id &&
+                c.ToModuleId == to.Id && c.ToPort == toInput.Id))
+                return false;
 
-            // Determine the output port of the previous module
-            var prevPorts = ModulePortRegistry.GetPorts(previous.ModuleType, "");
-            var prevOutput = prevPorts.FirstOrDefault(p => !p.IsInput);
-            if (prevOutput is null) continue;
-
-            // Determine the input port of the current module
-            var curPorts = ModulePortRegistry.GetPorts(current.ModuleType, "");
-            var curInput = curPorts.FirstOrDefault(p => p.IsInput);
-            if (curInput is null) continue;
-
-            // Check if this connection already exists
-            bool exists = _graph.Connections.Any(c =>
-                c.FromModuleId == previous.Id && c.FromPort == prevOutput.Id &&
-                c.ToModuleId == current.Id && c.ToPort == curInput.Id);
-            if (exists) continue;
-
-            // Also skip if the target input port already has a connection (user may have wired it differently)
-            bool inputOccupied = _graph.Connections.Any(c => c.ToModuleId == current.Id && c.ToPort == curInput.Id);
-            if (inputOccupied) continue;
+            // Skip if the target input port already has a different connection
+            if (_graph.Connections.Any(c => c.ToModuleId == to.Id && c.ToPort == toInput.Id))
+                return false;
 
             _graph.Connections.Add(new PipelineConnection
             {
-                FromModuleId = previous.Id,
-                FromPort = prevOutput.Id,
-                ToModuleId = current.Id,
-                ToPort = curInput.Id
+                FromModuleId = from.Id,
+                FromPort = fromOutput.Id,
+                ToModuleId = to.Id,
+                ToPort = toInput.Id
             });
+            return true;
         }
 
-        // Also sync branches
+        // Helper: check if a module's InputMapping takes from previous step
+        bool TakesFromPrevious(ProjectModuleResponse m)
+        {
+            // "previous" source — explicit
+            if (m.InputMapping is not null && m.InputMapping.Contains("\"previous\""))
+                return true;
+            // No InputMapping but not the first step — the executor treats this as "previous" implicitly
+            if (m.InputMapping is null && m.StepOrder > 1)
+                return true;
+            return false;
+        }
+
+        // Sync main pipeline consecutive steps
+        for (int i = 1; i < mainSteps.Count; i++)
+        {
+            if (TakesFromPrevious(mainSteps[i]))
+            {
+                if (TryAddConnection(mainSteps[i - 1], mainSteps[i]))
+                    added++;
+            }
+        }
+
+        // Sync branches
         var branches = _project.Modules
             .Where(m => m.BranchId != "main")
             .GroupBy(m => m.BranchId)
@@ -2240,32 +2259,14 @@ else
                 var forkOrigin = mainSteps.FirstOrDefault(m => m.StepOrder == branchSteps[0].BranchFromStep);
                 if (forkOrigin is not null)
                 {
+                    // Branch roots use "source":"step" or "source":"previous" — both should connect
                     var first = branchSteps[0];
-                    if (first.InputMapping is not null && first.InputMapping.Contains("\"previous\""))
+                    if (first.InputMapping is null ||
+                        first.InputMapping.Contains("\"previous\"") ||
+                        first.InputMapping.Contains("\"step\""))
                     {
-                        var originPorts = ModulePortRegistry.GetPorts(forkOrigin.ModuleType, "");
-                        var originOutput = originPorts.FirstOrDefault(p => !p.IsInput);
-                        var firstPorts = ModulePortRegistry.GetPorts(first.ModuleType, "");
-                        var firstInput = firstPorts.FirstOrDefault(p => p.IsInput);
-
-                        if (originOutput is not null && firstInput is not null)
-                        {
-                            bool exists = _graph.Connections.Any(c =>
-                                c.FromModuleId == forkOrigin.Id && c.FromPort == originOutput.Id &&
-                                c.ToModuleId == first.Id && c.ToPort == firstInput.Id);
-                            bool inputOccupied = _graph.Connections.Any(c => c.ToModuleId == first.Id && c.ToPort == firstInput.Id);
-
-                            if (!exists && !inputOccupied)
-                            {
-                                _graph.Connections.Add(new PipelineConnection
-                                {
-                                    FromModuleId = forkOrigin.Id,
-                                    FromPort = originOutput.Id,
-                                    ToModuleId = first.Id,
-                                    ToPort = firstInput.Id
-                                });
-                            }
-                        }
+                        if (TryAddConnection(forkOrigin, first))
+                            added++;
                     }
                 }
             }
@@ -2273,34 +2274,20 @@ else
             // Connect consecutive branch steps
             for (int i = 1; i < branchSteps.Count; i++)
             {
-                var current = branchSteps[i];
-                var previous = branchSteps[i - 1];
-
-                if (current.InputMapping is null || !current.InputMapping.Contains("\"previous\""))
-                    continue;
-
-                var prevPorts = ModulePortRegistry.GetPorts(previous.ModuleType, "");
-                var prevOutput = prevPorts.FirstOrDefault(p => !p.IsInput);
-                var curPorts = ModulePortRegistry.GetPorts(current.ModuleType, "");
-                var curInput = curPorts.FirstOrDefault(p => p.IsInput);
-
-                if (prevOutput is null || curInput is null) continue;
-
-                bool exists = _graph.Connections.Any(c =>
-                    c.FromModuleId == previous.Id && c.FromPort == prevOutput.Id &&
-                    c.ToModuleId == current.Id && c.ToPort == curInput.Id);
-                bool inputOccupied = _graph.Connections.Any(c => c.ToModuleId == current.Id && c.ToPort == curInput.Id);
-                if (exists || inputOccupied) continue;
-
-                _graph.Connections.Add(new PipelineConnection
+                if (TakesFromPrevious(branchSteps[i]))
                 {
-                    FromModuleId = previous.Id,
-                    FromPort = prevOutput.Id,
-                    ToModuleId = current.Id,
-                    ToPort = curInput.Id
-                });
+                    if (TryAddConnection(branchSteps[i - 1], branchSteps[i]))
+                        added++;
+                }
             }
         }
+
+        // Also clean up connections referencing modules that no longer exist
+        var moduleIds = _project.Modules.Select(m => m.Id).ToHashSet();
+        int removed = _graph.Connections.RemoveAll(c =>
+            !moduleIds.Contains(c.FromModuleId) || !moduleIds.Contains(c.ToModuleId));
+
+        return added > 0 || removed > 0;
     }
 
     private void StartContextEdit()
