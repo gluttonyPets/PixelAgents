@@ -221,6 +221,13 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<ProjectResponse>();
     }
 
+    public async Task<(bool Ok, string? Error)> SaveGraphLayoutAsync(Guid projectId, string? graphLayout)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/graph", new { graphLayout });
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── ProjectModules (Pipeline) ──
 
     public async Task<(bool Ok, string? Error)> AddProjectModuleAsync(Guid projectId, AddProjectModuleRequest req)

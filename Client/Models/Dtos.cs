@@ -31,6 +31,7 @@ public record ProjectDetailResponse(
     List<ProjectModuleResponse> Modules)
 {
     public string? Context { get; set; }
+    public string? GraphLayout { get; set; }
 }
 
 // ── ProjectModule ──

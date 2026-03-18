@@ -25,10 +25,11 @@ namespace Server.Models
     // ── Project ──
     public record CreateProjectRequest(string Name, string? Description, string? Context);
     public record UpdateProjectRequest(string Name, string? Description, string? Context);
+    public record GraphLayoutRequest(string? GraphLayout);
     public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt);
     public record ProjectDetailResponse(
         Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt,
-        List<ProjectModuleResponse> Modules);
+        List<ProjectModuleResponse> Modules, string? GraphLayout = null);
 
     // ── ProjectModule ──
     public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration, string BranchId = "main", int? BranchFromStep = null);

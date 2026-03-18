@@ -1,8 +1,11 @@
 @page "/projects/{ProjectId:guid}"
 @using System.Text.Json
+@using Client.Models
+@using Client.Components.Pipeline
 @using Microsoft.AspNetCore.SignalR.Client
 @inject ApiClient Api
 @inject IConfiguration Config
+@inject IJSRuntime JS
 @implements IAsyncDisposable
 
 @if (_project is null)
@@ -94,10 +97,34 @@ else
     @if (_activeTab == "pipeline")
     {
         <div class="tab-content">
+            <!-- View mode toggle -->
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem; align-items: center;">
+                <button class="btn btn-xs @(_pipelineViewMode == "visual" ? "btn-primary" : "")" @onclick='() => _pipelineViewMode = "visual"'>
+                    &#x1F5A7; Visual
+                </button>
+                <button class="btn btn-xs @(_pipelineViewMode == "linear" ? "btn-primary" : "")" @onclick='() => _pipelineViewMode = "linear"'>
+                    &#x2630; Lineal
+                </button>
+            </div>
+
             @if (_editError is not null)
             {
                 <div class="alert alert-error">@_editError</div>
             }
+
+            @if (_pipelineViewMode == "visual")
+            {
+                <PipelineCanvas Modules="_project.Modules.ToList()"
+                                AvailableModules="_modules"
+                                Graph="_graph"
+                                GraphChanged="OnGraphChanged"
+                                OnAddModule="AddModuleFromCanvas"
+                                OnRemoveModule="RemoveModuleFromCanvas"
+                                OnSaveGraph="SaveGraphLayout"
+                                OnSyncPipeline="SyncPipelineFromGraph" />
+            }
+            else
+            {
 
             @if (_project.Modules.Count > 0)
             {
@@ -766,6 +793,8 @@ else
                 <button class="btn btn-primary mt-1" @onclick="AddStep" disabled="@_loading">Agregar</button>
             </div>
         </div>
+            } @* end linear view else *@
+        </div> @* end tab-content *@
     }
 
     <!-- ═══════════ TAB: EJECUTAR ═══════════ -->
@@ -1859,8 +1888,12 @@ else
 
     // UI state
     private string _activeTab = "pipeline";
+    private string _pipelineViewMode = "visual";
     private bool _showSettings;
     private string _settingsTab = "messaging";
+
+    // Pipeline visual editor
+    private PipelineGraph _graph = new();
 
     // Add step
     private string _stepModuleId = "";
@@ -2191,9 +2224,92 @@ else
                 _waRecipientNumber = waConfig.RecipientNumber;
                 _waVerifyToken = waConfig.WebhookVerifyToken;
             }
+
+            // Load graph layout
+            if (!string.IsNullOrWhiteSpace(_project?.GraphLayout))
+            {
+                try { _graph = JsonSerializer.Deserialize<PipelineGraph>(_project.GraphLayout) ?? new(); }
+                catch { _graph = new(); }
+            }
+            else
+            {
+                _graph = new();
+            }
         }
         catch { }
         _loading = false;
+    }
+
+    // ── Visual pipeline editor methods ──
+
+    private async Task OnGraphChanged(PipelineGraph graph)
+    {
+        _graph = graph;
+    }
+
+    private async Task AddModuleFromCanvas(Guid moduleId)
+    {
+        _stepError = null;
+        _loading = true;
+        try
+        {
+            var mainSteps = GetMainSteps();
+            var order = mainSteps.Count + 1;
+            var req = new AddProjectModuleRequest(moduleId, order, null, "{\"source\":\"previous\",\"field\":\"text\"}", null);
+            var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
+            if (ok) await LoadAll();
+            else _editError = error;
+        }
+        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
+        _loading = false;
+    }
+
+    private async Task RemoveModuleFromCanvas(Guid projectModuleId)
+    {
+        _editError = null;
+        try
+        {
+            var (ok, error) = await Api.DeleteProjectModuleAsync(ProjectId, projectModuleId);
+            if (ok) await LoadAll();
+            else _editError = error;
+        }
+        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
+    }
+
+    private async Task SaveGraphLayout(PipelineGraph graph)
+    {
+        _graph = graph;
+        var json = JsonSerializer.Serialize(graph);
+        await Api.SaveGraphLayoutAsync(ProjectId, json);
+    }
+
+    private async Task SyncPipelineFromGraph(List<GraphToPipelineMapper.MappedStep> steps)
+    {
+        _editError = null;
+        try
+        {
+            foreach (var step in steps)
+            {
+                var pm = _project?.Modules.FirstOrDefault(m => m.Id == step.ProjectModuleId);
+                if (pm is null) continue;
+
+                var req = new UpdateProjectModuleRequest(
+                    step.StepOrder,
+                    pm.StepName,
+                    step.InputMapping,
+                    step.Configuration,
+                    pm.IsActive);
+
+                var (ok, error) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
+                if (!ok)
+                {
+                    _editError = $"Error sincronizando paso {step.StepOrder}: {error}";
+                    break;
+                }
+            }
+            await LoadAll();
+        }
+        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
     }
 
     private void StartContextEdit()

@@ -667,7 +667,7 @@ app.MapGet("/api/projects/{id}", async (
 
     return Results.Ok(new ProjectDetailResponse(
         project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, modules));
+        project.CreatedAt, project.UpdatedAt, modules, project.GraphLayout));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{id}", async (
@@ -688,6 +688,22 @@ app.MapPut("/api/projects/{id}", async (
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
         project.CreatedAt, project.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{id}/graph", async (
+    Guid id, GraphLayoutRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(id);
+    if (project is null) return Results.NotFound();
+
+    project.GraphLayout = req.GraphLayout;
+    project.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    return Results.Ok();
 }).RequireAuthorization();
 
 app.MapDelete("/api/projects/{id}", async (

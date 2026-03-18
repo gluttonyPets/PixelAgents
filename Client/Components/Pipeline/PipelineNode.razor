@@ -1,0 +1,135 @@
+@using Client.Models
+
+<div class="pipeline-node @(IsSelected ? "selected" : "")"
+     data-node-id="@Module.Id"
+     style="left: @(X)px; top: @(Y)px;">
+
+    <!-- Header (draggable) -->
+    <div class="node-header"
+         style="background: @ModulePortRegistry.GetModuleColor(Module.ModuleType);"
+         @onmousedown="OnHeaderMouseDown"
+         @onmousedown:preventDefault
+         @ontouchstart="OnHeaderTouchStart"
+         @ontouchstart:preventDefault>
+        <span class="node-header-icon">@ModulePortRegistry.GetModuleIcon(Module.ModuleType)</span>
+        <span class="node-header-title" title="@Module.AiModuleName">
+            @(Module.StepName ?? Module.AiModuleName)
+        </span>
+        <span class="node-header-badge">@Module.ModuleType</span>
+        <div class="node-header-actions">
+            <button class="node-btn" @onclick="OnConfigClick" @onclick:stopPropagation title="Configurar">&#x2699;</button>
+            <button class="node-btn" @onclick="OnDeleteClick" @onclick:stopPropagation title="Eliminar">&#x2715;</button>
+        </div>
+    </div>
+
+    <!-- Ports -->
+    <div class="node-ports">
+        @foreach (var port in InputPorts)
+        {
+            var isConnected = ConnectedPorts.Contains(port.Id);
+            <div class="node-port-row input">
+                <div class="node-port input-port @(isConnected ? "connected" : "")"
+                     style="color: @PortDataType.GetColor(port.DataType); border-color: @PortDataType.GetColor(port.DataType);"
+                     data-module-id="@Module.Id"
+                     data-port-id="@port.Id"
+                     data-port-input="true"
+                     data-port-type="@port.DataType"
+                     @onmousedown="e => OnPortMouseDown(e, port)"
+                     @onmousedown:preventDefault
+                     @onmousedown:stopPropagation>
+                </div>
+                <span class="port-label @(port.IsRequired ? "required" : "")">@port.Label</span>
+                <span class="port-type-tag" style="color: @PortDataType.GetColor(port.DataType);">@PortDataType.GetLabel(port.DataType)</span>
+            </div>
+        }
+        @foreach (var port in OutputPorts)
+        {
+            var isConnected = ConnectedPorts.Contains(port.Id);
+            <div class="node-port-row output">
+                <span class="port-type-tag" style="color: @PortDataType.GetColor(port.DataType);">@PortDataType.GetLabel(port.DataType)</span>
+                <span class="port-label">@port.Label</span>
+                <div class="node-port output-port @(isConnected ? "connected" : "")"
+                     style="color: @PortDataType.GetColor(port.DataType); border-color: @PortDataType.GetColor(port.DataType);"
+                     data-module-id="@Module.Id"
+                     data-port-id="@port.Id"
+                     data-port-input="false"
+                     data-port-type="@port.DataType"
+                     @onmousedown="e => OnPortMouseDown(e, port)"
+                     @onmousedown:preventDefault
+                     @onmousedown:stopPropagation>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Dynamic config for VideoEdit (scene count) -->
+    @if (Module.ModuleType == "VideoEdit")
+    {
+        <div class="node-config">
+            <div class="node-config-row">
+                <label>Escenas:</label>
+                <input type="number" min="1" max="10" value="@SceneCount"
+                       @onchange="OnSceneCountChange" />
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public ProjectModuleResponse Module { get; set; } = default!;
+    [Parameter] public double X { get; set; }
+    [Parameter] public double Y { get; set; }
+    [Parameter] public bool IsSelected { get; set; }
+    [Parameter] public int SceneCount { get; set; } = 1;
+    [Parameter] public HashSet<string> ConnectedPorts { get; set; } = new();
+
+    [Parameter] public EventCallback<(string moduleId, double clientX, double clientY)> OnDragStart { get; set; }
+    [Parameter] public EventCallback<(string moduleId, string portId, bool isInput, double clientX, double clientY)> OnPortDragStart { get; set; }
+    [Parameter] public EventCallback OnSelectNode { get; set; }
+    [Parameter] public EventCallback OnDelete { get; set; }
+    [Parameter] public EventCallback<int> OnSceneCountChanged { get; set; }
+
+    private List<PortDefinition> InputPorts => ModulePortRegistry.GetPorts(Module.ModuleType, "", SceneCount)
+        .Where(p => p.IsInput).ToList();
+
+    private List<PortDefinition> OutputPorts => ModulePortRegistry.GetPorts(Module.ModuleType, "", SceneCount)
+        .Where(p => !p.IsInput).ToList();
+
+    private async Task OnHeaderMouseDown(MouseEventArgs e)
+    {
+        await OnSelectNode.InvokeAsync();
+        await OnDragStart.InvokeAsync((Module.Id.ToString(), e.ClientX, e.ClientY));
+    }
+
+    private async Task OnHeaderTouchStart(TouchEventArgs e)
+    {
+        if (e.Touches.Length > 0)
+        {
+            await OnSelectNode.InvokeAsync();
+            await OnDragStart.InvokeAsync((Module.Id.ToString(), e.Touches[0].ClientX, e.Touches[0].ClientY));
+        }
+    }
+
+    private async Task OnPortMouseDown(MouseEventArgs e, PortDefinition port)
+    {
+        await OnPortDragStart.InvokeAsync((Module.Id.ToString(), port.Id, port.IsInput, e.ClientX, e.ClientY));
+    }
+
+    private async Task OnConfigClick()
+    {
+        await OnSelectNode.InvokeAsync();
+    }
+
+    private async Task OnDeleteClick()
+    {
+        await OnDelete.InvokeAsync();
+    }
+
+    private async Task OnSceneCountChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var count) && count >= 1 && count <= 10)
+        {
+            await OnSceneCountChanged.InvokeAsync(count);
+        }
+    }
+}

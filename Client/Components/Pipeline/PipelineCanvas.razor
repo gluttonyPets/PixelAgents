@@ -1,0 +1,521 @@
+@using Client.Models
+@using Client.Services
+@using System.Text.Json
+@inject IJSRuntime JS
+
+<div class="pipeline-editor-container">
+    <!-- ── Left: Module palette ── -->
+    <div class="pipeline-palette">
+        <div class="palette-header">Modulos</div>
+        <div class="palette-search">
+            <input type="text" placeholder="Buscar modulo..." @bind="_searchFilter" @bind:event="oninput" />
+        </div>
+        <div class="palette-list">
+            @foreach (var m in FilteredModules)
+            {
+                <div class="palette-item" @onclick="() => AddNodeFromPalette(m)">
+                    <div class="palette-item-icon" style="background: @ModulePortRegistry.GetModuleColor(m.ModuleType);">
+                        @ModulePortRegistry.GetModuleIcon(m.ModuleType)
+                    </div>
+                    <div class="palette-item-info">
+                        <div class="palette-item-name">@m.Name</div>
+                        <div class="palette-item-type">@m.ProviderType / @m.ModuleType</div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- ── Center: Canvas ── -->
+    <div class="pipeline-canvas" id="pipeline-canvas-@_canvasId">
+        <div class="pipeline-canvas-inner">
+            <!-- SVG layer for connections -->
+            <svg class="pipeline-svg">
+                @foreach (var conn in Graph.Connections)
+                {
+                    var path = GetConnectionPath(conn);
+                    var color = GetConnectionColor(conn);
+                    <g>
+                        <!-- Invisible wider hit area for clicking -->
+                        <path d="@path" class="connection-delete-zone" @onclick="() => RemoveConnection(conn)" />
+                        <path d="@path" class="connection-cable"
+                              stroke="@color" stroke-width="2.5"
+                              @onclick="() => RemoveConnection(conn)" />
+                    </g>
+                }
+            </svg>
+
+            <!-- Nodes -->
+            @foreach (var pm in Modules)
+            {
+                var nodeState = GetNodeState(pm.Id);
+                var sceneCount = GetSceneCount(pm.Id);
+                var connectedPorts = GetConnectedPorts(pm.Id);
+
+                <PipelineNode Module="pm"
+                              X="nodeState.X"
+                              Y="nodeState.Y"
+                              IsSelected="_selectedModuleId == pm.Id"
+                              SceneCount="sceneCount"
+                              ConnectedPorts="connectedPorts"
+                              OnDragStart="OnNodeDragStart"
+                              OnPortDragStart="OnPortDragStart"
+                              OnSelectNode="() => SelectNode(pm.Id)"
+                              OnDelete="() => RequestDeleteNode(pm.Id)"
+                              OnSceneCountChanged="count => UpdateSceneCount(pm.Id, count)" />
+            }
+
+            @if (Modules.Count == 0)
+            {
+                <div class="canvas-empty-state">
+                    <span class="canvas-empty-state-icon">&#x1F9E9;</span>
+                    <p>Pipeline vacio</p>
+                    <p class="text-sm">Haz clic en un modulo del panel izquierdo para agregarlo</p>
+                </div>
+            }
+        </div>
+
+        <!-- Toolbar -->
+        <div class="canvas-toolbar">
+            <button @onclick="AutoLayout" title="Organizar automaticamente">&#x2B50; Auto-layout</button>
+            <button @onclick="SyncPipeline" title="Sincronizar conexiones al pipeline ejecutable">&#x1F504; Sincronizar</button>
+            <button @onclick="SaveGraph" title="Guardar layout">&#x1F4BE; Guardar</button>
+        </div>
+    </div>
+
+    <!-- ── Right: Inspector ── -->
+    @if (_selectedModuleId.HasValue)
+    {
+        var sel = Modules.FirstOrDefault(m => m.Id == _selectedModuleId);
+        if (sel is not null)
+        {
+            <div class="pipeline-inspector">
+                <div class="inspector-header">
+                    <span>@(sel.StepName ?? sel.AiModuleName)</span>
+                    <button class="node-btn" @onclick="() => _selectedModuleId = null">&#x2715;</button>
+                </div>
+                <div class="inspector-body">
+                    <div class="inspector-section">
+                        <div class="inspector-section-title">Informacion</div>
+                        <div class="inspector-field">
+                            <label>Modulo</label>
+                            <input type="text" value="@sel.AiModuleName" readonly />
+                        </div>
+                        <div class="inspector-field">
+                            <label>Tipo</label>
+                            <input type="text" value="@sel.ModuleType" readonly />
+                        </div>
+                        <div class="inspector-field">
+                            <label>Modelo</label>
+                            <input type="text" value="@sel.ModelName" readonly />
+                        </div>
+                    </div>
+
+                    <div class="inspector-section">
+                        <div class="inspector-section-title">Conexiones</div>
+                        @{
+                            var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id));
+                            var inputPorts = ports.Where(p => p.IsInput).ToList();
+                            var outputPorts = ports.Where(p => !p.IsInput).ToList();
+                        }
+                        @if (inputPorts.Any())
+                        {
+                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem;">Entradas:</p>
+                            @foreach (var port in inputPorts)
+                            {
+                                var conn = Graph.Connections.FirstOrDefault(c => c.ToModuleId == sel.Id && c.ToPort == port.Id);
+                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem;">
+                                    <span style="color: @PortDataType.GetColor(port.DataType);">&#x25CF;</span>
+                                    <span>@port.Label</span>
+                                    @if (conn is not null)
+                                    {
+                                        var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+                                        <span class="text-muted">&#x2190; @(fromModule?.StepName ?? fromModule?.AiModuleName ?? "?")</span>
+                                        <button class="node-btn" style="color: var(--danger);" @onclick="() => RemoveConnection(conn)">&#x2715;</button>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted" style="font-style:italic;">sin conectar</span>
+                                    }
+                                </div>
+                            }
+                        }
+                        @if (outputPorts.Any())
+                        {
+                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem; margin-bottom: 0.2rem;">Salidas:</p>
+                            @foreach (var port in outputPorts)
+                            {
+                                var conns = Graph.Connections.Where(c => c.FromModuleId == sel.Id && c.FromPort == port.Id).ToList();
+                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem;">
+                                    <span style="color: @PortDataType.GetColor(port.DataType);">&#x25CF;</span>
+                                    <span>@port.Label</span>
+                                    @if (conns.Any())
+                                    {
+                                        @foreach (var c in conns)
+                                        {
+                                            var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
+                                            <span class="text-muted">&#x2192; @(toModule?.StepName ?? toModule?.AiModuleName ?? "?")</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted" style="font-style:italic;">sin conectar</span>
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    @if (sel.ModuleType == "VideoEdit")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Escenas Json2Video</div>
+                            <div class="inspector-field">
+                                <label>Numero de escenas</label>
+                                <input type="number" min="1" max="10" value="@GetSceneCount(sel.Id)"
+                                       @onchange="e => UpdateSceneCount(sel.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1)" />
+                            </div>
+                            <p class="text-sm text-muted">Cada escena crea puertos de video y guion que puedes conectar a otros modulos.</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error" style="margin-top: 0.5rem;">@_error</div>
+}
+@if (_saveSuccess)
+{
+    <div class="alert alert-success" style="margin-top: 0.5rem;">Layout guardado</div>
+}
+
+@code {
+    [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
+    [Parameter] public List<AiModuleResponse> AvailableModules { get; set; } = [];
+    [Parameter] public PipelineGraph Graph { get; set; } = new();
+    [Parameter] public EventCallback<PipelineGraph> GraphChanged { get; set; }
+    [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
+    [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
+    [Parameter] public EventCallback<PipelineGraph> OnSaveGraph { get; set; }
+    [Parameter] public EventCallback<List<GraphToPipelineMapper.MappedStep>> OnSyncPipeline { get; set; }
+
+    private string _canvasId = Guid.NewGuid().ToString("N")[..8];
+    private string _searchFilter = "";
+    private Guid? _selectedModuleId;
+    private string? _error;
+    private bool _saveSuccess;
+    private bool _jsInitialized;
+    private DotNetObjectReference<PipelineCanvas>? _dotNetRef;
+
+    private IEnumerable<AiModuleResponse> FilteredModules => string.IsNullOrWhiteSpace(_searchFilter)
+        ? AvailableModules
+        : AvailableModules.Where(m =>
+            m.Name.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) ||
+            m.ModuleType.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase) ||
+            m.ProviderType.Contains(_searchFilter, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("pipelineEditor.init", _dotNetRef, $"pipeline-canvas-{_canvasId}");
+            _jsInitialized = true;
+        }
+    }
+
+    private PipelineNodeState GetNodeState(Guid moduleId)
+    {
+        var existing = Graph.Nodes.FirstOrDefault(n => n.ModuleId == moduleId);
+        if (existing is not null) return existing;
+
+        // Auto-position new nodes
+        var state = new PipelineNodeState
+        {
+            ModuleId = moduleId,
+            X = 60 + (Graph.Nodes.Count % 4) * 280,
+            Y = 60 + (Graph.Nodes.Count / 4) * 200
+        };
+        Graph.Nodes.Add(state);
+        return state;
+    }
+
+    private int GetSceneCount(Guid moduleId)
+    {
+        var state = Graph.Nodes.FirstOrDefault(n => n.ModuleId == moduleId);
+        if (state?.NodeConfig is not null && state.NodeConfig.TryGetValue("sceneCount", out var val))
+        {
+            if (val is JsonElement je && je.TryGetInt32(out var c)) return Math.Max(1, c);
+            if (val is int i) return Math.Max(1, i);
+        }
+        return 1;
+    }
+
+    private HashSet<string> GetConnectedPorts(Guid moduleId)
+    {
+        var set = new HashSet<string>();
+        foreach (var c in Graph.Connections)
+        {
+            if (c.FromModuleId == moduleId) set.Add(c.FromPort);
+            if (c.ToModuleId == moduleId) set.Add(c.ToPort);
+        }
+        return set;
+    }
+
+    private string GetConnectionPath(PipelineConnection conn)
+    {
+        // Use node positions + port index offsets to compute path
+        var fromState = Graph.Nodes.FirstOrDefault(n => n.ModuleId == conn.FromModuleId);
+        var toState = Graph.Nodes.FirstOrDefault(n => n.ModuleId == conn.ToModuleId);
+        if (fromState is null || toState is null) return "";
+
+        var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+        var toModule = Modules.FirstOrDefault(m => m.Id == conn.ToModuleId);
+        if (fromModule is null || toModule is null) return "";
+
+        var fromPorts = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id));
+        var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id));
+
+        var fromOutputs = fromPorts.Where(p => !p.IsInput).ToList();
+        var toInputs = toPorts.Where(p => p.IsInput).ToList();
+
+        var fromIdx = fromOutputs.FindIndex(p => p.Id == conn.FromPort);
+        var toIdx = toInputs.FindIndex(p => p.Id == conn.ToPort);
+        if (fromIdx < 0) fromIdx = 0;
+        if (toIdx < 0) toIdx = 0;
+
+        var fromInputCount = fromPorts.Count(p => p.IsInput);
+
+        // Output port position: right side of node
+        double nodeWidth = 220;
+        double portSpacing = 24;
+        double headerHeight = 34;
+        double sx = fromState.X + nodeWidth;
+        double sy = fromState.Y + headerHeight + (fromInputCount + fromIdx) * portSpacing + portSpacing / 2;
+
+        // Input port position: left side of node
+        double ex = toState.X;
+        double ey = toState.Y + headerHeight + toIdx * portSpacing + portSpacing / 2;
+
+        // Bezier curve
+        double dx = Math.Max(Math.Abs(ex - sx) * 0.5, 50);
+        return $"M{sx},{sy} C{sx + dx},{sy} {ex - dx},{ey} {ex},{ey}";
+    }
+
+    private string GetConnectionColor(PipelineConnection conn)
+    {
+        var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+        if (fromModule is null) return "#888";
+        var ports = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id));
+        var port = ports.FirstOrDefault(p => p.Id == conn.FromPort);
+        return port is not null ? PortDataType.GetColor(port.DataType) : "#888";
+    }
+
+    private async Task AddNodeFromPalette(AiModuleResponse module)
+    {
+        await OnAddModule.InvokeAsync(module.Id);
+    }
+
+    private void SelectNode(Guid id)
+    {
+        _selectedModuleId = _selectedModuleId == id ? null : id;
+    }
+
+    private async Task RequestDeleteNode(Guid id)
+    {
+        // Remove connections involving this node
+        Graph.Connections.RemoveAll(c => c.FromModuleId == id || c.ToModuleId == id);
+        Graph.Nodes.RemoveAll(n => n.ModuleId == id);
+        if (_selectedModuleId == id) _selectedModuleId = null;
+        await OnRemoveModule.InvokeAsync(id);
+        await NotifyGraphChanged();
+    }
+
+    private async Task RemoveConnection(PipelineConnection conn)
+    {
+        Graph.Connections.Remove(conn);
+        await NotifyGraphChanged();
+    }
+
+    private async Task UpdateSceneCount(Guid moduleId, int count)
+    {
+        var state = Graph.Nodes.FirstOrDefault(n => n.ModuleId == moduleId);
+        if (state is null) return;
+        state.NodeConfig ??= new();
+        state.NodeConfig["sceneCount"] = count;
+
+        // Remove connections to ports that no longer exist
+        var module = Modules.FirstOrDefault(m => m.Id == moduleId);
+        if (module is not null)
+        {
+            var validPorts = ModulePortRegistry.GetPorts(module.ModuleType, "", count).Select(p => p.Id).ToHashSet();
+            Graph.Connections.RemoveAll(c =>
+                (c.FromModuleId == moduleId && !validPorts.Contains(c.FromPort)) ||
+                (c.ToModuleId == moduleId && !validPorts.Contains(c.ToPort)));
+        }
+
+        await NotifyGraphChanged();
+    }
+
+    private async Task OnNodeDragStart((string moduleId, double clientX, double clientY) args)
+    {
+        if (_jsInitialized)
+        {
+            await JS.InvokeVoidAsync("pipelineEditor.startNodeDrag", args.moduleId, args.clientX, args.clientY);
+        }
+    }
+
+    private async Task OnPortDragStart((string moduleId, string portId, bool isInput, double clientX, double clientY) args)
+    {
+        if (_jsInitialized)
+        {
+            await JS.InvokeVoidAsync("pipelineEditor.startConnection", args.moduleId, args.portId, args.isInput, args.clientX, args.clientY);
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnNodeMoved(string moduleId, double x, double y)
+    {
+        if (!Guid.TryParse(moduleId, out var id)) return;
+        var state = Graph.Nodes.FirstOrDefault(n => n.ModuleId == id);
+        if (state is null) return;
+        state.X = x;
+        state.Y = y;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnConnectionMade(string fromModuleId, string fromPort, string toModuleId, string toPort)
+    {
+        if (!Guid.TryParse(fromModuleId, out var fromId) || !Guid.TryParse(toModuleId, out var toId))
+            return;
+
+        // Validate compatibility
+        var fromModule = Modules.FirstOrDefault(m => m.Id == fromId);
+        var toModule = Modules.FirstOrDefault(m => m.Id == toId);
+        if (fromModule is null || toModule is null) return;
+
+        var fromPorts = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromId));
+        var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId));
+
+        var fromPortDef = fromPorts.FirstOrDefault(p => p.Id == fromPort && !p.IsInput);
+        var toPortDef = toPorts.FirstOrDefault(p => p.Id == toPort && p.IsInput);
+        if (fromPortDef is null || toPortDef is null) return;
+
+        if (!PortDataType.AreCompatible(fromPortDef.DataType, toPortDef.DataType))
+        {
+            _error = $"Tipos incompatibles: {PortDataType.GetLabel(fromPortDef.DataType)} -> {PortDataType.GetLabel(toPortDef.DataType)}";
+            await InvokeAsync(StateHasChanged);
+            _ = ClearErrorAfterDelay();
+            return;
+        }
+
+        // Remove existing connection to same input port (input ports accept only one connection)
+        Graph.Connections.RemoveAll(c => c.ToModuleId == toId && c.ToPort == toPort);
+
+        // Check no duplicate
+        if (!Graph.Connections.Any(c => c.FromModuleId == fromId && c.FromPort == fromPort && c.ToModuleId == toId && c.ToPort == toPort))
+        {
+            Graph.Connections.Add(new PipelineConnection
+            {
+                FromModuleId = fromId,
+                FromPort = fromPort,
+                ToModuleId = toId,
+                ToPort = toPort
+            });
+        }
+
+        await NotifyGraphChanged();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearErrorAfterDelay()
+    {
+        await Task.Delay(3000);
+        _error = null;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AutoLayout()
+    {
+        // Simple topological layout: arrange by dependency depth
+        var moduleIds = Modules.Select(m => m.Id).ToList();
+        var depths = new Dictionary<Guid, int>();
+
+        // Calculate depth for each node (BFS from nodes with no inputs)
+        foreach (var id in moduleIds)
+            depths[id] = 0;
+
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var conn in Graph.Connections)
+            {
+                if (depths.ContainsKey(conn.FromModuleId) && depths.ContainsKey(conn.ToModuleId))
+                {
+                    var newDepth = depths[conn.FromModuleId] + 1;
+                    if (newDepth > depths[conn.ToModuleId])
+                    {
+                        depths[conn.ToModuleId] = newDepth;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Group by depth
+        var groups = moduleIds.GroupBy(id => depths.GetValueOrDefault(id, 0)).OrderBy(g => g.Key).ToList();
+        for (int col = 0; col < groups.Count; col++)
+        {
+            var group = groups[col].ToList();
+            for (int row = 0; row < group.Count; row++)
+            {
+                var state = Graph.Nodes.FirstOrDefault(n => n.ModuleId == group[row]);
+                if (state is not null)
+                {
+                    state.X = 60 + col * 300;
+                    state.Y = 60 + row * 200;
+                }
+            }
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task SaveGraph()
+    {
+        _saveSuccess = false;
+        _error = null;
+        await OnSaveGraph.InvokeAsync(Graph);
+        _saveSuccess = true;
+        _ = Task.Delay(2000).ContinueWith(_ => { _saveSuccess = false; InvokeAsync(StateHasChanged); });
+    }
+
+    private async Task SyncPipeline()
+    {
+        _error = null;
+        var mapped = GraphToPipelineMapper.MapGraphToSteps(Modules, Graph);
+        await OnSyncPipeline.InvokeAsync(mapped);
+        // Also save the graph
+        await SaveGraph();
+    }
+
+    private async Task NotifyGraphChanged()
+    {
+        await GraphChanged.InvokeAsync(Graph);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_jsInitialized)
+        {
+            try { await JS.InvokeVoidAsync("pipelineEditor.dispose"); } catch { }
+        }
+        _dotNetRef?.Dispose();
+    }
+}

@@ -1746,6 +1746,479 @@ a.link:hover { text-decoration: underline; }
     border: 1px solid var(--border);
 }
 
+/* ═══════════ PIPELINE VISUAL EDITOR ═══════════ */
+
+.pipeline-editor-container {
+    display: flex;
+    height: calc(100vh - 260px);
+    min-height: 500px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--bg);
+}
+
+/* ── Module palette (left sidebar) ── */
+.pipeline-palette {
+    width: 240px;
+    min-width: 240px;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.palette-header {
+    padding: 0.6rem 0.8rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.palette-search {
+    padding: 0.4rem 0.8rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.palette-search input {
+    width: 100%;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+}
+
+.palette-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.4rem;
+}
+
+.palette-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 6px;
+    cursor: grab;
+    font-size: 0.8rem;
+    transition: background 0.15s;
+    border: 1px solid transparent;
+    margin-bottom: 2px;
+}
+
+.palette-item:hover {
+    background: var(--bg-input);
+    border-color: var(--border);
+}
+
+.palette-item-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    color: #fff;
+}
+
+.palette-item-info {
+    overflow: hidden;
+}
+
+.palette-item-name {
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.palette-item-type {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+/* ── Canvas area ── */
+.pipeline-canvas {
+    flex: 1;
+    position: relative;
+    overflow: auto;
+    background:
+        radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
+    cursor: default;
+}
+
+.pipeline-canvas-inner {
+    position: relative;
+    width: 4000px;
+    height: 3000px;
+    min-width: 100%;
+    min-height: 100%;
+}
+
+.pipeline-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.pipeline-svg path {
+    pointer-events: stroke;
+    cursor: pointer;
+}
+
+.pipeline-svg path:hover {
+    stroke-width: 3.5 !important;
+    filter: brightness(1.3);
+}
+
+.temp-connection {
+    pointer-events: none !important;
+    opacity: 0.7;
+}
+
+/* ── Node card ── */
+.pipeline-node {
+    position: absolute;
+    width: 220px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    z-index: 2;
+    transition: box-shadow 0.15s;
+    user-select: none;
+}
+
+.pipeline-node:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.pipeline-node.dragging {
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    z-index: 10;
+    opacity: 0.92;
+}
+
+.pipeline-node.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(108,99,255,0.3), 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.node-header {
+    padding: 0.4rem 0.6rem;
+    border-radius: 9px 9px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: grab;
+    position: relative;
+}
+
+.node-header-icon {
+    font-size: 0.85rem;
+}
+
+.node-header-title {
+    flex: 1;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.node-header-badge {
+    font-size: 0.6rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(0,0,0,0.3);
+    color: rgba(255,255,255,0.85);
+}
+
+.node-header-actions {
+    display: flex;
+    gap: 2px;
+}
+
+.node-btn {
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.6);
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.node-btn:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.15);
+}
+
+/* ── Node ports section ── */
+.node-ports {
+    padding: 0.3rem 0;
+}
+
+.node-port-row {
+    display: flex;
+    align-items: center;
+    padding: 0.15rem 0;
+    position: relative;
+    min-height: 24px;
+}
+
+.node-port-row.input {
+    padding-left: 0;
+    padding-right: 0.6rem;
+}
+
+.node-port-row.output {
+    padding-left: 0.6rem;
+    padding-right: 0;
+    justify-content: flex-end;
+}
+
+/* ── Port circle (connector dot) ── */
+.node-port {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid;
+    background: var(--bg-card);
+    cursor: crosshair;
+    flex-shrink: 0;
+    transition: transform 0.15s, background 0.15s;
+    z-index: 3;
+    position: relative;
+}
+
+.node-port:hover {
+    transform: scale(1.35);
+    background: currentColor;
+}
+
+.node-port.connected {
+    background: currentColor;
+}
+
+.node-port.port-compatible {
+    animation: port-pulse 0.8s infinite;
+}
+
+@keyframes port-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.5); }
+}
+
+.node-port.input-port {
+    margin-left: -8px;
+}
+
+.node-port.output-port {
+    margin-right: -8px;
+}
+
+.port-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    padding: 0 0.4rem;
+    white-space: nowrap;
+}
+
+.port-label.required::after {
+    content: " *";
+    color: var(--danger);
+}
+
+.port-type-tag {
+    font-size: 0.55rem;
+    padding: 0 3px;
+    border-radius: 2px;
+    opacity: 0.7;
+    margin: 0 2px;
+}
+
+/* ── Node config section (Json2Video scenes) ── */
+.node-config {
+    padding: 0.3rem 0.6rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.75rem;
+}
+
+.node-config-row {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin: 0.2rem 0;
+}
+
+.node-config-row label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.node-config-row input,
+.node-config-row select {
+    flex: 1;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.3rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text);
+    max-width: 70px;
+}
+
+/* ── Connection cables ── */
+.connection-cable {
+    fill: none;
+    stroke-width: 2.5;
+    transition: stroke-width 0.15s;
+}
+
+.connection-cable:hover {
+    stroke-width: 4;
+}
+
+.connection-delete-zone {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 16;
+    cursor: pointer;
+}
+
+/* ── Empty canvas state ── */
+.canvas-empty-state {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.canvas-empty-state-icon {
+    font-size: 3rem;
+    display: block;
+    margin-bottom: 0.5rem;
+    opacity: 0.4;
+}
+
+.canvas-empty-state p {
+    font-size: 0.9rem;
+    margin: 0.2rem 0;
+}
+
+/* ── Right panel (node inspector) ── */
+.pipeline-inspector {
+    width: 280px;
+    min-width: 280px;
+    background: var(--bg-card);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.inspector-header {
+    padding: 0.6rem 0.8rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.inspector-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.6rem 0.8rem;
+}
+
+.inspector-section {
+    margin-bottom: 0.8rem;
+}
+
+.inspector-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+}
+
+.inspector-field {
+    margin-bottom: 0.5rem;
+}
+
+.inspector-field label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: block;
+    margin-bottom: 0.15rem;
+}
+
+.inspector-field input,
+.inspector-field select,
+.inspector-field textarea {
+    width: 100%;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.5rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+}
+
+.inspector-field textarea {
+    resize: vertical;
+    min-height: 60px;
+}
+
+/* ── Canvas toolbar ── */
+.canvas-toolbar {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 4px;
+    z-index: 5;
+}
+
+.canvas-toolbar button {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.canvas-toolbar button:hover {
+    background: var(--bg-input);
+    border-color: var(--accent);
+}
+
 /* Utility */
 .mt-1 { margin-top: 0.5rem; }
 .mb-1 { margin-bottom: 0.5rem; }
