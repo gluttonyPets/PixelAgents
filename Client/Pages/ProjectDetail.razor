@@ -117,7 +117,10 @@ else
                                 Connections="_projectConnections"
                                 OnAddModule="AddModuleFromCanvas"
                                 OnRemoveModule="RemoveModuleFromCanvas"
-                                OnSaveGraph="SaveGraph">
+                                OnSaveGraph="SaveGraph"
+                                Executing="_executing"
+                                StepStatuses="GetStepStatuses()"
+                                ExecutionLogs="GetExecutionLogs()">
                     <TopPanel>
                         <div class="execute-inline">
                             @if (_execError is not null)
@@ -2317,7 +2320,7 @@ else
     {
         _execError = null; _executing = true; _result = null;
         _logEntries.Clear();
-        _activeTab = "execute";
+        _activeTab = "pipeline";
 
         try
         {
@@ -2345,7 +2348,7 @@ else
             {
                 _logEntries = logs.Select(l => new LogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
             }
-            _activeTab = "execute";
+            _activeTab = "pipeline";
 
             // Auto-open orchestrator modal if execution is waiting for review
             if (_result?.Status == "WaitingForReview")
@@ -2575,7 +2578,7 @@ else
             IsSystem = true,
         });
         _showOrchestratorModal = true;
-        _activeTab = "execute";
+        _activeTab = "pipeline";
     }
 
     private string? TryParseOrchestratorSummary(string? json)
@@ -2777,6 +2780,18 @@ else
             return parsed?.Type is not null ? parsed : null;
         }
         catch { return null; }
+    }
+
+    private List<StepExecutionStatus>? GetStepStatuses()
+    {
+        if (_result?.Steps is null || _result.Steps.Count == 0) return null;
+        return _result.Steps.Select(s => new StepExecutionStatus(s.ProjectModuleId, s.Status)).ToList();
+    }
+
+    private List<ExecutionLogEntry>? GetExecutionLogs()
+    {
+        if (_logEntries.Count == 0) return null;
+        return _logEntries.Select(l => new ExecutionLogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
     }
 
     private static string StatusBadge(string status) => status switch

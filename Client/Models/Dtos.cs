@@ -52,6 +52,10 @@ public record SaveGraphRequest(List<NodePositionEntry> Positions, List<Connectio
 public record NodePositionEntry(Guid ModuleId, double PosX, double PosY);
 public record ConnectionEntry(Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
 
+// ── Pipeline execution visualization ──
+public record StepExecutionStatus(Guid ProjectModuleId, string Status);
+public record ExecutionLogEntry(string Level, string Message, int? StepOrder, string? StepName, DateTime Timestamp);
+
 // ── Execution ──
 public record ExecuteProjectRequest(string? UserInput);
 public record RetryFromStepRequest(int StepOrder, string? Comment);

@@ -5,7 +5,7 @@ window.pipelineEditor = {
     _portMap: {},       // drawflowNodeId → { inputs: [portId...], outputs: [portId...] }
     _moduleMap: {},     // drawflowNodeId → moduleId (guid string)
     _reverseMap: {},    // moduleId → drawflowNodeId
-    _suppressEvents: false, // true while bulk-loading to avoid feedback loops
+    _suppressEvents: false,
 
     init: function (dotNetRef, containerId) {
         var container = document.getElementById(containerId);
@@ -65,11 +65,11 @@ window.pipelineEditor = {
         });
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, stepOrder, modelName) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
-        var html = this._buildNodeHtml(name, moduleType, color, icon, inputPorts, outputPorts);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName);
         var nodeId = this._editor.addNode(
             moduleId, inputPorts.length, outputPorts.length,
             x, y, 'df-type-' + moduleType.toLowerCase(),
@@ -85,38 +85,23 @@ window.pipelineEditor = {
         if (!this._editor) return;
         var fromNodeId = this._reverseMap[fromModuleId];
         var toNodeId = this._reverseMap[toModuleId];
-        if (fromNodeId === undefined || toNodeId === undefined) {
-            console.warn('[Drawflow] addConnection: node not found', { fromModuleId: fromModuleId, toModuleId: toModuleId, reverseMap: Object.keys(this._reverseMap) });
-            return;
-        }
+        if (fromNodeId === undefined || toNodeId === undefined) return;
         var fromPorts = this._portMap[fromNodeId];
         var toPorts = this._portMap[toNodeId];
-        if (!fromPorts || !toPorts) {
-            console.warn('[Drawflow] addConnection: portMap missing', { fromNodeId: fromNodeId, toNodeId: toNodeId });
-            return;
-        }
+        if (!fromPorts || !toPorts) return;
         var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
         var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
         if (fromIdx > 0 && toIdx > 0) {
-            // Ensure Drawflow active module matches where nodes live
             var nodeModule = this._editor.getModuleFromNodeId(fromNodeId);
             if (nodeModule && this._editor.module !== nodeModule) {
-                console.warn('[Drawflow] Module mismatch! active:', this._editor.module, 'nodes in:', nodeModule, '- switching');
                 this._editor.changeModule(nodeModule);
             }
             var wasSuppressed = this._suppressEvents;
             this._suppressEvents = true;
             try {
                 this._editor.addConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
-                console.log('[Drawflow] addConnection OK:', fromModuleId, fromPortId, '->', toModuleId, toPortId,
-                    'activeModule:', this._editor.module, 'nodeModule:', nodeModule);
-            } catch (e) { console.warn('[Drawflow] addConnection error:', e); }
+            } catch (e) { }
             this._suppressEvents = wasSuppressed;
-        } else {
-            console.warn('[Drawflow] addConnection: port not found', {
-                fromPortId: fromPortId, outputs: fromPorts.outputs,
-                toPortId: toPortId, inputs: toPorts.inputs
-            });
         }
     },
 
@@ -149,7 +134,6 @@ window.pipelineEditor = {
 
     refreshConnections: function () {
         if (!this._editor) return;
-        // Force recalculate all connection SVG paths after DOM settles
         var data = this._editor.drawflow.drawflow.Home.data;
         for (var nodeId in data) {
             this._editor.updateConnectionNodes('node-' + nodeId);
@@ -186,7 +170,6 @@ window.pipelineEditor = {
             this._suppressEvents = true;
             this._editor.clear();
             this._suppressEvents = wasSuppressed;
-            // clear() wipes all modules. Ensure Home module and active pointer are restored.
             if (!this._editor.drawflow.drawflow['Home']) {
                 this._editor.drawflow.drawflow['Home'] = { data: {} };
             }
@@ -197,9 +180,78 @@ window.pipelineEditor = {
         this._reverseMap = {};
     },
 
-    _buildNodeHtml: function (name, type, color, icon, inputs, outputs) {
-        // Plain text only — let Drawflow handle all visual layout natively
-        return '<div><strong>' + icon + ' ' + name + '</strong><br><small style="opacity:0.6">' + type + '</small></div>';
+    // ── Update step order badge on a node without full rebuild ──
+    updateNodeStepOrder: function (moduleId, stepOrder) {
+        var nodeId = this._reverseMap[moduleId];
+        if (nodeId === undefined) return;
+        var el = document.querySelector('#node-' + nodeId + ' .df-order-badge');
+        if (el) {
+            el.textContent = stepOrder > 0 ? stepOrder : '';
+            el.style.display = stepOrder > 0 ? '' : 'none';
+        }
+    },
+
+    // ── Set execution state on a node: 'idle', 'running', 'completed', 'failed' ──
+    setNodeState: function (moduleId, state) {
+        var nodeId = this._reverseMap[moduleId];
+        if (nodeId === undefined) return;
+        var el = document.querySelector('#node-' + nodeId);
+        if (!el) return;
+        el.classList.remove('df-state-running', 'df-state-completed', 'df-state-failed');
+        if (state && state !== 'idle') {
+            el.classList.add('df-state-' + state);
+        }
+    },
+
+    // ── Set connection state: 'active' (green animated) or 'idle' ──
+    setConnectionState: function (fromModuleId, toModuleId, state) {
+        if (!this._editor) return;
+        var fromNodeId = this._reverseMap[fromModuleId];
+        var toNodeId = this._reverseMap[toModuleId];
+        if (fromNodeId === undefined || toNodeId === undefined) return;
+        // Find SVG connection paths between these two nodes
+        var container = this._editor.precanvas;
+        if (!container) return;
+        var paths = container.querySelectorAll('.connection');
+        paths.forEach(function (conn) {
+            var classes = conn.classList;
+            if (classes.contains('node_out_node-' + fromNodeId) && classes.contains('node_in_node-' + toNodeId)) {
+                if (state === 'active') {
+                    conn.classList.add('df-conn-active');
+                } else {
+                    conn.classList.remove('df-conn-active');
+                }
+            }
+        });
+    },
+
+    // ── Clear all execution states ──
+    clearAllStates: function () {
+        if (!this._editor) return;
+        var container = this._editor.precanvas;
+        if (!container) return;
+        container.querySelectorAll('.df-state-running, .df-state-completed, .df-state-failed').forEach(function (el) {
+            el.classList.remove('df-state-running', 'df-state-completed', 'df-state-failed');
+        });
+        container.querySelectorAll('.df-conn-active').forEach(function (el) {
+            el.classList.remove('df-conn-active');
+        });
+    },
+
+    _buildNodeHtml: function (name, type, color, icon, stepOrder, modelName) {
+        var orderBadge = stepOrder > 0
+            ? '<span class="df-order-badge">' + stepOrder + '</span>'
+            : '<span class="df-order-badge" style="display:none"></span>';
+        var modelLine = modelName
+            ? '<div class="df-node-model">' + modelName + '</div>'
+            : '';
+        return '<div class="df-node-content">'
+            + orderBadge
+            + '<div class="df-node-overlay-spinner"></div>'
+            + '<div class="df-node-title">' + icon + ' ' + name + '</div>'
+            + '<div class="df-node-type">' + type + '</div>'
+            + modelLine
+            + '</div>';
     },
 
     dispose: function () {

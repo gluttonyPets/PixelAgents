@@ -157,6 +157,32 @@
             <div class="inspector-header"><span>Inspector</span></div>
             <div class="inspector-empty">Selecciona un nodo para ver sus propiedades</div>
         }
+
+        @if (Executing || (ExecutionLogs is { Count: > 0 }))
+        {
+            <div class="inspector-log">
+                <div class="inspector-log-header">
+                    <span>Log</span>
+                    @if (Executing) { <span class="spinner" style="width: 0.6rem; height: 0.6rem;"></span> }
+                </div>
+                <div class="inspector-log-entries">
+                    @if (ExecutionLogs is not null)
+                    {
+                        @foreach (var entry in ExecutionLogs.TakeLast(50))
+                        {
+                            <div class="inspector-log-entry inspector-log-@entry.Level">
+                                <span class="inspector-log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                                @if (entry.StepOrder.HasValue)
+                                {
+                                    <span class="inspector-log-step">P@(entry.StepOrder)</span>
+                                }
+                                <span>@entry.Message</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
     </div>
 </div>
 
@@ -174,6 +200,11 @@
     [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
     [Parameter] public EventCallback<SaveGraphRequest> OnSaveGraph { get; set; }
 
+    // Execution state from parent
+    [Parameter] public bool Executing { get; set; }
+    [Parameter] public List<StepExecutionStatus>? StepStatuses { get; set; }
+    [Parameter] public List<ExecutionLogEntry>? ExecutionLogs { get; set; }
+
     // Local mutable copy of connections (modified by JS callbacks)
     private List<ConnectionEntry> _connections = new();
     // Local mutable positions (modified by JS callbacks)
@@ -189,6 +220,8 @@
     private int _lastModuleCount;
     private int _lastConnectionCount;
     private Dictionary<Guid, int> _sceneCountOverrides = new();
+    private bool _lastExecuting;
+    private int _lastLogCount;
 
     private IEnumerable<AiModuleResponse> FilteredModules => string.IsNullOrWhiteSpace(_searchFilter)
         ? AvailableModules
@@ -219,6 +252,18 @@
                 await RebuildDrawflow();
             }
         }
+
+        // Update execution visualization without full rebuild
+        if (_jsInitialized)
+        {
+            var logCount = ExecutionLogs?.Count ?? 0;
+            if (Executing != _lastExecuting || logCount != _lastLogCount)
+            {
+                _lastExecuting = Executing;
+                _lastLogCount = logCount;
+                await UpdateExecutionVisualization();
+            }
+        }
     }
 
     /// <summary>Load local mutable state from parent parameters.</summary>
@@ -234,6 +279,8 @@
         await JS.InvokeVoidAsync("pipelineEditor.setSuppressEvents", true);
         await JS.InvokeVoidAsync("pipelineEditor.clear");
 
+        var execOrder = ComputeExecutionOrder();
+
         // Add all nodes using positions from DB
         int idx = 0;
         foreach (var pm in Modules)
@@ -248,6 +295,7 @@
             }).ToList();
 
             var pos = _positions.GetValueOrDefault(pm.Id, (60 + (idx % 4) * 280, 60 + (idx / 4) * 200));
+            var order = execOrder.GetValueOrDefault(pm.Id, 0);
 
             await JS.InvokeVoidAsync("pipelineEditor.addNode",
                 pm.Id.ToString(),
@@ -257,15 +305,15 @@
                 ModulePortRegistry.GetModuleIcon(pm.ModuleType),
                 JsonSerializer.Serialize(inputs),
                 JsonSerializer.Serialize(outputs),
-                pos.X, pos.Y);
+                pos.X, pos.Y,
+                order,
+                pm.ModelName);
             idx++;
         }
 
         // Add all connections from DB
-        Console.WriteLine($"[PipelineCanvas] RebuildDrawflow: {_connections.Count} connections to draw");
         foreach (var conn in _connections)
         {
-            Console.WriteLine($"[PipelineCanvas] Drawing connection: {conn.FromModuleId}:{conn.FromPort} -> {conn.ToModuleId}:{conn.ToPort}");
             await JS.InvokeVoidAsync("pipelineEditor.addConnection",
                 conn.FromModuleId.ToString(), conn.FromPort,
                 conn.ToModuleId.ToString(), conn.ToPort);
@@ -273,9 +321,89 @@
 
         await JS.InvokeVoidAsync("pipelineEditor.setSuppressEvents", false);
 
-        // Give the browser time to layout nodes before recalculating SVG paths
         await Task.Delay(50);
         await JS.InvokeVoidAsync("pipelineEditor.refreshConnections");
+
+        // Apply execution states if currently executing
+        if (Executing || StepStatuses is { Count: > 0 })
+            await UpdateExecutionVisualization();
+    }
+
+    /// <summary>Compute topological execution order from connections (1-based).</summary>
+    private Dictionary<Guid, int> ComputeExecutionOrder()
+    {
+        var moduleIds = Modules.Select(m => m.Id).ToHashSet();
+        var inDegree = moduleIds.ToDictionary(id => id, _ => 0);
+        var adj = moduleIds.ToDictionary(id => id, _ => new List<Guid>());
+
+        foreach (var conn in _connections)
+        {
+            if (moduleIds.Contains(conn.FromModuleId) && moduleIds.Contains(conn.ToModuleId))
+            {
+                adj[conn.FromModuleId].Add(conn.ToModuleId);
+                inDegree[conn.ToModuleId]++;
+            }
+        }
+
+        // Kahn's algorithm (topological sort)
+        var queue = new Queue<Guid>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
+        var order = new Dictionary<Guid, int>();
+        int step = 1;
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            order[node] = step++;
+            foreach (var next in adj[node])
+            {
+                inDegree[next]--;
+                if (inDegree[next] == 0) queue.Enqueue(next);
+            }
+        }
+
+        // Nodes in cycles or disconnected get 0
+        return order;
+    }
+
+    /// <summary>Update node/connection visual states based on execution progress.</summary>
+    private async Task UpdateExecutionVisualization()
+    {
+        if (!_jsInitialized) return;
+
+        if (!Executing && (StepStatuses is null || StepStatuses.Count == 0))
+        {
+            await JS.InvokeVoidAsync("pipelineEditor.clearAllStates");
+            return;
+        }
+
+        if (StepStatuses is null) return;
+
+        // Map projectModuleId → status
+        var statusMap = StepStatuses.ToDictionary(s => s.ProjectModuleId, s => s.Status);
+        Guid? runningModuleId = null;
+
+        foreach (var pm in Modules)
+        {
+            var status = statusMap.GetValueOrDefault(pm.Id, "idle");
+            var state = status switch
+            {
+                "Running" => "running",
+                "Completed" => "completed",
+                "Failed" => "failed",
+                _ => "idle"
+            };
+            await JS.InvokeVoidAsync("pipelineEditor.setNodeState", pm.Id.ToString(), state);
+            if (state == "running") runningModuleId = pm.Id;
+        }
+
+        // Animate the connection FROM the running node to the next
+        // First clear all connection states, then set the active one
+        foreach (var conn in _connections)
+        {
+            var isActive = runningModuleId.HasValue && conn.FromModuleId == runningModuleId.Value;
+            if (isActive)
+                await JS.InvokeVoidAsync("pipelineEditor.setConnectionState", conn.FromModuleId.ToString(), conn.ToModuleId.ToString(), "active");
+        }
     }
 
     // ── Helpers ──
@@ -464,6 +592,9 @@
 
     private async Task NotifyGraphChanged()
     {
+        // Update step order badges in real-time
+        await UpdateStepOrderBadges();
+
         // Debounce auto-save: wait 500ms after last change
         _saveDebounce?.Cancel();
         _saveDebounce = new CancellationTokenSource();
@@ -475,6 +606,17 @@
                 await AutoSaveGraph();
         }
         catch (TaskCanceledException) { }
+    }
+
+    private async Task UpdateStepOrderBadges()
+    {
+        if (!_jsInitialized) return;
+        var order = ComputeExecutionOrder();
+        foreach (var pm in Modules)
+        {
+            var step = order.GetValueOrDefault(pm.Id, 0);
+            await JS.InvokeVoidAsync("pipelineEditor.updateNodeStepOrder", pm.Id.ToString(), step);
+        }
     }
 
     public async ValueTask DisposeAsync()
