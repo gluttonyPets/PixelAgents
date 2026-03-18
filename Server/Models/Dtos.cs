@@ -35,6 +35,8 @@ namespace Server.Models
     public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration, string BranchId = "main", int? BranchFromStep = null);
     public record UpdateProjectModuleRequest(int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
     public record SwapStepOrderRequest(Guid ModuleIdA, Guid ModuleIdB);
+    public record ReorderModuleEntry(Guid ModuleId, int StepOrder, string? InputMapping);
+    public record ReorderModulesRequest(List<ReorderModuleEntry> Entries, string? GraphLayout);
     public record ProjectModuleResponse(
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
         int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,

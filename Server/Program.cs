@@ -895,6 +895,43 @@ app.MapPost("/api/projects/{projectId}/modules/swap", async (
     return Results.Ok();
 }).RequireAuthorization();
 
+// Batch reorder modules from visual graph topology
+app.MapPut("/api/projects/{projectId}/modules/reorder", async (
+    Guid projectId, ReorderModulesRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var modules = await db.ProjectModules
+        .Where(x => x.ProjectId == projectId)
+        .ToListAsync();
+
+    var now = DateTime.UtcNow;
+    foreach (var entry in req.Entries)
+    {
+        var pm = modules.FirstOrDefault(x => x.Id == entry.ModuleId);
+        if (pm is null) continue;
+        pm.StepOrder = entry.StepOrder;
+        pm.InputMapping = entry.InputMapping;
+        pm.UpdatedAt = now;
+    }
+
+    // Also persist the graph layout in the same transaction
+    if (req.GraphLayout is not null)
+    {
+        var project = await db.Projects.FindAsync(projectId);
+        if (project is not null)
+        {
+            project.GraphLayout = req.GraphLayout;
+            project.UpdatedAt = now;
+        }
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok();
+}).RequireAuthorization();
+
 app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
     Guid projectId, Guid id, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>

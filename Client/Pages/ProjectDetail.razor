@@ -2127,12 +2127,12 @@ else
                 _graph = new();
             }
 
-            // Sync connections from linear step order so visual view shows lines
-            if (SyncConnectionsFromStepOrder())
+            // Clean up stale connections referencing deleted modules
+            if (_project?.Modules is not null)
             {
-                // Persist the auto-generated connections so they survive reloads
-                var json = JsonSerializer.Serialize(_graph);
-                _ = Api.SaveGraphLayoutAsync(ProjectId, json);
+                var validIds = _project.Modules.Select(m => m.Id).ToHashSet();
+                _graph.Connections.RemoveAll(c =>
+                    !validIds.Contains(c.FromModuleId) || !validIds.Contains(c.ToModuleId));
             }
         }
         catch { }
@@ -2152,9 +2152,10 @@ else
         _loading = true;
         try
         {
+            // Add with a temp order; the graph topology will set the real order on next save
             var mainSteps = GetMainSteps();
             var order = mainSteps.Count + 1;
-            var req = new AddProjectModuleRequest(moduleId, order, null, "{\"source\":\"previous\",\"field\":\"text\"}", null);
+            var req = new AddProjectModuleRequest(moduleId, order, null, "{\"source\":\"user\"}", null);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
             if (ok) await LoadAll();
             else _editError = error;
@@ -2175,119 +2176,111 @@ else
         catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
     }
 
+    /// <summary>
+    /// Called by PipelineCanvas on every graph change (node move, connection add/remove).
+    /// Persists the graph layout AND recomputes StepOrder/InputMapping from the graph topology.
+    /// </summary>
     private async Task SaveGraphLayout(PipelineGraph graph)
     {
         _graph = graph;
-        var json = JsonSerializer.Serialize(graph);
-        await Api.SaveGraphLayoutAsync(ProjectId, json);
-    }
 
-    /// <summary>
-    /// Auto-generates Graph.Connections from the linear StepOrder / InputMapping
-    /// so the visual canvas shows connection lines matching the linear view.
-    /// Returns true if any new connections were added.
-    /// </summary>
-    private bool SyncConnectionsFromStepOrder()
-    {
-        if (_project?.Modules is null || _project.Modules.Count == 0) return false;
-
-        int added = 0;
-        var mainSteps = GetMainSteps();
-
-        // Helper: try to add a connection between two modules if not already present
-        bool TryAddConnection(ProjectModuleResponse from, ProjectModuleResponse to)
+        if (_project?.Modules is null || _project.Modules.Count == 0)
         {
-            var fromPorts = ModulePortRegistry.GetPorts(from.ModuleType, "");
-            var toPorts = ModulePortRegistry.GetPorts(to.ModuleType, "");
-            var fromOutput = fromPorts.FirstOrDefault(p => !p.IsInput);
-            var toInput = toPorts.FirstOrDefault(p => p.IsInput);
-            if (fromOutput is null || toInput is null) return false;
-
-            // Skip if this exact connection already exists
-            if (_graph.Connections.Any(c =>
-                c.FromModuleId == from.Id && c.FromPort == fromOutput.Id &&
-                c.ToModuleId == to.Id && c.ToPort == toInput.Id))
-                return false;
-
-            // Skip if the target input port already has a different connection
-            if (_graph.Connections.Any(c => c.ToModuleId == to.Id && c.ToPort == toInput.Id))
-                return false;
-
-            _graph.Connections.Add(new PipelineConnection
-            {
-                FromModuleId = from.Id,
-                FromPort = fromOutput.Id,
-                ToModuleId = to.Id,
-                ToPort = toInput.Id
-            });
-            return true;
+            await Api.SaveGraphLayoutAsync(ProjectId, JsonSerializer.Serialize(graph));
+            return;
         }
 
-        // Helper: check if a module's InputMapping takes from previous step
-        bool TakesFromPrevious(ProjectModuleResponse m)
+        // ── Topological sort: derive execution order from connections ──
+        var moduleIds = _project.Modules.Select(m => m.Id).ToHashSet();
+        var moduleLookup = _project.Modules.ToDictionary(m => m.Id);
+
+        // Build adjacency: who feeds into whom
+        var incomingEdges = new Dictionary<Guid, List<Guid>>(); // moduleId → list of upstream moduleIds
+        var outgoingEdges = new Dictionary<Guid, List<Guid>>(); // moduleId → list of downstream moduleIds
+        foreach (var id in moduleIds)
         {
-            // "previous" source — explicit
-            if (m.InputMapping is not null && m.InputMapping.Contains("\"previous\""))
-                return true;
-            // No InputMapping but not the first step — the executor treats this as "previous" implicitly
-            if (m.InputMapping is null && m.StepOrder > 1)
-                return true;
-            return false;
+            incomingEdges[id] = new();
+            outgoingEdges[id] = new();
         }
 
-        // Sync main pipeline consecutive steps
-        for (int i = 1; i < mainSteps.Count; i++)
+        foreach (var conn in graph.Connections)
         {
-            if (TakesFromPrevious(mainSteps[i]))
+            if (!moduleIds.Contains(conn.FromModuleId) || !moduleIds.Contains(conn.ToModuleId))
+                continue;
+            incomingEdges[conn.ToModuleId].Add(conn.FromModuleId);
+            outgoingEdges[conn.FromModuleId].Add(conn.ToModuleId);
+        }
+
+        // Kahn's algorithm for topological sort
+        var inDegree = moduleIds.ToDictionary(id => id, id => incomingEdges[id].Count);
+        var queue = new Queue<Guid>(moduleIds.Where(id => inDegree[id] == 0));
+        var sorted = new List<Guid>();
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            sorted.Add(current);
+            foreach (var next in outgoingEdges[current])
             {
-                if (TryAddConnection(mainSteps[i - 1], mainSteps[i]))
-                    added++;
+                inDegree[next]--;
+                if (inDegree[next] == 0)
+                    queue.Enqueue(next);
             }
         }
 
-        // Sync branches
-        var branches = _project.Modules
-            .Where(m => m.BranchId != "main")
-            .GroupBy(m => m.BranchId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
-
-        foreach (var (branchId, branchSteps) in branches)
+        // Append any modules not reached (disconnected nodes) at the end
+        foreach (var id in moduleIds)
         {
-            // Connect branch root to its fork origin in main
-            if (branchSteps.Count > 0 && branchSteps[0].BranchFromStep.HasValue)
+            if (!sorted.Contains(id))
+                sorted.Add(id);
+        }
+
+        // Build reorder entries
+        var entries = new List<ReorderModuleEntry>();
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            var moduleId = sorted[i];
+            var stepOrder = i + 1;
+
+            // Determine InputMapping from connections
+            string? inputMapping;
+            var upstream = incomingEdges[moduleId];
+            if (upstream.Count == 0)
             {
-                var forkOrigin = mainSteps.FirstOrDefault(m => m.StepOrder == branchSteps[0].BranchFromStep);
-                if (forkOrigin is not null)
+                // No incoming connection = first in chain, takes user input
+                inputMapping = "{\"source\":\"user\"}";
+            }
+            else
+            {
+                // Has incoming connection = takes from previous step output
+                // Determine field type based on upstream module's output port
+                var firstUpstream = upstream[0];
+                var conn = graph.Connections.FirstOrDefault(c =>
+                    c.FromModuleId == firstUpstream && c.ToModuleId == moduleId);
+                var field = "text";
+                if (conn is not null && moduleLookup.TryGetValue(firstUpstream, out var upMod))
                 {
-                    // Branch roots use "source":"step" or "source":"previous" — both should connect
-                    var first = branchSteps[0];
-                    if (first.InputMapping is null ||
-                        first.InputMapping.Contains("\"previous\"") ||
-                        first.InputMapping.Contains("\"step\""))
+                    var upPorts = ModulePortRegistry.GetPorts(upMod.ModuleType, "");
+                    var outPort = upPorts.FirstOrDefault(p => p.Id == conn.FromPort && !p.IsInput);
+                    if (outPort is not null)
                     {
-                        if (TryAddConnection(forkOrigin, first))
-                            added++;
+                        field = outPort.DataType switch
+                        {
+                            PortDataType.Image or PortDataType.File => "file",
+                            PortDataType.Video or PortDataType.VideoList => "file",
+                            _ => "text"
+                        };
                     }
                 }
+                inputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\"}}";
             }
 
-            // Connect consecutive branch steps
-            for (int i = 1; i < branchSteps.Count; i++)
-            {
-                if (TakesFromPrevious(branchSteps[i]))
-                {
-                    if (TryAddConnection(branchSteps[i - 1], branchSteps[i]))
-                        added++;
-                }
-            }
+            entries.Add(new ReorderModuleEntry(moduleId, stepOrder, inputMapping));
         }
 
-        // Also clean up connections referencing modules that no longer exist
-        var moduleIds = _project.Modules.Select(m => m.Id).ToHashSet();
-        int removed = _graph.Connections.RemoveAll(c =>
-            !moduleIds.Contains(c.FromModuleId) || !moduleIds.Contains(c.ToModuleId));
-
-        return added > 0 || removed > 0;
+        var graphJson = JsonSerializer.Serialize(graph);
+        var req = new ReorderModulesRequest(entries, graphJson);
+        await Api.ReorderModulesAsync(ProjectId, req);
     }
 
     private void StartContextEdit()

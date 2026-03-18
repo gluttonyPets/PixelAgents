@@ -244,6 +244,13 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    public async Task<(bool Ok, string? Error)> ReorderModulesAsync(Guid projectId, ReorderModulesRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/modules/reorder", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     public async Task<(bool Ok, string? Error)> SwapStepOrderAsync(Guid projectId, Guid moduleIdA, Guid moduleIdB)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/modules/swap",
