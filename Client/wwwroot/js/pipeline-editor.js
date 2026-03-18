@@ -5,6 +5,7 @@ window.pipelineEditor = {
     _dragging: null,        // { nodeId, offsetX, offsetY }
     _connecting: null,       // { fromModuleId, fromPort, startX, startY }
     _tempLine: null,         // SVG line element for temp connection
+    _panning: null,          // { startX, startY, scrollLeft, scrollTop }
 
     init: function (dotNetRef, canvasId) {
         this._dotNetRef = dotNetRef;
@@ -14,19 +15,62 @@ window.pipelineEditor = {
         // Prevent context menu on canvas
         this._canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-        // Mouse move on canvas (for drag & connect)
+        // Mouse move on canvas (for drag, connect & pan)
         this._canvas.addEventListener('mousemove', e => this._onMouseMove(e));
         this._canvas.addEventListener('mouseup', e => this._onMouseUp(e));
 
+        // Pan: mousedown on empty canvas area
+        this._canvas.addEventListener('mousedown', e => {
+            if (this._dragging || this._connecting) return;
+            const target = e.target;
+            // Only start pan on canvas background, not on nodes/ports/connections
+            if (target.closest('.pipeline-node') || target.closest('[data-port-id]') || target.closest('path')) return;
+            this._panning = {
+                startX: e.clientX,
+                startY: e.clientY,
+                scrollLeft: this._canvas.scrollLeft,
+                scrollTop: this._canvas.scrollTop
+            };
+            this._canvas.classList.add('panning');
+            e.preventDefault();
+        });
+
         // Touch support
+        this._canvas.addEventListener('touchstart', e => {
+            if (this._dragging || this._connecting) return;
+            const target = e.target;
+            if (target.closest('.pipeline-node') || target.closest('[data-port-id]') || target.closest('path')) return;
+            const touch = e.touches[0];
+            this._panning = {
+                startX: touch.clientX,
+                startY: touch.clientY,
+                scrollLeft: this._canvas.scrollLeft,
+                scrollTop: this._canvas.scrollTop
+            };
+            this._canvas.classList.add('panning');
+        }, { passive: false });
+
         this._canvas.addEventListener('touchmove', e => {
+            if (this._panning) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                this._canvas.scrollLeft = this._panning.scrollLeft - (touch.clientX - this._panning.startX);
+                this._canvas.scrollTop = this._panning.scrollTop - (touch.clientY - this._panning.startY);
+                return;
+            }
             if (this._dragging || this._connecting) {
                 e.preventDefault();
                 const touch = e.touches[0];
                 this._onMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
             }
         }, { passive: false });
+
         this._canvas.addEventListener('touchend', e => {
+            if (this._panning) {
+                this._panning = null;
+                this._canvas.classList.remove('panning');
+                return;
+            }
             this._onMouseUp(e);
         });
     },
@@ -84,6 +128,14 @@ window.pipelineEditor = {
 
     _onMouseMove: function (e) {
         if (!this._canvas) return;
+
+        // Canvas panning
+        if (this._panning) {
+            this._canvas.scrollLeft = this._panning.scrollLeft - (e.clientX - this._panning.startX);
+            this._canvas.scrollTop = this._panning.scrollTop - (e.clientY - this._panning.startY);
+            return;
+        }
+
         const canvasRect = this._canvas.getBoundingClientRect();
         const mx = e.clientX - canvasRect.left + this._canvas.scrollLeft;
         const my = e.clientY - canvasRect.top + this._canvas.scrollTop;
@@ -123,6 +175,13 @@ window.pipelineEditor = {
     },
 
     _onMouseUp: function (e) {
+        // End panning
+        if (this._panning) {
+            this._panning = null;
+            this._canvas.classList.remove('panning');
+            return;
+        }
+
         // End node drag
         if (this._dragging) {
             const node = document.querySelector(`[data-node-id="${this._dragging.nodeId}"]`);
@@ -195,5 +254,6 @@ window.pipelineEditor = {
         this._canvas = null;
         this._dragging = null;
         this._connecting = null;
+        this._panning = null;
     }
 };

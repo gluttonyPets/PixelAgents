@@ -83,13 +83,13 @@
         </div>
     </div>
 
-    <!-- ── Right: Inspector ── -->
-    @if (_selectedModuleId.HasValue)
-    {
-        var sel = Modules.FirstOrDefault(m => m.Id == _selectedModuleId);
-        if (sel is not null)
+    <!-- ── Right: Inspector (always rendered to prevent canvas resize) ── -->
+    <div class="pipeline-inspector">
+        @if (_selectedModuleId.HasValue)
         {
-            <div class="pipeline-inspector">
+            var sel = Modules.FirstOrDefault(m => m.Id == _selectedModuleId);
+            if (sel is not null)
+            {
                 <div class="inspector-header">
                     <span>@(sel.StepName ?? sel.AiModuleName)</span>
                     <button class="node-btn" @onclick="() => _selectedModuleId = null">&#x2715;</button>
@@ -179,9 +179,14 @@
                         </div>
                     }
                 </div>
-            </div>
+            }
         }
-    }
+        else
+        {
+            <div class="inspector-header"><span>Inspector</span></div>
+            <div class="inspector-empty">Selecciona un nodo para ver sus propiedades</div>
+        }
+    </div>
 </div>
 
 @if (_error is not null)

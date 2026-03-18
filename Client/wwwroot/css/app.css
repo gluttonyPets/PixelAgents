@@ -20,6 +20,7 @@ body {
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
+    zoom: 0.8;
 }
 
 .app-layout {
@@ -1849,15 +1850,19 @@ a.link:hover { text-decoration: underline; }
 .pipeline-canvas {
     flex: 1;
     position: relative;
-    overflow: auto;
-    background:
-        radial-gradient(circle, var(--border) 1px, transparent 1px);
-    background-size: 24px 24px;
-    cursor: default;
+    overflow: hidden;
+    cursor: grab;
+}
+
+.pipeline-canvas.panning {
+    cursor: grabbing;
 }
 
 .pipeline-canvas-inner {
     position: relative;
+    background:
+        radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 24px 24px;
     width: 4000px;
     height: 3000px;
     min-width: 100%;
@@ -2151,6 +2156,17 @@ a.link:hover { text-decoration: underline; }
     flex: 1;
     overflow-y: auto;
     padding: 0.6rem 0.8rem;
+}
+
+.inspector-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-align: center;
 }
 
 .inspector-section {
