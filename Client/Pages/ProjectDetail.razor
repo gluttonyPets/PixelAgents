@@ -82,9 +82,6 @@ else
                 <span class="tab-count">@_project.Modules.Count</span>
             }
         </button>
-        <button class="tab @(_activeTab == "execute" ? "tab-active" : "")" @onclick='() => _activeTab = "execute"'>
-            Ejecutar
-        </button>
         <button class="tab @(_activeTab == "history" ? "tab-active" : "")" @onclick='() => _activeTab = "history"'>
             Historial
             @if (_executions.Count > 0)
@@ -120,7 +117,54 @@ else
                                 Connections="_projectConnections"
                                 OnAddModule="AddModuleFromCanvas"
                                 OnRemoveModule="RemoveModuleFromCanvas"
-                                OnSaveGraph="SaveGraph" />
+                                OnSaveGraph="SaveGraph">
+                    <TopPanel>
+                        <div class="execute-inline">
+                            @if (_execError is not null)
+                            {
+                                <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
+                            }
+                            <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
+                            <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
+                                <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
+                                    @if (_executing)
+                                    {
+                                        <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
+                                        <span>Ejecutando...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Ejecutar</span>
+                                    }
+                                </button>
+                                @if (_executing)
+                                {
+                                    <button class="btn btn-danger btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelExecution">Cancelar</button>
+                                }
+                            </div>
+                            @if (_executing || _result is not null)
+                            {
+                                <div class="execute-inline-status">
+                                    @if (_executing)
+                                    {
+                                        <span class="spinner" style="width: 0.6rem; height: 0.6rem;"></span>
+                                        <span>Pipeline en ejecucion...</span>
+                                    }
+                                    else if (_result is not null)
+                                    {
+                                        <span class="badge @StatusBadge(_result.Status)" style="font-size: 0.65rem;">@_result.Status</span>
+                                        @if (_result.TotalEstimatedCost > 0)
+                                        {
+                                            <span class="text-muted" style="font-size: 0.65rem;">~$@_result.TotalEstimatedCost.ToString("F4")</span>
+                                        }
+                                        <button class="btn btn-sm" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-left: auto;"
+                                                @onclick='() => { _activeTab = "history"; }'>Ver detalles</button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </TopPanel>
+                </PipelineCanvas>
             }
             else
             {
@@ -689,560 +733,7 @@ else
         }
     }
 
-    <!-- ═══════════ TAB: EJECUTAR ═══════════ -->
-    @if (_activeTab == "execute")
-    {
-        <div class="tab-content tab-content-scroll">
-            <!-- Execute Input -->
-            <div class="execute-card">
-                @if (_execError is not null)
-                {
-                    <div class="alert alert-error">@_execError</div>
-                }
-                <div class="form-group">
-                    <label>Entrada del usuario</label>
-                    <textarea @bind="_userInput" rows="3" placeholder="Escribe tu prompt aqui..."></textarea>
-                </div>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <button class="btn btn-success" @onclick="Execute" disabled="@_executing">
-                        @if (_executing)
-                        {
-                            <span class="spinner"></span>
-                            <span>Ejecutando...</span>
-                        }
-                        else
-                        {
-                            <span>Ejecutar</span>
-                        }
-                    </button>
-                    @if (_executing)
-                    {
-                        <button class="btn btn-danger" @onclick="CancelExecution">Cancelar</button>
-                    }
-                </div>
-            </div>
-
-            <!-- Execution Result + Log Panel -->
-            @if (_executing || _result is not null || _logEntries.Count > 0)
-            {
-                <div class="execution-layout">
-                    <!-- Left: Results -->
-                    <div class="execution-results">
-                        @if (_result is not null)
-                        {
-                            <h3>
-                                Resultado - <span class="badge @StatusBadge(_result.Status)">@_result.Status</span>
-                                @if (_result.TotalEstimatedCost > 0)
-                                {
-                                    <span class="badge" style="background: var(--surface); color: var(--text); margin-left: 0.5rem; font-weight: normal; font-size: 0.75rem;">
-                                        ~$@_result.TotalEstimatedCost.ToString("F4") USD
-                                    </span>
-                                }
-                            </h3>
-
-                            @if (!string.IsNullOrWhiteSpace(_result.UserInput))
-                            {
-                                <div class="card" style="margin-bottom: 0.8rem; padding: 0.6rem 0.8rem;">
-                                    <label class="text-sm text-muted" style="margin-bottom: 0.2rem;">Prompt inicial</label>
-                                    <div class="output-block" style="white-space: pre-wrap;">@_result.UserInput</div>
-                                </div>
-                            }
-
-                            @foreach (var step in _result.Steps.OrderBy(s => s.StepOrder))
-                            {
-                                <div class="step-card">
-                                    <div class="step-header">
-                                        <strong>Paso @step.StepOrder: @step.ModuleName</strong>
-                                        <span class="badge @StatusBadge(step.Status)">@step.Status</span>
-                                        @if (step.EstimatedCost > 0)
-                                        {
-                                            <span class="text-sm text-muted" style="margin-left: 0.4rem;">~$@step.EstimatedCost.ToString("F4")</span>
-                                        }
-                                        @if (!_executing && (_result.Status == "Completed" || _result.Status == "Failed")
-                                            && (step.Status == "Completed" || step.Status == "Failed"))
-                                        {
-                                            <button class="btn btn-sm" style="margin-left: auto; padding: 0.15rem 0.5rem; font-size: 0.75rem;"
-                                                    @onclick="() => ToggleRetryPanel(step.StepOrder)">
-                                                @(_retryStepOrder == step.StepOrder ? "Cancelar" : "Reintentar desde aqui")
-                                            </button>
-                                        }
-                                    </div>
-
-                                    @if (_retryStepOrder == step.StepOrder)
-                                    {
-                                        <div class="retry-panel" style="background: var(--surface); border: 1px solid var(--border); border-radius: 0.4rem; padding: 0.6rem; margin: 0.4rem 0;">
-                                            <div class="form-group" style="margin-bottom: 0.4rem;">
-                                                <label class="text-sm">Feedback / comentario (opcional)</label>
-                                                <textarea @bind="_retryComment" rows="2"
-                                                          placeholder="Ej: Hazlo mas corto, cambia el tono, anade mas detalles sobre..."
-                                                          style="font-size: 0.85rem;"></textarea>
-                                            </div>
-                                            @if (_retryError is not null)
-                                            {
-                                                <div class="alert alert-error" style="font-size: 0.8rem; padding: 0.3rem 0.5rem;">@_retryError</div>
-                                            }
-                                            <button class="btn btn-sm btn-success" @onclick="() => RetryFromStep(step.StepOrder)" disabled="@_executing">
-                                                Reintentar paso @step.StepOrder y siguientes
-                                            </button>
-                                        </div>
-                                    }
-
-                                    @if (!string.IsNullOrWhiteSpace(step.InputData))
-                                    {
-                                        var inputData = ParseInputData(step.InputData);
-                                        if (inputData is not null)
-                                        {
-                                            <details class="step-input-details">
-                                                <summary class="step-input-summary">
-                                                    Input enviado al modelo
-                                                </summary>
-                                                <div class="step-input-content">
-                                                    @if (!string.IsNullOrWhiteSpace(inputData.SystemPrompt))
-                                                    {
-                                                        <label class="step-input-label">System Prompt</label>
-                                                        <div class="output-block step-input-block">@inputData.SystemPrompt</div>
-                                                    }
-                                                    @if (!string.IsNullOrWhiteSpace(inputData.ProjectContext))
-                                                    {
-                                                        <label class="step-input-label">Contexto del proyecto</label>
-                                                        <div class="output-block step-input-block">@inputData.ProjectContext</div>
-                                                    }
-                                                    @if (inputData.Prompts.Count > 0)
-                                                    {
-                                                        @foreach (var (prompt, idx) in inputData.Prompts.Select((p, i) => (p, i)))
-                                                        {
-                                                            <label class="step-input-label">@(inputData.Prompts.Count > 1 ? $"Prompt {idx + 1}" : "Prompt")</label>
-                                                            <div class="output-block step-input-block">@prompt</div>
-                                                        }
-                                                    }
-                                                    else if (string.IsNullOrWhiteSpace(inputData.SystemPrompt))
-                                                    {
-                                                        @* Non-AI steps (publish, canva, etc): show raw JSON *@
-                                                        <label class="step-input-label">Datos de entrada</label>
-                                                        <div class="output-block step-input-block">@inputData.RawJson</div>
-                                                    }
-                                                </div>
-                                            </details>
-                                        }
-                                    }
-
-                                    @if (step.ErrorMessage is not null)
-                                    {
-                                        <div class="alert alert-error">@step.ErrorMessage</div>
-                                    }
-
-                                    @if (step.OutputData is not null)
-                                    {
-                                        var parsed = TryParseOutput(step.OutputData);
-                                        if (parsed?.Type == "text")
-                                        {
-                                            @if (parsed.Summary is not null)
-                                            {
-                                                <p class="text-sm" style="color: var(--accent); margin-bottom: 0.3rem;">@parsed.Summary</p>
-                                            }
-
-                                            @if (parsed.Content is not null)
-                                            {
-                                                <div class="output-block">@parsed.Content</div>
-                                            }
-
-                                            @if (parsed.Items is not null && parsed.Items.Count > 0)
-                                            {
-                                                <details class="mt-1">
-                                                    <summary class="text-sm" style="cursor:pointer; color: var(--accent);">
-                                                        @parsed.Items.Count elementos generados para el siguiente paso
-                                                    </summary>
-                                                    <div style="margin-top: 0.3rem;">
-                                                        @foreach (var item in parsed.Items)
-                                                        {
-                                                            <div class="output-block" style="margin-bottom: 0.3rem; padding: 0.4rem 0.6rem; font-size: 0.8rem;">
-                                                                @if (item.Label is not null) { <strong>@item.Label:</strong> }
-                                                                @item.Content
-                                                            </div>
-                                                        }
-                                                    </div>
-                                                </details>
-                                            }
-
-                                            @if (parsed.Metadata is not null)
-                                            {
-                                                <div class="step-meta mt-1">
-                                                    @if (parsed.Metadata.TryGetValue("publishType", out var pubType))
-                                                    {
-                                                        <span class="badge badge-info">@pubType.ToString().ToUpper()</span>
-                                                    }
-                                                    @if (parsed.Metadata.TryGetValue("caption", out var caption))
-                                                    {
-                                                        <span class="badge badge-info">Caption: @caption</span>
-                                                    }
-                                                    @if (parsed.Metadata.ContainsKey("bufferRequest"))
-                                                    {
-                                                        <button class="btn btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem; margin-left: 0.3rem;"
-                                                                @onclick="() => ShowBufferDebug(parsed)">Ver API</button>
-                                                    }
-                                                    @if (parsed.Metadata.TryGetValue("model", out var model))
-                                                    {
-                                                        <span class="badge badge-warning">@model</span>
-                                                    }
-                                                    @if (parsed.Metadata.TryGetValue("inputTokens", out var inTok))
-                                                    {
-                                                        <span class="text-sm text-muted">In: @inTok</span>
-                                                    }
-                                                    @if (parsed.Metadata.TryGetValue("outputTokens", out var outTok))
-                                                    {
-                                                        <span class="text-sm text-muted">Out: @outTok</span>
-                                                    }
-                                                </div>
-                                            }
-                                        }
-                                        else if (parsed?.Type == "video")
-                                        {
-                                            @if (parsed.Metadata is not null && parsed.Metadata.TryGetValue("model", out var vidModel))
-                                            {
-                                                <span class="badge badge-warning">@vidModel</span>
-                                                @if (parsed.Metadata.TryGetValue("duration", out var vidDur))
-                                                {
-                                                    <span class="text-sm text-muted ml-1">@vidDur s</span>
-                                                }
-                                                @if (parsed.Metadata.TryGetValue("resolution", out var vidRes))
-                                                {
-                                                    <span class="text-sm text-muted ml-1">@vidRes</span>
-                                                }
-                                            }
-
-                                            @if (parsed.Files is not null && parsed.Files.Count > 0)
-                                            {
-                                                @foreach (var f in parsed.Files)
-                                                {
-                                                    var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
-                                                    <div style="margin-top: 0.5rem;">
-                                                        <video controls style="max-width: 100%; border-radius: 8px;" crossorigin="use-credentials">
-                                                            <source src="@fileUrl" type="@f.ContentType" />
-                                                            Tu navegador no soporta video HTML5.
-                                                        </video>
-                                                        <div class="file-info" style="margin-top: 0.3rem;">
-                                                            <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
-                                                                Descargar @f.FileName
-                                                            </a>
-                                                            <span class="text-sm text-muted">(@(f.FileSize / 1024) KB)</span>
-                                                        </div>
-                                                    </div>
-                                                }
-                                            }
-                                        }
-                                        else if (parsed?.Type == "image")
-                                        {
-                                            @if (parsed.Metadata is not null && parsed.Metadata.TryGetValue("model", out var imgModel))
-                                            {
-                                                <span class="badge badge-warning">@imgModel</span>
-                                                <span class="text-sm text-muted ml-1">@(parsed.Files?.Count ?? 0) imagen(es)</span>
-                                            }
-
-                                            @if (parsed.Files is not null && parsed.Files.Count > 0)
-                                            {
-                                                <div class="image-grid mt-1">
-                                                    @foreach (var f in parsed.Files)
-                                                    {
-                                                        var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
-                                                        <div class="image-grid-item">
-                                                            <img src="@fileUrl" alt="@f.FileName" class="file-preview" crossorigin="use-credentials" />
-                                                            @if (f.RevisedPrompt is not null)
-                                                            {
-                                                                <p class="text-sm text-muted" style="font-style: italic; margin: 0.2rem 0;">@f.RevisedPrompt</p>
-                                                            }
-                                                            <div class="file-info">
-                                                                <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
-                                                                    Descargar @f.FileName
-                                                                </a>
-                                                                <span class="text-sm text-muted">(@(f.FileSize / 1024) KB)</span>
-                                                            </div>
-                                                        </div>
-                                                    }
-                                                </div>
-                                            }
-                                        }
-                                        else if (parsed?.Type == "orchestrator")
-                                        {
-                                            @* Orchestrator renders its subtasks as child cards below *@
-                                            <p class="text-sm" style="color: var(--accent); margin-bottom: 0.3rem; font-weight: 500;">
-                                                @parsed.Summary
-                                            </p>
-                                            <p class="text-sm text-muted">@parsed.Content</p>
-
-                                            @* Show review panel if waiting for review *@
-                                            @if (step.Status == "WaitingForReview")
-                                            {
-                                                <div class="orchestrator-review">
-                                                    <h4 style="margin: 0 0 0.5rem 0; font-size: 0.9rem;">Revision del plan</h4>
-
-                                                    @* Parse plan JSON to show tasks *@
-                                                    @{
-                                                        var planTasks = TryParseOrchestratorPlan(step.OutputData);
-                                                    }
-                                                    @if (planTasks is not null)
-                                                    {
-                                                        <table class="orchestrator-plan-table">
-                                                            <thead>
-                                                                <tr>
-                                                                    <th>#</th>
-                                                                    <th>Tarea</th>
-                                                                    <th>Modulo</th>
-                                                                    <th>Input</th>
-                                                                    <th>Razon</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                @foreach (var t in planTasks)
-                                                                {
-                                                                    <tr>
-                                                                        <td>@t.Order</td>
-                                                                        <td>@t.Description</td>
-                                                                        <td><span class="badge badge-info">@t.ModuleName</span></td>
-                                                                        <td class="text-sm">@(t.Input.Length > 120 ? t.Input[..120] + "..." : t.Input)</td>
-                                                                        <td class="text-sm text-muted">@t.Reason</td>
-                                                                    </tr>
-                                                                }
-                                                            </tbody>
-                                                        </table>
-                                                    }
-
-                                                    <div class="form-group" style="margin-top: 0.5rem;">
-                                                        <label class="text-sm">Comentario (se aplicara en futuras ejecuciones)</label>
-                                                        <textarea @bind="_orchestratorComment" rows="2"
-                                                                  placeholder="Ej: No uses generacion de video, prioriza Pexels. Anade mas escenas de producto..."
-                                                                  style="font-size: 0.85rem;"></textarea>
-                                                    </div>
-                                                    @if (_orchestratorError is not null)
-                                                    {
-                                                        <div class="alert alert-error" style="font-size: 0.8rem;">@_orchestratorError</div>
-                                                    }
-                                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.4rem;">
-                                                        <button class="btn btn-success btn-sm" @onclick="() => ReviewOrchestrator(true)" disabled="@_orchestratorReviewing">
-                                                            @(_orchestratorReviewing ? "Aprobando..." : "Aprobar y ejecutar")
-                                                        </button>
-                                                        <button class="btn btn-danger btn-sm" @onclick="() => ReviewOrchestrator(false)" disabled="@_orchestratorReviewing">
-                                                            Rechazar
-                                                        </button>
-                                                    </div>
-                                                    <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                                                        Al aprobar, las futuras ejecuciones seran autonomas. Si rechazas, tu comentario se guardara para la proxima ejecucion.
-                                                    </p>
-                                                </div>
-                                            }
-                                        }
-                                        else
-                                        {
-                                            <!-- Fallback: raw output for old executions or unknown types -->
-                                            <div class="output-block">@step.OutputData</div>
-
-                                            @if (step.Files.Count > 0)
-                                            {
-                                                @foreach (var f in step.Files)
-                                                {
-                                                    var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.Id}";
-                                                    <div class="file-item">
-                                                        @if (f.ContentType.StartsWith("image/"))
-                                                        {
-                                                            <img src="@fileUrl" alt="@f.FileName" class="file-preview" crossorigin="use-credentials" />
-                                                        }
-                                                        <div class="file-info">
-                                                            <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm btn-primary">
-                                                                Descargar @f.FileName
-                                                            </a>
-                                                            <span class="text-sm text-muted">(@f.ContentType, @(f.FileSize / 1024) KB)</span>
-                                                        </div>
-                                                    </div>
-                                                }
-                                            }
-                                        }
-                                    }
-                                </div>
-                                @if (ShouldShowOrchChildren(step))
-                                {
-                                    var isLiveOrch = _executing && _orchestratorActiveTasks is not null && _orchestratorActiveTasks.Count > 0 && step.Status == "WaitingForReview";
-                                    <div class="orch-children-wrapper">
-                                        <div class="orch-children-line"></div>
-                                        @if (isLiveOrch)
-                                        {
-                                            <div class="orch-progress-header" style="margin-bottom: 0.3rem;">
-                                                <span class="spinner" style="width: 0.9rem; height: 0.9rem;"></span>
-                                                <span class="text-sm" style="font-weight: 600;">Ejecutando subtareas</span>
-                                                <span class="text-muted text-sm">
-                                                    @(_orchestratorTaskStatus.Count(kv => kv.Value.Status == "completed"))/@_orchestratorActiveTasks!.Count
-                                                </span>
-                                            </div>
-                                        }
-                                        <div class="orch-children-cards">
-                                            @if (isLiveOrch)
-                                                {
-                                                    @foreach (var lt in _orchestratorActiveTasks!.OrderBy(t => t.Order))
-                                                    {
-                                                        var liveState = _orchestratorTaskStatus.GetValueOrDefault(lt.TaskId);
-                                                        var liveStatus = liveState?.Status ?? "pending";
-                                                        var liveCardClass = liveStatus == "error" ? "orch-child-error"
-                                                            : liveStatus == "completed" ? "orch-child-ok"
-                                                            : liveStatus == "running" ? "orch-child-running"
-                                                            : "orch-child-pending";
-                                                        <div class="orch-child-card @liveCardClass" @key="lt.TaskId">
-                                                            <div class="orch-child-header">
-                                                                <span class="orch-child-status-icon">
-                                                                    @if (liveStatus == "running")
-                                                                    {
-                                                                        <span class="spinner" style="width: 0.8rem; height: 0.8rem;"></span>
-                                                                    }
-                                                                    else if (liveStatus == "completed")
-                                                                    {
-                                                                        <span style="color: #22c55e;">&#x2714;</span>
-                                                                    }
-                                                                    else if (liveStatus == "error")
-                                                                    {
-                                                                        <span style="color: #ef4444;">&#x2718;</span>
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        <span style="color: var(--text-muted);">&#x25CB;</span>
-                                                                    }
-                                                                </span>
-                                                                <span class="orch-child-order">#@lt.Order</span>
-                                                                <span class="orch-child-desc">@lt.Description</span>
-                                                            </div>
-                                                            <div class="orch-child-meta">
-                                                                <span class="badge badge-info" style="font-size: 0.65rem;">@lt.ModuleName</span>
-                                                                <span class="badge" style="font-size: 0.6rem; background: var(--border);">@lt.ModuleType</span>
-                                                            </div>
-                                                            @if (liveStatus == "error" && liveState?.ErrorMessage is not null)
-                                                            {
-                                                                <div class="orch-child-content" style="color: #ef4444;">@liveState.ErrorMessage</div>
-                                                            }
-                                                        </div>
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    var completedOrchOutput = TryParseOutput(step.OutputData);
-                                                    var completedOrchTasks = TryParseOrchestratorMetaTasks(completedOrchOutput);
-                                                    @foreach (var ot in completedOrchTasks!)
-                                                    {
-                                                        var taskItem = completedOrchOutput!.Items?.FirstOrDefault(i => i.Label?.StartsWith(ot.TaskId + ":") == true);
-                                                        var taskFiles = completedOrchOutput.Files?.Where(f => f.FileName.StartsWith(ot.TaskId + "_")).ToList();
-                                                        var isError = taskItem?.Content?.StartsWith("ERROR:") == true;
-                                                        <div class="orch-child-card @(isError ? "orch-child-error" : "orch-child-ok")">
-                                                            <div class="orch-child-header">
-                                                                <span class="orch-child-status-icon">
-                                                                    @if (isError)
-                                                                    {
-                                                                        <span style="color: #ef4444;">&#x2718;</span>
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        <span style="color: #22c55e;">&#x2714;</span>
-                                                                    }
-                                                                </span>
-                                                                <span class="orch-child-order">#@ot.Order</span>
-                                                                <span class="orch-child-desc">@ot.Description</span>
-                                                            </div>
-                                                            <div class="orch-child-meta">
-                                                                <span class="badge badge-info" style="font-size: 0.65rem;">@ot.ModuleName</span>
-                                                                <span class="badge" style="font-size: 0.6rem; background: var(--border);">@ot.ModuleType</span>
-                                                                @if (isError)
-                                                                {
-                                                                    <span class="badge" style="font-size: 0.6rem; background: rgba(239,68,68,0.2); color: #ef4444;">Error</span>
-                                                                }
-                                                            </div>
-                                                            @if (taskItem is not null)
-                                                            {
-                                                                <div class="orch-child-content">
-                                                                    @if (isError)
-                                                                    {
-                                                                        <span style="color: #ef4444;">@taskItem.Content</span>
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        @(taskItem.Content!.Length > 200 ? taskItem.Content[..200] + "..." : taskItem.Content)
-                                                                    }
-                                                                </div>
-                                                            }
-                                                            @if (taskFiles is not null && taskFiles.Count > 0)
-                                                            {
-                                                                <div class="orch-child-files">
-                                                                    @foreach (var f in taskFiles)
-                                                                    {
-                                                                        var fileUrl = $"{_apiBase}/api/executions/{_result!.Id}/files/{f.FileId}";
-                                                                        @if (f.ContentType.StartsWith("image/"))
-                                                                        {
-                                                                            <img src="@fileUrl" alt="@f.FileName" class="orch-child-img" crossorigin="use-credentials" />
-                                                                        }
-                                                                        else if (f.ContentType.StartsWith("video/"))
-                                                                        {
-                                                                            <video controls class="orch-child-video" crossorigin="use-credentials">
-                                                                                <source src="@fileUrl" type="@f.ContentType" />
-                                                                            </video>
-                                                                        }
-                                                                        <a href="@fileUrl" target="_blank" download="@f.FileName" class="btn btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.3rem;">
-                                                                            @f.FileName
-                                                                        </a>
-                                                                    }
-                                                                </div>
-                                                            }
-                                                        </div>
-                                                    }
-                                                }
-                                            </div>
-                                        </div>
-                                }
-                            }
-                        }
-                        else if (_executing)
-                        {
-                            <div class="card" style="text-align: center; padding: 2rem;">
-                                <span class="spinner"></span>
-                                <p class="text-muted mt-1">Ejecutando pipeline...</p>
-                            </div>
-                        }
-                    </div>
-
-                    <!-- Right: Execution Log -->
-                    <div class="execution-log">
-                        <div class="log-header">
-                            <strong>Log</strong>
-                            @if (_logEntries.Count > 0)
-                            {
-                                <button class="btn btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem;" @onclick="ClearLog">Limpiar</button>
-                            }
-                        </div>
-                        <div class="log-entries" @ref="_logContainer">
-                            @if (_logEntries.Count == 0 && _executing)
-                            {
-                                <div class="log-entry log-info">
-                                    <span class="log-time">--:--:--</span>
-                                    <span>Esperando logs...</span>
-                                </div>
-                            }
-                            @foreach (var entry in _logEntries)
-                            {
-                                <div class="log-entry log-@entry.Level">
-                                    <span class="log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
-                                    @if (entry.StepOrder.HasValue)
-                                    {
-                                        <span class="log-step">P@(entry.StepOrder)</span>
-                                    }
-                                    <span class="log-message">@entry.Message</span>
-                                    @if (entry.StepOrder.HasValue && entry.Level == "error" && !_executing && _result is not null)
-                                    {
-                                        <button class="btn btn-sm btn-warning log-retry-btn"
-                                                @onclick="() => RetryFromLog(entry.StepOrder!.Value)">
-                                            Reintentar desde P@(entry.StepOrder)
-                                        </button>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    </div>
-                </div>
-            }
-        </div>
-    }
-
+    <!-- Execute tab removed — UI is now in the pipeline inspector panel -->
     <!-- ═══════════ TAB: HISTORIAL ═══════════ -->
     @if (_activeTab == "history")
     {

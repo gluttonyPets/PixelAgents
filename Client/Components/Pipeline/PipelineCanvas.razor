@@ -45,8 +45,14 @@
         }
     </div>
 
-    <!-- ── Right: Inspector ── -->
+    <!-- ── Right: Execute + Inspector ── -->
     <div class="pipeline-inspector">
+        @if (TopPanel is not null)
+        {
+            <div class="inspector-top-panel">
+                @TopPanel
+            </div>
+        }
         @if (_selectedModuleId.HasValue)
         {
             var sel = Modules.FirstOrDefault(m => m.Id == _selectedModuleId);
@@ -163,6 +169,7 @@
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
     [Parameter] public List<AiModuleResponse> AvailableModules { get; set; } = [];
     [Parameter] public List<ModuleConnectionResponse> Connections { get; set; } = [];
+    [Parameter] public RenderFragment? TopPanel { get; set; }
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
     [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
     [Parameter] public EventCallback<SaveGraphRequest> OnSaveGraph { get; set; }
