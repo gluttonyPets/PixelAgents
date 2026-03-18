@@ -755,6 +755,115 @@ namespace Server.Services.Ai
                             $"Video encontrado en Pexels (query='{pexelsQuery}', {pexelsTotal} resultados, por {pexelsPhotographer})",
                             pm.StepOrder, stepName);
                     }
+                    else if (pm.AiModule.ModuleType == "VideoEdit")
+                    {
+                        // VideoEdit modules: use input from previous step as script/config,
+                        // optionally collect video file URLs from previous VideoSearch steps
+                        var editInput = inputs[0];
+                        if (string.IsNullOrWhiteSpace(editInput))
+                        {
+                            await FailStep(stepExecution, execution, "VideoEdit: no se proporciono input para edicion de video", db);
+                            return execution;
+                        }
+
+                        // Collect video URLs from previous VideoSearch steps to pass in config
+                        var videoUrls = new List<string>();
+                        foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderBy(k => k))
+                        {
+                            if (stepModuleTypes.TryGetValue(prevOrder, out var prevType) && prevType == "VideoSearch"
+                                && stepResults.TryGetValue(prevOrder, out var prevResult) && prevResult.Metadata.TryGetValue("pexelsUrl", out var pUrl))
+                            {
+                                // Use the downloaded file URL from workspace
+                                var prevOutput = stepOutputs.GetValueOrDefault(prevOrder);
+                                if (prevOutput?.Files.Count > 0)
+                                {
+                                    var filePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevOutput.Files[0].FileName);
+                                    if (File.Exists(filePath))
+                                    {
+                                        // Json2Video needs public URLs — use the download URL from Pexels metadata
+                                        if (prevResult.Metadata.TryGetValue("downloadUrl", out var dlUrl) && dlUrl is string dlUrlStr)
+                                            videoUrls.Add(dlUrlStr);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Inject collected video URLs into config if not already set
+                        if (videoUrls.Count > 0 && !config.ContainsKey("videoUrls"))
+                            config["videoUrls"] = JsonSerializer.Serialize(videoUrls);
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Editando video con Json2Video: input={editInput[..Math.Min(editInput.Length, 100)]}..., videoUrls={videoUrls.Count}",
+                            pm.StepOrder, stepName);
+
+                        var editContext = new AiExecutionContext
+                        {
+                            ModuleType = pm.AiModule.ModuleType,
+                            ModelName = pm.AiModule.ModelName,
+                            ApiKey = apiKey,
+                            Input = editInput,
+                            ProjectContext = project.Context,
+                            Configuration = config,
+                        };
+
+                        var result = await provider.ExecuteAsync(editContext);
+                        stepResults[pm.StepOrder] = result;
+                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                        stepExecution.EstimatedCost += result.EstimatedCost;
+
+                        if (!result.Success)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                $"Error en edicion de video: {result.Error}", pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution, result.Error!, db);
+                            return execution;
+                        }
+
+                        var outputFiles = new List<OutputFile>();
+
+                        if (result.FileOutput is not null)
+                        {
+                            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            Directory.CreateDirectory(stepDir);
+
+                            var ext = GetExtension(result.ContentType ?? "video/mp4");
+                            var fileName = $"output{ext}";
+                            var filePath = Path.Combine(stepDir, fileName);
+                            await File.WriteAllBytesAsync(filePath, result.FileOutput);
+
+                            var execFile = new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(),
+                                StepExecutionId = stepExecution.Id,
+                                FileName = fileName,
+                                ContentType = result.ContentType ?? "video/mp4",
+                                FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                                Direction = "Output",
+                                FileSize = result.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            };
+                            db.ExecutionFiles.Add(execFile);
+
+                            outputFiles.Add(new OutputFile
+                            {
+                                FileId = execFile.Id,
+                                FileName = fileName,
+                                ContentType = execFile.ContentType,
+                                FileSize = execFile.FileSize
+                            });
+                        }
+
+                        var videoOutput = OutputSchemaHelper.BuildVideoOutput(outputFiles, pm.AiModule.ModelName, result.Metadata);
+                        stepOutputs[pm.StepOrder] = videoOutput;
+                        stepExecution.OutputData = JsonSerializer.Serialize(videoOutput);
+                        await db.SaveChangesAsync();
+
+                        var duration = result.Metadata.GetValueOrDefault("duration", "?");
+                        var renderTime = result.Metadata.GetValueOrDefault("renderingTime", "?");
+                        await _logger.LogAsync(projectId, executionId, "success",
+                            $"Video editado correctamente con Json2Video (duracion={duration}s, renderizado={renderTime}s)",
+                            pm.StepOrder, stepName);
+                    }
                     else
                     {
                         // Generic fallback for other module types (Audio, Transcription, etc.)
@@ -2555,7 +2664,7 @@ Datos de la ejecucion:
 
                 // Truncate input if needed for image/video models
                 var taskInput = task.Input;
-                if (targetModule.ModuleType is "Image" or "Video" or "VideoSearch")
+                if (targetModule.ModuleType is "Image" or "Video" or "VideoSearch" or "VideoEdit")
                 {
                     var maxLen = InputAdapter.GetMaxPromptLength(targetModule.ModelName);
                     if (taskInput.Length > maxLen)
@@ -3279,6 +3388,48 @@ Datos de la ejecucion:
                         var bSearchOutput = OutputSchemaHelper.BuildVideoOutput(bSearchFiles, bpm.AiModule.ModelName, bResult.Metadata);
                         stepOutputs[bpm.StepOrder] = bSearchOutput;
                         branchStepExec.OutputData = JsonSerializer.Serialize(bSearchOutput);
+                        await db.SaveChangesAsync();
+                    }
+                    else if (bpm.AiModule.ModuleType == "VideoEdit")
+                    {
+                        var bEditInput = bInputs[0];
+                        if (string.IsNullOrWhiteSpace(bEditInput))
+                            throw new InvalidOperationException($"[{branchId}] Input obligatorio para VideoEdit");
+
+                        var bEditCtx = new AiExecutionContext
+                        {
+                            ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
+                            ApiKey = bApiKey, Input = bEditInput,
+                            ProjectContext = project.Context, Configuration = bConfig,
+                        };
+                        var bResult = await bProvider.ExecuteAsync(bEditCtx);
+                        stepResults[bpm.StepOrder] = bResult;
+                        stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
+                        branchStepExec.EstimatedCost += bResult.EstimatedCost;
+                        if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en edicion de video");
+
+                        var bEditFiles = new List<OutputFile>();
+                        if (bResult.FileOutput is not null)
+                        {
+                            var bDir = Path.Combine(workspacePath, $"branch_{branchId}_step_{bpm.StepOrder}");
+                            Directory.CreateDirectory(bDir);
+                            var ext = GetExtension(bResult.ContentType ?? "video/mp4");
+                            var fn = $"output{ext}";
+                            await File.WriteAllBytesAsync(Path.Combine(bDir, fn), bResult.FileOutput);
+                            var ef = new ExecutionFile
+                            {
+                                Id = Guid.NewGuid(), StepExecutionId = branchStepExec.Id,
+                                FileName = fn, ContentType = bResult.ContentType ?? "video/mp4",
+                                FilePath = Path.Combine($"branch_{branchId}_step_{bpm.StepOrder}", fn),
+                                Direction = "Output", FileSize = bResult.FileOutput.Length,
+                                CreatedAt = DateTime.UtcNow,
+                            };
+                            db.ExecutionFiles.Add(ef);
+                            bEditFiles.Add(new OutputFile { FileId = ef.Id, FileName = fn, ContentType = ef.ContentType, FileSize = ef.FileSize });
+                        }
+                        var bEditOutput = OutputSchemaHelper.BuildVideoOutput(bEditFiles, bpm.AiModule.ModelName, bResult.Metadata);
+                        stepOutputs[bpm.StepOrder] = bEditOutput;
+                        branchStepExec.OutputData = JsonSerializer.Serialize(bEditOutput);
                         await db.SaveChangesAsync();
                     }
 

@@ -126,7 +126,7 @@ You MUST respond ONLY with a JSON object matching this exact schema — no markd
       ""description"": ""What this task must accomplish"",
       ""moduleId"": ""<exact module ID from the list above>"",
       ""moduleName"": ""<exact module name>"",
-      ""moduleType"": ""<Text|Image|Video|Audio|Stock>"",
+      ""moduleType"": ""<Text|Image|Video|VideoEdit|Audio|Stock>"",
       ""input"": ""<the prompt or search query to send to the module>"",
       ""order"": 1,
       ""reason"": ""Why this module was chosen""

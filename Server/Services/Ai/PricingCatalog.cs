@@ -187,6 +187,17 @@ namespace Server.Services.Ai
         public static decimal EstimateVideoSearchCost(string modelName) => 0m;
 
         /// <summary>
+        /// Estimates cost for a Json2Video video edit based on duration in seconds.
+        /// Approximate: ~1 credit per second at HD, plan-dependent.
+        /// </summary>
+        public static decimal EstimateVideoEditCost(int durationSeconds)
+        {
+            // Json2Video pricing is credit-based (~1 credit/sec at HD).
+            // Starter plan: $19.95/600 credits ≈ $0.033/credit
+            return durationSeconds * 0.033m;
+        }
+
+        /// <summary>
         /// Estimates cost for a video generation based on duration in seconds.
         /// </summary>
         public static decimal EstimateVideoCost(string modelName, int durationSeconds = 8)
