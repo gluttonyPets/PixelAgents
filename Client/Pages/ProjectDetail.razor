@@ -2073,6 +2073,8 @@ else
         try
         {
             _project = await Api.GetProjectDetailAsync(ProjectId);
+            // Immediately grab connections so they're available on first render
+            _projectConnections = _project?.Connections ?? new();
             _modules = await Api.GetModulesAsync();
             _executions = await Api.GetExecutionsAsync(ProjectId);
             if (_project is not null)
