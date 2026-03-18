@@ -199,19 +199,7 @@ public class ApiClient
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{id}");
         if (!resp.IsSuccessStatusCode) return null;
-        var json = await resp.Content.ReadAsStringAsync();
-        Console.WriteLine($"[ApiClient] GetProjectDetail raw JSON connections: {(json.Contains("\"connections\"") ? "PRESENT" : "MISSING")}");
-        // Check if connections array has content
-        var connIdx = json.LastIndexOf("\"connections\"");
-        if (connIdx >= 0)
-        {
-            var snippet = json.Substring(connIdx, Math.Min(100, json.Length - connIdx));
-            Console.WriteLine($"[ApiClient] connections snippet: {snippet}");
-        }
-        var result = System.Text.Json.JsonSerializer.Deserialize<ProjectDetailResponse>(json,
-            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
-        Console.WriteLine($"[ApiClient] Deserialized connections: {result?.Connections?.Count ?? -1}");
-        return result;
+        return await resp.Content.ReadFromJsonAsync<ProjectDetailResponse>();
     }
 
     public async Task DeleteProjectAsync(Guid id)
