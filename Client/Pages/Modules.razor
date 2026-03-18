@@ -22,6 +22,7 @@
             <option value="LeonardoAI">Leonardo AI</option>
             <option value="Canva">Canva</option>
             <option value="Pexels">Pexels (Video gratuito)</option>
+            <option value="Json2Video">Json2Video (Edicion de video)</option>
         </select>
     </div>
 
@@ -858,6 +859,7 @@ else if (!_loading)
         ("Publish",     "Publicacion",           "P"),
         ("Design",      "Diseno",                "D"),
         ("VideoSearch", "Busqueda de video",     "S"),
+        ("VideoEdit",   "Edicion de video",      "E"),
         ("Orchestrator","Orquestador",           "O"),
     ];
 
@@ -1097,6 +1099,9 @@ else if (!_loading)
 
         // ─── Pexels: Video Search (free) ───
         new("pexels-video",    "Pexels Video Search", "Pexels", ["VideoSearch"], ["video-search","free"], "Busca videos de stock gratuitos en Pexels. Sin coste. Ideal para pipelines."),
+
+        // ─── Json2Video: Video Editing ───
+        new("json2video-v2",   "Json2Video Editor",   "Json2Video", ["VideoEdit"], ["video-editing","subtitles","tts","composition"], "Edicion automatica de video con subtitulos, voz TTS y composicion de escenas."),
     ];
 
     // ── Available types per provider ──
@@ -1118,6 +1123,7 @@ else if (!_loading)
                 "Transcription" => "Transcripcion (STT)",
                 "Design"        => "Diseno (Canva)",
                 "VideoSearch"   => "Busqueda de video (stock)",
+                "VideoEdit"     => "Edicion de video (Json2Video)",
                 "Orchestrator"  => "Orquestador de pipeline",
                 _               => t
             }))
