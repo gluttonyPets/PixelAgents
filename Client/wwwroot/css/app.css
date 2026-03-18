@@ -1858,25 +1858,24 @@ a.link:hover { text-decoration: underline; }
     height: 100%;
 }
 
-/* ── Drawflow theme overrides (dark mode) ── */
+/* ── Drawflow theme overrides (dark mode colors ONLY — keep native layout) ── */
 .drawflow {
     background:
         radial-gradient(circle, var(--border) 1px, transparent 1px) !important;
     background-size: 24px 24px !important;
 }
 
-/* Node: override horizontal flex → block so content takes full width */
+/* Node: colors + border only. Keep native display:flex layout intact */
 .drawflow .drawflow-node {
-    display: block !important;
-    position: absolute;
     background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 10px !important;
+    border: 2px solid var(--border) !important;
+    border-radius: 8px !important;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
+    color: var(--text) !important;
     padding: 0 !important;
     width: auto !important;
-    min-width: 0 !important;
-    color: var(--text) !important;
+    min-height: auto !important;
+    align-items: flex-start !important; /* top-align so circles match port rows */
 }
 
 .drawflow .drawflow-node:hover {
@@ -1888,54 +1887,20 @@ a.link:hover { text-decoration: underline; }
     box-shadow: 0 0 0 2px rgba(108,99,255,0.3), 0 4px 16px rgba(0,0,0,0.4) !important;
 }
 
-/* Content takes full width */
-.drawflow .drawflow-node .drawflow_content_node {
-    width: 100%;
-}
-
-/* Inputs/outputs: absolute on left/right edge, skip header with padding-top */
-.drawflow .drawflow-node .inputs,
-.drawflow .drawflow-node .outputs {
-    position: absolute !important;
-    top: 0;
-    display: flex !important;
-    flex-direction: column;
-    padding-top: 34px; /* matches header height */
-    z-index: 5;
-}
-
-.drawflow .drawflow-node .inputs {
-    left: -7px;
-}
-
-.drawflow .drawflow-node .outputs {
-    right: -7px;
-}
-
-/* Connection circles: sized + spaced to align with 26px port rows */
+/* Connection circles: colors only, keep native 20px size and position */
 .drawflow .drawflow-node .input,
 .drawflow .drawflow-node .output {
-    position: relative !important;
-    left: auto !important;
-    right: auto !important;
-    top: auto !important;
-    width: 14px !important;
-    height: 14px !important;
-    margin: 6px 0 !important; /* (26 - 14) / 2 = 6px → 26px total matches port row */
     background: var(--bg-card) !important;
     border: 2px solid var(--text-muted) !important;
-    border-radius: 50%;
-    cursor: crosshair;
-    transition: transform 0.15s, background 0.15s;
 }
 
 .drawflow .drawflow-node .input:hover,
 .drawflow .drawflow-node .output:hover {
-    transform: scale(1.35);
     background: var(--accent) !important;
     border-color: var(--accent) !important;
 }
 
+/* Cables */
 .drawflow .connection .main-path {
     stroke: var(--accent) !important;
     stroke-width: 2.5 !important;
@@ -1945,30 +1910,24 @@ a.link:hover { text-decoration: underline; }
     stroke-width: 4 !important;
 }
 
+/* Delete button */
 .drawflow > .drawflow-delete {
     background: var(--danger) !important;
     border: none !important;
     color: #fff !important;
 }
 
-/* ── Drawflow node content (custom HTML inside nodes) ── */
+/* ── Node custom HTML content ── */
 .df-node-content {
-    min-width: 160px;
+    min-width: 120px;
 }
 
 .df-node-header {
-    height: 34px; /* fixed: must match padding-top on .inputs/.outputs */
-    box-sizing: border-box;
-    padding: 0 0.6rem;
-    border-radius: 9px 9px 0 0;
+    padding: 0.35rem 0.5rem;
+    border-radius: 6px 6px 0 0;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    cursor: grab;
-}
-
-.df-node-icon {
-    font-size: 0.85rem;
+    gap: 0.3rem;
 }
 
 .df-node-title {
@@ -1989,48 +1948,31 @@ a.link:hover { text-decoration: underline; }
     color: rgba(255,255,255,0.85);
 }
 
-.df-node-ports {
-    display: flex;
-    gap: 1rem;
-    padding: 0 0.5rem 0.2rem;
-}
-
-.df-ports-col {
-    display: flex;
-    flex-direction: column;
-}
-
-.df-ports-inputs {
-    flex: 1;
-    min-width: 0;
-}
-
-.df-ports-outputs {
-    flex: 1;
-    min-width: 0;
-}
-
-/* Each port label row: exactly 26px to match circle spacing */
-.df-port-label {
+/* Each port row: 25px matches Drawflow native circle spacing (20px + 5px margin) */
+.df-port-row {
+    height: 25px;
+    line-height: 25px;
     font-size: 0.7rem;
     color: var(--text-muted);
-    height: 26px;
-    line-height: 26px;
-    padding: 0;
+    padding: 0 0.4rem;
     white-space: nowrap;
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
 }
 
-.df-port-label.input {
-    padding-left: 12px; /* space for the circle on the left edge */
+.df-port-in {
+    text-align: left;
 }
 
-.df-port-label.output {
+.df-port-out {
     text-align: right;
-    padding-right: 12px; /* space for the circle on the right edge */
+    margin-left: auto;
 }
 
 .df-port-dot {
-    font-size: 0.6rem;
+    font-size: 0.55rem;
+    vertical-align: middle;
 }
 
 .df-port-req {

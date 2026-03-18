@@ -146,31 +146,31 @@ window.pipelineEditor = {
     _buildNodeHtml: function (name, type, color, icon, inputs, outputs) {
         var html = '<div class="df-node-content">';
         html += '<div class="df-node-header" style="background:' + color + '">';
-        html += '<span class="df-node-icon">' + icon + '</span>';
-        html += '<span class="df-node-title" title="' + name + '">' + name + '</span>';
+        html += '<span class="df-node-title" title="' + name + '">' + icon + ' ' + name + '</span>';
         html += '<span class="df-node-badge">' + type + '</span>';
         html += '</div>';
-        // Two columns: inputs (left) and outputs (right) so each column
-        // aligns with its respective Drawflow circle container
-        html += '<div class="df-node-ports">';
-        html += '<div class="df-ports-col df-ports-inputs">';
-        for (var i = 0; i < inputs.length; i++) {
-            html += '<div class="df-port-label input" data-port="' + (i + 1) + '">';
-            html += '<span class="df-port-dot" style="color:' + inputs[i].color + '">&#x25CF;</span> ';
-            html += inputs[i].label;
-            if (inputs[i].required) html += ' <span class="df-port-req">*</span>';
+        // Port rows: one row per max(inputs, outputs) to align with native circles
+        var maxPorts = Math.max(inputs.length, outputs.length);
+        for (var r = 0; r < maxPorts; r++) {
+            html += '<div class="df-port-row">';
+            if (r < inputs.length) {
+                html += '<span class="df-port-in">';
+                html += '<span class="df-port-dot" style="color:' + inputs[r].color + '">&#x25CF;</span> ';
+                html += inputs[r].label;
+                if (inputs[r].required) html += ' <span class="df-port-req">*</span>';
+                html += '</span>';
+            } else {
+                html += '<span></span>';
+            }
+            if (r < outputs.length) {
+                html += '<span class="df-port-out">';
+                html += outputs[r].label;
+                html += ' <span class="df-port-dot" style="color:' + outputs[r].color + '">&#x25CF;</span>';
+                html += '</span>';
+            }
             html += '</div>';
         }
         html += '</div>';
-        html += '<div class="df-ports-col df-ports-outputs">';
-        for (var j = 0; j < outputs.length; j++) {
-            html += '<div class="df-port-label output" data-port="' + (j + 1) + '">';
-            html += outputs[j].label;
-            html += ' <span class="df-port-dot" style="color:' + outputs[j].color + '">&#x25CF;</span>';
-            html += '</div>';
-        }
-        html += '</div>';
-        html += '</div></div>';
         return html;
     },
 
