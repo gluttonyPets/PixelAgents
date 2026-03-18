@@ -12,8 +12,7 @@ window.pipelineEditor = {
         if (!container) return;
 
         this._editor = new Drawflow(container);
-        this._editor.reroute = true;
-        this._editor.reroute_fix_curvature = true;
+        this._editor.reroute = false;
         this._editor.force_first_input = false;
         this._editor.start();
         this._dotNetRef = dotNetRef;
@@ -125,6 +124,34 @@ window.pipelineEditor = {
             this._editor.drawflow.drawflow.Home.data[nodeId].pos_x = x;
             this._editor.drawflow.drawflow.Home.data[nodeId].pos_y = y;
             this._editor.updateConnectionNodes('node-' + nodeId);
+        }
+    },
+
+    refreshConnections: function () {
+        if (!this._editor) return;
+        // Force recalculate all connection SVG paths after DOM settles
+        var data = this._editor.drawflow.drawflow.Home.data;
+        for (var nodeId in data) {
+            this._editor.updateConnectionNodes('node-' + nodeId);
+        }
+    },
+
+    removeConnection: function (fromModuleId, fromPortId, toModuleId, toPortId) {
+        if (!this._editor) return;
+        var fromNodeId = this._reverseMap[fromModuleId];
+        var toNodeId = this._reverseMap[toModuleId];
+        if (fromNodeId === undefined || toNodeId === undefined) return;
+        var fromPorts = this._portMap[fromNodeId];
+        var toPorts = this._portMap[toNodeId];
+        if (!fromPorts || !toPorts) return;
+        var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
+        var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
+        if (fromIdx > 0 && toIdx > 0) {
+            this._suppressEvents = true;
+            try {
+                this._editor.removeSingleConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
+            } catch (e) { }
+            this._suppressEvents = false;
         }
     },
 

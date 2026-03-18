@@ -247,6 +247,10 @@
         }
 
         await JS.InvokeVoidAsync("pipelineEditor.setSuppressEvents", false);
+
+        // Force recalculate connection SVG paths after DOM layout settles
+        await Task.Yield();
+        await JS.InvokeVoidAsync("pipelineEditor.refreshConnections");
     }
 
     // ── Node state helpers ──
@@ -389,6 +393,7 @@
         if (state is null) return;
         state.X = x;
         state.Y = y;
+        await NotifyGraphChanged();
     }
 
     [JSInvokable]
@@ -413,8 +418,9 @@
             _error = $"Tipos incompatibles: {PortDataType.GetLabel(fromPortDef.DataType)} -> {PortDataType.GetLabel(toPortDef.DataType)}";
             await InvokeAsync(StateHasChanged);
             _ = ClearErrorAfterDelay();
-            // Remove the invalid connection from Drawflow
-            await RebuildDrawflow();
+            // Remove only this invalid connection from Drawflow (not full rebuild)
+            await JS.InvokeVoidAsync("pipelineEditor.removeConnection",
+                fromModuleId, fromPort, toModuleId, toPort);
             return;
         }
 

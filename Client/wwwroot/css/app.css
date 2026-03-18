@@ -1865,17 +1865,13 @@ a.link:hover { text-decoration: underline; }
     background-size: 24px 24px !important;
 }
 
-/* Node: colors + border only. Keep native display:flex layout intact */
+/* Node: ONLY colors/borders — keep native layout (160px, 15px padding, flex center) */
 .drawflow .drawflow-node {
     background: var(--bg-card) !important;
     border: 2px solid var(--border) !important;
     border-radius: 8px !important;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
     color: var(--text) !important;
-    padding: 0 !important;
-    width: auto !important;
-    min-height: auto !important;
-    align-items: flex-start !important; /* top-align so circles match port rows */
 }
 
 .drawflow .drawflow-node:hover {
@@ -1917,13 +1913,14 @@ a.link:hover { text-decoration: underline; }
     color: #fff !important;
 }
 
-/* ── Node custom HTML content ── */
+/* ── Node custom HTML content (fits inside native 15px padding) ── */
 .df-node-content {
-    min-width: 120px;
+    min-width: 100px;
 }
 
 .df-node-header {
-    padding: 0.35rem 0.5rem;
+    padding: 0.3rem 0.4rem;
+    margin: -15px -15px 0.3rem -15px; /* fill the native padding area */
     border-radius: 6px 6px 0 0;
     display: flex;
     align-items: center;
@@ -1948,36 +1945,30 @@ a.link:hover { text-decoration: underline; }
     color: rgba(255,255,255,0.85);
 }
 
-/* Each port row: 25px matches Drawflow native circle spacing (20px + 5px margin) */
+/* Port labels inside node content — purely informational */
 .df-port-row {
-    height: 25px;
-    line-height: 25px;
-    font-size: 0.7rem;
+    font-size: 0.68rem;
     color: var(--text-muted);
-    padding: 0 0.4rem;
+    padding: 0.1rem 0;
     white-space: nowrap;
     display: flex;
     justify-content: space-between;
-    gap: 1rem;
+    gap: 0.8rem;
 }
 
-.df-port-in {
-    text-align: left;
-}
-
+.df-port-in,
 .df-port-out {
-    text-align: right;
-    margin-left: auto;
+    display: inline;
 }
 
 .df-port-dot {
-    font-size: 0.55rem;
+    font-size: 0.5rem;
     vertical-align: middle;
 }
 
 .df-port-req {
     color: var(--danger);
-    font-size: 0.6rem;
+    font-size: 0.55rem;
 }
 
 /* Keep node-btn for inspector */
