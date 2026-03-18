@@ -321,7 +321,7 @@
 
         await JS.InvokeVoidAsync("pipelineEditor.setSuppressEvents", false);
 
-        await Task.Delay(50);
+        await Task.Delay(100);
         await JS.InvokeVoidAsync("pipelineEditor.refreshConnections");
 
         // Apply execution states if currently executing
