@@ -219,6 +219,7 @@
     {
         _positions = Modules.ToDictionary(m => m.Id, m => (m.PosX, m.PosY));
         _connections = Connections.Select(c => new ConnectionEntry(c.FromModuleId, c.FromPort, c.ToModuleId, c.ToPort)).ToList();
+        Console.WriteLine($"[PipelineCanvas] LoadFromParameters: {Modules.Count} modules, {Connections.Count} connections from parent, {_connections.Count} local connections");
     }
 
     private async Task RebuildDrawflow()
@@ -254,8 +255,10 @@
         }
 
         // Add all connections from DB
+        Console.WriteLine($"[PipelineCanvas] RebuildDrawflow: {_connections.Count} connections to draw");
         foreach (var conn in _connections)
         {
+            Console.WriteLine($"[PipelineCanvas] Drawing connection: {conn.FromModuleId}:{conn.FromPort} -> {conn.ToModuleId}:{conn.ToPort}");
             await JS.InvokeVoidAsync("pipelineEditor.addConnection",
                 conn.FromModuleId.ToString(), conn.FromPort,
                 conn.ToModuleId.ToString(), conn.ToPort);
@@ -263,7 +266,8 @@
 
         await JS.InvokeVoidAsync("pipelineEditor.setSuppressEvents", false);
 
-        await Task.Yield();
+        // Give the browser time to layout nodes before recalculating SVG paths
+        await Task.Delay(50);
         await JS.InvokeVoidAsync("pipelineEditor.refreshConnections");
     }
 
