@@ -171,34 +171,8 @@ window.pipelineEditor = {
     },
 
     _buildNodeHtml: function (name, type, color, icon, inputs, outputs) {
-        var html = '<div class="df-node-content">';
-        html += '<div class="df-node-header" style="background:' + color + '">';
-        html += '<span class="df-node-title" title="' + name + '">' + icon + ' ' + name + '</span>';
-        html += '<span class="df-node-badge">' + type + '</span>';
-        html += '</div>';
-        // Port rows: one row per max(inputs, outputs) to align with native circles
-        var maxPorts = Math.max(inputs.length, outputs.length);
-        for (var r = 0; r < maxPorts; r++) {
-            html += '<div class="df-port-row">';
-            if (r < inputs.length) {
-                html += '<span class="df-port-in">';
-                html += '<span class="df-port-dot" style="color:' + inputs[r].color + '">&#x25CF;</span> ';
-                html += inputs[r].label;
-                if (inputs[r].required) html += ' <span class="df-port-req">*</span>';
-                html += '</span>';
-            } else {
-                html += '<span></span>';
-            }
-            if (r < outputs.length) {
-                html += '<span class="df-port-out">';
-                html += outputs[r].label;
-                html += ' <span class="df-port-dot" style="color:' + outputs[r].color + '">&#x25CF;</span>';
-                html += '</span>';
-            }
-            html += '</div>';
-        }
-        html += '</div>';
-        return html;
+        // Plain text only — let Drawflow handle all visual layout natively
+        return '<div><strong>' + icon + ' ' + name + '</strong><br><small style="opacity:0.6">' + type + '</small></div>';
     },
 
     dispose: function () {
