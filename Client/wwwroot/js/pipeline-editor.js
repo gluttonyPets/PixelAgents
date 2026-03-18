@@ -98,11 +98,18 @@ window.pipelineEditor = {
         var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
         var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
         if (fromIdx > 0 && toIdx > 0) {
+            // Ensure Drawflow active module matches where nodes live
+            var nodeModule = this._editor.getModuleFromNodeId(fromNodeId);
+            if (nodeModule && this._editor.module !== nodeModule) {
+                console.warn('[Drawflow] Module mismatch! active:', this._editor.module, 'nodes in:', nodeModule, '- switching');
+                this._editor.changeModule(nodeModule);
+            }
             var wasSuppressed = this._suppressEvents;
             this._suppressEvents = true;
             try {
                 this._editor.addConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
-                console.log('[Drawflow] addConnection OK:', fromModuleId, fromPortId, '->', toModuleId, toPortId);
+                console.log('[Drawflow] addConnection OK:', fromModuleId, fromPortId, '->', toModuleId, toPortId,
+                    'activeModule:', this._editor.module, 'nodeModule:', nodeModule);
             } catch (e) { console.warn('[Drawflow] addConnection error:', e); }
             this._suppressEvents = wasSuppressed;
         } else {
@@ -179,6 +186,11 @@ window.pipelineEditor = {
             this._suppressEvents = true;
             this._editor.clear();
             this._suppressEvents = wasSuppressed;
+            // clear() wipes all modules. Ensure Home module and active pointer are restored.
+            if (!this._editor.drawflow.drawflow['Home']) {
+                this._editor.drawflow.drawflow['Home'] = { data: {} };
+            }
+            this._editor.module = 'Home';
         }
         this._portMap = {};
         this._moduleMap = {};
