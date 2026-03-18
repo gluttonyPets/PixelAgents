@@ -176,6 +176,7 @@
     private CancellationTokenSource? _saveDebounce;
     private DotNetObjectReference<PipelineCanvas>? _dotNetRef;
     private int _lastModuleCount;
+    private PipelineGraph? _lastGraphRef;
 
     private IEnumerable<AiModuleResponse> FilteredModules => string.IsNullOrWhiteSpace(_searchFilter)
         ? AvailableModules
@@ -193,12 +194,18 @@
             _jsInitialized = true;
             await RebuildDrawflow();
             _lastModuleCount = Modules.Count;
+            _lastGraphRef = Graph;
         }
-        else if (_jsInitialized && Modules.Count != _lastModuleCount)
+        else if (_jsInitialized)
         {
-            // Modules changed externally (add/remove from parent)
-            _lastModuleCount = Modules.Count;
-            await RebuildDrawflow();
+            // Detect when parent replaces the Graph object (e.g. after loading from API)
+            // or when modules are added/removed externally
+            if (!ReferenceEquals(Graph, _lastGraphRef) || Modules.Count != _lastModuleCount)
+            {
+                _lastModuleCount = Modules.Count;
+                _lastGraphRef = Graph;
+                await RebuildDrawflow();
+            }
         }
     }
 
