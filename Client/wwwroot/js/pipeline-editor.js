@@ -63,6 +63,60 @@ window.pipelineEditor = {
         this._editor.on('nodeUnselected', () => {
             this._dotNetRef.invokeMethodAsync('OnNodeDeselected');
         });
+
+        // ── Re-drag existing connections ──
+        // When mousedown on an input port that already has a connection,
+        // remove that connection and start a new drag from the original output.
+        this._setupConnectionRedrag(container);
+    },
+
+    _setupConnectionRedrag: function (container) {
+        var self = this;
+        container.addEventListener('mousedown', function (e) {
+            if (!self._editor || self._suppressEvents) return;
+            var target = e.target;
+            // Only handle input ports
+            if (!target.classList.contains('input')) return;
+
+            // Find the parent node
+            var nodeEl = target.closest('.drawflow-node');
+            if (!nodeEl) return;
+            var inputNodeId = parseInt(nodeEl.id.replace('node-', ''));
+            var inputClass = target.classList[1]; // e.g. 'input_1'
+            if (!inputClass) return;
+
+            // Check if this input has an existing connection
+            var nodeData = self._editor.getNodeFromId(inputNodeId);
+            if (!nodeData || !nodeData.inputs[inputClass]) return;
+            var conns = nodeData.inputs[inputClass].connections;
+            if (!conns || conns.length === 0) return;
+
+            // Get the source output info before removing
+            var existingConn = conns[0];
+            var outputNodeId = parseInt(existingConn.node);
+            var outputClass = existingConn.output; // e.g. 'output_1'
+
+            // Remove the existing connection
+            self._editor.removeSingleConnection(outputNodeId, inputNodeId, outputClass, inputClass);
+
+            // Find the output port element and simulate a new drag from it
+            var outputPortEl = document.querySelector('#node-' + outputNodeId + ' .' + outputClass);
+            if (!outputPortEl) return;
+
+            // Prevent the default input port mousedown from firing
+            e.stopPropagation();
+            e.preventDefault();
+
+            // Trigger Drawflow's connection drawing from the output port
+            // We simulate a click event on the output to start the connection
+            var rect = outputPortEl.getBoundingClientRect();
+            var fakeDown = new MouseEvent('mousedown', {
+                bubbles: true,
+                clientX: rect.left + rect.width / 2,
+                clientY: rect.top + rect.height / 2
+            });
+            outputPortEl.dispatchEvent(fakeDown);
+        }, true); // capture phase to intercept before Drawflow
     },
 
     addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, stepOrder, modelName) {
