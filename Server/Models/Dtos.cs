@@ -29,7 +29,8 @@ namespace Server.Models
     public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt);
     public record ProjectDetailResponse(
         Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt,
-        List<ProjectModuleResponse> Modules, string? GraphLayout = null);
+        List<ProjectModuleResponse> Modules, string? GraphLayout = null,
+        List<ModuleConnectionResponse>? Connections = null);
 
     // ── ProjectModule ──
     public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration, string BranchId = "main", int? BranchFromStep = null);
@@ -40,7 +41,13 @@ namespace Server.Models
     public record ProjectModuleResponse(
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
         int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,
-        string BranchId, int? BranchFromStep);
+        string BranchId, int? BranchFromStep, double PosX = 0, double PosY = 0);
+
+    // ── ModuleConnection ──
+    public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
+    public record SaveGraphRequest(List<NodePositionEntry> Positions, List<ConnectionEntry> Connections);
+    public record NodePositionEntry(Guid ModuleId, double PosX, double PosY);
+    public record ConnectionEntry(Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
 
     // ── Execution ──
     public record ExecuteProjectRequest(string? UserInput);

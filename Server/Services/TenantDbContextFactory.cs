@@ -90,6 +90,25 @@ namespace Server.Services
 
             RunSafe(ctx, @"DROP INDEX IF EXISTS ""IX_ProjectModules_ProjectId_StepOrder""");
             RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectModules_ProjectId_BranchId_StepOrder"" ON ""ProjectModules"" (""ProjectId"", ""BranchId"", ""StepOrder"")");
+
+            // ── Visual graph: node positions on ProjectModule ──
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosX"" double precision NOT NULL DEFAULT 0");
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosY"" double precision NOT NULL DEFAULT 0");
+
+            // ── Visual graph: dedicated connections table ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ModuleConnections"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
+                    ""FromModuleId"" uuid NOT NULL REFERENCES ""ProjectModules""(""Id"") ON DELETE CASCADE,
+                    ""FromPort"" varchar(100) NOT NULL,
+                    ""ToModuleId"" uuid NOT NULL REFERENCES ""ProjectModules""(""Id"") ON DELETE CASCADE,
+                    ""ToPort"" varchar(100) NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL
+                )");
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ProjectId"" ON ""ModuleConnections"" (""ProjectId"")");
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_FromModuleId_FromPort"" ON ""ModuleConnections"" (""FromModuleId"", ""FromPort"")");
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ToModuleId_ToPort"" ON ""ModuleConnections"" (""ToModuleId"", ""ToPort"")");
         }
 
         private static void RunSafe(UserDbContext ctx, string sql)

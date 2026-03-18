@@ -32,6 +32,7 @@ public record ProjectDetailResponse(
 {
     public string? Context { get; set; }
     public string? GraphLayout { get; set; }
+    public List<ModuleConnectionResponse>? Connections { get; set; }
 }
 
 // ── ProjectModule ──
@@ -42,7 +43,13 @@ public record ReorderModulesRequest(List<ReorderModuleEntry> Entries, string? Gr
 public record ProjectModuleResponse(
     Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
     int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,
-    string BranchId, int? BranchFromStep);
+    string BranchId, int? BranchFromStep, double PosX = 0, double PosY = 0);
+
+// ── ModuleConnection ──
+public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
+public record SaveGraphRequest(List<NodePositionEntry> Positions, List<ConnectionEntry> Connections);
+public record NodePositionEntry(Guid ModuleId, double PosX, double PosY);
+public record ConnectionEntry(Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
 
 // ── Execution ──
 public record ExecuteProjectRequest(string? UserInput);

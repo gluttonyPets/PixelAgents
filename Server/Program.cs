@@ -663,11 +663,16 @@ app.MapGet("/api/projects/{id}", async (
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
             pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
             pm.InputMapping, pm.Configuration, pm.IsActive,
-            pm.BranchId, pm.BranchFromStep)).ToList();
+            pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY)).ToList();
+
+    var connections = await db.ModuleConnections
+        .Where(c => c.ProjectId == id)
+        .Select(c => new ModuleConnectionResponse(c.Id, c.FromModuleId, c.FromPort, c.ToModuleId, c.ToPort))
+        .ToListAsync();
 
     return Results.Ok(new ProjectDetailResponse(
         project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, modules, project.GraphLayout));
+        project.CreatedAt, project.UpdatedAt, modules, project.GraphLayout, connections));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{id}", async (
@@ -702,6 +707,133 @@ app.MapPut("/api/projects/{id}/graph", async (
 
     project.GraphLayout = req.GraphLayout;
     project.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    return Results.Ok();
+}).RequireAuthorization();
+
+// Save full graph: node positions + connections + recompute StepOrder/InputMapping
+app.MapPut("/api/projects/{projectId}/graph/save", async (
+    Guid projectId, SaveGraphRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    var modules = await db.ProjectModules
+        .Where(x => x.ProjectId == projectId)
+        .ToListAsync();
+
+    var now = DateTime.UtcNow;
+
+    // 1. Update node positions
+    foreach (var pos in req.Positions)
+    {
+        var pm = modules.FirstOrDefault(m => m.Id == pos.ModuleId);
+        if (pm is null) continue;
+        pm.PosX = pos.PosX;
+        pm.PosY = pos.PosY;
+        pm.UpdatedAt = now;
+    }
+
+    // 2. Replace all connections (delete old, insert new)
+    var oldConnections = await db.ModuleConnections
+        .Where(c => c.ProjectId == projectId)
+        .ToListAsync();
+    db.ModuleConnections.RemoveRange(oldConnections);
+
+    var moduleIds = modules.Select(m => m.Id).ToHashSet();
+    foreach (var conn in req.Connections)
+    {
+        if (!moduleIds.Contains(conn.FromModuleId) || !moduleIds.Contains(conn.ToModuleId))
+            continue;
+        db.ModuleConnections.Add(new ModuleConnection
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            FromModuleId = conn.FromModuleId,
+            FromPort = conn.FromPort,
+            ToModuleId = conn.ToModuleId,
+            ToPort = conn.ToPort,
+            CreatedAt = now
+        });
+    }
+
+    // 3. Topological sort: derive StepOrder from connections
+    var incomingEdges = moduleIds.ToDictionary(id => id, _ => new List<Guid>());
+    foreach (var conn in req.Connections)
+    {
+        if (moduleIds.Contains(conn.FromModuleId) && moduleIds.Contains(conn.ToModuleId))
+            incomingEdges[conn.ToModuleId].Add(conn.FromModuleId);
+    }
+
+    var outgoingEdges = moduleIds.ToDictionary(id => id, _ => new List<Guid>());
+    foreach (var conn in req.Connections)
+    {
+        if (moduleIds.Contains(conn.FromModuleId) && moduleIds.Contains(conn.ToModuleId))
+            outgoingEdges[conn.FromModuleId].Add(conn.ToModuleId);
+    }
+
+    // Kahn's algorithm
+    var inDegree = moduleIds.ToDictionary(id => id, id => incomingEdges[id].Count);
+    var queue = new Queue<Guid>(moduleIds.Where(id => inDegree[id] == 0));
+    var sorted = new List<Guid>();
+    while (queue.Count > 0)
+    {
+        var current = queue.Dequeue();
+        sorted.Add(current);
+        foreach (var next in outgoingEdges[current])
+        {
+            inDegree[next]--;
+            if (inDegree[next] == 0) queue.Enqueue(next);
+        }
+    }
+    // Append unreachable (cycle or disconnected)
+    foreach (var id in moduleIds)
+        if (!sorted.Contains(id)) sorted.Add(id);
+
+    // 4. Update StepOrder and InputMapping
+    // Temporarily set all to negative to avoid unique constraint violations
+    foreach (var pm in modules)
+    {
+        pm.StepOrder = -(pm.StepOrder + 1000);
+    }
+    await db.SaveChangesAsync();
+
+    for (int i = 0; i < sorted.Count; i++)
+    {
+        var pm = modules.FirstOrDefault(m => m.Id == sorted[i]);
+        if (pm is null) continue;
+        pm.StepOrder = i + 1;
+        pm.UpdatedAt = now;
+
+        // Derive InputMapping from connections
+        var upstream = incomingEdges[pm.Id];
+        if (upstream.Count == 0)
+        {
+            pm.InputMapping = "{\"source\":\"user\"}";
+        }
+        else
+        {
+            // Check if upstream provides file or text
+            var upModule = modules.FirstOrDefault(m => m.Id == upstream[0]);
+            var conn = req.Connections.FirstOrDefault(c => c.FromModuleId == upstream[0] && c.ToModuleId == pm.Id);
+            var field = "text";
+            if (conn is not null && upModule is not null)
+            {
+                // Detect by port name convention
+                if (conn.FromPort.Contains("image") || conn.FromPort.Contains("video") ||
+                    conn.FromPort.Contains("audio") || conn.FromPort.Contains("file") ||
+                    conn.FromPort.Contains("design"))
+                    field = "file";
+            }
+            pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\"}}";
+        }
+    }
+
+    project.UpdatedAt = now;
     await db.SaveChangesAsync();
     return Results.Ok();
 }).RequireAuthorization();
@@ -814,7 +946,7 @@ app.MapPost("/api/projects/{projectId}/modules", async (
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
             module.ModuleType, module.ModelName, pm.StepOrder, pm.StepName,
             pm.InputMapping, pm.Configuration, pm.IsActive,
-            pm.BranchId, pm.BranchFromStep));
+            pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/modules/{id}", async (

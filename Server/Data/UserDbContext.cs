@@ -17,6 +17,7 @@ namespace Server.Data
         public DbSet<ExecutionLog> ExecutionLogs => Set<ExecutionLog>();
         public DbSet<ProjectSchedule> ProjectSchedules => Set<ProjectSchedule>();
         public DbSet<ModuleFile> ModuleFiles => Set<ModuleFile>();
+        public DbSet<ModuleConnection> ModuleConnections => Set<ModuleConnection>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -73,6 +74,8 @@ namespace Server.Data
                 e.Property(x => x.InputMapping).HasColumnType("text");
                 e.Property(x => x.Configuration).HasColumnType("text");
                 e.Property(x => x.IsActive).HasDefaultValue(true);
+                e.Property(x => x.PosX).HasDefaultValue(0.0);
+                e.Property(x => x.PosY).HasDefaultValue(0.0);
 
                 e.HasOne(x => x.Project)
                     .WithMany(p => p.ProjectModules)
@@ -85,6 +88,33 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
 
                 e.HasIndex(x => new { x.ProjectId, x.BranchId, x.StepOrder }).IsUnique();
+            });
+
+            // ── ModuleConnection ──
+            modelBuilder.Entity<ModuleConnection>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.FromPort).IsRequired().HasMaxLength(100);
+                e.Property(x => x.ToPort).IsRequired().HasMaxLength(100);
+
+                e.HasOne(x => x.Project)
+                    .WithMany()
+                    .HasForeignKey(x => x.ProjectId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasOne(x => x.FromModule)
+                    .WithMany(m => m.OutgoingConnections)
+                    .HasForeignKey(x => x.FromModuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasOne(x => x.ToModule)
+                    .WithMany(m => m.IncomingConnections)
+                    .HasForeignKey(x => x.ToModuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => x.ProjectId);
+                e.HasIndex(x => new { x.FromModuleId, x.FromPort });
+                e.HasIndex(x => new { x.ToModuleId, x.ToPort });
             });
 
             // ── ProjectExecution ──

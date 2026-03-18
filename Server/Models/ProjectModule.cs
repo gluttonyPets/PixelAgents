@@ -12,11 +12,15 @@ namespace Server.Models
         public string? InputMapping { get; set; }
         public string? Configuration { get; set; }
         public bool IsActive { get; set; } = true;
+        public double PosX { get; set; }
+        public double PosY { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         public Project Project { get; set; } = null!;
         public AiModule AiModule { get; set; } = null!;
         public ICollection<StepExecution> StepExecutions { get; set; } = new List<StepExecution>();
+        public ICollection<ModuleConnection> OutgoingConnections { get; set; } = new List<ModuleConnection>();
+        public ICollection<ModuleConnection> IncomingConnections { get; set; } = new List<ModuleConnection>();
     }
 }

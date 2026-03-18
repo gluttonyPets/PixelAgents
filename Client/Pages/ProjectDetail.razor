@@ -116,11 +116,10 @@ else
             {
                 <PipelineCanvas Modules="_project.Modules.ToList()"
                                 AvailableModules="_modules"
-                                Graph="_graph"
-                                GraphChanged="OnGraphChanged"
+                                Connections="_projectConnections"
                                 OnAddModule="AddModuleFromCanvas"
                                 OnRemoveModule="RemoveModuleFromCanvas"
-                                OnSaveGraph="SaveGraphLayout" />
+                                OnSaveGraph="SaveGraph" />
             }
             else
             {
@@ -1784,7 +1783,7 @@ else
     private string _settingsTab = "messaging";
 
     // Pipeline visual editor
-    private PipelineGraph _graph = new();
+    private List<ModuleConnectionResponse> _projectConnections = new();
 
     // Add step
     private string _stepModuleId = "";
@@ -2116,24 +2115,8 @@ else
                 _waVerifyToken = waConfig.WebhookVerifyToken;
             }
 
-            // Load graph layout
-            if (!string.IsNullOrWhiteSpace(_project?.GraphLayout))
-            {
-                try { _graph = JsonSerializer.Deserialize<PipelineGraph>(_project.GraphLayout) ?? new(); }
-                catch { _graph = new(); }
-            }
-            else
-            {
-                _graph = new();
-            }
-
-            // Clean up stale connections referencing deleted modules
-            if (_project?.Modules is not null)
-            {
-                var validIds = _project.Modules.Select(m => m.Id).ToHashSet();
-                _graph.Connections.RemoveAll(c =>
-                    !validIds.Contains(c.FromModuleId) || !validIds.Contains(c.ToModuleId));
-            }
+            // Load connections from DB (positions are already on each module)
+            _projectConnections = _project?.Connections ?? new();
         }
         catch { }
         _loading = false;
@@ -2141,18 +2124,12 @@ else
 
     // ── Visual pipeline editor methods ──
 
-    private async Task OnGraphChanged(PipelineGraph graph)
-    {
-        _graph = graph;
-    }
-
     private async Task AddModuleFromCanvas(Guid moduleId)
     {
         _stepError = null;
         _loading = true;
         try
         {
-            // Add with a temp order; the graph topology will set the real order on next save
             var mainSteps = GetMainSteps();
             var order = mainSteps.Count + 1;
             var req = new AddProjectModuleRequest(moduleId, order, null, "{\"source\":\"user\"}", null);
@@ -2178,109 +2155,22 @@ else
 
     /// <summary>
     /// Called by PipelineCanvas on every graph change (node move, connection add/remove).
-    /// Persists the graph layout AND recomputes StepOrder/InputMapping from the graph topology.
+    /// Saves positions + connections to dedicated DB tables.
+    /// Server recomputes StepOrder/InputMapping from graph topology.
     /// </summary>
-    private async Task SaveGraphLayout(PipelineGraph graph)
+    private async Task SaveGraph(SaveGraphRequest req)
     {
-        _graph = graph;
-
-        if (_project?.Modules is null || _project.Modules.Count == 0)
+        await Api.SaveGraphAsync(ProjectId, req);
+        // Reload to get updated StepOrder from server-side topological sort
+        if (_project is not null)
         {
-            await Api.SaveGraphLayoutAsync(ProjectId, JsonSerializer.Serialize(graph));
-            return;
-        }
-
-        // ── Topological sort: derive execution order from connections ──
-        var moduleIds = _project.Modules.Select(m => m.Id).ToHashSet();
-        var moduleLookup = _project.Modules.ToDictionary(m => m.Id);
-
-        // Build adjacency: who feeds into whom
-        var incomingEdges = new Dictionary<Guid, List<Guid>>(); // moduleId → list of upstream moduleIds
-        var outgoingEdges = new Dictionary<Guid, List<Guid>>(); // moduleId → list of downstream moduleIds
-        foreach (var id in moduleIds)
-        {
-            incomingEdges[id] = new();
-            outgoingEdges[id] = new();
-        }
-
-        foreach (var conn in graph.Connections)
-        {
-            if (!moduleIds.Contains(conn.FromModuleId) || !moduleIds.Contains(conn.ToModuleId))
-                continue;
-            incomingEdges[conn.ToModuleId].Add(conn.FromModuleId);
-            outgoingEdges[conn.FromModuleId].Add(conn.ToModuleId);
-        }
-
-        // Kahn's algorithm for topological sort
-        var inDegree = moduleIds.ToDictionary(id => id, id => incomingEdges[id].Count);
-        var queue = new Queue<Guid>(moduleIds.Where(id => inDegree[id] == 0));
-        var sorted = new List<Guid>();
-
-        while (queue.Count > 0)
-        {
-            var current = queue.Dequeue();
-            sorted.Add(current);
-            foreach (var next in outgoingEdges[current])
+            var updated = await Api.GetProjectDetailAsync(ProjectId);
+            if (updated is not null)
             {
-                inDegree[next]--;
-                if (inDegree[next] == 0)
-                    queue.Enqueue(next);
+                _project = updated;
+                _projectConnections = updated.Connections ?? new();
             }
         }
-
-        // Append any modules not reached (disconnected nodes) at the end
-        foreach (var id in moduleIds)
-        {
-            if (!sorted.Contains(id))
-                sorted.Add(id);
-        }
-
-        // Build reorder entries
-        var entries = new List<ReorderModuleEntry>();
-        for (int i = 0; i < sorted.Count; i++)
-        {
-            var moduleId = sorted[i];
-            var stepOrder = i + 1;
-
-            // Determine InputMapping from connections
-            string? inputMapping;
-            var upstream = incomingEdges[moduleId];
-            if (upstream.Count == 0)
-            {
-                // No incoming connection = first in chain, takes user input
-                inputMapping = "{\"source\":\"user\"}";
-            }
-            else
-            {
-                // Has incoming connection = takes from previous step output
-                // Determine field type based on upstream module's output port
-                var firstUpstream = upstream[0];
-                var conn = graph.Connections.FirstOrDefault(c =>
-                    c.FromModuleId == firstUpstream && c.ToModuleId == moduleId);
-                var field = "text";
-                if (conn is not null && moduleLookup.TryGetValue(firstUpstream, out var upMod))
-                {
-                    var upPorts = ModulePortRegistry.GetPorts(upMod.ModuleType, "");
-                    var outPort = upPorts.FirstOrDefault(p => p.Id == conn.FromPort && !p.IsInput);
-                    if (outPort is not null)
-                    {
-                        field = outPort.DataType switch
-                        {
-                            PortDataType.Image or PortDataType.File => "file",
-                            PortDataType.Video or PortDataType.VideoList => "file",
-                            _ => "text"
-                        };
-                    }
-                }
-                inputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\"}}";
-            }
-
-            entries.Add(new ReorderModuleEntry(moduleId, stepOrder, inputMapping));
-        }
-
-        var graphJson = JsonSerializer.Serialize(graph);
-        var req = new ReorderModulesRequest(entries, graphJson);
-        await Api.ReorderModulesAsync(ProjectId, req);
     }
 
     private void StartContextEdit()
