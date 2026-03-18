@@ -20,7 +20,6 @@ body {
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
-    zoom: 0.8;
 }
 
 .app-layout {
@@ -1860,7 +1859,7 @@ a.link:hover { text-decoration: underline; }
 
 /* ── Drawflow dark mode — ONLY colors, ZERO layout changes ── */
 .drawflow {
-    background: var(--bg-surface) !important;
+    background: var(--bg) !important;
 }
 
 .drawflow .drawflow-node {
