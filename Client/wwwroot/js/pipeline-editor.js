@@ -150,7 +150,10 @@ window.pipelineEditor = {
         html += '<span class="df-node-title" title="' + name + '">' + name + '</span>';
         html += '<span class="df-node-badge">' + type + '</span>';
         html += '</div>';
+        // Two columns: inputs (left) and outputs (right) so each column
+        // aligns with its respective Drawflow circle container
         html += '<div class="df-node-ports">';
+        html += '<div class="df-ports-col df-ports-inputs">';
         for (var i = 0; i < inputs.length; i++) {
             html += '<div class="df-port-label input" data-port="' + (i + 1) + '">';
             html += '<span class="df-port-dot" style="color:' + inputs[i].color + '">&#x25CF;</span> ';
@@ -158,12 +161,15 @@ window.pipelineEditor = {
             if (inputs[i].required) html += ' <span class="df-port-req">*</span>';
             html += '</div>';
         }
+        html += '</div>';
+        html += '<div class="df-ports-col df-ports-outputs">';
         for (var j = 0; j < outputs.length; j++) {
             html += '<div class="df-port-label output" data-port="' + (j + 1) + '">';
             html += outputs[j].label;
             html += ' <span class="df-port-dot" style="color:' + outputs[j].color + '">&#x25CF;</span>';
             html += '</div>';
         }
+        html += '</div>';
         html += '</div></div>';
         return html;
     },

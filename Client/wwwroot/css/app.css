@@ -1865,13 +1865,17 @@ a.link:hover { text-decoration: underline; }
     background-size: 24px 24px !important;
 }
 
+/* Node: override horizontal flex → block so content takes full width */
 .drawflow .drawflow-node {
+    display: block !important;
+    position: absolute;
     background: var(--bg-card) !important;
     border: 1px solid var(--border) !important;
     border-radius: 10px !important;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
     padding: 0 !important;
-    min-width: 200px;
+    width: auto !important;
+    min-width: 0 !important;
     color: var(--text) !important;
 }
 
@@ -1884,12 +1888,44 @@ a.link:hover { text-decoration: underline; }
     box-shadow: 0 0 0 2px rgba(108,99,255,0.3), 0 4px 16px rgba(0,0,0,0.4) !important;
 }
 
+/* Content takes full width */
+.drawflow .drawflow-node .drawflow_content_node {
+    width: 100%;
+}
+
+/* Inputs/outputs: absolute on left/right edge, skip header with padding-top */
+.drawflow .drawflow-node .inputs,
+.drawflow .drawflow-node .outputs {
+    position: absolute !important;
+    top: 0;
+    display: flex !important;
+    flex-direction: column;
+    padding-top: 34px; /* matches header height */
+    z-index: 5;
+}
+
+.drawflow .drawflow-node .inputs {
+    left: -7px;
+}
+
+.drawflow .drawflow-node .outputs {
+    right: -7px;
+}
+
+/* Connection circles: sized + spaced to align with 26px port rows */
 .drawflow .drawflow-node .input,
 .drawflow .drawflow-node .output {
-    background: var(--bg-card) !important;
-    border: 2px solid var(--text-muted) !important;
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
     width: 14px !important;
     height: 14px !important;
+    margin: 6px 0 !important; /* (26 - 14) / 2 = 6px → 26px total matches port row */
+    background: var(--bg-card) !important;
+    border: 2px solid var(--text-muted) !important;
+    border-radius: 50%;
+    cursor: crosshair;
     transition: transform 0.15s, background 0.15s;
 }
 
@@ -1917,11 +1953,13 @@ a.link:hover { text-decoration: underline; }
 
 /* ── Drawflow node content (custom HTML inside nodes) ── */
 .df-node-content {
-    min-width: 180px;
+    min-width: 160px;
 }
 
 .df-node-header {
-    padding: 0.4rem 0.6rem;
+    height: 34px; /* fixed: must match padding-top on .inputs/.outputs */
+    box-sizing: border-box;
+    padding: 0 0.6rem;
     border-radius: 9px 9px 0 0;
     display: flex;
     align-items: center;
@@ -1952,18 +1990,43 @@ a.link:hover { text-decoration: underline; }
 }
 
 .df-node-ports {
-    padding: 0.2rem 0.5rem 0.4rem;
+    display: flex;
+    gap: 1rem;
+    padding: 0 0.5rem 0.2rem;
 }
 
+.df-ports-col {
+    display: flex;
+    flex-direction: column;
+}
+
+.df-ports-inputs {
+    flex: 1;
+    min-width: 0;
+}
+
+.df-ports-outputs {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Each port label row: exactly 26px to match circle spacing */
 .df-port-label {
     font-size: 0.7rem;
     color: var(--text-muted);
-    padding: 0.1rem 0;
+    height: 26px;
+    line-height: 26px;
+    padding: 0;
     white-space: nowrap;
+}
+
+.df-port-label.input {
+    padding-left: 12px; /* space for the circle on the left edge */
 }
 
 .df-port-label.output {
     text-align: right;
+    padding-right: 12px; /* space for the circle on the right edge */
 }
 
 .df-port-dot {
