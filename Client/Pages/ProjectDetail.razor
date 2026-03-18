@@ -138,24 +138,14 @@ else
                     {
                         var pm = __main[si];
                         var nextPm = si + 1 < __main.Count ? __main[si + 1] : null;
-                        var isEditing = _editingPmId == pm.Id;
                         var stepCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == pm.Id)?.EstimatedCost;
 
                         <!-- Step card -->
                         <div class="pipeline-step">
-                            <div class="step-card-v2 @(isEditing ? "editing" : "")">
+                            <div class="step-card-v2">
                                 <div class="step-card-header">
                                     <span class="step-number">@pm.StepOrder</span>
-                                    <span class="step-title">
-                                        @if (isEditing)
-                                        {
-                                            <input type="text" class="input-inline" @bind="_editStepName" placeholder="Nombre" />
-                                        }
-                                        else
-                                        {
-                                            @(pm.StepName ?? pm.AiModuleName)
-                                        }
-                                    </span>
+                                    <span class="step-title">@(pm.StepName ?? pm.AiModuleName)</span>
                                     <span class="badge badge-@(pm.ModuleType.ToLower())">@pm.ModuleType</span>
                                 </div>
                                 <div class="step-card-meta">
@@ -166,82 +156,16 @@ else
                                         <span class="text-muted">~$@stepCost.Value.ToString("F4")</span>
                                     }
                                 </div>
-                                @if (isEditing)
-                                {
-                                    <div class="step-card-edit">
-                                        <select class="select-inline" @bind="_editInputMapping">
-                                            <option value='{"source":"user"}'>Entrada del usuario</option>
-                                            <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
-                                            <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
-                                        </select>
-                                        @if (pm.ModuleType == "Image")
-                                        {
-                                            <textarea @bind="_imagePrompt" rows="2" placeholder="Prompt de imagen (opcional)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                        }
-                                        @if (pm.ModuleType == "Video")
-                                        {
-                                            <textarea @bind="_videoPrompt" rows="2" placeholder="Prompt del video (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                            <select class="select-inline" @bind="_videoSource" style="margin-top:0.3rem;">
-                                                <option value="prompt">Solo texto</option>
-                                                <option value="both">Imagen + prompt</option>
-                                            </select>
-                                        }
-                                        @if (pm.ModuleType == "VideoEdit")
-                                        {
-                                            <textarea @bind="_videoPrompt" rows="2" placeholder="Guion / texto de voz (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                        }
-                                        @if (pm.ModuleType == "Publish")
-                                        {
-                                            <textarea @bind="_publishCaption" rows="2" placeholder="Caption ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
-                                            <select class="select-inline" @bind="_publishType" style="margin-top:0.3rem;">
-                                                <option value="post">Post</option>
-                                                <option value="reel">Reel</option>
-                                                <option value="story">Story</option>
-                                            </select>
-                                        }
-                                        @if (pm.ModuleType == "Interaction")
-                                        {
-                                            <textarea @bind="_interactionTemplate" rows="2" placeholder="Mensaje ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
-                                            <select class="select-inline" @bind="_interactionMessageType" style="margin-top:0.3rem;">
-                                                <option value="combined">Texto + Imagenes</option>
-                                                <option value="text">Solo texto</option>
-                                                <option value="image">Solo imagenes</option>
-                                            </select>
-                                            <select class="select-inline" @bind="_interactionWaitForResponse" style="margin-top:0.3rem;">
-                                                <option value="true">Esperar respuesta</option>
-                                                <option value="false">Enviar y continuar</option>
-                                            </select>
-                                        }
-                                        @if (pm.ModuleType == "Design")
-                                        {
-                                            <input type="text" class="input-inline" @bind="_canvaDesignTitle" placeholder="Titulo del diseno" style="margin-top:0.3rem;" />
-                                            <select class="select-inline" @bind="_canvaExportFormat" style="margin-top:0.3rem;">
-                                                <option value="png">PNG</option>
-                                                <option value="jpg">JPG</option>
-                                                <option value="pdf">PDF</option>
-                                                <option value="pptx">PPTX</option>
-                                            </select>
-                                        }
-                                    </div>
-                                }
-                                @if (!isEditing && pm.ModuleType == "Text" && nextPm is not null)
+                                @if (pm.ModuleType == "Text" && nextPm is not null)
                                 {
                                     var maxLen = GetMaxPromptLength(nextPm.ModelName);
                                     <div class="step-rule-hint">Limite: @maxLen chars (siguiente: @nextPm.ModelName)</div>
                                 }
                                 <div class="step-card-actions">
-                                    @if (isEditing)
-                                    {
-                                        <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
-                                        <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn btn-xs" @onclick="() => MoveStep(pm, -1)" disabled="@(pm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
-                                        <button class="btn btn-xs" @onclick="() => MoveStep(pm, 1)" disabled="@(pm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
-                                        <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
-                                        <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
-                                    }
+                                    <button class="btn btn-xs" @onclick="() => MoveStep(pm, -1)" disabled="@(pm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
+                                    <button class="btn btn-xs" @onclick="() => MoveStep(pm, 1)" disabled="@(pm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
+                                    <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
+                                    <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
                                 </div>
                             </div>
                         </div>
@@ -266,7 +190,6 @@ else
                                             @for (var rmi = 0; rmi < remainingMain.Count; rmi++)
                                             {
                                                 var rpm = remainingMain[rmi];
-                                                var rIsEditing = _editingPmId == rpm.Id;
                                                 var rNextPm = rmi + 1 < remainingMain.Count ? remainingMain[rmi + 1] : null;
                                                 var rCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == rpm.Id)?.EstimatedCost;
 
@@ -274,19 +197,10 @@ else
                                                 {
                                                     <div class="branch-connector"></div>
                                                 }
-                                                <div class="step-card-v2 branch-step @(rIsEditing ? "editing" : "")">
+                                                <div class="step-card-v2 branch-step">
                                                     <div class="step-card-header">
                                                         <span class="step-number">@rpm.StepOrder</span>
-                                                        <span class="step-title">
-                                                            @if (rIsEditing)
-                                                            {
-                                                                <input type="text" class="input-inline" @bind="_editStepName" placeholder="Nombre" />
-                                                            }
-                                                            else
-                                                            {
-                                                                @(rpm.StepName ?? rpm.AiModuleName)
-                                                            }
-                                                        </span>
+                                                        <span class="step-title">@(rpm.StepName ?? rpm.AiModuleName)</span>
                                                         <span class="badge badge-@(rpm.ModuleType.ToLower())">@rpm.ModuleType</span>
                                                     </div>
                                                     <div class="step-card-meta">
@@ -297,82 +211,16 @@ else
                                                             <span class="text-muted">~$@rCost.Value.ToString("F4")</span>
                                                         }
                                                     </div>
-                                                    @if (rIsEditing)
-                                                    {
-                                                        <div class="step-card-edit">
-                                                            <select class="select-inline" @bind="_editInputMapping">
-                                                                <option value='{"source":"user"}'>Entrada del usuario</option>
-                                                                <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
-                                                                <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
-                                                            </select>
-                                                            @if (rpm.ModuleType == "Image")
-                                                            {
-                                                                <textarea @bind="_imagePrompt" rows="2" placeholder="Prompt de imagen (opcional)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                            }
-                                                            @if (rpm.ModuleType == "Video")
-                                                            {
-                                                                <textarea @bind="_videoPrompt" rows="2" placeholder="Prompt del video (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                                <select class="select-inline" @bind="_videoSource" style="margin-top:0.3rem;">
-                                                                    <option value="prompt">Solo texto</option>
-                                                                    <option value="both">Imagen + prompt</option>
-                                                                </select>
-                                                            }
-                                                            @if (rpm.ModuleType == "VideoEdit")
-                                                            {
-                                                                <textarea @bind="_videoPrompt" rows="2" placeholder="Guion / texto de voz (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                            }
-                                                            @if (rpm.ModuleType == "Publish")
-                                                            {
-                                                                <textarea @bind="_publishCaption" rows="2" placeholder="Caption ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                                <select class="select-inline" @bind="_publishType" style="margin-top:0.3rem;">
-                                                                    <option value="post">Post</option>
-                                                                    <option value="reel">Reel</option>
-                                                                    <option value="story">Story</option>
-                                                                </select>
-                                                            }
-                                                            @if (rpm.ModuleType == "Interaction")
-                                                            {
-                                                                <textarea @bind="_interactionTemplate" rows="2" placeholder="Mensaje ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                                <select class="select-inline" @bind="_interactionMessageType" style="margin-top:0.3rem;">
-                                                                    <option value="combined">Texto + Imagenes</option>
-                                                                    <option value="text">Solo texto</option>
-                                                                    <option value="image">Solo imagenes</option>
-                                                                </select>
-                                                                <select class="select-inline" @bind="_interactionWaitForResponse" style="margin-top:0.3rem;">
-                                                                    <option value="true">Esperar respuesta</option>
-                                                                    <option value="false">Enviar y continuar</option>
-                                                                </select>
-                                                            }
-                                                            @if (rpm.ModuleType == "Design")
-                                                            {
-                                                                <input type="text" class="input-inline" @bind="_canvaDesignTitle" placeholder="Titulo del diseno" style="margin-top:0.3rem;" />
-                                                                <select class="select-inline" @bind="_canvaExportFormat" style="margin-top:0.3rem;">
-                                                                    <option value="png">PNG</option>
-                                                                    <option value="jpg">JPG</option>
-                                                                    <option value="pdf">PDF</option>
-                                                                    <option value="pptx">PPTX</option>
-                                                                </select>
-                                                            }
-                                                        </div>
-                                                    }
-                                                    @if (!rIsEditing && rpm.ModuleType == "Text" && rNextPm is not null)
+                                                    @if (rpm.ModuleType == "Text" && rNextPm is not null)
                                                     {
                                                         var rMaxLen = GetMaxPromptLength(rNextPm.ModelName);
                                                         <div class="step-rule-hint">Limite: @rMaxLen chars (siguiente: @rNextPm.ModelName)</div>
                                                     }
                                                     <div class="step-card-actions">
-                                                        @if (rIsEditing)
-                                                        {
-                                                            <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
-                                                            <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
-                                                        }
-                                                        else
-                                                        {
-                                                            <button class="btn btn-xs" @onclick="() => MoveStep(rpm, -1)" disabled="@(rpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
-                                                            <button class="btn btn-xs" @onclick="() => MoveStep(rpm, 1)" disabled="@(rpm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
-                                                            <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(rpm)">Editar</button>
-                                                            <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(rpm.Id)">Quitar</button>
-                                                        }
+                                                        <button class="btn btn-xs" @onclick="() => MoveStep(rpm, -1)" disabled="@(rpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
+                                                        <button class="btn btn-xs" @onclick="() => MoveStep(rpm, 1)" disabled="@(rpm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
+                                                        <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(rpm)">Editar</button>
+                                                        <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(rpm.Id)">Quitar</button>
                                                     </div>
                                                 </div>
                                             }
@@ -391,26 +239,16 @@ else
                                             @for (var bsi = 0; bsi < branchSteps.Count; bsi++)
                                             {
                                                 var bpm = branchSteps[bsi];
-                                                var bIsEditing = _editingPmId == bpm.Id;
                                                 var bCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == bpm.Id)?.EstimatedCost;
 
                                                 @if (bsi > 0)
                                                 {
                                                     <div class="branch-connector"></div>
                                                 }
-                                                <div class="step-card-v2 branch-step @(bIsEditing ? "editing" : "")">
+                                                <div class="step-card-v2 branch-step">
                                                     <div class="step-card-header">
                                                         <span class="step-number">@bpm.StepOrder</span>
-                                                        <span class="step-title">
-                                                            @if (bIsEditing)
-                                                            {
-                                                                <input type="text" class="input-inline" @bind="_editStepName" placeholder="Nombre" />
-                                                            }
-                                                            else
-                                                            {
-                                                                @(bpm.StepName ?? bpm.AiModuleName)
-                                                            }
-                                                        </span>
+                                                        <span class="step-title">@(bpm.StepName ?? bpm.AiModuleName)</span>
                                                         <span class="badge badge-@(bpm.ModuleType.ToLower())">@bpm.ModuleType</span>
                                                     </div>
                                                     <div class="step-card-meta">
@@ -420,78 +258,12 @@ else
                                                             <span class="text-muted">~$@bCost.Value.ToString("F4")</span>
                                                         }
                                                     </div>
-                                                    @if (bIsEditing)
-                                                    {
-                                                        <div class="step-card-edit">
-                                                            <select class="select-inline" @bind="_editInputMapping">
-                                                                <option value='{"source":"user"}'>Entrada del usuario</option>
-                                                                <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
-                                                                <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
-                                                            </select>
-                                                            @if (bpm.ModuleType == "Image")
-                                                            {
-                                                                <textarea @bind="_imagePrompt" rows="2" placeholder="Prompt de imagen (opcional)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                            }
-                                                            @if (bpm.ModuleType == "Video")
-                                                            {
-                                                                <textarea @bind="_videoPrompt" rows="2" placeholder="Prompt del video (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                                <select class="select-inline" @bind="_videoSource" style="margin-top:0.3rem;">
-                                                                    <option value="prompt">Solo texto</option>
-                                                                    <option value="both">Imagen + prompt</option>
-                                                                </select>
-                                                            }
-                                                            @if (bpm.ModuleType == "VideoEdit")
-                                                            {
-                                                                <textarea @bind="_videoPrompt" rows="2" placeholder="Guion / texto de voz (obligatorio)" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                            }
-                                                            @if (bpm.ModuleType == "Publish")
-                                                            {
-                                                                <textarea @bind="_publishCaption" rows="2" placeholder="Caption ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                                <select class="select-inline" @bind="_publishType" style="margin-top:0.3rem;">
-                                                                    <option value="post">Post</option>
-                                                                    <option value="reel">Reel</option>
-                                                                    <option value="story">Story</option>
-                                                                </select>
-                                                            }
-                                                            @if (bpm.ModuleType == "Interaction")
-                                                            {
-                                                                <textarea @bind="_interactionTemplate" rows="2" placeholder="Mensaje ({previous_output})" style="width:100%; margin-top:0.3rem;"></textarea>
-                                                                <select class="select-inline" @bind="_interactionMessageType" style="margin-top:0.3rem;">
-                                                                    <option value="combined">Texto + Imagenes</option>
-                                                                    <option value="text">Solo texto</option>
-                                                                    <option value="image">Solo imagenes</option>
-                                                                </select>
-                                                                <select class="select-inline" @bind="_interactionWaitForResponse" style="margin-top:0.3rem;">
-                                                                    <option value="true">Esperar respuesta</option>
-                                                                    <option value="false">Enviar y continuar</option>
-                                                                </select>
-                                                            }
-                                                            @if (bpm.ModuleType == "Design")
-                                                            {
-                                                                <input type="text" class="input-inline" @bind="_canvaDesignTitle" placeholder="Titulo del diseno" style="margin-top:0.3rem;" />
-                                                                <select class="select-inline" @bind="_canvaExportFormat" style="margin-top:0.3rem;">
-                                                                    <option value="png">PNG</option>
-                                                                    <option value="jpg">JPG</option>
-                                                                    <option value="pdf">PDF</option>
-                                                                    <option value="pptx">PPTX</option>
-                                                                </select>
-                                                            }
-                                                        </div>
-                                                    }
                                                     <div class="step-card-actions">
-                                                        @if (bIsEditing)
-                                                        {
-                                                            <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
-                                                            <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
-                                                        }
-                                                        else
-                                                        {
-                                                            var bSorted = branchSteps;
-                                                            <button class="btn btn-xs" @onclick="() => MoveStep(bpm, -1)" disabled="@(bpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
-                                                            <button class="btn btn-xs" @onclick="() => MoveStep(bpm, 1)" disabled="@(bpm.StepOrder >= bSorted.Count)" title="Bajar">&#x25BC;</button>
-                                                            <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(bpm)">Editar</button>
-                                                            <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(bpm.Id)">Quitar</button>
-                                                        }
+                                                        @{var bSorted = branchSteps;}
+                                                        <button class="btn btn-xs" @onclick="() => MoveStep(bpm, -1)" disabled="@(bpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
+                                                        <button class="btn btn-xs" @onclick="() => MoveStep(bpm, 1)" disabled="@(bpm.StepOrder >= bSorted.Count)" title="Bajar">&#x25BC;</button>
+                                                        <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(bpm)">Editar</button>
+                                                        <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(bpm.Id)">Quitar</button>
                                                     </div>
                                                 </div>
                                             }
@@ -794,6 +566,127 @@ else
             </div>
             } @* end linear view else *@
         </div> @* end tab-content *@
+
+        @* ── Edit step modal ── *@
+        @if (_editingPmId.HasValue)
+        {
+            var editPm = _project.Modules.FirstOrDefault(m => m.Id == _editingPmId);
+            if (editPm is not null)
+            {
+                <div class="modal-overlay" @onclick="CancelEdit">
+                    <div class="modal-content" @onclick:stopPropagation="true">
+                        <div class="modal-header">
+                            <span class="badge badge-@(editPm.ModuleType.ToLower())">@editPm.ModuleType</span>
+                            <strong style="flex:1">Editar paso @editPm.StepOrder &mdash; @(editPm.StepName ?? editPm.AiModuleName)</strong>
+                            <button class="btn btn-xs" @onclick="CancelEdit">&#x2715;</button>
+                        </div>
+                        <div class="modal-body">
+                            @if (_editError is not null)
+                            {
+                                <div class="alert alert-error" style="margin-bottom:0.8rem;">@_editError</div>
+                            }
+                            <div class="form-group">
+                                <label>Nombre del paso</label>
+                                <input type="text" @bind="_editStepName" placeholder="Nombre personalizado" />
+                            </div>
+                            <div class="form-group">
+                                <label>Fuente de entrada</label>
+                                <select @bind="_editInputMapping">
+                                    <option value='{"source":"user"}'>Entrada del usuario</option>
+                                    <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
+                                    <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
+                                </select>
+                            </div>
+                            @if (editPm.ModuleType == "Image")
+                            {
+                                <div class="form-group">
+                                    <label>Prompt de imagen</label>
+                                    <textarea @bind="_imagePrompt" rows="3" placeholder="Prompt de imagen (opcional)"></textarea>
+                                </div>
+                            }
+                            @if (editPm.ModuleType == "Video")
+                            {
+                                <div class="form-group">
+                                    <label>Prompt del video</label>
+                                    <textarea @bind="_videoPrompt" rows="3" placeholder="Prompt del video (obligatorio)"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label>Fuente de video</label>
+                                    <select @bind="_videoSource">
+                                        <option value="prompt">Solo texto</option>
+                                        <option value="both">Imagen + prompt</option>
+                                    </select>
+                                </div>
+                            }
+                            @if (editPm.ModuleType == "VideoEdit")
+                            {
+                                <div class="form-group">
+                                    <label>Guion / texto de voz</label>
+                                    <textarea @bind="_videoPrompt" rows="3" placeholder="Guion / texto de voz (obligatorio)"></textarea>
+                                </div>
+                            }
+                            @if (editPm.ModuleType == "Publish")
+                            {
+                                <div class="form-group">
+                                    <label>Caption</label>
+                                    <textarea @bind="_publishCaption" rows="3" placeholder="Caption ({previous_output})"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tipo de publicacion</label>
+                                    <select @bind="_publishType">
+                                        <option value="post">Post</option>
+                                        <option value="reel">Reel</option>
+                                        <option value="story">Story</option>
+                                    </select>
+                                </div>
+                            }
+                            @if (editPm.ModuleType == "Interaction")
+                            {
+                                <div class="form-group">
+                                    <label>Plantilla de mensaje</label>
+                                    <textarea @bind="_interactionTemplate" rows="3" placeholder="Mensaje ({previous_output})"></textarea>
+                                </div>
+                                <div class="form-group">
+                                    <label>Tipo de mensaje</label>
+                                    <select @bind="_interactionMessageType">
+                                        <option value="combined">Texto + Imagenes</option>
+                                        <option value="text">Solo texto</option>
+                                        <option value="image">Solo imagenes</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Respuesta</label>
+                                    <select @bind="_interactionWaitForResponse">
+                                        <option value="true">Esperar respuesta</option>
+                                        <option value="false">Enviar y continuar</option>
+                                    </select>
+                                </div>
+                            }
+                            @if (editPm.ModuleType == "Design")
+                            {
+                                <div class="form-group">
+                                    <label>Titulo del diseno</label>
+                                    <input type="text" @bind="_canvaDesignTitle" placeholder="Titulo del diseno" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Formato de exportacion</label>
+                                    <select @bind="_canvaExportFormat">
+                                        <option value="png">PNG</option>
+                                        <option value="jpg">JPG</option>
+                                        <option value="pdf">PDF</option>
+                                        <option value="pptx">PPTX</option>
+                                    </select>
+                                </div>
+                            }
+                            <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1rem; padding-top:0.8rem; border-top:1px solid var(--border);">
+                                <button class="btn" @onclick="CancelEdit">Cancelar</button>
+                                <button class="btn btn-primary" @onclick="SaveEdit">Guardar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
     }
 
     <!-- ═══════════ TAB: EJECUTAR ═══════════ -->
