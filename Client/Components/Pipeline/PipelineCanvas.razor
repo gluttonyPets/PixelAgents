@@ -33,7 +33,6 @@
         <!-- Toolbar -->
         <div class="canvas-toolbar">
             <button @onclick="AutoLayout" title="Organizar automaticamente">&#x2B50; Auto-layout</button>
-            <button @onclick="SyncPipeline" title="Sincronizar conexiones al pipeline ejecutable">&#x1F504; Sincronizar</button>
         </div>
 
         @if (Modules.Count == 0 && _jsInitialized)
@@ -168,7 +167,6 @@
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
     [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
     [Parameter] public EventCallback<PipelineGraph> OnSaveGraph { get; set; }
-    [Parameter] public EventCallback<List<GraphToPipelineMapper.MappedStep>> OnSyncPipeline { get; set; }
 
     private string _canvasId = Guid.NewGuid().ToString("N")[..8];
     private string _searchFilter = "";
@@ -365,14 +363,6 @@
     {
         _error = null;
         await OnSaveGraph.InvokeAsync(Graph);
-    }
-
-    private async Task SyncPipeline()
-    {
-        _error = null;
-        var mapped = GraphToPipelineMapper.MapGraphToSteps(Modules, Graph);
-        await OnSyncPipeline.InvokeAsync(mapped);
-        await AutoSaveGraph();
     }
 
     // ── JS Callbacks ──

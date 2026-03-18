@@ -120,8 +120,7 @@ else
                                 GraphChanged="OnGraphChanged"
                                 OnAddModule="AddModuleFromCanvas"
                                 OnRemoveModule="RemoveModuleFromCanvas"
-                                OnSaveGraph="SaveGraphLayout"
-                                OnSyncPipeline="SyncPipelineFromGraph" />
+                                OnSaveGraph="SaveGraphLayout" />
             }
             else
             {
@@ -2175,34 +2174,6 @@ else
         await Api.SaveGraphLayoutAsync(ProjectId, json);
     }
 
-    private async Task SyncPipelineFromGraph(List<GraphToPipelineMapper.MappedStep> steps)
-    {
-        _editError = null;
-        try
-        {
-            foreach (var step in steps)
-            {
-                var pm = _project?.Modules.FirstOrDefault(m => m.Id == step.ProjectModuleId);
-                if (pm is null) continue;
-
-                var req = new UpdateProjectModuleRequest(
-                    step.StepOrder,
-                    pm.StepName,
-                    step.InputMapping,
-                    step.Configuration,
-                    pm.IsActive);
-
-                var (ok, error) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
-                if (!ok)
-                {
-                    _editError = $"Error sincronizando paso {step.StepOrder}: {error}";
-                    break;
-                }
-            }
-            await LoadAll();
-        }
-        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
-    }
 
     private void StartContextEdit()
     {
