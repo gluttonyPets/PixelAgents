@@ -85,18 +85,29 @@ window.pipelineEditor = {
         if (!this._editor) return;
         var fromNodeId = this._reverseMap[fromModuleId];
         var toNodeId = this._reverseMap[toModuleId];
-        if (fromNodeId === undefined || toNodeId === undefined) return;
+        if (fromNodeId === undefined || toNodeId === undefined) {
+            console.warn('[Drawflow] addConnection: node not found', { fromModuleId: fromModuleId, toModuleId: toModuleId, reverseMap: Object.keys(this._reverseMap) });
+            return;
+        }
         var fromPorts = this._portMap[fromNodeId];
         var toPorts = this._portMap[toNodeId];
-        if (!fromPorts || !toPorts) return;
+        if (!fromPorts || !toPorts) {
+            console.warn('[Drawflow] addConnection: portMap missing', { fromNodeId: fromNodeId, toNodeId: toNodeId });
+            return;
+        }
         var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
         var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
         if (fromIdx > 0 && toIdx > 0) {
             this._suppressEvents = true;
             try {
                 this._editor.addConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
-            } catch (e) { /* connection may already exist */ }
+            } catch (e) { console.warn('[Drawflow] addConnection error:', e); }
             this._suppressEvents = false;
+        } else {
+            console.warn('[Drawflow] addConnection: port not found', {
+                fromPortId: fromPortId, outputs: fromPorts.outputs,
+                toPortId: toPortId, inputs: toPorts.inputs
+            });
         }
     },
 

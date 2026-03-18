@@ -34,7 +34,6 @@
         <div class="canvas-toolbar">
             <button @onclick="AutoLayout" title="Organizar automaticamente">&#x2B50; Auto-layout</button>
             <button @onclick="SyncPipeline" title="Sincronizar conexiones al pipeline ejecutable">&#x1F504; Sincronizar</button>
-            <button @onclick="SaveGraph" title="Guardar layout">&#x1F4BE; Guardar</button>
         </div>
 
         @if (Modules.Count == 0 && _jsInitialized)
@@ -160,10 +159,6 @@
 {
     <div class="alert alert-error" style="margin-top: 0.5rem;">@_error</div>
 }
-@if (_saveSuccess)
-{
-    <div class="alert alert-success" style="margin-top: 0.5rem;">Layout guardado</div>
-}
 
 @code {
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
@@ -179,8 +174,8 @@
     private string _searchFilter = "";
     private Guid? _selectedModuleId;
     private string? _error;
-    private bool _saveSuccess;
     private bool _jsInitialized;
+    private CancellationTokenSource? _saveDebounce;
     private DotNetObjectReference<PipelineCanvas>? _dotNetRef;
     private int _lastModuleCount;
 
@@ -366,13 +361,10 @@
         StateHasChanged();
     }
 
-    private async Task SaveGraph()
+    private async Task AutoSaveGraph()
     {
-        _saveSuccess = false;
         _error = null;
         await OnSaveGraph.InvokeAsync(Graph);
-        _saveSuccess = true;
-        _ = Task.Delay(2000).ContinueWith(_ => { _saveSuccess = false; InvokeAsync(StateHasChanged); });
     }
 
     private async Task SyncPipeline()
@@ -380,7 +372,7 @@
         _error = null;
         var mapped = GraphToPipelineMapper.MapGraphToSteps(Modules, Graph);
         await OnSyncPipeline.InvokeAsync(mapped);
-        await SaveGraph();
+        await AutoSaveGraph();
     }
 
     // ── JS Callbacks ──
@@ -485,6 +477,18 @@
     private async Task NotifyGraphChanged()
     {
         await GraphChanged.InvokeAsync(Graph);
+
+        // Debounce auto-save: wait 500ms after last change
+        _saveDebounce?.Cancel();
+        _saveDebounce = new CancellationTokenSource();
+        var token = _saveDebounce.Token;
+        try
+        {
+            await Task.Delay(500, token);
+            if (!token.IsCancellationRequested)
+                await AutoSaveGraph();
+        }
+        catch (TaskCanceledException) { }
     }
 
     public async ValueTask DisposeAsync()
