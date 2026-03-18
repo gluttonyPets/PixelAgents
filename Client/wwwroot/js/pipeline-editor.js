@@ -83,11 +83,7 @@ window.pipelineEditor = {
         this._dragging = {
             nodeId: nodeId,
             offsetX: clientX - nodeRect.left,
-            offsetY: clientY - nodeRect.top,
-            canvasLeft: canvasRect.left,
-            canvasTop: canvasRect.top,
-            scrollLeft: this._canvas.scrollLeft,
-            scrollTop: this._canvas.scrollTop
+            offsetY: clientY - nodeRect.top
         };
         node.classList.add('dragging');
     },
@@ -142,8 +138,8 @@ window.pipelineEditor = {
 
         // Node dragging
         if (this._dragging) {
-            const x = e.clientX - this._dragging.canvasLeft + this._canvas.scrollLeft - this._dragging.offsetX;
-            const y = e.clientY - this._dragging.canvasTop + this._canvas.scrollTop - this._dragging.offsetY;
+            const x = e.clientX - canvasRect.left + this._canvas.scrollLeft - this._dragging.offsetX;
+            const y = e.clientY - canvasRect.top + this._canvas.scrollTop - this._dragging.offsetY;
             const node = document.querySelector(`[data-node-id="${this._dragging.nodeId}"]`);
             if (node) {
                 node.style.left = Math.max(0, x) + 'px';

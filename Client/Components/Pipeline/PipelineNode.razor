@@ -97,16 +97,17 @@
 
     private async Task OnHeaderMouseDown(MouseEventArgs e)
     {
-        await OnSelectNode.InvokeAsync();
+        // Start drag FIRST to capture DOM rects before any Blazor re-render
         await OnDragStart.InvokeAsync((Module.Id.ToString(), e.ClientX, e.ClientY));
+        await OnSelectNode.InvokeAsync();
     }
 
     private async Task OnHeaderTouchStart(TouchEventArgs e)
     {
         if (e.Touches.Length > 0)
         {
-            await OnSelectNode.InvokeAsync();
             await OnDragStart.InvokeAsync((Module.Id.ToString(), e.Touches[0].ClientX, e.Touches[0].ClientY));
+            await OnSelectNode.InvokeAsync();
         }
     }
 
