@@ -1103,7 +1103,11 @@ namespace Server.Services.Ai
                         return prevOutput.Items.Select(item => InputAdapter.SanitizePlainText(item.Content)).ToList();
                     }
 
-                    // Fallback to raw text
+                    // Fallback to Content field (e.g., Image/Video steps with no Items)
+                    if (prevOutput is not null && !string.IsNullOrWhiteSpace(prevOutput.Content))
+                        return [InputAdapter.SanitizePlainText(prevOutput.Content)];
+
+                    // Fallback to raw text from stepResults
                     if (stepResults.TryGetValue(prevOrder, out var prevResult))
                         return [InputAdapter.SanitizePlainText(prevResult.TextOutput ?? "")];
 
@@ -1118,6 +1122,10 @@ namespace Server.Services.Ai
                     {
                         return targetOutput.Items.Select(item => InputAdapter.SanitizePlainText(item.Content)).ToList();
                     }
+
+                    // Fallback to Content field
+                    if (targetOutput is not null && !string.IsNullOrWhiteSpace(targetOutput.Content))
+                        return [InputAdapter.SanitizePlainText(targetOutput.Content)];
 
                     if (stepResults.TryGetValue(targetStep, out var targetResult))
                         return [InputAdapter.SanitizePlainText(targetResult.TextOutput ?? "")];
@@ -4162,7 +4170,9 @@ Datos de la ejecucion:
                         }
                         catch { }
                     }
-                    if (oldStep.ProjectModule.AiModule.ModuleType == "Text" && oldStep.OutputData is not null)
+                    // Populate stepResults for ALL step types (not just Text) to match normal execution.
+                    // This ensures "previous" input resolution works for Image/Video/Audio steps too.
+                    if (oldStep.OutputData is not null)
                     {
                         stepResults[oldStep.StepOrder] = AiResult.Ok(oldStep.OutputData);
                     }
