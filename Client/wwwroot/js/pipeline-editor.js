@@ -276,13 +276,13 @@ window.pipelineEditor = {
     },
 
     // ── Update step order badge on a node without full rebuild ──
-    updateNodeStepOrder: function (moduleId, stepOrder) {
+    updateNodeStepOrder: function (moduleId, stepLabel) {
         var nodeId = this._reverseMap[moduleId];
         if (nodeId === undefined) return;
         var el = document.querySelector('#node-' + nodeId + ' .df-order-badge');
         if (el) {
-            el.textContent = stepOrder > 0 ? stepOrder : '';
-            el.style.display = stepOrder > 0 ? '' : 'none';
+            el.textContent = stepLabel || '';
+            el.style.display = stepLabel ? '' : 'none';
         }
     },
 
@@ -333,9 +333,9 @@ window.pipelineEditor = {
         });
     },
 
-    _buildNodeHtml: function (name, type, color, icon, stepOrder, modelName) {
-        var orderBadge = stepOrder > 0
-            ? '<span class="df-order-badge">' + stepOrder + '</span>'
+    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName) {
+        var orderBadge = stepLabel
+            ? '<span class="df-order-badge">' + stepLabel + '</span>'
             : '<span class="df-order-badge" style="display:none"></span>';
         var modelLine = modelName
             ? '<div class="df-node-model">' + modelName + '</div>'

@@ -209,7 +209,11 @@
                                 <span class="inspector-log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
                                 @if (entry.StepOrder.HasValue)
                                 {
-                                    <span class="inspector-log-step">P@(entry.StepOrder)</span>
+                                    @{
+                                        var logPm = Modules.FirstOrDefault(m => m.StepOrder == entry.StepOrder.Value);
+                                        var logLabel = logPm is not null ? GetStepLabel(logPm) : entry.StepOrder.Value.ToString();
+                                    }
+                                    <span class="inspector-log-step">P@(logLabel)</span>
                                 }
                                 <span>@entry.Message</span>
                             </div>
@@ -335,6 +339,7 @@
 
             var pos = _positions.GetValueOrDefault(pm.Id, (60 + (idx % 4) * 280, 60 + (idx / 4) * 200));
             var order = execOrder.GetValueOrDefault(pm.Id, 0);
+            var stepLabel = order > 0 ? GetStepLabel(pm) : "";
 
             await JS.InvokeVoidAsync("pipelineEditor.addNode",
                 pm.Id.ToString(),
@@ -345,7 +350,7 @@
                 JsonSerializer.Serialize(inputs),
                 JsonSerializer.Serialize(outputs),
                 pos.X, pos.Y,
-                order,
+                stepLabel,
                 pm.ModelName);
             idx++;
         }
@@ -668,8 +673,38 @@
         foreach (var pm in Modules)
         {
             var step = order.GetValueOrDefault(pm.Id, 0);
-            await JS.InvokeVoidAsync("pipelineEditor.updateNodeStepOrder", pm.Id.ToString(), step);
+            var label = step > 0 ? GetStepLabel(pm) : "";
+            await JS.InvokeVoidAsync("pipelineEditor.updateNodeStepOrder", pm.Id.ToString(), label);
         }
+    }
+
+    private string GetStepLabel(ProjectModuleResponse pm)
+    {
+        var branches = Modules.Where(m => m.BranchId != "main")
+            .Select(m => m.BranchFromStep).Where(f => f.HasValue).Select(f => f!.Value).Distinct().ToList();
+        if (branches.Count == 0) return pm.StepOrder.ToString();
+
+        var maxFork = branches.Max();
+        if (pm.BranchId == "main" && pm.StepOrder <= maxFork)
+            return pm.StepOrder.ToString();
+
+        if (pm.BranchId == "main")
+        {
+            var mainPostFork = Modules.Where(m => m.BranchId == "main" && m.StepOrder > maxFork)
+                .OrderBy(m => m.StepOrder).ToList();
+            var idx = mainPostFork.FindIndex(m => m.StepOrder == pm.StepOrder);
+            return $"A{maxFork + 1 + idx}";
+        }
+
+        var branchIds = Modules.Where(m => m.BranchId != "main")
+            .GroupBy(m => m.BranchId).Select(g => g.Key).OrderBy(b => b).ToList();
+        var branchIdx = branchIds.IndexOf(pm.BranchId);
+        var letter = (char)('B' + branchIdx);
+        var forkStep = pm.BranchFromStep ?? maxFork;
+        var branchSteps = Modules.Where(m => m.BranchId == pm.BranchId)
+            .OrderBy(m => m.StepOrder).ToList();
+        var bIdx = branchSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
+        return $"{letter}{forkStep + 1 + bIdx}";
     }
 
     private async Task HandleInputMappingChange(Guid moduleId, string? mapping)

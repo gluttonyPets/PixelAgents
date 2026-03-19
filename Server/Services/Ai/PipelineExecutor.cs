@@ -191,8 +191,9 @@ namespace Server.Services.Ai
                 try
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
+                    var stepLabel = GetStepLabel(pm, project.ProjectModules);
                     await _logger.LogAsync(projectId, executionId, "info",
-                        $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
                         pm.StepOrder, stepName);
 
                     // ── Interaction step: send message, optionally pause pipeline ──
@@ -1156,6 +1157,39 @@ namespace Server.Services.Ai
                 }
             }
             return branches;
+        }
+
+        /// <summary>
+        /// Compute a branch-prefixed step label (e.g., "A5", "B5") for display in logs.
+        /// Pre-fork trunk steps show plain numbers. Post-fork: main = A, branches = B, C...
+        /// </summary>
+        private static string GetStepLabel(ProjectModule pm, ICollection<ProjectModule> allModules)
+        {
+            var forkSteps = allModules.Where(m => m.BranchId != "main")
+                .Select(m => m.BranchFromStep).Where(f => f.HasValue).Select(f => f!.Value).Distinct().ToList();
+            if (forkSteps.Count == 0) return pm.StepOrder.ToString();
+
+            var maxFork = forkSteps.Max();
+            if (pm.BranchId == "main" && pm.StepOrder <= maxFork)
+                return pm.StepOrder.ToString();
+
+            if (pm.BranchId == "main")
+            {
+                var mainPostFork = allModules.Where(m => m.BranchId == "main" && m.StepOrder > maxFork)
+                    .OrderBy(m => m.StepOrder).ToList();
+                var idx = mainPostFork.FindIndex(m => m.StepOrder == pm.StepOrder);
+                return $"A{maxFork + 1 + idx}";
+            }
+
+            var branchIds = allModules.Where(m => m.BranchId != "main")
+                .GroupBy(m => m.BranchId).Select(g => g.Key).OrderBy(b => b).ToList();
+            var branchIdx = branchIds.IndexOf(pm.BranchId);
+            var letter = (char)('B' + branchIdx);
+            var forkStep = pm.BranchFromStep ?? maxFork;
+            var branchSteps = allModules.Where(m => m.BranchId == pm.BranchId)
+                .OrderBy(m => m.StepOrder).ToList();
+            var bIdx = branchSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
+            return $"{letter}{forkStep + 1 + bIdx}";
         }
 
         // ── Execution summary generation ──
@@ -2187,8 +2221,9 @@ Datos de la ejecucion:
                 try
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
+                    var stepLabel = GetStepLabel(pm, project.ProjectModules);
                     await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
                         pm.StepOrder, stepName);
 
                     // Handle another interaction step
@@ -3229,8 +3264,9 @@ Datos de la ejecucion:
                 try
                 {
                     var bStepName = bpm.StepName ?? bpm.AiModule.Name;
+                    var bStepLabel = GetStepLabel(bpm, project.ProjectModules);
                     await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"[{branchId}] Ejecutando paso {bpm.StepOrder}: {bStepName} ({bpm.AiModule.ProviderType}/{bpm.AiModule.ModelName})",
+                        $"[{branchId}] Ejecutando paso {bStepLabel}: {bStepName} ({bpm.AiModule.ProviderType}/{bpm.AiModule.ModelName})",
                         bpm.StepOrder, bStepName);
 
                     var bConfig = MergeConfiguration(bpm.AiModule.Configuration, bpm.Configuration);
@@ -3945,8 +3981,9 @@ Datos de la ejecucion:
                 try
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
+                    var stepLabel = GetStepLabel(pm, project.ProjectModules);
                     await _logger.LogAsync(projectId, executionId, "info",
-                        $"Ejecutando paso {pm.StepOrder}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
                         pm.StepOrder, stepName);
 
                     // Handle interaction step during retry

@@ -191,7 +191,7 @@ else
                         <div class="pipeline-step">
                             <div class="step-card-v2">
                                 <div class="step-card-header">
-                                    <span class="step-number">@pm.StepOrder</span>
+                                    <span class="step-number">@GetStepLabel(pm)</span>
                                     <span class="step-title">@(pm.StepName ?? pm.AiModuleName)</span>
                                     <span class="badge badge-@(pm.ModuleType.ToLower())">@pm.ModuleType</span>
                                 </div>
@@ -246,7 +246,7 @@ else
                                                 }
                                                 <div class="step-card-v2 branch-step">
                                                     <div class="step-card-header">
-                                                        <span class="step-number">@rpm.StepOrder</span>
+                                                        <span class="step-number">@GetStepLabel(rpm)</span>
                                                         <span class="step-title">@(rpm.StepName ?? rpm.AiModuleName)</span>
                                                         <span class="badge badge-@(rpm.ModuleType.ToLower())">@rpm.ModuleType</span>
                                                     </div>
@@ -294,7 +294,7 @@ else
                                                 }
                                                 <div class="step-card-v2 branch-step">
                                                     <div class="step-card-header">
-                                                        <span class="step-number">@bpm.StepOrder</span>
+                                                        <span class="step-number">@GetStepLabel(bpm)</span>
                                                         <span class="step-title">@(bpm.StepName ?? bpm.AiModuleName)</span>
                                                         <span class="badge badge-@(bpm.ModuleType.ToLower())">@bpm.ModuleType</span>
                                                     </div>
@@ -625,7 +625,7 @@ else
                     <div class="modal-content" @onclick:stopPropagation="true">
                         <div class="modal-header">
                             <span class="badge badge-@(editPm.ModuleType.ToLower())">@editPm.ModuleType</span>
-                            <strong style="flex:1">Editar paso @editPm.StepOrder &mdash; @(editPm.StepName ?? editPm.AiModuleName)</strong>
+                            <strong style="flex:1">Editar paso @GetStepLabel(editPm) &mdash; @(editPm.StepName ?? editPm.AiModuleName)</strong>
                             <button class="btn btn-xs" @onclick="CancelEdit">&#x2715;</button>
                         </div>
                         <div class="modal-body">
@@ -786,7 +786,7 @@ else
                                         @if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
                                         {
                                             <div class="history-step-preview">
-                                                <span class="text-sm text-muted">Paso @step.StepOrder: @step.ModuleName</span>
+                                                <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
                                                 <div class="history-image-grid">
                                                     @foreach (var f in parsed.Files)
                                                     {
@@ -801,7 +801,7 @@ else
                                         else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
                                         {
                                             <div class="history-step-preview">
-                                                <span class="text-sm text-muted">Paso @step.StepOrder: @step.ModuleName</span>
+                                                <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
                                                 @foreach (var f in parsed.Files)
                                                 {
                                                     var fileUrl = $"{_apiBase}/api/executions/{_expandedExecDetail.Id}/files/{f.FileId}";
@@ -814,7 +814,7 @@ else
                                         else if (parsed?.Type == "text" && parsed.Content is not null)
                                         {
                                             <div class="history-step-preview">
-                                                <span class="text-sm text-muted">Paso @step.StepOrder: @step.ModuleName</span>
+                                                <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
                                                 <div class="output-block" style="font-size: 0.8rem; max-height: 80px; overflow: hidden;">
                                                     @(parsed.Content.Length > 200 ? parsed.Content[..200] + "..." : parsed.Content)
                                                 </div>
@@ -886,7 +886,7 @@ else
                         {
                             <div class="card" style="margin-bottom: 0.5rem; padding: 0.5rem;">
                                 <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem;">
-                                    <span class="step-number" style="font-size: 0.7rem;">@step.StepOrder</span>
+                                    <span class="step-number" style="font-size: 0.7rem;">@GetStepLabelFromOrder(step.StepOrder)</span>
                                     <span style="font-weight: 600; font-size: 0.85rem;">@step.ModuleName</span>
                                     <span class="badge @StatusBadge(step.Status)" style="font-size: 0.6rem;">@step.Status</span>
                                     @if (step.EstimatedCost > 0)
@@ -959,7 +959,7 @@ else
                                             <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
                                             @if (log.StepOrder.HasValue)
                                             {
-                                                <span class="inspector-log-step">P@(log.StepOrder)</span>
+                                                <span class="inspector-log-step">P@(GetStepLabelFromOrder(log.StepOrder.Value))</span>
                                             }
                                             <span>@log.Message</span>
                                         </div>
@@ -2094,6 +2094,62 @@ else
             ?? new())
             .Where(b => b.Value.FirstOrDefault()?.BranchFromStep == stepOrder)
             .ToList();
+
+    /// <summary>
+    /// Compute a branch-prefixed step label. Pre-fork trunk steps show plain numbers (1, 2, 3).
+    /// Post-fork: main continuation = A + seq, other branches = B, C, D... + seq.
+    /// </summary>
+    private string GetStepLabel(ProjectModuleResponse pm)
+    {
+        if (_project is null) return pm.StepOrder.ToString();
+
+        var modules = _project.Modules;
+        var branches = modules.Where(m => m.BranchId != "main")
+            .Select(m => m.BranchFromStep).Where(f => f.HasValue).Select(f => f!.Value).Distinct().ToList();
+
+        // If no branches exist, just return the number
+        if (branches.Count == 0) return pm.StepOrder.ToString();
+
+        var maxFork = branches.Max();
+
+        // Trunk step before any fork
+        if (pm.BranchId == "main" && pm.StepOrder <= maxFork)
+            return pm.StepOrder.ToString();
+
+        // Post-fork: determine branch letter and position
+        if (pm.BranchId == "main")
+        {
+            // Main continuation after fork
+            var mainPostFork = modules.Where(m => m.BranchId == "main" && m.StepOrder > maxFork)
+                .OrderBy(m => m.StepOrder).ToList();
+            var idx = mainPostFork.FindIndex(m => m.StepOrder == pm.StepOrder);
+            return $"A{maxFork + 1 + idx}";
+        }
+        else
+        {
+            // Non-main branch: assign letter B, C, D... based on branch order
+            var branchIds = modules.Where(m => m.BranchId != "main")
+                .GroupBy(m => m.BranchId).Select(g => g.Key).OrderBy(b => b).ToList();
+            var branchIdx = branchIds.IndexOf(pm.BranchId);
+            var letter = (char)('B' + branchIdx);
+
+            var forkStep = pm.BranchFromStep ?? maxFork;
+            var branchSteps = modules.Where(m => m.BranchId == pm.BranchId)
+                .OrderBy(m => m.StepOrder).ToList();
+            var idx = branchSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
+            return $"{letter}{forkStep + 1 + idx}";
+        }
+    }
+
+    /// <summary>
+    /// Compute step label from a StepOrder int (for log entries that only have the order number).
+    /// </summary>
+    private string GetStepLabelFromOrder(int stepOrder)
+    {
+        var pm = _project?.Modules.FirstOrDefault(m => m.StepOrder == stepOrder);
+        if (pm is null) return stepOrder.ToString();
+        return GetStepLabel(pm);
+    }
 
     private static string FormatInputMapping(string? mapping)
     {
