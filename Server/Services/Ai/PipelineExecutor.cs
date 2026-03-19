@@ -1601,15 +1601,28 @@ Datos de la ejecucion:
                 $"Publicando via Buffer...", pm.StepOrder, stepName);
 
             // Collect and classify media from the nearest non-Interaction previous step
+            // Prioritize media from the SAME branch before falling back to main
             var classifiedMedia = new List<ClassifiedMedia>();
-            var mediaStepOrder = candidateOrders.FirstOrDefault(co =>
+
+            var ownBranchCandidates = candidateOrders
+                .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == pm.BranchId)
+                .ToList();
+            var mainCandidates = candidateOrders
+                .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == "main")
+                .ToList();
+
+            // Search own branch first, then main
+            var mediaStepOrder = ownBranchCandidates.FirstOrDefault(co =>
                 !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
+            if (mediaStepOrder == 0)
+                mediaStepOrder = mainCandidates.FirstOrDefault(co =>
+                    !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
             if (mediaStepOrder == 0 && candidateOrders.Count > 0)
-                mediaStepOrder = candidateOrders[0]; // fallback
+                mediaStepOrder = candidateOrders[0]; // last resort fallback
 
             await _logger.LogAsync(projectId, executionId, "info",
                 $"[Publish Debug] BranchId={pm.BranchId}, StepOrder={pm.StepOrder}, " +
-                $"CandidateOrders=[{string.Join(",", candidateOrders)}], MediaStepOrder={mediaStepOrder}",
+                $"OwnBranch=[{string.Join(",", ownBranchCandidates)}], Main=[{string.Join(",", mainCandidates)}], MediaStepOrder={mediaStepOrder}",
                 pm.StepOrder, stepName);
 
             // Collect media files — try two approaches:
