@@ -118,7 +118,7 @@ else
                                 OnAddModule="AddModuleFromCanvas"
                                 OnRemoveModule="RemoveModuleFromCanvas"
                                 OnSaveGraph="SaveGraph"
-                                OnInputMappingChanged="UpdateInputMapping"
+                                OnInputMappingChanged="@(args => UpdateInputMapping(args))"
                                 Executing="_executing"
                                 StepStatuses="GetStepStatuses()"
                                 ExecutionLogs="GetExecutionLogs()">
@@ -2952,12 +2952,12 @@ else
         return _logEntries.Select(l => new ExecutionLogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
     }
 
-    private static string FormatFileSize(long bytes) => bytes switch
+    private static string FormatFileSize(long bytes)
     {
-        < 1024 => $"{bytes} B",
-        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
-        _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
-    };
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
 
     private static string StatusBadge(string status) => status switch
     {
