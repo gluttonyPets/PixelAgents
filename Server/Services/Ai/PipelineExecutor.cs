@@ -1607,12 +1607,22 @@ Datos de la ejecucion:
             if (mediaStepOrder == 0 && candidateOrders.Count > 0)
                 mediaStepOrder = candidateOrders[0]; // fallback
 
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"[Publish Debug] BranchId={pm.BranchId}, StepOrder={pm.StepOrder}, " +
+                $"CandidateOrders=[{string.Join(",", candidateOrders)}], MediaStepOrder={mediaStepOrder}",
+                pm.StepOrder, stepName);
+
             var prevStepExec = await db.StepExecutions
                 .Include(s => s.Files)
                 .Where(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder)
-                .OrderByDescending(s => s.Files.Count)
-                .ThenByDescending(s => s.CompletedAt)
+                .OrderByDescending(s => s.CompletedAt)
                 .FirstOrDefaultAsync();
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"[Publish Debug] PrevStepExec found={prevStepExec is not null}, " +
+                $"Files={prevStepExec?.Files?.Count ?? 0}, " +
+                $"FileTypes=[{string.Join(",", prevStepExec?.Files?.Select(f => f.ContentType) ?? [])}]",
+                pm.StepOrder, stepName);
 
             if (prevStepExec?.Files is not null)
             {
