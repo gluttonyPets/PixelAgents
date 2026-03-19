@@ -116,6 +116,7 @@ namespace Server.Services.Telegram
                     }
 
                     await _executor.AbortFromInteractionAsync(correlation.ExecutionId, db, correlation.TenantDbName);
+                    await _executor.CancelQueuedInteractionsAsync(correlation.ExecutionId);
 
                     if (projectIdForRestart is not null)
                     {
@@ -145,13 +146,14 @@ namespace Server.Services.Telegram
                 if (text == "abort" || text.Contains("Abortar"))
                 {
                     await _executor.AbortFromInteractionAsync(correlation.ExecutionId, db, correlation.TenantDbName);
+                    await _executor.CancelQueuedInteractionsAsync(correlation.ExecutionId);
                     correlation.IsResolved = true;
                     await _coreDb.SaveChangesAsync();
 
                     var tgConfig = await GetTgConfigAsync();
                     if (tgConfig is not null)
                     {
-                        try { await _telegram.SendTextMessageAsync(tgConfig, "❌ Pipeline abortado."); }
+                        try { await _telegram.SendTextMessageAsync(tgConfig, "❌ Pipeline abortado. Interacciones pendientes canceladas."); }
                         catch { /* non-critical */ }
                     }
                     return;
@@ -187,6 +189,9 @@ namespace Server.Services.Telegram
                 }
                 correlation.IsResolved = true;
                 await _coreDb.SaveChangesAsync();
+
+                // Send next queued interaction message if any
+                await _executor.SendNextQueuedInteractionAsync(correlation.ExecutionId, normalizedChatId);
             }
             catch (Exception ex)
             {

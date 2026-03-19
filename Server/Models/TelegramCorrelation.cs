@@ -12,8 +12,16 @@ namespace Server.Models
         public DateTime CreatedAt { get; set; }
         public bool IsResolved { get; set; }
         /// <summary>
-        /// Tracks the correlation state: "waiting" (default), "awaiting_restart" (waiting for restart clarification text).
+        /// Tracks the correlation state: "waiting" (default), "awaiting_restart" (waiting for restart clarification text),
+        /// "queued" (message not yet sent — waiting for a prior interaction to resolve first).
         /// </summary>
         public string State { get; set; } = "waiting";
+
+        /// <summary>
+        /// JSON-serialized message data for queued interactions (State="queued").
+        /// Contains message text, image file paths, button config, etc.
+        /// Null when the message has already been sent.
+        /// </summary>
+        public string? QueuedMessageData { get; set; }
     }
 }

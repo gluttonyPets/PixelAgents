@@ -22,13 +22,15 @@ namespace Server.Services.Ai
         private readonly BufferService _buffer;
         private readonly CanvaService _canva;
         private readonly CoreDbContext _coreDb;
+        private readonly ITenantDbContextFactory _tenantFactory;
         private readonly IConfiguration _configuration;
         private readonly string _mediaRoot;
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
             WhatsAppService whatsApp, TelegramService telegram, BufferService buffer,
             CanvaService canva,
-            CoreDbContext coreDb, IConfiguration configuration, IWebHostEnvironment env)
+            CoreDbContext coreDb, ITenantDbContextFactory tenantFactory,
+            IConfiguration configuration, IWebHostEnvironment env)
         {
             _registry = registry;
             _baseLogger = logger;
@@ -39,6 +41,7 @@ namespace Server.Services.Ai
             _buffer = buffer;
             _canva = canva;
             _coreDb = coreDb;
+            _tenantFactory = tenantFactory;
             _configuration = configuration;
         }
 
@@ -1213,6 +1216,139 @@ namespace Server.Services.Ai
             return $"{letter}{forkStep + 1 + bIdx}";
         }
 
+        /// <summary>
+        /// Send a Telegram/WhatsApp interaction message (text + images + control buttons).
+        /// Used both for immediate sends and for dequeuing queued interactions.
+        /// </summary>
+        private async Task SendInteractionMessageAsync(
+            Guid projectId, Guid executionId, int stepOrder, string stepName, string channelName,
+            bool useTelegram, TelegramConfig? tgConfig, WhatsAppConfig? waConfig,
+            bool sendText, string message, string? continueLabel, List<string> imageFilePaths)
+        {
+            if (sendText)
+            {
+                await _logger.LogAsync(projectId, executionId, "info",
+                    $"Enviando mensaje a {channelName}...", stepOrder, stepName);
+
+                if (useTelegram && continueLabel is not null)
+                {
+                    var controlOptions = new List<(string Label, string CallbackData)>
+                    {
+                        (continueLabel, "continue"),
+                        ("❌ Abortar", "abort"),
+                        ("🔄 Reiniciar", "restart")
+                    };
+                    await _telegram.SendTextMessageWithOptionsAsync(tgConfig!, message, controlOptions);
+                }
+                else if (useTelegram)
+                    await _telegram.SendTextMessageAsync(tgConfig!, message);
+                else if (waConfig is not null)
+                    await _whatsApp.SendTextMessageAsync(waConfig, message);
+            }
+
+            foreach (var filePath in imageFilePaths)
+            {
+                if (!System.IO.File.Exists(filePath)) continue;
+                var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
+                var fileName = Path.GetFileName(filePath);
+
+                if (useTelegram)
+                    await _telegram.SendPhotoAsync(tgConfig!, fileBytes, fileName);
+                else if (waConfig is not null)
+                {
+                    var ext = Path.GetExtension(filePath).TrimStart('.');
+                    var contentType = $"image/{(ext == "jpg" ? "jpeg" : ext)}";
+                    var mediaId = await _whatsApp.UploadMediaAsync(waConfig, fileBytes, contentType, fileName);
+                    await _whatsApp.SendImageMessageAsync(waConfig, mediaId);
+                }
+            }
+
+            if (imageFilePaths.Count > 0)
+            {
+                await _logger.LogAsync(projectId, executionId, "info",
+                    $"Imagenes del paso anterior enviadas a {channelName}", stepOrder, stepName);
+            }
+        }
+
+        /// <summary>
+        /// Send the next queued Telegram interaction message for an execution, if any.
+        /// Called after a correlation is resolved.
+        /// </summary>
+        public async Task SendNextQueuedInteractionAsync(Guid executionId, string chatId)
+        {
+            var nextQueued = await _coreDb.TelegramCorrelations
+                .Where(c => !c.IsResolved && c.ExecutionId == executionId && c.State == "queued")
+                .OrderBy(c => c.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (nextQueued is null) return;
+
+            // Deserialize the queued message data
+            if (string.IsNullOrWhiteSpace(nextQueued.QueuedMessageData)) return;
+
+            try
+            {
+                var data = JsonSerializer.Deserialize<JsonElement>(nextQueued.QueuedMessageData);
+                var message = data.GetProperty("message").GetString() ?? "";
+                var continueLabel = data.TryGetProperty("continueLabel", out var cl) && cl.ValueKind != JsonValueKind.Null
+                    ? cl.GetString() : null;
+                var imageFilePaths = data.TryGetProperty("imageFilePaths", out var ifp)
+                    ? ifp.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList()
+                    : new List<string>();
+                var sendText = data.TryGetProperty("sendText", out var st) && st.GetBoolean();
+                var stepName = data.TryGetProperty("stepName", out var sn) ? sn.GetString() ?? "" : "";
+                var channelName = data.TryGetProperty("channelName", out var cn) ? cn.GetString() ?? "" : "Telegram";
+
+                // Get Telegram config from the execution's project
+                var tgConfig = await GetTelegramConfigForCorrelation(nextQueued);
+                if (tgConfig is null) return;
+
+                await SendInteractionMessageAsync(
+                    Guid.Empty, Guid.Empty, nextQueued.StepOrder, stepName, channelName,
+                    true, tgConfig, null,
+                    sendText, message, continueLabel, imageFilePaths);
+
+                // Mark as sent (no longer queued)
+                nextQueued.State = "waiting";
+                nextQueued.QueuedMessageData = null;
+                await _coreDb.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Queue] Error sending queued interaction: {ex.Message}");
+            }
+        }
+
+        private async Task<TelegramConfig?> GetTelegramConfigForCorrelation(TelegramCorrelation correlation)
+        {
+            await using var db = _tenantFactory.Create(correlation.TenantDbName);
+            var exec = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
+            if (exec is null) return null;
+            var proj = await db.Projects.FindAsync(exec.ProjectId);
+            if (proj?.TelegramConfig is null) return null;
+            return JsonSerializer.Deserialize<TelegramConfig>(proj.TelegramConfig);
+        }
+
+        /// <summary>
+        /// Cancel all queued (unsent) interactions for an execution.
+        /// Called on abort/restart.
+        /// </summary>
+        public async Task CancelQueuedInteractionsAsync(Guid executionId)
+        {
+            var queued = await _coreDb.TelegramCorrelations
+                .Where(c => !c.IsResolved && c.ExecutionId == executionId && c.State == "queued")
+                .ToListAsync();
+
+            foreach (var c in queued)
+            {
+                c.IsResolved = true;
+                c.State = "cancelled";
+            }
+
+            if (queued.Count > 0)
+                await _coreDb.SaveChangesAsync();
+        }
+
         // ── Execution summary generation ──
         private async Task GenerateExecutionSummaryAsync(
             ProjectExecution execution,
@@ -1971,47 +2107,30 @@ Datos de la ejecucion:
                     waitForResponse = wfrBool;
             }
 
-            // 3. Send messages based on messageType
+            // 3. Build message data (text, images, buttons)
             var sendText = messageType is "text" or "combined";
             var sendImages = messageType is "image" or "combined";
 
-            if (sendText)
+            // Build control buttons for Telegram
+            string? continueLabel = null;
+            if (useTelegram && waitForResponse)
             {
-                await _logger.LogAsync(project.Id, execution.Id, "info",
-                    $"Enviando mensaje a {channelName}...", pm.StepOrder, stepName);
+                var allModules = project.ProjectModules.OrderBy(p => p.StepOrder).ToList();
+                var currentIdx = allModules.FindIndex(p => p.Id == pm.Id);
+                var nextPm = currentIdx + 1 < allModules.Count ? allModules[currentIdx + 1] : null;
+                var isLastStep = nextPm is null;
 
-                if (useTelegram && waitForResponse)
-                {
-                    // Build pipeline control buttons
-                    var allModules = project.ProjectModules.OrderBy(p => p.StepOrder).ToList();
-                    var currentIdx = allModules.FindIndex(p => p.Id == pm.Id);
-                    var nextPm = currentIdx + 1 < allModules.Count ? allModules[currentIdx + 1] : null;
-                    var isLastStep = nextPm is null;
+                var nextStepName = nextPm?.StepName ?? nextPm?.AiModule.Name ?? "";
+                if (nextStepName.Length > 40)
+                    nextStepName = nextStepName[..37] + "...";
 
-                    var nextStepName = nextPm?.StepName ?? nextPm?.AiModule.Name ?? "";
-                    if (nextStepName.Length > 40)
-                        nextStepName = nextStepName[..37] + "...";
-
-                    var continueLabel = isLastStep
-                        ? "✅ Finalizar"
-                        : $"▶️ Continuar con: {nextStepName}";
-
-                    var controlOptions = new List<(string Label, string CallbackData)>
-                    {
-                        (continueLabel, "continue"),
-                        ("❌ Abortar", "abort"),
-                        ("🔄 Reiniciar", "restart")
-                    };
-
-                    await _telegram.SendTextMessageWithOptionsAsync(tgConfig!, message, controlOptions);
-                }
-                else if (useTelegram)
-                    await _telegram.SendTextMessageAsync(tgConfig!, message);
-                else
-                    await _whatsApp.SendTextMessageAsync(waConfig!, message);
+                continueLabel = isLastStep
+                    ? "✅ Finalizar"
+                    : $"▶️ Continuar con: {nextStepName}";
             }
 
-            // 4. Send images from previous step if configured
+            // Collect image file paths for later sending
+            var imageFilePaths = new List<string>();
             if (sendImages)
             {
                 var prevStepExec = await db.StepExecutions
@@ -2023,22 +2142,31 @@ Datos de la ejecucion:
                     foreach (var file in prevStepExec.Files.Where(f => f.ContentType.StartsWith("image/")))
                     {
                         var filePath = Path.Combine(ResolveWorkspacePath(execution.WorkspacePath), file.FilePath);
-                        if (!System.IO.File.Exists(filePath)) continue;
-
-                        var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
-
-                        if (useTelegram)
-                            await _telegram.SendPhotoAsync(tgConfig!, fileBytes, file.FileName);
-                        else
-                        {
-                            var mediaId = await _whatsApp.UploadMediaAsync(waConfig!, fileBytes, file.ContentType, file.FileName);
-                            await _whatsApp.SendImageMessageAsync(waConfig!, mediaId);
-                        }
+                        if (System.IO.File.Exists(filePath))
+                            imageFilePaths.Add(filePath);
                     }
-
-                    await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"Imagenes del paso anterior enviadas a {channelName}", pm.StepOrder, stepName);
                 }
+            }
+
+            // 3b. Check if another interaction is already active for this execution
+            //     If so, queue this message instead of sending immediately
+            var hasActiveInteraction = await _coreDb.TelegramCorrelations
+                .AnyAsync(c => !c.IsResolved && c.ExecutionId == execution.Id && c.State != "queued");
+
+            if (hasActiveInteraction && useTelegram && waitForResponse)
+            {
+                // Queue: don't send yet, store message data for later
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"Interaccion en cola — esperando que se resuelva otra interaccion activa{(branchId is not null ? $" [rama '{branchId}']" : "")}",
+                    pm.StepOrder, stepName);
+            }
+            else
+            {
+                // Send immediately
+                await SendInteractionMessageAsync(
+                    project.Id, execution.Id, pm.StepOrder, stepName, channelName,
+                    useTelegram, tgConfig, waConfig,
+                    sendText, message, continueLabel, imageFilePaths);
             }
 
             // 5. If not waiting for response, complete step immediately and continue pipeline
@@ -2102,6 +2230,21 @@ Datos de la ejecucion:
             await db.SaveChangesAsync();
 
             // 7. Create correlation for webhook resolution
+            var isQueued = hasActiveInteraction && useTelegram && waitForResponse;
+            string? queuedData = null;
+            if (isQueued)
+            {
+                queuedData = JsonSerializer.Serialize(new
+                {
+                    message,
+                    continueLabel,
+                    imageFilePaths,
+                    sendText,
+                    stepName,
+                    channelName
+                });
+            }
+
             if (useTelegram)
             {
                 _coreDb.TelegramCorrelations.Add(new TelegramCorrelation
@@ -2114,6 +2257,8 @@ Datos de la ejecucion:
                     BranchId = branchId,
                     CreatedAt = DateTime.UtcNow,
                     IsResolved = false,
+                    State = isQueued ? "queued" : "waiting",
+                    QueuedMessageData = queuedData,
                 });
             }
             else
@@ -2132,9 +2277,12 @@ Datos de la ejecucion:
             }
             await _coreDb.SaveChangesAsync();
 
-            var branchLabel = branchId is not null ? $" [rama '{branchId}']" : "";
+            var branchLabelLog = branchId is not null ? $" [rama '{branchId}']" : "";
             await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Esperando respuesta de {channelName}...{branchLabel}", pm.StepOrder, stepName);
+                isQueued
+                    ? $"Interaccion en cola{branchLabelLog} — se enviara cuando se resuelva la interaccion activa"
+                    : $"Esperando respuesta de {channelName}...{branchLabelLog}",
+                pm.StepOrder, stepName);
             return true; // caller should pause (branch or main)
         }
 
