@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Server.Data;
+using Server.Models;
 using Server.Services.Ai;
 
 namespace Server.Services.Telegram
@@ -41,10 +42,8 @@ namespace Server.Services.Telegram
 
             var normalizedChatId = chatId.Trim();
 
-            var correlation = await _coreDb.TelegramCorrelations
-                .Where(c => !c.IsResolved && c.ChatId == normalizedChatId && c.State != "queued")
-                .OrderBy(c => c.CreatedAt) // FIFO: oldest unresolved first
-                .FirstOrDefaultAsync();
+            // Find a valid correlation, skipping stale ones whose executions are no longer waiting
+            var correlation = await FindValidCorrelationAsync(normalizedChatId, messageDate, callbackQueryId);
 
             if (correlation is null)
             {
@@ -54,19 +53,6 @@ namespace Server.Services.Telegram
                     .ToListAsync();
                 Console.WriteLine($"[TG-Update] No correlation found for chatId={normalizedChatId}. Pending: {JsonSerializer.Serialize(pending)}");
                 return;
-            }
-
-            // Reject text messages sent before the correlation was created (prevents stale "ok" from previous pipelines)
-            // Callback queries (button presses) are exempt — they are always intentional actions on our messages.
-            if (messageDate.HasValue && string.IsNullOrWhiteSpace(callbackQueryId))
-            {
-                // Allow a small tolerance (5 seconds) to handle clock skew between Telegram servers and our server
-                var tolerance = TimeSpan.FromSeconds(5);
-                if (messageDate.Value < correlation.CreatedAt - tolerance)
-                {
-                    Console.WriteLine($"[TG-Update] Ignored stale message: messageDate={messageDate.Value:O} < correlation.CreatedAt={correlation.CreatedAt:O}");
-                    return;
-                }
             }
 
             Console.WriteLine($"[TG-Update] Matched correlation {correlation.Id} for execution {correlation.ExecutionId}");
@@ -206,6 +192,65 @@ namespace Server.Services.Telegram
                 }
                 catch { /* non-critical */ }
             }
+        }
+
+        /// <summary>
+        /// Find a valid correlation for this chatId, skipping and resolving stale ones
+        /// whose executions are no longer in WaitingForInput status.
+        /// </summary>
+        private async Task<TelegramCorrelation?> FindValidCorrelationAsync(
+            string chatId, DateTimeOffset? messageDate, string? callbackQueryId)
+        {
+            var candidates = await _coreDb.TelegramCorrelations
+                .Where(c => !c.IsResolved && c.ChatId == chatId && c.State != "queued")
+                .OrderBy(c => c.CreatedAt)
+                .Take(10) // safety limit
+                .ToListAsync();
+
+            foreach (var candidate in candidates)
+            {
+                // Reject text messages sent before the correlation was created (stale messages)
+                // Callback queries (button presses) are exempt — always intentional
+                if (messageDate.HasValue && string.IsNullOrWhiteSpace(callbackQueryId))
+                {
+                    var tolerance = TimeSpan.FromSeconds(5);
+                    if (messageDate.Value < candidate.CreatedAt - tolerance)
+                    {
+                        Console.WriteLine($"[TG-Update] Skipping correlation {candidate.Id}: message is older than correlation");
+                        continue;
+                    }
+                }
+
+                // For "awaiting_restart" state, the execution may not be in WaitingForInput — that's OK
+                if (candidate.State == "awaiting_restart")
+                    return candidate;
+
+                // Verify the execution is actually still waiting for input
+                await using var db = _factory.Create(candidate.TenantDbName);
+                var execution = await db.ProjectExecutions
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(e => e.Id == candidate.ExecutionId);
+
+                if (execution is null)
+                {
+                    Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution not found");
+                    candidate.IsResolved = true;
+                    await _coreDb.SaveChangesAsync();
+                    continue;
+                }
+
+                if (execution.Status != "WaitingForInput")
+                {
+                    Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution status is '{execution.Status}', not WaitingForInput");
+                    candidate.IsResolved = true;
+                    await _coreDb.SaveChangesAsync();
+                    continue;
+                }
+
+                return candidate;
+            }
+
+            return null;
         }
     }
 }
