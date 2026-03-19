@@ -82,7 +82,7 @@
                     <div class="inspector-section">
                         <div class="inspector-section-title">Conexiones</div>
                         @{
-                            var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id));
+                            var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id), sel.InputMapping);
                             var inputPorts = ports.Where(p => p.IsInput).ToList();
                             var outputPorts = ports.Where(p => !p.IsInput).ToList();
                         }
@@ -99,7 +99,7 @@
                                     @if (conn is not null)
                                     {
                                         var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
-                                        var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id)) : new();
+                                        var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping) : new();
                                         var fromPort = fromPorts.FirstOrDefault(p => p.Id == conn.FromPort);
                                         <span class="text-muted">&#x2190; @(fromModule?.StepName ?? fromModule?.AiModuleName ?? "?")</span>
                                         @if (fromPort is not null)
@@ -129,7 +129,7 @@
                                         @foreach (var c in conns)
                                         {
                                             var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
-                                            var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id)) : new();
+                                            var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping) : new();
                                             var toPort = toPorts.FirstOrDefault(p => p.Id == c.ToPort);
                                             <span class="text-muted">&#x2192; @(toModule?.StepName ?? toModule?.AiModuleName ?? "?")</span>
                                             @if (toPort is not null)
@@ -251,6 +251,7 @@
     private DotNetObjectReference<PipelineCanvas>? _dotNetRef;
     private int _lastModuleCount;
     private int _lastConnectionCount;
+    private string _lastInputMappingsHash = "";
     private Dictionary<Guid, int> _sceneCountOverrides = new();
     private bool _lastExecuting;
     private int _lastLogCount;
@@ -276,10 +277,12 @@
         }
         else if (_jsInitialized)
         {
-            if (Modules.Count != _lastModuleCount || Connections.Count != _lastConnectionCount)
+            var mappingsHash = string.Join("|", Modules.Select(m => $"{m.Id}:{m.InputMapping}"));
+            if (Modules.Count != _lastModuleCount || Connections.Count != _lastConnectionCount || mappingsHash != _lastInputMappingsHash)
             {
                 _lastModuleCount = Modules.Count;
                 _lastConnectionCount = Connections.Count;
+                _lastInputMappingsHash = mappingsHash;
                 LoadFromParameters();
                 await RebuildDrawflow();
             }
@@ -318,7 +321,7 @@
         foreach (var pm in Modules)
         {
             var sceneCount = GetSceneCount(pm.Id);
-            var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount);
+            var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount, pm.InputMapping);
             var inputs = ports.Where(p => p.IsInput).Select(p => new {
                 id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = p.IsRequired
             }).ToList();
@@ -476,7 +479,7 @@
         var module = Modules.FirstOrDefault(m => m.Id == moduleId);
         if (module is not null)
         {
-            var validPorts = ModulePortRegistry.GetPorts(module.ModuleType, "", count).Select(p => p.Id).ToHashSet();
+            var validPorts = ModulePortRegistry.GetPorts(module.ModuleType, "", count, module.InputMapping).Select(p => p.Id).ToHashSet();
             _connections.RemoveAll(c =>
                 (c.FromModuleId == moduleId && !validPorts.Contains(c.FromPort)) ||
                 (c.ToModuleId == moduleId && !validPorts.Contains(c.ToPort)));
@@ -556,8 +559,8 @@
         var toModule = Modules.FirstOrDefault(m => m.Id == toId);
         if (fromModule is null || toModule is null) return;
 
-        var fromPorts = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromId));
-        var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId));
+        var fromPorts = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromId), fromModule.InputMapping);
+        var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId), toModule.InputMapping);
         var fromPortDef = fromPorts.FirstOrDefault(p => p.Id == fromPort && !p.IsInput);
         var toPortDef = toPorts.FirstOrDefault(p => p.Id == toPort && p.IsInput);
         if (fromPortDef is null || toPortDef is null) return;
