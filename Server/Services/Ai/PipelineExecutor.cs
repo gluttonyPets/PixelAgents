@@ -1612,19 +1612,48 @@ Datos de la ejecucion:
                 $"CandidateOrders=[{string.Join(",", candidateOrders)}], MediaStepOrder={mediaStepOrder}",
                 pm.StepOrder, stepName);
 
+            // Collect media files — try two approaches:
+            // 1. Query StepExecution.Files from DB
+            // 2. Fallback: use stepOutputs FileIds (from in-memory / pause state)
+            var mediaFiles = new List<ExecutionFile>();
+
             var prevStepExec = await db.StepExecutions
                 .Include(s => s.Files)
                 .Where(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder)
                 .OrderByDescending(s => s.CompletedAt)
                 .FirstOrDefaultAsync();
 
+            if (prevStepExec?.Files is not null)
+            {
+                mediaFiles = prevStepExec.Files
+                    .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
+                    .ToList();
+            }
+
+            // Fallback: if DB query found no media files, try using FileIds from stepOutputs
+            if (mediaFiles.Count == 0 && stepOutputs.TryGetValue(mediaStepOrder, out var mediaOutput) && mediaOutput.Files.Count > 0)
+            {
+                var fileIds = mediaOutput.Files.Select(f => f.FileId).Where(id => id != Guid.Empty).ToList();
+                if (fileIds.Count > 0)
+                {
+                    mediaFiles = await db.ExecutionFiles
+                        .Where(f => fileIds.Contains(f.Id))
+                        .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
+                        .ToListAsync();
+
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"[Publish Debug] Fallback via stepOutputs FileIds: found {mediaFiles.Count} file(s) from {fileIds.Count} IDs",
+                        pm.StepOrder, stepName);
+                }
+            }
+
             await _logger.LogAsync(projectId, executionId, "info",
                 $"[Publish Debug] PrevStepExec found={prevStepExec is not null}, " +
-                $"Files={prevStepExec?.Files?.Count ?? 0}, " +
-                $"FileTypes=[{string.Join(",", prevStepExec?.Files?.Select(f => f.ContentType) ?? [])}]",
+                $"MediaFiles={mediaFiles.Count}, " +
+                $"FileTypes=[{string.Join(",", mediaFiles.Select(f => f.ContentType))}]",
                 pm.StepOrder, stepName);
 
-            if (prevStepExec?.Files is not null)
+            if (mediaFiles.Count > 0)
             {
                 var serverBaseUrl = (_configuration["BaseUrl"]
                     ?? _configuration["AllowedOrigin"]
@@ -1652,8 +1681,7 @@ Datos de la ejecucion:
                         pm.StepOrder, stepName);
                 }
 
-                foreach (var file in prevStepExec.Files.Where(f =>
-                    f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/")))
+                foreach (var file in mediaFiles)
                 {
                     var publicUrl = $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}/{file.FileName}";
                     var kind = file.ContentType.StartsWith("video/") ? MediaKind.Video : MediaKind.Image;
@@ -1694,7 +1722,16 @@ Datos de la ejecucion:
             {
                 await _logger.LogAsync(projectId, executionId, "error",
                     $"Error publicando via Buffer: {ex.Message}", pm.StepOrder, stepName);
-                await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
+                // Only fail the entire execution for main pipeline steps
+                if (pm.BranchId == "main")
+                    await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
+                else
+                {
+                    stepExecution.Status = "Failed";
+                    stepExecution.ErrorMessage = $"Error Buffer: {ex.Message}";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
                 throw;
             }
 
@@ -1775,7 +1812,16 @@ Datos de la ejecucion:
             {
                 await _logger.LogAsync(projectId, executionId, "error",
                     $"Error publicando via Buffer: {bufferResult.Error}", pm.StepOrder, stepName);
-                await FailStep(stepExecution, execution, $"Error Buffer: {bufferResult.Error}", db);
+                // Only fail the entire execution for main pipeline steps
+                if (pm.BranchId == "main")
+                    await FailStep(stepExecution, execution, $"Error Buffer: {bufferResult.Error}", db);
+                else
+                {
+                    stepExecution.Status = "Failed";
+                    stepExecution.ErrorMessage = $"Error Buffer: {bufferResult.Error}";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
                 throw new InvalidOperationException(bufferResult.Error);
             }
         }
@@ -1971,7 +2017,15 @@ Datos de la ejecucion:
             {
                 await _logger.LogAsync(projectId, executionId, "error",
                     $"Error publicando via Canva: {ex.Message}", pm.StepOrder, stepName);
-                await FailStep(stepExecution, execution, $"Error Canva: {ex.Message}", db);
+                if (pm.BranchId == "main")
+                    await FailStep(stepExecution, execution, $"Error Canva: {ex.Message}", db);
+                else
+                {
+                    stepExecution.Status = "Failed";
+                    stepExecution.ErrorMessage = $"Error Canva: {ex.Message}";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
                 throw;
             }
 
@@ -2068,7 +2122,15 @@ Datos de la ejecucion:
             {
                 await _logger.LogAsync(projectId, executionId, "error",
                     $"Error publicando via Canva: {canvaResult.Error}", pm.StepOrder, stepName);
-                await FailStep(stepExecution, execution, $"Error Canva: {canvaResult.Error}", db);
+                if (pm.BranchId == "main")
+                    await FailStep(stepExecution, execution, $"Error Canva: {canvaResult.Error}", db);
+                else
+                {
+                    stepExecution.Status = "Failed";
+                    stepExecution.ErrorMessage = $"Error Canva: {canvaResult.Error}";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                }
                 throw new InvalidOperationException(canvaResult.Error);
             }
         }
@@ -4068,32 +4130,44 @@ Datos de la ejecucion:
                     result == BranchResult.Completed
                         ? $"Rama '{branchId}' completada correctamente tras respuesta del usuario"
                         : $"Rama '{branchId}' fallo tras respuesta del usuario");
+            }
 
-                // ── Check if ALL pauses are resolved — mark execution as fully Completed ──
-                var remainingBranches = DeserializePausedBranches(execution.PausedBranches);
-                var mainStillPaused = execution.PausedAtStepOrder is not null;
+            // ── Safety net: ensure execution status is consistent after branch completes/fails ──
+            // A branch failure (FailStep) may have corrupted execution.Status to "Failed"
+            // even though the main pipeline or other branches are still waiting.
+            var remainingBranches = DeserializePausedBranches(execution.PausedBranches);
+            var mainStillPaused = execution.PausedAtStepOrder is not null;
 
-                if (remainingBranches.Count == 0 && !mainStillPaused)
+            if (remainingBranches.Count == 0 && !mainStillPaused)
+            {
+                // Everything resolved — mark as Completed
+                execution.Status = "Completed";
+                execution.CompletedAt = DateTime.UtcNow;
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(project.Id, execution.Id, "success",
+                    "Pipeline completado correctamente");
+
+                try
                 {
-                    execution.Status = "Completed";
-                    execution.CompletedAt = DateTime.UtcNow;
-                    execution.TotalEstimatedCost = await db.StepExecutions
-                        .Where(s => s.ExecutionId == execution.Id)
-                        .SumAsync(s => s.EstimatedCost);
+                    await GenerateExecutionSummaryAsync(execution, stepOutputs, pauseState.UserInput, db);
+                }
+                catch (Exception ex)
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "warning",
+                        $"No se pudo generar resumen: {ex.Message}");
+                }
+            }
+            else if (mainStillPaused || remainingBranches.Count > 0)
+            {
+                // Still have pending interactions — ensure status reflects this
+                if (execution.Status != "WaitingForInput")
+                {
+                    execution.Status = "WaitingForInput";
                     await db.SaveChangesAsync();
-
-                    await _logger.LogAsync(project.Id, execution.Id, "success",
-                        "Pipeline completado correctamente");
-
-                    try
-                    {
-                        await GenerateExecutionSummaryAsync(execution, stepOutputs, pauseState.UserInput, db);
-                    }
-                    catch (Exception ex)
-                    {
-                        await _logger.LogAsync(project.Id, execution.Id, "warning",
-                            $"No se pudo generar resumen: {ex.Message}");
-                    }
                 }
             }
 
