@@ -1,5 +1,6 @@
 using Cronos;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using Server.Data;
 using Server.Models;
 using Server.Services.Ai;
@@ -66,9 +67,18 @@ namespace Server.Services.Scheduler
         {
             await using var db = factory.Create(dbName);
 
-            var dueSchedules = await db.ProjectSchedules
-                .Where(s => s.IsEnabled && s.NextRunAt != null && s.NextRunAt <= now)
-                .ToListAsync(ct);
+            List<ProjectSchedule> dueSchedules;
+            try
+            {
+                dueSchedules = await db.ProjectSchedules
+                    .Where(s => s.IsEnabled && s.NextRunAt != null && s.NextRunAt <= now)
+                    .ToListAsync(ct);
+            }
+            catch (PostgresException ex) when (ex.SqlState == "42P01")
+            {
+                // Table doesn't exist yet for this tenant — skip
+                return;
+            }
 
             if (dueSchedules.Count == 0) return;
 

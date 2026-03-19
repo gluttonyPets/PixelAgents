@@ -11,10 +11,12 @@ namespace Server.Services
     public class TenantDbContextFactory : ITenantDbContextFactory
     {
         private readonly IConfiguration _cfg;
+        private readonly ILogger<TenantDbContextFactory> _log;
 
-        public TenantDbContextFactory(IConfiguration cfg)
+        public TenantDbContextFactory(IConfiguration cfg, ILogger<TenantDbContextFactory> log)
         {
             _cfg = cfg;
+            _log = log;
         }
 
         public UserDbContext Create(string dbName)
@@ -25,20 +27,20 @@ namespace Server.Services
                 .UseNpgsql(cs)
                 .Options;
             var ctx = new UserDbContext(opts);
-            ApplyPendingColumns(ctx);
+            ApplyPendingColumns(ctx, _log);
             return ctx;
         }
 
-        private static void ApplyPendingColumns(UserDbContext ctx)
+        private static void ApplyPendingColumns(UserDbContext ctx, ILogger log)
         {
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"Context\" text");
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"WhatsAppConfig\" text");
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"TelegramConfig\" text");
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"InstagramConfig\" text");
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"GraphLayout\" text");
-            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtStepOrder\" integer");
-            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text");
-            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"UserInput\" text");
+            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"Context\" text", log);
+            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"WhatsAppConfig\" text", log);
+            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"TelegramConfig\" text", log);
+            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"InstagramConfig\" text", log);
+            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"GraphLayout\" text", log);
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtStepOrder\" integer", log);
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text", log);
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"UserInput\" text", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ExecutionLogs"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
@@ -48,13 +50,13 @@ namespace Server.Services
                     ""StepOrder"" integer,
                     ""StepName"" varchar(200),
                     ""Timestamp"" timestamp with time zone NOT NULL
-                )");
+                )", log);
             RunSafe(ctx, @"
                 CREATE INDEX IF NOT EXISTS ""IX_ExecutionLogs_ExecutionId""
-                ON ""ExecutionLogs"" (""ExecutionId"")");
-            RunSafe(ctx, "ALTER TABLE \"StepExecutions\" ADD COLUMN IF NOT EXISTS \"EstimatedCost\" numeric NOT NULL DEFAULT 0");
-            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"TotalEstimatedCost\" numeric NOT NULL DEFAULT 0");
-            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"ExecutionSummary\" text");
+                ON ""ExecutionLogs"" (""ExecutionId"")", log);
+            RunSafe(ctx, "ALTER TABLE \"StepExecutions\" ADD COLUMN IF NOT EXISTS \"EstimatedCost\" numeric NOT NULL DEFAULT 0", log);
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"TotalEstimatedCost\" numeric NOT NULL DEFAULT 0", log);
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"ExecutionSummary\" text", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ProjectSchedules"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
@@ -67,9 +69,9 @@ namespace Server.Services
                     ""NextRunAt"" timestamp with time zone,
                     ""CreatedAt"" timestamp with time zone NOT NULL,
                     ""UpdatedAt"" timestamp with time zone NOT NULL
-                )");
-            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_ProjectId"" ON ""ProjectSchedules"" (""ProjectId"")");
-            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_IsEnabled_NextRunAt"" ON ""ProjectSchedules"" (""IsEnabled"", ""NextRunAt"")");
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_ProjectId"" ON ""ProjectSchedules"" (""ProjectId"")", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_IsEnabled_NextRunAt"" ON ""ProjectSchedules"" (""IsEnabled"", ""NextRunAt"")", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ModuleFiles"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
@@ -79,21 +81,21 @@ namespace Server.Services
                     ""FilePath"" varchar(1000) NOT NULL,
                     ""FileSize"" bigint NOT NULL DEFAULT 0,
                     ""CreatedAt"" timestamp with time zone NOT NULL
-                )");
-            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleFiles_AiModuleId"" ON ""ModuleFiles"" (""AiModuleId"")");
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleFiles_AiModuleId"" ON ""ModuleFiles"" (""AiModuleId"")", log);
 
             // ── Pipeline branching support ──
-            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100) NOT NULL DEFAULT 'main'");
-            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""BranchFromStep"" integer");
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100) NOT NULL DEFAULT 'main'", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""BranchFromStep"" integer", log);
             // ── Branch interaction pause support ──
-            RunSafe(ctx, @"ALTER TABLE ""ProjectExecutions"" ADD COLUMN IF NOT EXISTS ""PausedBranches"" text");
+            RunSafe(ctx, @"ALTER TABLE ""ProjectExecutions"" ADD COLUMN IF NOT EXISTS ""PausedBranches"" text", log);
 
-            RunSafe(ctx, @"DROP INDEX IF EXISTS ""IX_ProjectModules_ProjectId_StepOrder""");
-            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectModules_ProjectId_BranchId_StepOrder"" ON ""ProjectModules"" (""ProjectId"", ""BranchId"", ""StepOrder"")");
+            RunSafe(ctx, @"DROP INDEX IF EXISTS ""IX_ProjectModules_ProjectId_StepOrder""", log);
+            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectModules_ProjectId_BranchId_StepOrder"" ON ""ProjectModules"" (""ProjectId"", ""BranchId"", ""StepOrder"")", log);
 
             // ── Visual graph: node positions on ProjectModule ──
-            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosX"" double precision NOT NULL DEFAULT 0");
-            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosY"" double precision NOT NULL DEFAULT 0");
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosX"" double precision NOT NULL DEFAULT 0", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosY"" double precision NOT NULL DEFAULT 0", log);
 
             // ── Visual graph: dedicated connections table ──
             RunSafe(ctx, @"
@@ -105,16 +107,20 @@ namespace Server.Services
                     ""ToModuleId"" uuid NOT NULL REFERENCES ""ProjectModules""(""Id"") ON DELETE CASCADE,
                     ""ToPort"" varchar(100) NOT NULL,
                     ""CreatedAt"" timestamp with time zone NOT NULL
-                )");
-            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ProjectId"" ON ""ModuleConnections"" (""ProjectId"")");
-            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_FromModuleId_FromPort"" ON ""ModuleConnections"" (""FromModuleId"", ""FromPort"")");
-            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ToModuleId_ToPort"" ON ""ModuleConnections"" (""ToModuleId"", ""ToPort"")");
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ProjectId"" ON ""ModuleConnections"" (""ProjectId"")", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_FromModuleId_FromPort"" ON ""ModuleConnections"" (""FromModuleId"", ""FromPort"")", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ToModuleId_ToPort"" ON ""ModuleConnections"" (""ToModuleId"", ""ToPort"")", log);
         }
 
-        private static void RunSafe(UserDbContext ctx, string sql)
+        private static void RunSafe(UserDbContext ctx, string sql, ILogger? log = null)
         {
             try { ctx.Database.ExecuteSqlRaw(sql); }
-            catch { /* column/table already exists or doesn't exist yet */ }
+            catch (Exception ex)
+            {
+                log?.LogWarning(ex, "ApplyPendingColumns failed: {Sql}",
+                    sql.Length > 80 ? sql[..80] : sql);
+            }
         }
     }
 }
