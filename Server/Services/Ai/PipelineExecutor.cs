@@ -1133,13 +1133,18 @@ namespace Server.Services.Ai
                         return prevOutput.Items.Select(item => InputAdapter.SanitizePlainText(item.Content)).ToList();
                     }
 
-                    // Fallback to Content field (e.g., Image/Video steps with no Items)
+                    // Fallback to Content field (e.g., Orchestrator/Interaction steps)
                     if (prevOutput is not null && !string.IsNullOrWhiteSpace(prevOutput.Content))
                         return [InputAdapter.SanitizePlainText(prevOutput.Content)];
 
                     // Fallback to raw text from stepResults
                     if (stepResults.TryGetValue(prevOrder, out var prevResult))
                         return [InputAdapter.SanitizePlainText(prevResult.TextOutput ?? "")];
+
+                    // Image/Video/Audio steps have Files but no text — return empty placeholder
+                    // (the actual file transfer happens via the "file" field in InputMapping)
+                    if (prevOutput is not null && prevOutput.Files.Count > 0)
+                        return [""];
 
                     throw new InvalidOperationException($"Paso {pm.StepOrder}: No hay paso anterior con resultado");
                 }
@@ -1159,6 +1164,10 @@ namespace Server.Services.Ai
 
                     if (stepResults.TryGetValue(targetStep, out var targetResult))
                         return [InputAdapter.SanitizePlainText(targetResult.TextOutput ?? "")];
+
+                    // Image/Video/Audio steps — empty text placeholder
+                    if (targetOutput is not null && targetOutput.Files.Count > 0)
+                        return [""];
 
                     throw new InvalidOperationException($"Paso {pm.StepOrder}: Paso {targetStep} no tiene resultado disponible");
                 }
@@ -4200,9 +4209,8 @@ Datos de la ejecucion:
                         }
                         catch { }
                     }
-                    // Populate stepResults for ALL step types (not just Text) to match normal execution.
-                    // This ensures "previous" input resolution works for Image/Video/Audio steps too.
-                    if (oldStep.OutputData is not null)
+                    // Populate stepResults for Text steps (raw output as fallback for text resolution)
+                    if (oldStep.ProjectModule.AiModule.ModuleType == "Text" && oldStep.OutputData is not null)
                     {
                         stepResults[oldStep.StepOrder] = AiResult.Ok(oldStep.OutputData);
                     }
@@ -4263,17 +4271,58 @@ Datos de la ejecucion:
                 catch { }
             }
 
-            // Re-execute from retry step onwards
-            var retryModulesList = project.ProjectModules
-                .Where(pm => pm.StepOrder >= fromStepOrder).ToList();
+            // Re-execute from retry step onwards — branch-aware like ExecuteAsync
+            var allRetryModules = project.ProjectModules.ToList();
+            var retryMainModules = allRetryModules
+                .Where(pm => pm.BranchId == "main" && pm.StepOrder >= fromStepOrder)
+                .OrderBy(pm => pm.StepOrder).ToList();
+            var retryBranchModules = allRetryModules
+                .Where(pm => pm.BranchId != "main" && pm.StepOrder >= fromStepOrder)
+                .GroupBy(pm => pm.BranchId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
 
             // Load previous execution summaries for context
             var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, projectId, executionId);
 
-            for (var mi = 0; mi < retryModulesList.Count; mi++)
+            // Execute branches whose fork step is BEFORE the retry point (already completed)
+            // These branches need to run before/alongside the main retry steps
+            var earlyBranches = retryBranchModules
+                .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep < fromStepOrder)
+                .ToList();
+
+            foreach (var (branchId, branchSteps) in earlyBranches)
             {
-                var pm = retryModulesList[mi];
-                var nextModule = mi + 1 < retryModulesList.Count ? retryModulesList[mi + 1] : null;
+                var forkStep = branchSteps.First().BranchFromStep ?? 0;
+                await _logger.LogAsync(projectId, executionId, "info",
+                    $"Iniciando rama '{branchId}' (bifurcacion desde paso {forkStep}, {branchSteps.Count} pasos)");
+
+                var branchResult = await ExecuteBranchStepsAsync(
+                    project, execution, branchId, branchSteps, originalUserInput,
+                    stepResults, stepOutputs, stepModuleTypes,
+                    workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                if (branchResult == BranchResult.Cancelled)
+                {
+                    execution.Status = "Cancelled";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
+                }
+
+                var branchLevel = branchResult == BranchResult.Failed ? "warning"
+                    : branchResult == BranchResult.Paused ? "info" : "success";
+                var branchMsg = branchResult == BranchResult.Failed
+                    ? $"Rama '{branchId}' fallo — continuando"
+                    : branchResult == BranchResult.Paused
+                        ? $"Rama '{branchId}' pausada esperando respuesta del usuario"
+                        : $"Rama '{branchId}' completada correctamente";
+                await _logger.LogAsync(projectId, executionId, branchLevel, branchMsg);
+            }
+
+            for (var mi = 0; mi < retryMainModules.Count; mi++)
+            {
+                var pm = retryMainModules[mi];
+                var nextModule = mi + 1 < retryMainModules.Count ? retryMainModules[mi + 1] : null;
 
                 if (ct.IsCancellationRequested)
                 {
@@ -4649,6 +4698,58 @@ Datos de la ejecucion:
                     await db.SaveChangesAsync();
                     return execution;
                 }
+
+                // ── Execute sub-branches that fork from this main step (same as ExecuteAsync) ──
+                var retryForksFromHere = retryBranchModules
+                    .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
+                    .ToList();
+
+                foreach (var (branchId, branchSteps) in retryForksFromHere)
+                {
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Iniciando rama '{branchId}' (bifurcacion desde paso {pm.StepOrder}, {branchSteps.Count} pasos)");
+
+                    var branchResult = await ExecuteBranchStepsAsync(
+                        project, execution, branchId, branchSteps, originalUserInput,
+                        stepResults, stepOutputs, stepModuleTypes,
+                        workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                    if (branchResult == BranchResult.Cancelled)
+                    {
+                        execution.Status = "Cancelled";
+                        execution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        return execution;
+                    }
+
+                    var branchLevel = branchResult == BranchResult.Failed ? "warning"
+                        : branchResult == BranchResult.Paused ? "info" : "success";
+                    var branchMsg = branchResult == BranchResult.Failed
+                        ? $"Rama '{branchId}' fallo — continuando con otras ramas"
+                        : branchResult == BranchResult.Paused
+                            ? $"Rama '{branchId}' pausada esperando respuesta del usuario"
+                            : $"Rama '{branchId}' completada correctamente";
+                    await _logger.LogAsync(projectId, executionId, branchLevel, branchMsg);
+                }
+            }
+
+            // ── Check if branches are still paused before marking as Completed ──
+            var retryHasPausedBranches = !string.IsNullOrWhiteSpace(execution.PausedBranches)
+                && DeserializePausedBranches(execution.PausedBranches).Count > 0;
+
+            if (retryHasPausedBranches)
+            {
+                if (execution.PausedAtStepOrder is null)
+                    execution.Status = "WaitingForInput";
+
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(projectId, executionId, "info",
+                    "Pipeline principal reintentado — esperando respuestas en ramas pendientes");
+                return execution;
             }
 
             execution.Status = "Completed";
