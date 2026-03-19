@@ -106,6 +106,8 @@
                                         {
                                             <span class="port-type-badge" style="background: @PortDataType.GetColor(fromPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(fromPort.DataType)</span>
                                         }
+                                        @{ var capturedInputConn = conn; }
+                                        <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1;opacity:0.6;" @onclick="() => RemoveConnection(capturedInputConn)" title="Quitar conexion">&#x2715;</button>
                                     }
                                     else
                                     {
@@ -136,6 +138,8 @@
                                             {
                                                 <span class="port-type-badge" style="background: @PortDataType.GetColor(toPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(toPort.DataType)</span>
                                             }
+                                            @{ var capturedOutputConn = c; }
+                                            <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1;opacity:0.6;" @onclick="() => RemoveConnection(capturedOutputConn)" title="Quitar conexion">&#x2715;</button>
                                         }
                                     }
                                     else
@@ -599,6 +603,20 @@
 
         await NotifyGraphChanged();
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RemoveConnection(ConnectionEntry conn)
+    {
+        _connections.RemoveAll(c =>
+            c.FromModuleId == conn.FromModuleId && c.FromPort == conn.FromPort &&
+            c.ToModuleId == conn.ToModuleId && c.ToPort == conn.ToPort);
+
+        await JS.InvokeVoidAsync("pipelineEditor.removeConnection",
+            conn.FromModuleId.ToString(), conn.FromPort,
+            conn.ToModuleId.ToString(), conn.ToPort);
+
+        await NotifyGraphChanged();
+        StateHasChanged();
     }
 
     [JSInvokable]
