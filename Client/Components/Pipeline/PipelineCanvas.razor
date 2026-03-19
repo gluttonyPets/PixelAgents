@@ -92,13 +92,20 @@
                             @foreach (var port in inputPorts)
                             {
                                 var conn = _connections.FirstOrDefault(c => c.ToModuleId == sel.Id && c.ToPort == port.Id);
-                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem;">
+                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
                                     <span style="color: @PortDataType.GetColor(port.DataType);">&#x25CF;</span>
                                     <span>@port.Label</span>
+                                    <span class="port-type-badge" style="background: @PortDataType.GetColor(port.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(port.DataType)</span>
                                     @if (conn is not null)
                                     {
                                         var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+                                        var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id)) : new();
+                                        var fromPort = fromPorts.FirstOrDefault(p => p.Id == conn.FromPort);
                                         <span class="text-muted">&#x2190; @(fromModule?.StepName ?? fromModule?.AiModuleName ?? "?")</span>
+                                        @if (fromPort is not null)
+                                        {
+                                            <span class="port-type-badge" style="background: @PortDataType.GetColor(fromPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(fromPort.DataType)</span>
+                                        }
                                     }
                                     else
                                     {
@@ -113,15 +120,22 @@
                             @foreach (var port in outputPorts)
                             {
                                 var conns = _connections.Where(c => c.FromModuleId == sel.Id && c.FromPort == port.Id).ToList();
-                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem;">
+                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
                                     <span style="color: @PortDataType.GetColor(port.DataType);">&#x25CF;</span>
                                     <span>@port.Label</span>
+                                    <span class="port-type-badge" style="background: @PortDataType.GetColor(port.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(port.DataType)</span>
                                     @if (conns.Any())
                                     {
                                         @foreach (var c in conns)
                                         {
                                             var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
+                                            var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id)) : new();
+                                            var toPort = toPorts.FirstOrDefault(p => p.Id == c.ToPort);
                                             <span class="text-muted">&#x2192; @(toModule?.StepName ?? toModule?.AiModuleName ?? "?")</span>
+                                            @if (toPort is not null)
+                                            {
+                                                <span class="port-type-badge" style="background: @PortDataType.GetColor(toPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(toPort.DataType)</span>
+                                            }
                                         }
                                     }
                                     else
@@ -131,6 +145,23 @@
                                 </div>
                             }
                         }
+                    </div>
+
+                    <!-- Input mapping editor -->
+                    <div class="inspector-section">
+                        <div class="inspector-section-title">Entrada de datos</div>
+                        <div class="inspector-field">
+                            <label>Fuente de datos</label>
+                            <select value="@(sel.InputMapping ?? "{\"source\":\"user\"}")"
+                                    @onchange="e => HandleInputMappingChange(sel.Id, e.Value?.ToString())">
+                                <option value='{"source":"user"}'>Entrada del usuario</option>
+                                <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
+                                <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
+                            </select>
+                            <p class="text-sm text-muted" style="margin-top: 0.2rem;">
+                                Tipo actual: <strong>@FormatInputMapping(sel.InputMapping)</strong>
+                            </p>
+                        </div>
                     </div>
 
                     @if (sel.ModuleType == "VideoEdit")
@@ -199,6 +230,7 @@
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
     [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
     [Parameter] public EventCallback<SaveGraphRequest> OnSaveGraph { get; set; }
+    [Parameter] public EventCallback<(Guid ModuleId, string InputMapping)> OnInputMappingChanged { get; set; }
 
     // Execution state from parent
     [Parameter] public bool Executing { get; set; }
@@ -617,6 +649,26 @@
             var step = order.GetValueOrDefault(pm.Id, 0);
             await JS.InvokeVoidAsync("pipelineEditor.updateNodeStepOrder", pm.Id.ToString(), step);
         }
+    }
+
+    private async Task HandleInputMappingChange(Guid moduleId, string? mapping)
+    {
+        if (mapping is null) return;
+        await OnInputMappingChanged.InvokeAsync((moduleId, mapping));
+    }
+
+    private static string FormatInputMapping(string? mapping)
+    {
+        if (string.IsNullOrEmpty(mapping)) return "Usuario";
+        try
+        {
+            var el = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(mapping);
+            var source = el.TryGetProperty("source", out var s) ? s.GetString() : "user";
+            if (source == "user") return "Usuario";
+            var field = el.TryGetProperty("field", out var f) ? f.GetString() : "text";
+            return field == "file" ? "Paso anterior (archivo)" : "Paso anterior (texto)";
+        }
+        catch { return "Usuario"; }
     }
 
     public async ValueTask DisposeAsync()

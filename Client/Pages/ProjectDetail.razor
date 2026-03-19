@@ -118,6 +118,7 @@ else
                                 OnAddModule="AddModuleFromCanvas"
                                 OnRemoveModule="RemoveModuleFromCanvas"
                                 OnSaveGraph="SaveGraph"
+                                OnInputMappingChanged="UpdateInputMapping"
                                 Executing="_executing"
                                 StepStatuses="GetStepStatuses()"
                                 ExecutionLogs="GetExecutionLogs()">
@@ -845,6 +846,133 @@ else
 
 </div> @* end project-page-layout *@
 
+    <!-- ═══════════ EXECUTION DETAIL MODAL ═══════════ -->
+    @if (_showExecDetailModal)
+    {
+        <div class="modal-overlay" @onclick="() => _showExecDetailModal = false">
+            <div class="settings-modal" @onclick:stopPropagation="true" style="max-width: 800px;">
+                <div class="settings-modal-header">
+                    <h3 style="margin: 0;">Detalle de ejecucion</h3>
+                    <button class="btn-icon" @onclick="() => _showExecDetailModal = false">&#x2715;</button>
+                </div>
+                <div class="settings-modal-body" style="max-height: 70vh; overflow-y: auto;">
+                    @if (_execDetailModal is null)
+                    {
+                        <p class="text-muted">Cargando...</p>
+                    }
+                    else
+                    {
+                        <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap;">
+                            <span class="badge @StatusBadge(_execDetailModal.Status)">@_execDetailModal.Status</span>
+                            <span class="text-sm text-muted">@_execDetailModal.CreatedAt.ToString("dd MMM yyyy HH:mm")</span>
+                            @if (_execDetailModal.CompletedAt.HasValue)
+                            {
+                                <span class="text-sm text-muted">- @_execDetailModal.CompletedAt.Value.ToString("HH:mm")</span>
+                            }
+                            @if (_execDetailModal.TotalEstimatedCost > 0)
+                            {
+                                <span class="text-sm text-muted">~$@_execDetailModal.TotalEstimatedCost.ToString("F4")</span>
+                            }
+                        </div>
+                        @if (_execDetailModal.UserInput is not null)
+                        {
+                            <div class="output-block" style="font-size: 0.8rem; margin-bottom: 0.5rem; max-height: 60px; overflow-y: auto;">
+                                <strong>Prompt:</strong> @_execDetailModal.UserInput
+                            </div>
+                        }
+
+                        <!-- Steps -->
+                        @foreach (var step in _execDetailModal.Steps.OrderBy(s => s.StepOrder))
+                        {
+                            <div class="card" style="margin-bottom: 0.5rem; padding: 0.5rem;">
+                                <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem;">
+                                    <span class="step-number" style="font-size: 0.7rem;">@step.StepOrder</span>
+                                    <span style="font-weight: 600; font-size: 0.85rem;">@step.ModuleName</span>
+                                    <span class="badge @StatusBadge(step.Status)" style="font-size: 0.6rem;">@step.Status</span>
+                                    @if (step.EstimatedCost > 0)
+                                    {
+                                        <span class="text-sm text-muted">~$@step.EstimatedCost.ToString("F4")</span>
+                                    }
+                                </div>
+
+                                @if (step.ErrorMessage is not null)
+                                {
+                                    <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@step.ErrorMessage</div>
+                                }
+
+                                @if (step.OutputData is not null)
+                                {
+                                    var parsed = TryParseOutput(step.OutputData);
+                                    @if (parsed?.Type == "text" && parsed.Content is not null)
+                                    {
+                                        <div class="output-block" style="font-size: 0.75rem; max-height: 120px; overflow-y: auto; white-space: pre-wrap;">@parsed.Content</div>
+                                    }
+                                    else if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
+                                    {
+                                        <div class="history-image-grid">
+                                            @foreach (var f in parsed.Files)
+                                            {
+                                                var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
+                                                <div class="history-image-item">
+                                                    <img src="@fileUrl" alt="@f.FileName" class="history-image-thumb" crossorigin="use-credentials" style="max-width: 200px;" />
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                    else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
+                                    {
+                                        @foreach (var f in parsed.Files)
+                                        {
+                                            var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
+                                            <video controls style="max-width: 300px; border-radius: 6px; margin-top: 0.3rem;" crossorigin="use-credentials">
+                                                <source src="@fileUrl" type="@f.ContentType" />
+                                            </video>
+                                        }
+                                    }
+                                }
+
+                                @* Show attached files *@
+                                @if (step.Files is { Count: > 0 })
+                                {
+                                    <div style="margin-top: 0.3rem;">
+                                        @foreach (var file in step.Files.Where(f => f.Direction == "Output"))
+                                        {
+                                            var dlUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{file.Id}";
+                                            <a href="@dlUrl" target="_blank" class="text-sm" style="display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.5rem;">
+                                                &#x1F4CE; @file.FileName <span class="text-muted">(@FormatFileSize(file.FileSize))</span>
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <!-- Logs -->
+                        @if (_execDetailLogs is { Count: > 0 })
+                        {
+                            <details style="margin-top: 0.5rem;">
+                                <summary style="cursor: pointer; font-weight: 600; font-size: 0.85rem;">Logs (@_execDetailLogs.Count)</summary>
+                                <div class="inspector-log-entries" style="max-height: 200px; overflow-y: auto; margin-top: 0.3rem;">
+                                    @foreach (var log in _execDetailLogs)
+                                    {
+                                        <div class="inspector-log-entry inspector-log-@log.Level">
+                                            <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                                            @if (log.StepOrder.HasValue)
+                                            {
+                                                <span class="inspector-log-step">P@(log.StepOrder)</span>
+                                            }
+                                            <span>@log.Message</span>
+                                        </div>
+                                    }
+                                </div>
+                            </details>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
     <!-- ═══════════ SETTINGS MODAL ═══════════ -->
     @if (_showSettings)
     {
@@ -1330,6 +1458,11 @@ else
     private Guid? _expandedExecId;
     private ExecutionDetailResponse? _expandedExecDetail;
 
+    // History detail modal
+    private bool _showExecDetailModal;
+    private ExecutionDetailResponse? _execDetailModal;
+    private List<ExecutionLogResponse>? _execDetailLogs;
+
     // Edit context
     private bool _editingContext;
     private string _contextDraft = "";
@@ -1410,6 +1543,7 @@ else
 
     // Execution log
     private List<LogEntry> _logEntries = [];
+    private Dictionary<Guid, string> _realtimeStepStatuses = new();
     private HubConnection? _hubConnection;
     private ElementReference _logContainer;
     private System.Threading.Timer? _pollTimer;
@@ -1448,10 +1582,17 @@ else
             InvokeAsync(StateHasChanged);
         });
 
+        _hubConnection.On<StepExecutionStatus>("StepProgress", entry =>
+        {
+            _realtimeStepStatuses[entry.ProjectModuleId] = entry.Status;
+            InvokeAsync(StateHasChanged);
+        });
+
         _hubConnection.On<ExecutionDetailResponse>("ExecutionCompleted", result =>
         {
             _result = result;
             _executing = false;
+            _realtimeStepStatuses.Clear();
             _orchestratorActiveTasks = null;
             _orchestratorTaskStatus.Clear();
             StopPolling();
@@ -1490,6 +1631,7 @@ else
         {
             _execError = error;
             _executing = false;
+            _realtimeStepStatuses.Clear();
             StopPolling();
             InvokeAsync(StateHasChanged);
         });
@@ -1663,6 +1805,23 @@ else
         await Api.SaveGraphAsync(ProjectId, req);
         // Reload to get updated StepOrder from server-side topological sort
         if (_project is not null)
+        {
+            var updated = await Api.GetProjectDetailAsync(ProjectId);
+            if (updated is not null)
+            {
+                _project = updated;
+                _projectConnections = updated.Connections ?? new();
+            }
+        }
+    }
+
+    private async Task UpdateInputMapping((Guid ModuleId, string InputMapping) args)
+    {
+        var module = _project?.Modules.FirstOrDefault(m => m.Id == args.ModuleId);
+        if (module is null || _project is null) return;
+        var req = new UpdateProjectModuleRequest(module.StepOrder, module.StepName, args.InputMapping, module.Configuration, module.IsActive);
+        var (ok, _) = await Api.UpdateProjectModuleAsync(ProjectId, args.ModuleId, req);
+        if (ok)
         {
             var updated = await Api.GetProjectDetailAsync(ProjectId);
             if (updated is not null)
@@ -2320,6 +2479,7 @@ else
     {
         _execError = null; _executing = true; _result = null;
         _logEntries.Clear();
+        _realtimeStepStatuses.Clear();
         _activeTab = "pipeline";
 
         try
@@ -2338,23 +2498,14 @@ else
 
     private async Task ViewExecution(Guid id)
     {
-        _logEntries.Clear();
+        _showExecDetailModal = true;
+        _execDetailModal = null;
+        _execDetailLogs = null;
         try
         {
-            _result = await Api.GetExecutionDetailAsync(id);
-            // Load persisted logs
-            var logs = await Api.GetExecutionLogsAsync(id);
-            if (logs is not null)
-            {
-                _logEntries = logs.Select(l => new LogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
-            }
-            _activeTab = "pipeline";
-
-            // Auto-open orchestrator modal if execution is waiting for review
-            if (_result?.Status == "WaitingForReview")
-            {
-                OpenOrchestratorModal(_result);
-            }
+            _execDetailModal = await Api.GetExecutionDetailAsync(id);
+            _execDetailLogs = await Api.GetExecutionLogsAsync(id);
+            StateHasChanged();
         }
         catch { }
     }
@@ -2784,6 +2935,13 @@ else
 
     private List<StepExecutionStatus>? GetStepStatuses()
     {
+        // During execution, use real-time step statuses from SignalR
+        if (_executing && _realtimeStepStatuses.Count > 0)
+        {
+            return _realtimeStepStatuses
+                .Select(kv => new StepExecutionStatus(kv.Key, kv.Value))
+                .ToList();
+        }
         if (_result?.Steps is null || _result.Steps.Count == 0) return null;
         return _result.Steps.Select(s => new StepExecutionStatus(s.ProjectModuleId, s.Status)).ToList();
     }
@@ -2793,6 +2951,13 @@ else
         if (_logEntries.Count == 0) return null;
         return _logEntries.Select(l => new ExecutionLogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
     }
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
+    };
 
     private static string StatusBadge(string status) => status switch
     {

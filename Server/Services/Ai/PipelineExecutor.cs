@@ -185,6 +185,7 @@ namespace Server.Services.Ai
 
                 db.StepExecutions.Add(stepExecution);
                 await db.SaveChangesAsync();
+                await _logger.LogStepProgressAsync(projectId, pm.Id, "Running");
 
                 try
                 {
@@ -932,6 +933,7 @@ namespace Server.Services.Ai
                     stepExecution.Status = "Completed";
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
                 }
                 catch (OperationCanceledException)
                 {
@@ -941,6 +943,7 @@ namespace Server.Services.Ai
                     stepExecution.Status = "Cancelled";
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Cancelled");
 
                     execution.Status = "Cancelled";
                     execution.CompletedAt = DateTime.UtcNow;
@@ -956,6 +959,7 @@ namespace Server.Services.Ai
                     stepExecution.ErrorMessage = ex.Message;
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Failed");
 
                     execution.Status = "Failed";
                     execution.CompletedAt = DateTime.UtcNow;
@@ -1434,6 +1438,7 @@ Datos de la ejecucion:
                 stepExecution.Status = "Completed";
                 stepExecution.CompletedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
+                await _logger.LogStepProgressAsync(project.Id, pm.Id, "Completed");
 
                 stepOutputs[pm.StepOrder] = publishOutput;
                 stepModuleTypes[pm.StepOrder] = "Publish";
@@ -1727,6 +1732,7 @@ Datos de la ejecucion:
                 stepExecution.Status = "Completed";
                 stepExecution.CompletedAt = DateTime.UtcNow;
                 await db.SaveChangesAsync();
+                await _logger.LogStepProgressAsync(project.Id, pm.Id, "Completed");
 
                 stepOutputs[pm.StepOrder] = publishOutput;
                 stepModuleTypes[pm.StepOrder] = "Publish";
@@ -1919,6 +1925,7 @@ Datos de la ejecucion:
                 stepExecution.CompletedAt = DateTime.UtcNow;
                 stepExecution.InputData = JsonSerializer.Serialize(new { message });
                 await db.SaveChangesAsync();
+                await _logger.LogStepProgressAsync(project.Id, pm.Id, "Completed");
 
                 stepOutputs[pm.StepOrder] = fireAndForgetOutput;
                 stepModuleTypes[pm.StepOrder] = "Interaction";
@@ -2330,6 +2337,7 @@ Datos de la ejecucion:
                     stepExecution.Status = "Completed";
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(project.Id, pm.Id, "Completed");
                 }
                 catch (Exception ex)
                 {
@@ -2339,6 +2347,7 @@ Datos de la ejecucion:
                     execution.Status = "Failed";
                     execution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(project.Id, pm.Id, "Failed");
                     return execution;
                 }
             }
@@ -3144,6 +3153,7 @@ Datos de la ejecucion:
                 };
                 db.StepExecutions.Add(branchStepExec);
                 await db.SaveChangesAsync();
+                await _logger.LogStepProgressAsync(project.Id, bpm.Id, "Running");
 
                 try
                 {
@@ -3447,6 +3457,7 @@ Datos de la ejecucion:
                     branchStepExec.Status = "Completed";
                     branchStepExec.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(project.Id, bpm.Id, "Completed");
                 }
                 catch (Exception bex)
                 {
@@ -3456,6 +3467,7 @@ Datos de la ejecucion:
                     branchStepExec.ErrorMessage = bex.Message;
                     branchStepExec.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(project.Id, bpm.Id, "Failed");
                     return BranchResult.Failed;
                 }
             }
@@ -3856,6 +3868,7 @@ Datos de la ejecucion:
 
                 db.StepExecutions.Add(stepExecution);
                 await db.SaveChangesAsync();
+                await _logger.LogStepProgressAsync(projectId, pm.Id, "Running");
 
                 try
                 {
@@ -4171,6 +4184,7 @@ Datos de la ejecucion:
                     stepExecution.Status = "Completed";
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
                 }
                 catch (OperationCanceledException)
                 {
@@ -4180,6 +4194,7 @@ Datos de la ejecucion:
                     stepExecution.Status = "Cancelled";
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Cancelled");
 
                     execution.Status = "Cancelled";
                     execution.CompletedAt = DateTime.UtcNow;
@@ -4195,6 +4210,7 @@ Datos de la ejecucion:
                     stepExecution.ErrorMessage = ex.Message;
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Failed");
 
                     execution.Status = "Failed";
                     execution.CompletedAt = DateTime.UtcNow;

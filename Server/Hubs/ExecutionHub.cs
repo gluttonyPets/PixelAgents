@@ -25,6 +25,11 @@ namespace Server.Hubs
         DateTime Timestamp
     );
 
+    public record StepProgressEntry(
+        Guid ProjectModuleId,
+        string Status   // "Running", "Completed", "Failed", "Cancelled"
+    );
+
     public record OrchestratorTaskProgressEntry(
         string TaskId,
         string Description,
@@ -44,6 +49,8 @@ namespace Server.Hubs
             int? stepOrder = null, string? stepName = null);
 
         Task LogTaskProgressAsync(Guid projectId, OrchestratorTaskProgressEntry progress);
+
+        Task LogStepProgressAsync(Guid projectId, Guid projectModuleId, string status);
 
         /// <summary>
         /// Returns a wrapper that persists all logs to the given DB context.
@@ -73,6 +80,12 @@ namespace Server.Hubs
         {
             await _hub.Clients.Group(projectId.ToString())
                 .SendAsync("OrchestratorTaskProgress", progress);
+        }
+
+        public async Task LogStepProgressAsync(Guid projectId, Guid projectModuleId, string status)
+        {
+            await _hub.Clients.Group(projectId.ToString())
+                .SendAsync("StepProgress", new StepProgressEntry(projectModuleId, status));
         }
 
         public async Task LogAsync(Guid projectId, Guid executionId, string level, string message,
