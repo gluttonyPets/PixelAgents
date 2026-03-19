@@ -43,7 +43,7 @@ namespace Server.Services.Telegram
 
             var correlation = await _coreDb.TelegramCorrelations
                 .Where(c => !c.IsResolved && c.ChatId == normalizedChatId)
-                .OrderByDescending(c => c.CreatedAt)
+                .OrderBy(c => c.CreatedAt) // FIFO: oldest unresolved first
                 .FirstOrDefaultAsync();
 
             if (correlation is null)

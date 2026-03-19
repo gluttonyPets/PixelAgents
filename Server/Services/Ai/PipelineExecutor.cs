@@ -1005,24 +1005,45 @@ namespace Server.Services.Ai
                 }
             }
 
-            execution.Status = "Completed";
-            execution.CompletedAt = DateTime.UtcNow;
-            execution.TotalEstimatedCost = await db.StepExecutions
-                .Where(s => s.ExecutionId == execution.Id)
-                .SumAsync(s => s.EstimatedCost);
-            await db.SaveChangesAsync();
+            // ── Check if branches are still paused before marking as Completed ──
+            var hasPausedBranches = !string.IsNullOrWhiteSpace(execution.PausedBranches)
+                && DeserializePausedBranches(execution.PausedBranches).Count > 0;
 
-            await _logger.LogAsync(projectId, executionId, "success", "Pipeline completado correctamente");
-
-            // ── Generate execution summary for future context ──
-            try
+            if (hasPausedBranches)
             {
-                await GenerateExecutionSummaryAsync(execution, stepOutputs, userInput, db);
+                // Main pipeline finished but branches still waiting for user input
+                if (execution.PausedAtStepOrder is null)
+                    execution.Status = "WaitingForInput";
+
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(projectId, executionId, "info",
+                    "Pipeline principal completado — esperando respuestas en ramas pendientes");
             }
-            catch (Exception ex)
+            else
             {
-                await _logger.LogAsync(projectId, executionId, "warning",
-                    $"No se pudo generar resumen: {ex.Message}");
+                execution.Status = "Completed";
+                execution.CompletedAt = DateTime.UtcNow;
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(projectId, executionId, "success", "Pipeline completado correctamente");
+
+                // ── Generate execution summary for future context ──
+                try
+                {
+                    await GenerateExecutionSummaryAsync(execution, stepOutputs, userInput, db);
+                }
+                catch (Exception ex)
+                {
+                    await _logger.LogAsync(projectId, executionId, "warning",
+                        $"No se pudo generar resumen: {ex.Message}");
+                }
             }
 
             return execution;
@@ -1923,6 +1944,13 @@ Datos de la ejecucion:
                 .Replace("{previous_output}", previousText)
                 .Replace("{step_number}", pm.StepOrder.ToString());
 
+            // Add branch/step context label so the user knows which interaction they're responding to
+            var interactionLabel = GetStepLabel(pm, project.ProjectModules);
+            var branchContext = branchId is not null
+                ? $"[Rama {branchId} - Paso {interactionLabel}]\n"
+                : $"[Principal - Paso {interactionLabel}]\n";
+            message = branchContext + message;
+
             var channelName = useTelegram ? "Telegram" : "WhatsApp";
 
             // 2b. Read interaction config: messageType, waitForResponse
@@ -2496,23 +2524,42 @@ Datos de la ejecucion:
                 }
             }
 
-            execution.Status = "Completed";
-            execution.CompletedAt = DateTime.UtcNow;
-            execution.TotalEstimatedCost = await db.StepExecutions
-                .Where(s => s.ExecutionId == execution.Id)
-                .SumAsync(s => s.EstimatedCost);
-            await db.SaveChangesAsync();
-            await _logger.LogAsync(project.Id, execution.Id, "success", "Pipeline completado correctamente");
+            // ── Check if branches are still paused before marking as Completed ──
+            var resumeHasPausedBranches = !string.IsNullOrWhiteSpace(execution.PausedBranches)
+                && DeserializePausedBranches(execution.PausedBranches).Count > 0;
 
-            // Generate execution summary for future context
-            try
+            if (resumeHasPausedBranches)
             {
-                await GenerateExecutionSummaryAsync(execution, stepOutputs, pauseState.UserInput, db);
+                if (execution.PausedAtStepOrder is null)
+                    execution.Status = "WaitingForInput";
+
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    "Pipeline principal completado — esperando respuestas en ramas pendientes");
             }
-            catch (Exception ex)
+            else
             {
-                await _logger.LogAsync(project.Id, execution.Id, "warning",
-                    $"No se pudo generar resumen: {ex.Message}");
+                execution.Status = "Completed";
+                execution.CompletedAt = DateTime.UtcNow;
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+                await _logger.LogAsync(project.Id, execution.Id, "success", "Pipeline completado correctamente");
+
+                try
+                {
+                    await GenerateExecutionSummaryAsync(execution, stepOutputs, pauseState.UserInput, db);
+                }
+                catch (Exception ex)
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "warning",
+                        $"No se pudo generar resumen: {ex.Message}");
+                }
             }
 
             return execution;
@@ -3816,6 +3863,33 @@ Datos de la ejecucion:
                     result == BranchResult.Completed
                         ? $"Rama '{branchId}' completada correctamente tras respuesta del usuario"
                         : $"Rama '{branchId}' fallo tras respuesta del usuario");
+
+                // ── Check if ALL pauses are resolved — mark execution as fully Completed ──
+                var remainingBranches = DeserializePausedBranches(execution.PausedBranches);
+                var mainStillPaused = execution.PausedAtStepOrder is not null;
+
+                if (remainingBranches.Count == 0 && !mainStillPaused)
+                {
+                    execution.Status = "Completed";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    execution.TotalEstimatedCost = await db.StepExecutions
+                        .Where(s => s.ExecutionId == execution.Id)
+                        .SumAsync(s => s.EstimatedCost);
+                    await db.SaveChangesAsync();
+
+                    await _logger.LogAsync(project.Id, execution.Id, "success",
+                        "Pipeline completado correctamente");
+
+                    try
+                    {
+                        await GenerateExecutionSummaryAsync(execution, stepOutputs, pauseState.UserInput, db);
+                    }
+                    catch (Exception ex)
+                    {
+                        await _logger.LogAsync(project.Id, execution.Id, "warning",
+                            $"No se pudo generar resumen: {ex.Message}");
+                    }
+                }
             }
 
             return execution;
