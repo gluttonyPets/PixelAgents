@@ -151,6 +151,7 @@ namespace Server.Services.Ai
             var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, projectId, executionId);
 
             var allModules = project.ProjectModules.ToList();
+            var stepBranches = BuildStepBranches(allModules);
 
             // ── Branch-aware execution: group modules by branch ──
             var mainModules = allModules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList();
@@ -257,7 +258,7 @@ namespace Server.Services.Ai
                         InjectImageCountRule(config);
 
                     // Resolve inputs: check if previous step has multiple items
-                    var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
+                    var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName, stepBranches);
 
                     // Store raw input data including systemPrompt so history shows exactly what was sent
                     var systemPrompt = config.TryGetValue("systemPrompt", out var spVal) && spVal is string spStr ? spStr : null;
@@ -370,8 +371,9 @@ namespace Server.Services.Ai
                             if (mappingJson.TryGetProperty("field", out var fieldProp) && fieldProp.GetString() == "file")
                             {
                                 isFileInput = true;
-                                var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
-                                    .OrderByDescending(k => k).FirstOrDefault();
+                                var prevOrder = FindPreviousStepInBranch(
+                                    pm.StepOrder, pm.BranchId, pm.BranchFromStep,
+                                    stepOutputs, stepResults, stepBranches);
 
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
@@ -571,8 +573,9 @@ namespace Server.Services.Ai
                         // Load image from previous step if videoSource is "both"
                         if (videoSource == "both")
                         {
-                            var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
-                                .OrderByDescending(k => k).FirstOrDefault();
+                            var prevOrder = FindPreviousStepInBranch(
+                                pm.StepOrder, pm.BranchId, pm.BranchFromStep,
+                                stepOutputs, stepResults, stepBranches);
 
                             await _logger.LogAsync(projectId, executionId, "info",
                                 $"Buscando imagen en paso anterior (orden {prevOrder}). StepOutputs keys: [{string.Join(", ", stepOutputs.Keys)}]",
@@ -1032,7 +1035,8 @@ namespace Server.Services.Ai
             ProjectModule pm, string? userInput,
             Dictionary<int, AiResult> stepResults,
             Dictionary<int, StepOutput> stepOutputs,
-            string targetModuleType, string targetModelName)
+            string targetModuleType, string targetModelName,
+            Dictionary<int, string>? stepBranches = null)
         {
             if (pm.InputMapping is null)
             {
@@ -1052,14 +1056,21 @@ namespace Server.Services.Ai
 
                 case "previous":
                 {
-                    var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
-                        .OrderByDescending(k => k).FirstOrDefault();
-
-                    // If no previous step found in branch outputs, fall back to the main step
-                    // this branch forked from (first step of a branch has no prior sibling)
-                    if (!stepOutputs.ContainsKey(prevOrder) && !stepResults.ContainsKey(prevOrder)
-                        && pm.BranchFromStep.HasValue)
-                        prevOrder = pm.BranchFromStep.Value;
+                    int prevOrder;
+                    if (stepBranches is not null)
+                    {
+                        prevOrder = FindPreviousStepInBranch(
+                            pm.StepOrder, pm.BranchId, pm.BranchFromStep,
+                            stepOutputs, stepResults, stepBranches);
+                    }
+                    else
+                    {
+                        prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
+                            .OrderByDescending(k => k).FirstOrDefault();
+                        if (!stepOutputs.ContainsKey(prevOrder) && !stepResults.ContainsKey(prevOrder)
+                            && pm.BranchFromStep.HasValue)
+                            prevOrder = pm.BranchFromStep.Value;
+                    }
 
                     // Check if previous step has structured items
                     if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Items.Count > 0)
@@ -1092,6 +1103,59 @@ namespace Server.Services.Ai
                 default:
                     return [userInput ?? ""];
             }
+        }
+
+        /// <summary>
+        /// Find the nearest previous step that belongs to the same branch (or trunk).
+        /// </summary>
+        private static int FindPreviousStepInBranch(
+            int currentStepOrder, string branchId, int? branchFromStep,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, string> stepBranches)
+        {
+            // First: look for the nearest previous step in the SAME branch
+            var prevOrder = stepBranches
+                .Where(kv => kv.Value == branchId && kv.Key < currentStepOrder)
+                .Select(kv => kv.Key)
+                .OrderByDescending(k => k)
+                .FirstOrDefault();
+
+            if (prevOrder > 0 && (stepOutputs.ContainsKey(prevOrder) || stepResults.ContainsKey(prevOrder)))
+                return prevOrder;
+
+            // Second: fall back to the fork source step (trunk step the branch forked from)
+            if (branchFromStep.HasValue)
+                return branchFromStep.Value;
+
+            // Third: fall back to nearest trunk step with order < current
+            prevOrder = stepBranches
+                .Where(kv => kv.Value == "main" && kv.Key < currentStepOrder)
+                .Select(kv => kv.Key)
+                .OrderByDescending(k => k)
+                .FirstOrDefault();
+
+            return prevOrder;
+        }
+
+        /// <summary>
+        /// Build a StepOrder → BranchId mapping from the project's modules.
+        /// Includes executed steps from stepModuleTypes to cover restored state.
+        /// </summary>
+        private static Dictionary<int, string> BuildStepBranches(
+            IEnumerable<ProjectModule> modules,
+            Dictionary<int, string>? stepModuleTypes = null)
+        {
+            var branches = modules.ToDictionary(m => m.StepOrder, m => m.BranchId);
+            // Ensure any steps from restored state that aren't in modules are included as "main"
+            if (stepModuleTypes is not null)
+            {
+                foreach (var kv in stepModuleTypes)
+                {
+                    branches.TryAdd(kv.Key, "main");
+                }
+            }
+            return branches;
         }
 
         // ── Execution summary generation ──
@@ -1233,10 +1297,13 @@ Datos de la ejecucion:
             }
 
             // For caption, skip Interaction steps (their output is just the user's response, e.g. "continue")
+            // Scope candidates to the same branch (or trunk) to avoid cross-branch contamination
             var previousText = "";
             string? previousTitle = null;
-            var candidateOrders = stepOutputs.Keys
-                .Where(k => k < pm.StepOrder)
+            var pubBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+            var candidateOrders = pubBranches
+                .Where(kv => (kv.Value == pm.BranchId || kv.Value == "main") && kv.Key < pm.StepOrder)
+                .Select(kv => kv.Key)
                 .OrderByDescending(k => k)
                 .ToList();
 
@@ -1806,10 +1873,10 @@ Datos de la ejecucion:
                 messageTemplate = tmplStr;
 
             var previousText = "";
-            var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k).FirstOrDefault();
-            // Fallback to fork source step for first branch step
-            if (!stepOutputs.ContainsKey(prevOrder) && !stepResults.ContainsKey(prevOrder) && pm.BranchFromStep.HasValue)
-                prevOrder = pm.BranchFromStep.Value;
+            var sBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+            var prevOrder = FindPreviousStepInBranch(
+                pm.StepOrder, pm.BranchId, pm.BranchFromStep,
+                stepOutputs, stepResults, sBranches);
             if (stepOutputs.TryGetValue(prevOrder, out var prevOutput))
                 previousText = prevOutput.Content ?? string.Join("\n", prevOutput.Items.Select(i => i.Content));
             else if (stepResults.TryGetValue(prevOrder, out var prevResult))
@@ -2045,6 +2112,7 @@ Datos de la ejecucion:
             }
 
             var stepResults = new Dictionary<int, AiResult>();
+            var stepBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
 
             // Determine the channel name from the paused step's module
             var pausedModule = project.ProjectModules.FirstOrDefault(pm => pm.StepOrder == pausedStep);
@@ -2173,7 +2241,7 @@ Datos de la ejecucion:
                     if (pm.AiModule.ModuleType == "Text")
                         InjectImageCountRule(config);
 
-                    var inputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName);
+                    var inputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName, stepBranches);
 
                     if (pm.AiModule.ModuleType == "Text")
                     {
@@ -2233,8 +2301,9 @@ Datos de la ejecucion:
                             var mappingJson = JsonSerializer.Deserialize<JsonElement>(pm.InputMapping);
                             if (mappingJson.TryGetProperty("field", out var fieldProp) && fieldProp.GetString() == "file")
                             {
-                                var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
-                                    .OrderByDescending(k => k).FirstOrDefault();
+                                var prevOrder = FindPreviousStepInBranch(
+                                    pm.StepOrder, pm.BranchId, pm.BranchFromStep,
+                                    stepOutputs, stepResults, stepBranches);
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
                                     resumePrevFiles = new List<byte[]>();
@@ -2478,7 +2547,8 @@ Datos de la ejecucion:
             var input = userInput ?? "";
             if (pm.InputMapping is not null)
             {
-                var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, "Text", pm.AiModule.ModelName);
+                var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, "Text", pm.AiModule.ModelName,
+                    BuildStepBranches(project.ProjectModules, stepModuleTypes));
                 input = string.Join("\n\n", inputs);
             }
 
@@ -3038,7 +3108,8 @@ Datos de la ejecucion:
 
                         var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
                         var inputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs,
-                            pm.AiModule.ModuleType, pm.AiModule.ModelName);
+                            pm.AiModule.ModuleType, pm.AiModule.ModelName,
+                            BuildStepBranches(project.ProjectModules, stepModuleTypes));
 
                         var ctx = new AiExecutionContext
                         {
@@ -3201,7 +3272,8 @@ Datos de la ejecucion:
                     var bProvider = _registry.GetProvider(bpm.AiModule.ProviderType)
                         ?? throw new InvalidOperationException($"[{branchId}] Paso {bpm.StepOrder}: Proveedor no disponible");
 
-                    var bInputs = ResolveInputs(bpm, userInput, stepResults, stepOutputs, bpm.AiModule.ModuleType, bpm.AiModule.ModelName);
+                    var bInputs = ResolveInputs(bpm, userInput, stepResults, stepOutputs, bpm.AiModule.ModuleType, bpm.AiModule.ModelName,
+                        BuildStepBranches(project.ProjectModules, stepModuleTypes));
 
                     if (bpm.AiModule.ModuleType == "Text")
                     {
@@ -3262,10 +3334,10 @@ Datos de la ejecucion:
                             var bMap = JsonSerializer.Deserialize<JsonElement>(bpm.InputMapping);
                             if (bMap.TryGetProperty("field", out var bf) && bf.GetString() == "file")
                             {
-                                var bPrevOrd = stepOutputs.Keys.Where(k => k < bpm.StepOrder)
-                                    .OrderByDescending(k => k).FirstOrDefault();
-                                if (!stepOutputs.ContainsKey(bPrevOrd) && bpm.BranchFromStep.HasValue)
-                                    bPrevOrd = bpm.BranchFromStep.Value;
+                                var bBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+                                var bPrevOrd = FindPreviousStepInBranch(
+                                    bpm.StepOrder, bpm.BranchId, bpm.BranchFromStep,
+                                    stepOutputs, stepResults, bBranches);
                                 if (stepOutputs.TryGetValue(bPrevOrd, out var bPrev) && bPrev.Files.Count > 0)
                                 {
                                     bPrevFiles = new List<byte[]>();
@@ -3929,7 +4001,8 @@ Datos de la ejecucion:
                         InjectImageCountRule(config);
 
                     var inputs = ResolveInputs(pm, originalUserInput, stepResults, stepOutputs,
-                        pm.AiModule.ModuleType, pm.AiModule.ModelName);
+                        pm.AiModule.ModuleType, pm.AiModule.ModelName,
+                        BuildStepBranches(project.ProjectModules, stepModuleTypes));
 
                     // For the retry step: enrich input with feedback + previous output
                     if (pm.StepOrder == fromStepOrder && comment is not null)
@@ -4011,8 +4084,10 @@ Datos de la ejecucion:
                             var mappingJson = JsonSerializer.Deserialize<JsonElement>(pm.InputMapping);
                             if (mappingJson.TryGetProperty("field", out var fieldProp) && fieldProp.GetString() == "file")
                             {
-                                var prevOrder = stepOutputs.Keys.Where(k => k < pm.StepOrder)
-                                    .OrderByDescending(k => k).FirstOrDefault();
+                                var prevOrder = FindPreviousStepInBranch(
+                                    pm.StepOrder, pm.BranchId, pm.BranchFromStep,
+                                    stepOutputs, stepResults,
+                                    BuildStepBranches(project.ProjectModules, stepModuleTypes));
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
                                     retryPrevFiles = new List<byte[]>();
