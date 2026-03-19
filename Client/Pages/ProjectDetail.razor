@@ -2693,7 +2693,8 @@ else
 
     private async Task RetryFromStep(int stepOrder)
     {
-        if (_result is null) return;
+        var execId = _execDetailModal?.Id ?? _result?.Id;
+        if (execId is null) return;
         _retryError = null;
         _executing = true;
         _logEntries.Clear();
@@ -2701,11 +2702,12 @@ else
         try
         {
             var commentToSend = string.IsNullOrWhiteSpace(_retryComment) ? null : _retryComment;
-            var (ok, error) = await Api.RetryFromStepAsync(_result.Id, stepOrder, commentToSend);
+            var (ok, error) = await Api.RetryFromStepAsync(execId.Value, stepOrder, commentToSend);
             if (ok)
             {
                 _retryStepOrder = null;
                 _retryComment = "";
+                _showExecDetailModal = false;
                 StartPolling();
             }
             else
