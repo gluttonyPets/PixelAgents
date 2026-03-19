@@ -17,33 +17,45 @@ window.pipelineEditor = {
         this._editor.start();
         this._dotNetRef = dotNetRef;
 
-        // ── Infinite canvas: forward mouse events from document to Drawflow ──
-        var canvasEl = container.querySelector('.drawflow');
-        var dragging = false;
+        // ── Infinite canvas: allow panning even when .drawflow has scrolled out of view ──
+        var editorRef = this._editor;
+        var precanvas = container.querySelector('.drawflow');
+        var panActive = false;
 
         container.addEventListener('mousedown', function (e) {
-            if (e.target === canvasEl || e.target.classList.contains('drawflow')) {
-                dragging = true;
+            var target = e.target;
+            if (target.closest('.drawflow-node') || target.closest('.connection') ||
+                target.classList.contains('input') || target.classList.contains('output')) {
+                return;
             }
+
+            editorRef.editor_selected = true;
+            editorRef.pos_x = e.clientX;
+            editorRef.pos_y = e.clientY;
+            editorRef.pos_x_start = e.clientX;
+            editorRef.pos_y_start = e.clientY;
+            panActive = true;
+            e.preventDefault();
         });
 
         document.addEventListener('mousemove', function (e) {
-            if (dragging && canvasEl) {
-                canvasEl.dispatchEvent(new MouseEvent('mousemove', {
-                    clientX: e.clientX, clientY: e.clientY,
-                    bubbles: true, cancelable: true
-                }));
-            }
+            if (!panActive || !editorRef.editor_selected) return;
+
+            var x = editorRef.canvas_x + (-(editorRef.pos_x - e.clientX));
+            var y = editorRef.canvas_y + (-(editorRef.pos_y - e.clientY));
+            editorRef.dispatch('translate', { x: x, y: y });
+            precanvas.style.transform = "translate(" + x + "px, " + y + "px) scale(" + editorRef.zoom + ")";
         });
 
         document.addEventListener('mouseup', function (e) {
-            if (dragging) {
-                dragging = false;
-                canvasEl.dispatchEvent(new MouseEvent('mouseup', {
-                    clientX: e.clientX, clientY: e.clientY,
-                    bubbles: true, cancelable: true
-                }));
+            if (!panActive) return;
+
+            if (editorRef.editor_selected) {
+                editorRef.canvas_x = editorRef.canvas_x + (-(editorRef.pos_x - e.clientX));
+                editorRef.canvas_y = editorRef.canvas_y + (-(editorRef.pos_y - e.clientY));
+                editorRef.editor_selected = false;
             }
+            panActive = false;
         });
 
         this._editor.on('nodeMoved', id => {
