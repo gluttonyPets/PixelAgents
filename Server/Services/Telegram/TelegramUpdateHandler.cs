@@ -203,7 +203,7 @@ namespace Server.Services.Telegram
         {
             var candidates = await _coreDb.TelegramCorrelations
                 .Where(c => !c.IsResolved && c.ChatId == chatId && c.State != "queued")
-                .OrderBy(c => c.CreatedAt)
+                .OrderByDescending(c => c.CreatedAt) // newest first: prefer current execution over stale ones
                 .Take(10) // safety limit
                 .ToListAsync();
 

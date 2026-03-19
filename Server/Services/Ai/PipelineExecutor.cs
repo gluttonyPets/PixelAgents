@@ -143,6 +143,36 @@ namespace Server.Services.Ai
 
             Directory.CreateDirectory(workspacePath);
 
+            // Cancel old executions of this project still stuck in WaitingForInput/WaitingForReview
+            // and resolve their correlations to prevent stale Telegram/WhatsApp interactions
+            var stuckExecutions = await db.ProjectExecutions
+                .Where(e => e.ProjectId == projectId && e.Id != executionId
+                    && (e.Status == "WaitingForInput" || e.Status == "WaitingForReview"))
+                .ToListAsync();
+            foreach (var stuck in stuckExecutions)
+            {
+                stuck.Status = "Cancelled";
+                stuck.CompletedAt = DateTime.UtcNow;
+                stuck.PausedAtStepOrder = null;
+                stuck.PausedStepData = null;
+                stuck.PausedBranches = null;
+
+                var staleCorrs = await _coreDb.TelegramCorrelations
+                    .Where(c => !c.IsResolved && c.ExecutionId == stuck.Id)
+                    .ToListAsync();
+                foreach (var sc in staleCorrs) sc.IsResolved = true;
+
+                var staleWa = await _coreDb.WhatsAppCorrelations
+                    .Where(c => !c.IsResolved && c.ExecutionId == stuck.Id)
+                    .ToListAsync();
+                foreach (var sc in staleWa) sc.IsResolved = true;
+            }
+            if (stuckExecutions.Count > 0)
+            {
+                await db.SaveChangesAsync();
+                await _coreDb.SaveChangesAsync();
+            }
+
             await _logger.LogAsync(projectId, executionId, "info",
                 $"Iniciando pipeline con {project.ProjectModules.Count} paso(s)");
 
@@ -4193,9 +4223,27 @@ Datos de la ejecucion:
                 db.StepExecutions.Remove(oldStep);
             }
 
+            // Clear pause state — retry starts fresh
             execution.Status = "Running";
             execution.CompletedAt = null;
+            execution.PausedAtStepOrder = null;
+            execution.PausedStepData = null;
+            execution.PausedBranches = null;
             await db.SaveChangesAsync();
+
+            // Resolve all unresolved Telegram/WhatsApp correlations for this execution
+            var staleCorrelations = await _coreDb.TelegramCorrelations
+                .Where(c => !c.IsResolved && c.ExecutionId == executionId)
+                .ToListAsync();
+            foreach (var sc in staleCorrelations) sc.IsResolved = true;
+
+            var staleWaCorrelations = await _coreDb.WhatsAppCorrelations
+                .Where(c => !c.IsResolved && c.ExecutionId == executionId)
+                .ToListAsync();
+            foreach (var sc in staleWaCorrelations) sc.IsResolved = true;
+
+            if (staleCorrelations.Count > 0 || staleWaCorrelations.Count > 0)
+                await _coreDb.SaveChangesAsync();
 
             var projectId = execution.ProjectId;
             await _logger.LogAsync(projectId, executionId, "info",
