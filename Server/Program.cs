@@ -152,6 +152,9 @@ using (var scope = app.Services.CreateScope())
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100)");
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""WhatsAppCorrelations"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100)");
+        // Migration: add QueuedMessageData column for interaction queue
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""QueuedMessageData"" text");
     }
     catch { }
 }
