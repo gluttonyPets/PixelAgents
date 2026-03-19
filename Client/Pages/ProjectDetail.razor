@@ -956,6 +956,31 @@ else
                                                 }
                                             </div>
                                         }
+
+                                        @* Retry from this step *@
+                                        @if ((step.Status == "Completed" || step.Status == "Failed") && !_executing)
+                                        {
+                                            var capturedStepOrder = step.StepOrder;
+                                            <div style="margin-top: 0.4rem; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
+                                                <button class="btn btn-sm btn-outline" style="font-size: 0.7rem; padding: 0.15rem 0.5rem;"
+                                                        @onclick="() => ToggleRetryPanel(capturedStepOrder)">
+                                                    &#x1F504; Reiniciar desde aqui
+                                                </button>
+                                                @if (_retryStepOrder == capturedStepOrder)
+                                                {
+                                                    <input type="text" @bind="_retryComment" placeholder="Comentario opcional..."
+                                                           style="font-size: 0.75rem; padding: 0.2rem 0.4rem; flex: 1; min-width: 120px;" />
+                                                    <button class="btn btn-sm btn-primary" style="font-size: 0.7rem; padding: 0.15rem 0.5rem;"
+                                                            @onclick="() => RetryFromStep(capturedStepOrder)">
+                                                        Ejecutar
+                                                    </button>
+                                                }
+                                            </div>
+                                            @if (_retryError is not null && _retryStepOrder == capturedStepOrder)
+                                            {
+                                                <div class="alert alert-error" style="font-size: 0.7rem; padding: 0.2rem 0.4rem; margin-top: 0.2rem;">@_retryError</div>
+                                            }
+                                        }
                                     </div>
                                 }
                             </div>

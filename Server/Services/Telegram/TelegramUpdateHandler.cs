@@ -42,7 +42,7 @@ namespace Server.Services.Telegram
             var normalizedChatId = chatId.Trim();
 
             var correlation = await _coreDb.TelegramCorrelations
-                .Where(c => !c.IsResolved && c.ChatId == normalizedChatId)
+                .Where(c => !c.IsResolved && c.ChatId == normalizedChatId && c.State != "queued")
                 .OrderBy(c => c.CreatedAt) // FIFO: oldest unresolved first
                 .FirstOrDefaultAsync();
 
@@ -195,7 +195,16 @@ namespace Server.Services.Telegram
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error processing Telegram update: {ex.Message}");
+                Console.WriteLine($"[TG-Update] ERROR processing update for correlation {correlation.Id}: {ex}");
+
+                // Try to notify the user about the error
+                try
+                {
+                    var tgConfig = await GetTgConfigAsync();
+                    if (tgConfig is not null)
+                        await _telegram.SendTextMessageAsync(tgConfig, $"⚠️ Error al procesar respuesta: {ex.Message}");
+                }
+                catch { /* non-critical */ }
             }
         }
     }
