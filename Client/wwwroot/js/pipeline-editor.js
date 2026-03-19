@@ -17,6 +17,35 @@ window.pipelineEditor = {
         this._editor.start();
         this._dotNetRef = dotNetRef;
 
+        // ── Infinite canvas: forward mouse events from document to Drawflow ──
+        var canvasEl = container.querySelector('.drawflow');
+        var dragging = false;
+
+        container.addEventListener('mousedown', function (e) {
+            if (e.target === canvasEl || e.target.classList.contains('drawflow')) {
+                dragging = true;
+            }
+        });
+
+        document.addEventListener('mousemove', function (e) {
+            if (dragging && canvasEl) {
+                canvasEl.dispatchEvent(new MouseEvent('mousemove', {
+                    clientX: e.clientX, clientY: e.clientY,
+                    bubbles: true, cancelable: true
+                }));
+            }
+        });
+
+        document.addEventListener('mouseup', function (e) {
+            if (dragging) {
+                dragging = false;
+                canvasEl.dispatchEvent(new MouseEvent('mouseup', {
+                    clientX: e.clientX, clientY: e.clientY,
+                    bubbles: true, cancelable: true
+                }));
+            }
+        });
+
         this._editor.on('nodeMoved', id => {
             if (this._suppressEvents) return;
             var info = this._editor.getNodeFromId(id);
