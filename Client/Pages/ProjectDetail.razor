@@ -118,7 +118,7 @@ else
                                 OnAddModule="AddModuleFromCanvas"
                                 OnRemoveModule="RemoveModuleFromCanvas"
                                 OnSaveGraph="SaveGraph"
-                                OnInputMappingChanged="@(args => UpdateInputMapping(args))"
+                                OnInputMappingChanged="@(((Guid ModuleId, string InputMapping) args) => UpdateInputMapping(args))"
                                 Executing="_executing"
                                 StepStatuses="GetStepStatuses()"
                                 ExecutionLogs="GetExecutionLogs()">

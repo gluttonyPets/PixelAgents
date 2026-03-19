@@ -98,6 +98,7 @@
                                     <span class="port-type-badge" style="background: @PortDataType.GetColor(port.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(port.DataType)</span>
                                     @if (conn is not null)
                                     {
+                                        var capturedInputConn = conn;
                                         var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
                                         var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping) : new();
                                         var fromPort = fromPorts.FirstOrDefault(p => p.Id == conn.FromPort);
@@ -106,7 +107,6 @@
                                         {
                                             <span class="port-type-badge" style="background: @PortDataType.GetColor(fromPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(fromPort.DataType)</span>
                                         }
-                                        @{ var capturedInputConn = conn; }
                                         <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1;opacity:0.6;" @onclick="() => RemoveConnection(capturedInputConn)" title="Quitar conexion">&#x2715;</button>
                                     }
                                     else
@@ -130,6 +130,7 @@
                                     {
                                         @foreach (var c in conns)
                                         {
+                                            var capturedOutputConn = c;
                                             var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
                                             var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping) : new();
                                             var toPort = toPorts.FirstOrDefault(p => p.Id == c.ToPort);
@@ -138,7 +139,6 @@
                                             {
                                                 <span class="port-type-badge" style="background: @PortDataType.GetColor(toPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(toPort.DataType)</span>
                                             }
-                                            @{ var capturedOutputConn = c; }
                                             <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1;opacity:0.6;" @onclick="() => RemoveConnection(capturedOutputConn)" title="Quitar conexion">&#x2715;</button>
                                         }
                                     }
