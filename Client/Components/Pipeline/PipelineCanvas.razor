@@ -209,10 +209,8 @@
                                 <span class="inspector-log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
                                 @if (entry.StepOrder.HasValue)
                                 {
-                                    @{
-                                        var logPm = Modules.FirstOrDefault(m => m.StepOrder == entry.StepOrder.Value);
-                                        var logLabel = logPm is not null ? GetStepLabel(logPm) : entry.StepOrder.Value.ToString();
-                                    }
+                                    var logPm = Modules.FirstOrDefault(m => m.StepOrder == entry.StepOrder.Value);
+                                    var logLabel = logPm is not null ? GetStepLabel(logPm) : entry.StepOrder.Value.ToString();
                                     <span class="inspector-log-step">P@(logLabel)</span>
                                 }
                                 <span>@entry.Message</span>
