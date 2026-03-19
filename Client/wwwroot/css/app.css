@@ -1967,21 +1967,39 @@ a.link:hover { text-decoration: underline; }
     vertical-align: middle;
 }
 
-/* ── Spinner overlay (hidden by default) ── */
+/* ── Spinner overlay (hidden by default, shown on running state) ── */
 .df-node-overlay-spinner {
     display: none;
+}
+.drawflow .drawflow-node.df-state-running .df-node-overlay-spinner {
+    display: block;
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(76, 175, 80, 0.3);
+    border-top-color: var(--success);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    z-index: 2;
 }
 
 /* ── Execution states ── */
 .drawflow .drawflow-node.df-state-running {
-    border-color: var(--warning) !important;
-    box-shadow: 0 0 12px rgba(255, 152, 0, 0.4);
-    animation: df-pulse 2s ease-in-out infinite;
+    border-color: var(--success) !important;
+    box-shadow: 0 0 12px rgba(76, 175, 80, 0.4);
+    animation: df-pulse-green 2s ease-in-out infinite;
 }
 
-@keyframes df-pulse {
-    0%, 100% { box-shadow: 0 0 8px rgba(255, 152, 0, 0.3); }
-    50% { box-shadow: 0 0 18px rgba(255, 152, 0, 0.6); }
+.drawflow .drawflow-node.df-state-running .df-order-badge {
+    background: var(--success);
+    box-shadow: 0 2px 6px rgba(76, 175, 80, 0.5);
+}
+
+@keyframes df-pulse-green {
+    0%, 100% { box-shadow: 0 0 8px rgba(76, 175, 80, 0.3); }
+    50% { box-shadow: 0 0 18px rgba(76, 175, 80, 0.6); }
 }
 
 .drawflow .drawflow-node.df-state-completed {

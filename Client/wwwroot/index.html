@@ -21,6 +21,22 @@
     </div>
     <script src="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow@0.0.60/dist/drawflow.min.js"></script>
     <script src="js/pipeline-editor.js"></script>
+    <script>
+        window.downloadFileWithCredentials = async function(url, fileName) {
+            try {
+                var resp = await fetch(url, { credentials: 'include' });
+                if (!resp.ok) { console.error('Download failed:', resp.status); return; }
+                var blob = await resp.blob();
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+            } catch(e) { console.error('Download error:', e); }
+        };
+    </script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 </html>

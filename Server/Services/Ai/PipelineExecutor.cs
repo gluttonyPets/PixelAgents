@@ -1405,7 +1405,10 @@ Datos de la ejecucion:
 
             var prevStepExec = await db.StepExecutions
                 .Include(s => s.Files)
-                .FirstOrDefaultAsync(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder);
+                .Where(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder)
+                .OrderByDescending(s => s.Files.Count)
+                .ThenByDescending(s => s.CompletedAt)
+                .FirstOrDefaultAsync();
 
             if (prevStepExec?.Files is not null)
             {
@@ -2183,19 +2186,23 @@ Datos de la ejecucion:
             await _logger.LogAsync(project.Id, execution.Id, "info",
                 $"Respuesta recibida de {channelLabel}: \"{responseText}\". Reanudando pipeline...");
 
-            // Continue execution from the step after the paused one
+            // Continue execution from the step after the paused one — only main branch modules
             var allModules = project.ProjectModules.ToList();
+            var mainModules = allModules.Where(m => m.BranchId == "main" && m.StepOrder > pausedStep)
+                .OrderBy(m => m.StepOrder).ToList();
+            var branchModules = allModules.Where(m => m.BranchId != "main")
+                .GroupBy(m => m.BranchId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
             var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
 
             // Load previous execution summaries for context
             var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, execution.ProjectId, execution.Id);
 
-            for (var mi = 0; mi < allModules.Count; mi++)
+            for (var mi = 0; mi < mainModules.Count; mi++)
             {
-                var pm = allModules[mi];
-                if (pm.StepOrder <= pausedStep) continue;
+                var pm = mainModules[mi];
 
-                var nextModule = mi + 1 < allModules.Count ? allModules[mi + 1] : null;
+                var nextModule = mi + 1 < mainModules.Count ? mainModules[mi + 1] : null;
 
                 if (ct.IsCancellationRequested)
                 {
@@ -2453,6 +2460,39 @@ Datos de la ejecucion:
                     await db.SaveChangesAsync();
                     await _logger.LogStepProgressAsync(project.Id, pm.Id, "Failed");
                     return execution;
+                }
+
+                // ── Execute sub-branches that fork from this main step (resume path) ──
+                var forksFromHere = branchModules
+                    .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
+                    .ToList();
+
+                foreach (var (branchId, branchSteps) in forksFromHere)
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "info",
+                        $"Iniciando rama '{branchId}' (bifurcacion desde paso {pm.StepOrder}, {branchSteps.Count} pasos)");
+
+                    var branchResult = await ExecuteBranchStepsAsync(
+                        project, execution, branchId, branchSteps, pauseState.UserInput,
+                        stepResults, stepOutputs, stepModuleTypes,
+                        workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                    if (branchResult == BranchResult.Cancelled)
+                    {
+                        execution.Status = "Cancelled";
+                        execution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        return execution;
+                    }
+
+                    var branchLevel = branchResult == BranchResult.Failed ? "warning"
+                        : branchResult == BranchResult.Paused ? "info" : "success";
+                    var branchMsg = branchResult == BranchResult.Failed
+                        ? $"Rama '{branchId}' fallo — continuando con otras ramas"
+                        : branchResult == BranchResult.Paused
+                            ? $"Rama '{branchId}' pausada esperando respuesta del usuario"
+                            : $"Rama '{branchId}' completada correctamente";
+                    await _logger.LogAsync(project.Id, execution.Id, branchLevel, branchMsg);
                 }
             }
 

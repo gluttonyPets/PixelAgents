@@ -850,123 +850,143 @@ else
     @if (_showExecDetailModal)
     {
         <div class="modal-overlay" @onclick="() => _showExecDetailModal = false">
-            <div class="settings-modal" @onclick:stopPropagation="true" style="max-width: 800px;">
+            <div class="settings-modal" @onclick:stopPropagation="true" style="max-width: 1100px; width: 95vw;">
                 <div class="settings-modal-header">
                     <h3 style="margin: 0;">Detalle de ejecucion</h3>
-                    <button class="btn-icon" @onclick="() => _showExecDetailModal = false">&#x2715;</button>
+                    @if (_execDetailModal is not null && (_execDetailModal.Status == "Running" || _execDetailModal.Status == "WaitingForInput"))
+                    {
+                        <button class="btn btn-sm" style="margin-left: 0.5rem; font-size: 0.7rem;" @onclick="() => RefreshExecDetail(_execDetailModal.Id)">
+                            &#x21BB; Actualizar
+                        </button>
+                    }
+                    <button class="btn-icon" @onclick="() => { _showExecDetailModal = false; _execDetailRefreshTimer?.Dispose(); }">&#x2715;</button>
                 </div>
-                <div class="settings-modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="settings-modal-body" style="max-height: 75vh; overflow: hidden; padding: 0;">
                     @if (_execDetailModal is null)
                     {
-                        <p class="text-muted">Cargando...</p>
+                        <p class="text-muted" style="padding: 1rem;">Cargando...</p>
                     }
                     else
                     {
-                        <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap;">
-                            <span class="badge @StatusBadge(_execDetailModal.Status)">@_execDetailModal.Status</span>
-                            <span class="text-sm text-muted">@_execDetailModal.CreatedAt.ToString("dd MMM yyyy HH:mm")</span>
-                            @if (_execDetailModal.CompletedAt.HasValue)
+                        <div style="padding: 0.5rem 0.8rem;">
+                            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap;">
+                                <span class="badge @StatusBadge(_execDetailModal.Status)">@_execDetailModal.Status</span>
+                                <span class="text-sm text-muted">@_execDetailModal.CreatedAt.ToString("dd MMM yyyy HH:mm")</span>
+                                @if (_execDetailModal.CompletedAt.HasValue)
+                                {
+                                    <span class="text-sm text-muted">- @_execDetailModal.CompletedAt.Value.ToString("HH:mm")</span>
+                                }
+                                @if (_execDetailModal.TotalEstimatedCost > 0)
+                                {
+                                    <span class="text-sm text-muted">~$@_execDetailModal.TotalEstimatedCost.ToString("F4")</span>
+                                }
+                            </div>
+                            @if (_execDetailModal.UserInput is not null)
                             {
-                                <span class="text-sm text-muted">- @_execDetailModal.CompletedAt.Value.ToString("HH:mm")</span>
-                            }
-                            @if (_execDetailModal.TotalEstimatedCost > 0)
-                            {
-                                <span class="text-sm text-muted">~$@_execDetailModal.TotalEstimatedCost.ToString("F4")</span>
+                                <div class="output-block" style="font-size: 0.8rem; margin-bottom: 0.5rem; max-height: 60px; overflow-y: auto;">
+                                    <strong>Prompt:</strong> @_execDetailModal.UserInput
+                                </div>
                             }
                         </div>
-                        @if (_execDetailModal.UserInput is not null)
-                        {
-                            <div class="output-block" style="font-size: 0.8rem; margin-bottom: 0.5rem; max-height: 60px; overflow-y: auto;">
-                                <strong>Prompt:</strong> @_execDetailModal.UserInput
-                            </div>
-                        }
 
-                        <!-- Steps -->
-                        @foreach (var step in _execDetailModal.Steps.OrderBy(s => s.StepOrder))
-                        {
-                            <div class="card" style="margin-bottom: 0.5rem; padding: 0.5rem;">
-                                <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem;">
-                                    <span class="step-number" style="font-size: 0.7rem;">@GetStepLabelFromOrder(step.StepOrder)</span>
-                                    <span style="font-weight: 600; font-size: 0.85rem;">@step.ModuleName</span>
-                                    <span class="badge @StatusBadge(step.Status)" style="font-size: 0.6rem;">@step.Status</span>
-                                    @if (step.EstimatedCost > 0)
-                                    {
-                                        <span class="text-sm text-muted">~$@step.EstimatedCost.ToString("F4")</span>
-                                    }
-                                </div>
-
-                                @if (step.ErrorMessage is not null)
+                        <div style="display: flex; gap: 0; height: calc(75vh - 130px); overflow: hidden;">
+                            <!-- Left: Steps -->
+                            <div style="flex: 1; overflow-y: auto; padding: 0 0.8rem 0.8rem; border-right: 1px solid var(--border);">
+                                @foreach (var step in _execDetailModal.Steps.OrderBy(s => s.StepOrder))
                                 {
-                                    <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@step.ErrorMessage</div>
-                                }
-
-                                @if (step.OutputData is not null)
-                                {
-                                    var parsed = TryParseOutput(step.OutputData);
-                                    @if (parsed?.Type == "text" && parsed.Content is not null)
-                                    {
-                                        <div class="output-block" style="font-size: 0.75rem; max-height: 120px; overflow-y: auto; white-space: pre-wrap;">@parsed.Content</div>
-                                    }
-                                    else if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
-                                    {
-                                        <div class="history-image-grid">
-                                            @foreach (var f in parsed.Files)
+                                    <div class="card" style="margin-bottom: 0.5rem; padding: 0.5rem;">
+                                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem;">
+                                            <span class="step-number" style="font-size: 0.7rem;">@GetStepLabelFromOrder(step.StepOrder)</span>
+                                            <span style="font-weight: 600; font-size: 0.85rem;">@step.ModuleName</span>
+                                            <span class="badge @StatusBadge(step.Status)" style="font-size: 0.6rem;">@step.Status</span>
+                                            @if (step.EstimatedCost > 0)
                                             {
-                                                var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
-                                                <div class="history-image-item">
-                                                    <img src="@fileUrl" alt="@f.FileName" class="history-image-thumb" crossorigin="use-credentials" style="max-width: 200px;" />
-                                                </div>
+                                                <span class="text-sm text-muted">~$@step.EstimatedCost.ToString("F4")</span>
                                             }
                                         </div>
-                                    }
-                                    else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
-                                    {
-                                        @foreach (var f in parsed.Files)
-                                        {
-                                            var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
-                                            <video controls style="max-width: 300px; border-radius: 6px; margin-top: 0.3rem;" crossorigin="use-credentials">
-                                                <source src="@fileUrl" type="@f.ContentType" />
-                                            </video>
-                                        }
-                                    }
-                                }
 
-                                @* Show attached files *@
-                                @if (step.Files is { Count: > 0 })
-                                {
-                                    <div style="margin-top: 0.3rem;">
-                                        @foreach (var file in step.Files.Where(f => f.Direction == "Output"))
+                                        @if (step.ErrorMessage is not null)
                                         {
-                                            var dlUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{file.Id}";
-                                            <a href="@dlUrl" target="_blank" class="text-sm" style="display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.5rem;">
-                                                &#x1F4CE; @file.FileName <span class="text-muted">(@FormatFileSize(file.FileSize))</span>
-                                            </a>
+                                            <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@step.ErrorMessage</div>
+                                        }
+
+                                        @if (step.OutputData is not null)
+                                        {
+                                            var parsed = TryParseOutput(step.OutputData);
+                                            @if (parsed?.Type == "text" && parsed.Content is not null)
+                                            {
+                                                <div class="output-block" style="font-size: 0.75rem; max-height: 120px; overflow-y: auto; white-space: pre-wrap;">@parsed.Content</div>
+                                            }
+                                            else if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
+                                            {
+                                                <div class="history-image-grid">
+                                                    @foreach (var f in parsed.Files)
+                                                    {
+                                                        var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
+                                                        <div class="history-image-item">
+                                                            <img src="@fileUrl" alt="@f.FileName" class="history-image-thumb" crossorigin="use-credentials" style="max-width: 200px;" />
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                            else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
+                                            {
+                                                @foreach (var f in parsed.Files)
+                                                {
+                                                    var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
+                                                    <video controls style="max-width: 300px; border-radius: 6px; margin-top: 0.3rem;" crossorigin="use-credentials">
+                                                        <source src="@fileUrl" type="@f.ContentType" />
+                                                    </video>
+                                                }
+                                            }
+                                        }
+
+                                        @* Show attached files with download button *@
+                                        @if (step.Files is { Count: > 0 })
+                                        {
+                                            <div style="margin-top: 0.3rem;">
+                                                @foreach (var file in step.Files.Where(f => f.Direction == "Output"))
+                                                {
+                                                    var capturedFile = file;
+                                                    var capturedExecId = _execDetailModal.Id;
+                                                    <button class="btn btn-sm" style="display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.5rem; font-size: 0.75rem; padding: 0.15rem 0.4rem;"
+                                                            @onclick="() => DownloadFile(capturedExecId, capturedFile.Id, capturedFile.FileName)">
+                                                        &#x1F4CE; @file.FileName <span class="text-muted">(@FormatFileSize(file.FileSize))</span>
+                                                    </button>
+                                                }
+                                            </div>
                                         }
                                     </div>
                                 }
                             </div>
-                        }
 
-                        <!-- Logs -->
-                        @if (_execDetailLogs is { Count: > 0 })
-                        {
-                            <details style="margin-top: 0.5rem;">
-                                <summary style="cursor: pointer; font-weight: 600; font-size: 0.85rem;">Logs (@_execDetailLogs.Count)</summary>
-                                <div class="inspector-log-entries" style="max-height: 200px; overflow-y: auto; margin-top: 0.3rem;">
-                                    @foreach (var log in _execDetailLogs)
-                                    {
-                                        <div class="inspector-log-entry inspector-log-@log.Level">
-                                            <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
-                                            @if (log.StepOrder.HasValue)
-                                            {
-                                                <span class="inspector-log-step">P@(GetStepLabelFromOrder(log.StepOrder.Value))</span>
-                                            }
-                                            <span>@log.Message</span>
-                                        </div>
-                                    }
+                            <!-- Right: Logs -->
+                            <div style="width: 340px; min-width: 280px; overflow-y: auto; padding: 0 0.8rem 0.8rem; display: flex; flex-direction: column;">
+                                <div style="font-weight: 600; font-size: 0.85rem; padding: 0.3rem 0; position: sticky; top: 0; background: var(--bg-secondary); z-index: 1;">
+                                    Logs @(_execDetailLogs is { Count: > 0 } ? $"({_execDetailLogs.Count})" : "")
                                 </div>
-                            </details>
-                        }
+                                @if (_execDetailLogs is { Count: > 0 })
+                                {
+                                    <div class="inspector-log-entries" style="flex: 1;">
+                                        @foreach (var log in _execDetailLogs)
+                                        {
+                                            <div class="inspector-log-entry inspector-log-@log.Level">
+                                                <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                                                @if (log.StepOrder.HasValue)
+                                                {
+                                                    <span class="inspector-log-step">P@(GetStepLabelFromOrder(log.StepOrder.Value))</span>
+                                                }
+                                                <span>@log.Message</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p class="text-sm text-muted">Sin logs</p>
+                                }
+                            </div>
+                        </div>
                     }
                 </div>
             </div>
@@ -1462,6 +1482,7 @@ else
     private bool _showExecDetailModal;
     private ExecutionDetailResponse? _execDetailModal;
     private List<ExecutionLogResponse>? _execDetailLogs;
+    private System.Threading.Timer? _execDetailRefreshTimer;
 
     // Edit context
     private bool _editingContext;
@@ -2557,11 +2578,56 @@ else
         _showExecDetailModal = true;
         _execDetailModal = null;
         _execDetailLogs = null;
+        _execDetailRefreshTimer?.Dispose();
         try
         {
             _execDetailModal = await Api.GetExecutionDetailAsync(id);
             _execDetailLogs = await Api.GetExecutionLogsAsync(id);
             StateHasChanged();
+
+            // Auto-refresh if execution is still running
+            if (_execDetailModal.Status is "Running" or "WaitingForInput")
+            {
+                _execDetailRefreshTimer = new System.Threading.Timer(async _ =>
+                {
+                    await InvokeAsync(async () =>
+                    {
+                        try
+                        {
+                            await RefreshExecDetail(id);
+                        }
+                        catch { }
+                    });
+                }, null, 3000, 3000);
+            }
+        }
+        catch { }
+    }
+
+    private async Task RefreshExecDetail(Guid id)
+    {
+        try
+        {
+            _execDetailModal = await Api.GetExecutionDetailAsync(id);
+            _execDetailLogs = await Api.GetExecutionLogsAsync(id);
+            StateHasChanged();
+
+            // Stop auto-refresh when execution completes
+            if (_execDetailModal.Status is not ("Running" or "WaitingForInput"))
+            {
+                _execDetailRefreshTimer?.Dispose();
+                _execDetailRefreshTimer = null;
+            }
+        }
+        catch { }
+    }
+
+    private async Task DownloadFile(Guid executionId, Guid fileId, string fileName)
+    {
+        try
+        {
+            var url = $"{_apiBase}/api/executions/{executionId}/files/{fileId}";
+            await JS.InvokeVoidAsync("downloadFileWithCredentials", url, fileName);
         }
         catch { }
     }
@@ -3030,6 +3096,7 @@ else
     public async ValueTask DisposeAsync()
     {
         StopPolling();
+        _execDetailRefreshTimer?.Dispose();
         if (_hubConnection is not null)
         {
             try { await _hubConnection.InvokeAsync("LeaveProject", ProjectId.ToString()); } catch { }

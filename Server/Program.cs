@@ -833,6 +833,107 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
         }
     }
 
+    // 5. Auto-detect branches from fork points in the connection graph
+    // Find fork points: nodes with more than one downstream connection
+    var forkPoints = outgoingEdges.Where(kv => kv.Value.Count > 1).Select(kv => kv.Key).ToList();
+
+    if (forkPoints.Count > 0)
+    {
+        // For each fork, determine which downstream path is "main" and which are branches.
+        // Walk from each fork's downstream nodes to classify paths.
+        var branchAssignment = new Dictionary<Guid, (string BranchId, int? BranchFromStep)>();
+
+        // First mark all as main by default
+        foreach (var m in modules)
+            branchAssignment[m.Id] = (m.BranchId ?? "main", m.BranchFromStep);
+
+        foreach (var forkId in forkPoints)
+        {
+            var forkModule = modules.FirstOrDefault(m => m.Id == forkId);
+            if (forkModule is null) continue;
+            var forkStepOrder = forkModule.StepOrder;
+
+            var downstream = outgoingEdges[forkId];
+            if (downstream.Count <= 1) continue;
+
+            // The first downstream node with BranchId == "main" stays main.
+            // If none, the one with lowest StepOrder stays main.
+            var mainDown = downstream.FirstOrDefault(d =>
+            {
+                var dm = modules.FirstOrDefault(m => m.Id == d);
+                return dm?.BranchId == "main";
+            });
+            if (mainDown == Guid.Empty)
+                mainDown = downstream.OrderBy(d => modules.FirstOrDefault(m => m.Id == d)?.StepOrder ?? int.MaxValue).First();
+
+            int branchLetterIdx = 0;
+            foreach (var downId in downstream)
+            {
+                if (downId == mainDown) continue;
+
+                // This path is a branch — walk all reachable nodes from downId
+                var branchNodes = new HashSet<Guid>();
+                var walkQueue = new Queue<Guid>();
+                walkQueue.Enqueue(downId);
+                while (walkQueue.Count > 0)
+                {
+                    var n = walkQueue.Dequeue();
+                    if (!branchNodes.Add(n)) continue;
+                    foreach (var next in outgoingEdges.GetValueOrDefault(n, []))
+                        if (!downstream.Contains(next) || next == downId) // don't cross into other fork paths
+                            walkQueue.Enqueue(next);
+                }
+
+                // Use existing branch name if any node already has one, otherwise generate
+                var existingBranch = branchNodes
+                    .Select(n => modules.FirstOrDefault(m => m.Id == n))
+                    .Where(m => m is not null && m.BranchId != "main" && !string.IsNullOrEmpty(m.BranchId))
+                    .Select(m => m!.BranchId)
+                    .FirstOrDefault();
+
+                var branchName = existingBranch ?? $"branch-{forkStepOrder}-{(char)('a' + branchLetterIdx)}";
+                branchLetterIdx++;
+
+                foreach (var nodeId in branchNodes)
+                {
+                    branchAssignment[nodeId] = (branchName, forkStepOrder);
+                }
+            }
+
+            // Ensure main downstream path stays main
+            var mainWalk = new Queue<Guid>();
+            mainWalk.Enqueue(mainDown);
+            while (mainWalk.Count > 0)
+            {
+                var n = mainWalk.Dequeue();
+                if (branchAssignment.TryGetValue(n, out var ba) && ba.BranchId == "main")
+                {
+                    foreach (var next in outgoingEdges.GetValueOrDefault(n, []))
+                        mainWalk.Enqueue(next);
+                }
+            }
+        }
+
+        // Apply branch assignments
+        foreach (var m in modules)
+        {
+            if (branchAssignment.TryGetValue(m.Id, out var ba))
+            {
+                m.BranchId = ba.BranchId;
+                m.BranchFromStep = ba.BranchFromStep;
+            }
+        }
+    }
+    else
+    {
+        // No forks — all modules are main
+        foreach (var m in modules)
+        {
+            m.BranchId = "main";
+            m.BranchFromStep = null;
+        }
+    }
+
     project.UpdatedAt = now;
     await db.SaveChangesAsync();
     return Results.Ok();
