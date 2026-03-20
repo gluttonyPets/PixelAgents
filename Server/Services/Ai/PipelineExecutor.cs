@@ -833,8 +833,8 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
-                        // VideoEdit modules: prefer videoPrompt from step config (set in UI),
-                        // fallback to input from previous step
+                        // Resolve script: prefer videoPrompt from config, then resolved input,
+                        // then search previous steps for text content (skip VideoSearch steps)
                         var editInput = "";
                         if (config.TryGetValue("videoPrompt", out var vp2))
                             editInput = vp2 is JsonElement vp2El ? vp2El.GetString() ?? "" : vp2?.ToString() ?? "";
@@ -842,7 +842,29 @@ namespace Server.Services.Ai
                             editInput = inputs[0];
                         if (string.IsNullOrWhiteSpace(editInput))
                         {
-                            await FailStep(stepExecution, execution, "VideoEdit: no se proporciono guion de video (videoPrompt)", db);
+                            // Fallback: find text from previous non-video steps
+                            foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k))
+                            {
+                                if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video"))
+                                    continue;
+                                if (stepOutputs.TryGetValue(prevOrder, out var po))
+                                {
+                                    if (po.Items.Count > 0)
+                                    {
+                                        editInput = string.Join("\n\n", po.Items.Select(i => i.Content));
+                                        break;
+                                    }
+                                    if (!string.IsNullOrWhiteSpace(po.Content))
+                                    {
+                                        editInput = po.Content;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (string.IsNullOrWhiteSpace(editInput))
+                        {
+                            await FailStep(stepExecution, execution, "VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'", db);
                             return execution;
                         }
 
@@ -3443,9 +3465,37 @@ Datos de la ejecucion:
                     }
                     else if (bpm.AiModule.ModuleType == "VideoEdit")
                     {
-                        var bEditInput = bInputs[0];
+                        // Resolve script: prefer videoPrompt from config, then resolved input,
+                        // then search previous steps for text content (skip VideoSearch steps)
+                        var bEditInput = "";
+                        if (bConfig.TryGetValue("videoPrompt", out var bVp))
+                            bEditInput = bVp is JsonElement bVpEl ? bVpEl.GetString() ?? "" : bVp?.ToString() ?? "";
                         if (string.IsNullOrWhiteSpace(bEditInput))
-                            throw new InvalidOperationException($"[{branchId}] Input obligatorio para VideoEdit");
+                            bEditInput = bInputs[0];
+                        if (string.IsNullOrWhiteSpace(bEditInput))
+                        {
+                            // Fallback: find text from previous non-video steps (orchestrator, text, etc.)
+                            foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderByDescending(k => k))
+                            {
+                                if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video"))
+                                    continue;
+                                if (stepOutputs.TryGetValue(prevOrder, out var po))
+                                {
+                                    if (po.Items.Count > 0)
+                                    {
+                                        bEditInput = string.Join("\n\n", po.Items.Select(i => i.Content));
+                                        break;
+                                    }
+                                    if (!string.IsNullOrWhiteSpace(po.Content))
+                                    {
+                                        bEditInput = po.Content;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (string.IsNullOrWhiteSpace(bEditInput))
+                            throw new InvalidOperationException($"[{branchId}] VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'");
 
                         // Collect video URLs from previous VideoSearch steps (main + branches)
                         var bVideoUrls = new List<string>();
