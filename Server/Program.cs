@@ -732,6 +732,7 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
     if (project is null) return Results.NotFound();
 
     var modules = await db.ProjectModules
+        .Include(x => x.AiModule)
         .Where(x => x.ProjectId == projectId)
         .ToListAsync();
 
@@ -838,7 +839,17 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
                     conn.FromPort.Contains("design"))
                     field = "file";
             }
-            pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\"}}";
+
+            // Include outputKey when connected from a specific orchestrator output port
+            if (conn is not null && upModule?.AiModule?.ModuleType == "Orchestrator"
+                && !string.IsNullOrEmpty(conn.FromPort) && conn.FromPort.StartsWith("output_"))
+            {
+                pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\",\"outputKey\":\"{conn.FromPort}\"}}";
+            }
+            else
+            {
+                pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\"}}";
+            }
         }
     }
 

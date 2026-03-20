@@ -265,6 +265,40 @@ namespace Server.Services.Ai
                             stepResults, stepOutputs, stepModuleTypes,
                             workspacePath, previousSummaryContext, db, tenantDbName, ct);
                         if (shouldPause) return execution;
+
+                        // Launch sub-branches forking from this orchestrator step
+                        // (must run before 'continue' so branches aren't skipped)
+                        var orchForks = branchModules
+                            .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
+                            .ToList();
+                        foreach (var (branchId, branchSteps) in orchForks)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Iniciando rama '{branchId}' (bifurcacion desde orquestador paso {pm.StepOrder}, {branchSteps.Count} pasos)");
+
+                            var branchResult = await ExecuteBranchStepsAsync(
+                                project, execution, branchId, branchSteps, userInput,
+                                stepResults, stepOutputs, stepModuleTypes,
+                                workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                            if (branchResult == BranchResult.Cancelled)
+                            {
+                                execution.Status = "Cancelled";
+                                execution.CompletedAt = DateTime.UtcNow;
+                                await db.SaveChangesAsync();
+                                return execution;
+                            }
+
+                            var orchBranchLevel = branchResult == BranchResult.Failed ? "warning"
+                                : branchResult == BranchResult.Paused ? "info" : "success";
+                            var orchBranchMsg = branchResult == BranchResult.Failed
+                                ? $"Rama '{branchId}' fallo — continuando con otras ramas"
+                                : branchResult == BranchResult.Paused
+                                    ? $"Rama '{branchId}' pausada esperando respuesta del usuario"
+                                    : $"Rama '{branchId}' completada correctamente";
+                            await _logger.LogAsync(projectId, executionId, orchBranchLevel, orchBranchMsg);
+                        }
+
                         continue;
                     }
 
@@ -1134,6 +1168,20 @@ namespace Server.Services.Ai
                     // Check if previous step has structured items
                     if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Items.Count > 0)
                     {
+                        // If InputMapping specifies a specific orchestrator output key, return only that item
+                        if (mapping.TryGetProperty("outputKey", out var outputKeyProp))
+                        {
+                            var outputKey = outputKeyProp.GetString();
+                            if (!string.IsNullOrEmpty(outputKey) && outputKey.StartsWith("output_")
+                                && int.TryParse(outputKey.AsSpan("output_".Length), out var outputIdx))
+                            {
+                                // output_1 → index 0, output_2 → index 1, etc.
+                                var idx = outputIdx - 1;
+                                if (idx >= 0 && idx < prevOutput.Items.Count)
+                                    return [InputAdapter.SanitizePlainText(prevOutput.Items[idx].Content)];
+                            }
+                        }
+
                         return prevOutput.Items.Select(item => InputAdapter.SanitizePlainText(item.Content)).ToList();
                     }
 
@@ -1159,6 +1207,19 @@ namespace Server.Services.Ai
 
                     if (stepOutputs.TryGetValue(targetStep, out var targetOutput) && targetOutput.Items.Count > 0)
                     {
+                        // If InputMapping specifies a specific orchestrator output key, return only that item
+                        if (mapping.TryGetProperty("outputKey", out var stepOutputKeyProp))
+                        {
+                            var outputKey = stepOutputKeyProp.GetString();
+                            if (!string.IsNullOrEmpty(outputKey) && outputKey.StartsWith("output_")
+                                && int.TryParse(outputKey.AsSpan("output_".Length), out var outputIdx))
+                            {
+                                var idx = outputIdx - 1;
+                                if (idx >= 0 && idx < targetOutput.Items.Count)
+                                    return [InputAdapter.SanitizePlainText(targetOutput.Items[idx].Content)];
+                            }
+                        }
+
                         return targetOutput.Items.Select(item => InputAdapter.SanitizePlainText(item.Content)).ToList();
                     }
 
