@@ -22,5 +22,6 @@ namespace Server.Models
         public ICollection<StepExecution> StepExecutions { get; set; } = new List<StepExecution>();
         public ICollection<ModuleConnection> OutgoingConnections { get; set; } = new List<ModuleConnection>();
         public ICollection<ModuleConnection> IncomingConnections { get; set; } = new List<ModuleConnection>();
+        public ICollection<OrchestratorOutput> OrchestratorOutputs { get; set; } = new List<OrchestratorOutput>();
     }
 }

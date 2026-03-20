@@ -2,6 +2,7 @@
 @using Client.Services
 @using System.Text.Json
 @inject IJSRuntime JS
+@inject ApiClient Api
 
 <div class="pipeline-editor-container">
     <!-- ── Left: Module palette ── -->
@@ -82,7 +83,7 @@
                     <div class="inspector-section">
                         <div class="inspector-section-title">Conexiones</div>
                         @{
-                            var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id), sel.InputMapping);
+                            var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id), sel.InputMapping, sel.OrchestratorOutputs);
                             var inputPorts = ports.Where(p => p.IsInput).ToList();
                             var outputPorts = ports.Where(p => !p.IsInput).ToList();
                         }
@@ -100,7 +101,7 @@
                                     {
                                         var capturedInputConn = conn;
                                         var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
-                                        var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping) : new();
+                                        var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping, fromModule.OrchestratorOutputs) : new();
                                         var fromPort = fromPorts.FirstOrDefault(p => p.Id == conn.FromPort);
                                         <span class="text-muted">&#x2190; @(fromModule?.StepName ?? fromModule?.AiModuleName ?? "?")</span>
                                         @if (fromPort is not null)
@@ -132,7 +133,7 @@
                                         {
                                             var capturedOutputConn = c;
                                             var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
-                                            var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping) : new();
+                                            var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping, toModule.OrchestratorOutputs) : new();
                                             var toPort = toPorts.FirstOrDefault(p => p.Id == c.ToPort);
                                             <span class="text-muted">&#x2192; @(toModule?.StepName ?? toModule?.AiModuleName ?? "?")</span>
                                             @if (toPort is not null)
@@ -178,6 +179,59 @@
                                        @onchange="e => UpdateSceneCount(sel.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1)" />
                             </div>
                             <p class="text-sm text-muted">Cada escena crea puertos de video y guion que puedes conectar a otros modulos.</p>
+                        </div>
+                    }
+
+                    @if (sel.ModuleType == "Orchestrator")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Salidas del orquestador</div>
+                            @if (sel.OrchestratorOutputs is { Count: > 0 })
+                            {
+                                @foreach (var output in sel.OrchestratorOutputs.OrderBy(o => o.SortOrder))
+                                {
+                                    <div class="orchestrator-output-card" style="border: 1px solid var(--border-color); border-radius: 0.3rem; padding: 0.4rem; margin-bottom: 0.4rem; font-size: 0.75rem;">
+                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                                            <strong>@output.Label</strong>
+                                            <button class="btn btn-xs btn-danger" style="padding: 0.1rem 0.3rem; font-size: 0.65rem;" @onclick="() => DeleteOrchestratorOutput(sel, output.Id)">X</button>
+                                        </div>
+                                        <div class="text-muted" style="font-size: 0.7rem; margin-bottom: 0.2rem;">@output.Prompt</div>
+                                        @if (output.TargetModuleName is not null)
+                                        {
+                                            <div style="font-size: 0.7rem;">Modulo: <strong>@output.TargetModuleName</strong> (@output.TargetModuleType)</div>
+                                        }
+                                        else
+                                        {
+                                            <div style="font-size: 0.7rem; color: var(--text-muted);">Sin modulo destino</div>
+                                        }
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="text-sm text-muted">No hay salidas configuradas.</p>
+                            }
+                            <div style="margin-top: 0.3rem;">
+                                <div class="inspector-field" style="margin-bottom: 0.2rem;">
+                                    <label>Label</label>
+                                    <input @bind="_newOutputLabel" placeholder="Ej: Video perro" />
+                                </div>
+                                <div class="inspector-field" style="margin-bottom: 0.2rem;">
+                                    <label>Prompt</label>
+                                    <textarea @bind="_newOutputPrompt" rows="2" placeholder="Ej: Busca un video de un perro paseando" style="font-size: 0.75rem;"></textarea>
+                                </div>
+                                <div class="inspector-field" style="margin-bottom: 0.2rem;">
+                                    <label>Modulo destino</label>
+                                    <select @bind="_newOutputTargetModuleId">
+                                        <option value="">-- Ninguno --</option>
+                                        @foreach (var m in AvailableModules.Where(m => m.ModuleType != "Orchestrator" && m.ModuleType != "Interaction" && m.ModuleType != "Publish"))
+                                        {
+                                            <option value="@m.Id">@m.Name (@m.ModuleType)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <button class="btn btn-xs btn-primary" style="width: 100%;" @onclick="() => AddOrchestratorOutput(sel)">Agregar salida</button>
+                            </div>
                         </div>
                     }
 
@@ -229,6 +283,7 @@
 }
 
 @code {
+    [Parameter] public Guid ProjectId { get; set; }
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
     [Parameter] public List<AiModuleResponse> AvailableModules { get; set; } = [];
     [Parameter] public List<ModuleConnectionResponse> Connections { get; set; } = [];
@@ -261,6 +316,11 @@
     private Dictionary<Guid, int> _sceneCountOverrides = new();
     private bool _lastExecuting;
     private int _lastLogCount;
+
+    // Orchestrator output form state
+    private string _newOutputLabel = "";
+    private string _newOutputPrompt = "";
+    private string _newOutputTargetModuleId = "";
 
     private IEnumerable<AiModuleResponse> FilteredModules => string.IsNullOrWhiteSpace(_searchFilter)
         ? AvailableModules
@@ -327,7 +387,7 @@
         foreach (var pm in Modules)
         {
             var sceneCount = GetSceneCount(pm.Id);
-            var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount, pm.InputMapping);
+            var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount, pm.InputMapping, pm.OrchestratorOutputs);
             var inputs = ports.Where(p => p.IsInput).Select(p => new {
                 id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = p.IsRequired
             }).ToList();
@@ -479,6 +539,63 @@
         await NotifyGraphChanged();
     }
 
+    private async Task AddOrchestratorOutput(ProjectModuleResponse module)
+    {
+        if (string.IsNullOrWhiteSpace(_newOutputLabel)) return;
+
+        Guid? targetId = Guid.TryParse(_newOutputTargetModuleId, out var tid) ? tid : null;
+        var sortOrder = (module.OrchestratorOutputs?.Count ?? 0) + 1;
+
+        var (output, error) = await Api.CreateOrchestratorOutputAsync(
+            ProjectId, module.Id,
+            new OrchestratorOutputRequest(_newOutputLabel, _newOutputPrompt, sortOrder, targetId));
+
+        if (output is not null)
+        {
+            // Update local state
+            var outputs = module.OrchestratorOutputs?.ToList() ?? new();
+            outputs.Add(output);
+            // Replace module in the list with updated outputs (records are immutable)
+            var idx = Modules.FindIndex(m => m.Id == module.Id);
+            if (idx >= 0)
+            {
+                Modules[idx] = module with { OrchestratorOutputs = outputs };
+            }
+
+            _newOutputLabel = "";
+            _newOutputPrompt = "";
+            _newOutputTargetModuleId = "";
+
+            // Rebuild node to show new ports
+            await RebuildDrawflow();
+        }
+        else
+        {
+            _error = error ?? "Error al crear salida";
+        }
+        StateHasChanged();
+    }
+
+    private async Task DeleteOrchestratorOutput(ProjectModuleResponse module, Guid outputId)
+    {
+        var (ok, error) = await Api.DeleteOrchestratorOutputAsync(ProjectId, module.Id, outputId);
+        if (ok)
+        {
+            var outputs = module.OrchestratorOutputs?.Where(o => o.Id != outputId).ToList() ?? new();
+            var idx = Modules.FindIndex(m => m.Id == module.Id);
+            if (idx >= 0)
+            {
+                Modules[idx] = module with { OrchestratorOutputs = outputs };
+            }
+            await RebuildDrawflow();
+        }
+        else
+        {
+            _error = error ?? "Error al eliminar salida";
+        }
+        StateHasChanged();
+    }
+
     private async Task UpdateSceneCount(Guid moduleId, int count)
     {
         _sceneCountOverrides[moduleId] = count;
@@ -486,7 +603,7 @@
         var module = Modules.FirstOrDefault(m => m.Id == moduleId);
         if (module is not null)
         {
-            var validPorts = ModulePortRegistry.GetPorts(module.ModuleType, "", count, module.InputMapping).Select(p => p.Id).ToHashSet();
+            var validPorts = ModulePortRegistry.GetPorts(module.ModuleType, "", count, module.InputMapping, module.OrchestratorOutputs).Select(p => p.Id).ToHashSet();
             _connections.RemoveAll(c =>
                 (c.FromModuleId == moduleId && !validPorts.Contains(c.FromPort)) ||
                 (c.ToModuleId == moduleId && !validPorts.Contains(c.ToPort)));

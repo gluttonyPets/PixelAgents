@@ -18,6 +18,7 @@ namespace Server.Data
         public DbSet<ProjectSchedule> ProjectSchedules => Set<ProjectSchedule>();
         public DbSet<ModuleFile> ModuleFiles => Set<ModuleFile>();
         public DbSet<ModuleConnection> ModuleConnections => Set<ModuleConnection>();
+        public DbSet<OrchestratorOutput> OrchestratorOutputs => Set<OrchestratorOutput>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -206,6 +207,27 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
 
                 e.HasIndex(x => x.StepExecutionId);
+            });
+
+            // ── OrchestratorOutput ──
+            modelBuilder.Entity<OrchestratorOutput>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.OutputKey).IsRequired().HasMaxLength(100);
+                e.Property(x => x.Label).IsRequired().HasMaxLength(500);
+                e.Property(x => x.Prompt).IsRequired().HasColumnType("text");
+
+                e.HasOne(x => x.ProjectModule)
+                    .WithMany(pm => pm.OrchestratorOutputs)
+                    .HasForeignKey(x => x.ProjectModuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasOne(x => x.TargetModule)
+                    .WithMany()
+                    .HasForeignKey(x => x.TargetModuleId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                e.HasIndex(x => x.ProjectModuleId);
             });
 
             // ── ModuleFile ──

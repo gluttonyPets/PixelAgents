@@ -112,7 +112,8 @@ else
 
             @if (_pipelineViewMode == "visual")
             {
-                <PipelineCanvas Modules="_project.Modules.ToList()"
+                <PipelineCanvas ProjectId="_project.Id"
+                                Modules="_project.Modules.ToList()"
                                 AvailableModules="_modules"
                                 Connections="_projectConnections"
                                 OnAddModule="AddModuleFromCanvas"

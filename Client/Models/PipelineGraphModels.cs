@@ -114,7 +114,7 @@ public class PipelineConnection
 // ── Module port registry ──
 public static class ModulePortRegistry
 {
-    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, string? inputMapping = null)
+    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, string? inputMapping = null, List<OrchestratorOutputResponse>? orchestratorOutputs = null)
     {
         var ports = new List<PortDefinition>();
 
@@ -166,7 +166,15 @@ public static class ModulePortRegistry
 
             case "Orchestrator":
                 ports.Add(new("input_prompt", "Instrucciones", PortDataType.Text, isInput: true, isRequired: true));
-                ports.Add(new("output_plan", "Plan", PortDataType.Text, isInput: false));
+                if (orchestratorOutputs?.Count > 0)
+                {
+                    foreach (var o in orchestratorOutputs)
+                        ports.Add(new(o.OutputKey, o.Label, PortDataType.Any, isInput: false));
+                }
+                else
+                {
+                    ports.Add(new("output_plan", "Plan", PortDataType.Text, isInput: false));
+                }
                 break;
 
             case "Design":

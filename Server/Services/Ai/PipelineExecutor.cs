@@ -287,6 +287,10 @@ namespace Server.Services.Ai
                             config["systemPrompt"] = rule;
                     }
 
+                    // Inject orchestrator output context if next step is an orchestrator
+                    if (pm.AiModule.ModuleType == "Text" && nextModule is not null && IsOrchestratorStep(nextModule.AiModule))
+                        await InjectOrchestratorOutputContext(nextModule, config, db);
+
                     // Inject image count rule if configured
                     if (pm.AiModule.ModuleType == "Text")
                         InjectImageCountRule(config);
@@ -2587,6 +2591,10 @@ Datos de la ejecucion:
                             config["systemPrompt"] = rule;
                     }
 
+                    // Inject orchestrator output context if next step is an orchestrator
+                    if (pm.AiModule.ModuleType == "Text" && nextModule is not null && IsOrchestratorStep(nextModule.AiModule))
+                        await InjectOrchestratorOutputContext(nextModule, config, db);
+
                     // Inject image count rule if configured
                     if (pm.AiModule.ModuleType == "Text")
                         InjectImageCountRule(config);
@@ -2862,90 +2870,23 @@ Datos de la ejecucion:
         {
             var stepName = pm.StepName ?? pm.AiModule.Name;
             await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Orquestador: analizando tareas necesarias...", pm.StepOrder, stepName);
+                $"Orquestador: procesando salidas fijas...", pm.StepOrder, stepName);
 
-            // 1. Load ALL modules in the project (not just pipeline) so the orchestrator knows its tools
-            var allProjectModules = await db.ProjectModules
-                .Where(m => m.ProjectId == project.Id && m.IsActive && m.Id != pm.Id)
-                .Include(m => m.AiModule)
+            // 1. Load configured outputs for this orchestrator module
+            var outputs = await db.OrchestratorOutputs
+                .Include(o => o.TargetModule)
+                    .ThenInclude(m => m!.ApiKey)
+                .Where(o => o.ProjectModuleId == pm.Id)
+                .OrderBy(o => o.SortOrder)
                 .ToListAsync();
 
-            // Also load standalone modules (not assigned to this project but available)
-            var allAiModules = await db.AiModules
-                .Include(m => m.ApiKey)
-                .Where(m => m.IsEnabled)
-                .ToListAsync();
-
-            // Build available module list: prefer project-assigned modules, also include all enabled modules
-            var seenModuleIds = new HashSet<Guid>();
-            var availableModules = new List<AvailableModule>();
-
-            foreach (var projMod in allProjectModules)
+            if (outputs.Count == 0)
             {
-                if (IsInteractionStep(projMod.AiModule) || IsPublishStep(projMod.AiModule)
-                    || IsDesignStep(projMod.AiModule) || IsOrchestratorStep(projMod.AiModule))
-                    continue;
-
-                if (seenModuleIds.Add(projMod.AiModule.Id))
-                {
-                    availableModules.Add(new AvailableModule
-                    {
-                        ModuleId = projMod.AiModule.Id.ToString(),
-                        Name = projMod.AiModule.Name,
-                        ModuleType = projMod.AiModule.ModuleType,
-                        Provider = projMod.AiModule.ProviderType,
-                        Model = projMod.AiModule.ModelName,
-                        Description = projMod.AiModule.Description ?? "",
-                    });
-                }
-            }
-
-            // Add unassigned but enabled modules
-            foreach (var aiMod in allAiModules)
-            {
-                if (seenModuleIds.Add(aiMod.Id) && aiMod.ApiKey is not null)
-                {
-                    if (aiMod.ModuleType == "Interaction" || aiMod.ModuleType == "Publish"
-                        || aiMod.ModuleType == "Design" || aiMod.ModuleType == "Orchestrator")
-                        continue;
-
-                    availableModules.Add(new AvailableModule
-                    {
-                        ModuleId = aiMod.Id.ToString(),
-                        Name = aiMod.Name,
-                        ModuleType = aiMod.ModuleType,
-                        Provider = aiMod.ProviderType,
-                        Model = aiMod.ModelName,
-                        Description = aiMod.Description ?? "",
-                    });
-                }
-            }
-
-            if (availableModules.Count == 0)
-            {
-                await FailStep(stepExecution, execution, "Orquestador: no hay modulos disponibles para asignar tareas", db);
+                await FailStep(stepExecution, execution, "Orquestador: no hay salidas configuradas", db);
                 return false;
             }
 
-            await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Orquestador: {availableModules.Count} modulos disponibles", pm.StepOrder, stepName);
-
-            // 2. Load previous feedback if any
-            OrchestratorFeedback? feedback = null;
-            var orchConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
-            if (orchConfig.TryGetValue("orchestratorFeedback", out var fbVal))
-            {
-                try
-                {
-                    var fbJson = fbVal is JsonElement el ? el.GetRawText() : fbVal?.ToString();
-                    if (fbJson is not null)
-                        feedback = JsonSerializer.Deserialize<OrchestratorFeedback>(fbJson,
-                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                }
-                catch { /* ignore parse errors */ }
-            }
-
-            // 3. Resolve input from previous step
+            // 2. Resolve input from previous step
             var input = userInput ?? "";
             if (pm.InputMapping is not null)
             {
@@ -2954,7 +2895,7 @@ Datos de la ejecucion:
                 input = string.Join("\n\n", inputs);
             }
 
-            // 4. Call the AI to generate the plan
+            // 3. Call AI to generate content for each output
             var orchestratorApiKey = pm.AiModule.ApiKey?.EncryptedKey;
             if (string.IsNullOrEmpty(orchestratorApiKey))
             {
@@ -2969,15 +2910,14 @@ Datos de la ejecucion:
                 return false;
             }
 
-            var systemPrompt = OrchestratorSchemaHelper.BuildOrchestratorPrompt(
-                availableModules, feedback, project.Context);
+            var systemPrompt = OrchestratorSchemaHelper.BuildFixedOutputPrompt(outputs, project.Context);
 
             var aiContext = new AiExecutionContext
             {
                 ModuleType = "Text",
                 ModelName = pm.AiModule.ModelName,
                 ApiKey = orchestratorApiKey,
-                Input = $"Analyze the following input and create a task plan:\n\n{input}",
+                Input = $"Analyze the following input and generate content for each output:\n\n{input}",
                 ProjectContext = project.Context,
                 PreviousExecutionsSummary = previousSummaryContext,
                 SkipOutputSchema = true,
@@ -2994,41 +2934,41 @@ Datos de la ejecucion:
             if (!result.Success)
             {
                 await _logger.LogAsync(project.Id, execution.Id, "error",
-                    $"Orquestador: error al generar plan: {result.Error}", pm.StepOrder, stepName);
+                    $"Orquestador: error al generar contenido: {result.Error}", pm.StepOrder, stepName);
                 await FailStep(stepExecution, execution, result.Error!, db);
                 return false;
             }
 
-            // 5. Parse the plan
-            var plan = OrchestratorSchemaHelper.ParsePlan(result.TextOutput ?? "");
+            // 4. Parse the fixed plan
+            var plan = OrchestratorSchemaHelper.ParseFixedPlan(result.TextOutput ?? "");
             if (plan is null)
             {
                 await _logger.LogAsync(project.Id, execution.Id, "error",
-                    $"Orquestador: el modelo no genero un plan JSON valido", pm.StepOrder, stepName);
-                await FailStep(stepExecution, execution, "El orquestador no genero un plan valido", db);
+                    $"Orquestador: el modelo no genero un JSON valido", pm.StepOrder, stepName);
+                await FailStep(stepExecution, execution, "El orquestador no genero una respuesta valida", db);
                 return false;
             }
 
-            // 6. Validate plan
-            var validationErrors = OrchestratorSchemaHelper.ValidatePlan(plan, availableModules);
+            // 5. Validate plan
+            var validationErrors = OrchestratorSchemaHelper.ValidateFixedPlan(plan, outputs);
             if (validationErrors.Count > 0)
             {
-                var errMsg = "Plan invalido:\n" + string.Join("\n", validationErrors);
+                var errMsg = "Respuesta invalida:\n" + string.Join("\n", validationErrors);
                 await _logger.LogAsync(project.Id, execution.Id, "error", errMsg, pm.StepOrder, stepName);
                 await FailStep(stepExecution, execution, errMsg, db);
                 return false;
             }
 
             await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Orquestador: plan generado con {plan.Tasks.Count} tarea(s): {plan.Summary}", pm.StepOrder, stepName);
+                $"Orquestador: contenido generado para {plan.Outputs.Count} salida(s): {plan.Summary}", pm.StepOrder, stepName);
 
-            // Save the plan as step output
+            // Save plan as step output file
             var planJson = JsonSerializer.Serialize(plan, new JsonSerializerOptions { WriteIndented = true });
             var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
             Directory.CreateDirectory(stepDir);
             await File.WriteAllTextAsync(Path.Combine(stepDir, "plan.json"), planJson);
 
-            var planFile = new ExecutionFile
+            db.ExecutionFiles.Add(new ExecutionFile
             {
                 Id = Guid.NewGuid(),
                 StepExecutionId = stepExecution.Id,
@@ -3038,115 +2978,69 @@ Datos de la ejecucion:
                 Direction = "Output",
                 FileSize = System.Text.Encoding.UTF8.GetByteCount(planJson),
                 CreatedAt = DateTime.UtcNow,
-            };
-            db.ExecutionFiles.Add(planFile);
+            });
 
-            stepExecution.OutputData = planJson;
-            stepExecution.InputData = JsonSerializer.Serialize(new { input, availableModuleCount = availableModules.Count });
+            stepExecution.InputData = JsonSerializer.Serialize(new { input, outputCount = outputs.Count });
 
-            // 7. Decide: pause for review or auto-continue
-            bool autoApproved = feedback is { Approved: true };
-
-            if (autoApproved)
-            {
-                await _logger.LogAsync(project.Id, execution.Id, "info",
-                    $"Orquestador: plan auto-aprobado (feedback previo validado)", pm.StepOrder, stepName);
-
-                // Execute the sub-tasks immediately
-                await ExecuteOrchestratorPlanAsync(
-                    project, execution, stepExecution, pm, plan,
-                    stepResults, stepOutputs, stepModuleTypes,
-                    workspacePath, previousSummaryContext, db, tenantDbName, ct);
-                return false; // don't pause, continue pipeline
-            }
-
-            // Pause for user review
-            await _logger.LogAsync(project.Id, execution.Id, "info",
-                $"Orquestador: esperando revision del plan...", pm.StepOrder, stepName);
-
-            var pauseState = new PausedPipelineState
-            {
-                UserInput = userInput,
-                StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value)),
-                StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
-            };
-
-            stepExecution.Status = "WaitingForReview";
-            execution.PausedAtStepOrder = pm.StepOrder;
-            execution.PausedStepData = JsonSerializer.Serialize(pauseState);
-            execution.Status = "WaitingForReview";
-            await db.SaveChangesAsync();
-
-            return true; // pause pipeline
-        }
-
-        /// <summary>
-        /// Executes the sub-tasks in an approved orchestrator plan.
-        /// Each task calls the assigned module's provider directly.
-        /// </summary>
-        private async Task ExecuteOrchestratorPlanAsync(
-            Project project, ProjectExecution execution, StepExecution orchestratorStep,
-            ProjectModule orchestratorPm, OrchestratorPlan plan,
-            Dictionary<int, AiResult> stepResults,
-            Dictionary<int, StepOutput> stepOutputs,
-            Dictionary<int, string> stepModuleTypes,
-            string workspacePath, string? previousSummaryContext,
-            UserDbContext db, string tenantDbName, CancellationToken ct)
-        {
-            var stepName = orchestratorPm.StepName ?? orchestratorPm.AiModule.Name;
+            // 6. Execute each output's target module
             var orchestratorOutputItems = new List<OutputItem>();
             var orchestratorOutputFiles = new List<OutputFile>();
             decimal totalSubCost = 0;
 
-            foreach (var task in plan.Tasks.OrderBy(t => t.Order))
+            // Build a lookup: outputKey -> generated content
+            var contentByKey = plan.Outputs.ToDictionary(o => o.OutputKey, o => o.Content);
+
+            foreach (var output in outputs)
             {
                 if (ct.IsCancellationRequested) break;
 
+                if (!contentByKey.TryGetValue(output.OutputKey, out var content) || string.IsNullOrWhiteSpace(content))
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "warning",
+                        $"Orquestador [{output.OutputKey}]: sin contenido generado", pm.StepOrder, stepName);
+                    orchestratorOutputItems.Add(new OutputItem { Content = "SIN CONTENIDO", Label = output.Label });
+                    continue;
+                }
+
+                if (output.TargetModule is null)
+                {
+                    // No target module — store content as text output
+                    orchestratorOutputItems.Add(new OutputItem { Content = content, Label = output.Label });
+                    await _logger.LogAsync(project.Id, execution.Id, "info",
+                        $"Orquestador [{output.OutputKey}]: contenido guardado (sin modulo destino)", pm.StepOrder, stepName);
+                    continue;
+                }
+
+                var targetModule = output.TargetModule;
                 await _logger.LogAsync(project.Id, execution.Id, "info",
-                    $"Orquestador [{task.TaskId}]: {task.Description} (modulo: {task.ModuleName})",
-                    orchestratorPm.StepOrder, stepName);
+                    $"Orquestador [{output.OutputKey}]: ejecutando '{targetModule.Name}' ({targetModule.ModuleType})",
+                    pm.StepOrder, stepName);
 
                 // Broadcast task started
                 await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                    task.TaskId, task.Description, task.ModuleName, task.ModuleType,
-                    task.Order, "running", null, null, null, DateTime.UtcNow));
-
-                // Load the target module
-                var targetModule = await db.AiModules
-                    .Include(m => m.ApiKey)
-                    .FirstOrDefaultAsync(m => m.Id == Guid.Parse(task.ModuleId));
-
-                if (targetModule is null)
-                {
-                    await _logger.LogAsync(project.Id, execution.Id, "error",
-                        $"Orquestador [{task.TaskId}]: modulo {task.ModuleId} no encontrado", orchestratorPm.StepOrder, stepName);
-                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
-                        task.Order, "error", null, null, "Modulo no encontrado", DateTime.UtcNow));
-                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: modulo no encontrado", Label = task.TaskId });
-                    continue;
-                }
+                    output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
+                    output.SortOrder, "running", null, null, null, DateTime.UtcNow));
 
                 if (targetModule.ApiKey is null || string.IsNullOrEmpty(targetModule.ApiKey.EncryptedKey))
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "error",
-                        $"Orquestador [{task.TaskId}]: modulo '{targetModule.Name}' no tiene API Key", orchestratorPm.StepOrder, stepName);
+                        $"Orquestador [{output.OutputKey}]: modulo '{targetModule.Name}' no tiene API Key", pm.StepOrder, stepName);
                     await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
-                        task.Order, "error", null, null, "API Key no configurada", DateTime.UtcNow));
-                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: API Key no configurada", Label = task.TaskId });
+                        output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
+                        output.SortOrder, "error", null, null, "API Key no configurada", DateTime.UtcNow));
+                    orchestratorOutputItems.Add(new OutputItem { Content = "ERROR: API Key no configurada", Label = output.Label });
                     continue;
                 }
 
-                var provider = _registry.GetProvider(targetModule.ProviderType);
-                if (provider is null)
+                var targetProvider = _registry.GetProvider(targetModule.ProviderType);
+                if (targetProvider is null)
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "error",
-                        $"Orquestador [{task.TaskId}]: proveedor '{targetModule.ProviderType}' no disponible", orchestratorPm.StepOrder, stepName);
+                        $"Orquestador [{output.OutputKey}]: proveedor '{targetModule.ProviderType}' no disponible", pm.StepOrder, stepName);
                     await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
-                        task.Order, "error", null, null, "Proveedor no disponible", DateTime.UtcNow));
-                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: proveedor no disponible", Label = task.TaskId });
+                        output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
+                        output.SortOrder, "error", null, null, "Proveedor no disponible", DateTime.UtcNow));
+                    orchestratorOutputItems.Add(new OutputItem { Content = "ERROR: proveedor no disponible", Label = output.Label });
                     continue;
                 }
 
@@ -3155,7 +3049,7 @@ Datos de la ejecucion:
                     : new Dictionary<string, object>();
 
                 // Truncate input if needed for image/video models
-                var taskInput = task.Input;
+                var taskInput = content;
                 if (targetModule.ModuleType is "Image" or "Video" or "VideoSearch" or "VideoEdit")
                 {
                     var maxLen = InputAdapter.GetMaxPromptLength(targetModule.ModelName);
@@ -3163,7 +3057,7 @@ Datos de la ejecucion:
                         taskInput = InputAdapter.TruncateAtWord(taskInput, maxLen);
                 }
 
-                var aiContext = new AiExecutionContext
+                var targetContext = new AiExecutionContext
                 {
                     ModuleType = targetModule.ModuleType,
                     ModelName = targetModule.ModelName,
@@ -3176,54 +3070,52 @@ Datos de la ejecucion:
 
                 try
                 {
-                    var result = await provider.ExecuteAsync(aiContext);
-                    totalSubCost += result.EstimatedCost;
+                    var subResult = await targetProvider.ExecuteAsync(targetContext);
+                    totalSubCost += subResult.EstimatedCost;
 
-                    if (!result.Success)
+                    if (!subResult.Success)
                     {
                         await _logger.LogAsync(project.Id, execution.Id, "error",
-                            $"Orquestador [{task.TaskId}]: error: {result.Error}", orchestratorPm.StepOrder, stepName);
+                            $"Orquestador [{output.OutputKey}]: error: {subResult.Error}", pm.StepOrder, stepName);
                         await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                            task.TaskId, task.Description, task.ModuleName, task.ModuleType,
-                            task.Order, "error", null, null, result.Error, DateTime.UtcNow));
-                        orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {result.Error}", Label = task.TaskId });
+                            output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
+                            output.SortOrder, "error", null, null, subResult.Error, DateTime.UtcNow));
+                        orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {subResult.Error}", Label = output.Label });
                         continue;
                     }
 
                     // Handle text output
-                    if (result.TextOutput is not null)
+                    if (subResult.TextOutput is not null)
                     {
-                        var parsed = OutputSchemaHelper.ParseTextOutput(result.TextOutput);
+                        var parsed = OutputSchemaHelper.ParseTextOutput(subResult.TextOutput);
                         orchestratorOutputItems.Add(new OutputItem
                         {
-                            Content = parsed.Content ?? result.TextOutput,
-                            Label = $"{task.TaskId}: {task.Description}"
+                            Content = parsed.Content ?? subResult.TextOutput,
+                            Label = output.Label
                         });
-
                         await _logger.LogAsync(project.Id, execution.Id, "success",
-                            $"Orquestador [{task.TaskId}]: texto generado", orchestratorPm.StepOrder, stepName);
+                            $"Orquestador [{output.OutputKey}]: texto generado", pm.StepOrder, stepName);
                     }
 
                     // Handle file output
-                    if (result.FileOutput is not null)
+                    if (subResult.FileOutput is not null)
                     {
-                        var taskDir = Path.Combine(workspacePath, $"step_{orchestratorPm.StepOrder}", task.TaskId);
+                        var taskDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}", output.OutputKey);
                         Directory.CreateDirectory(taskDir);
 
-                        var ext = GetExtension(result.ContentType ?? "application/octet-stream");
+                        var ext = GetExtension(subResult.ContentType ?? "application/octet-stream");
                         var fileName = $"output{ext}";
-                        var filePath = Path.Combine(taskDir, fileName);
-                        await File.WriteAllBytesAsync(filePath, result.FileOutput);
+                        await File.WriteAllBytesAsync(Path.Combine(taskDir, fileName), subResult.FileOutput);
 
                         var execFile = new ExecutionFile
                         {
                             Id = Guid.NewGuid(),
-                            StepExecutionId = orchestratorStep.Id,
-                            FileName = $"{task.TaskId}_{fileName}",
-                            ContentType = result.ContentType ?? "application/octet-stream",
-                            FilePath = Path.Combine($"step_{orchestratorPm.StepOrder}", task.TaskId, fileName),
+                            StepExecutionId = stepExecution.Id,
+                            FileName = $"{output.OutputKey}_{fileName}",
+                            ContentType = subResult.ContentType ?? "application/octet-stream",
+                            FilePath = Path.Combine($"step_{pm.StepOrder}", output.OutputKey, fileName),
                             Direction = "Output",
-                            FileSize = result.FileOutput.Length,
+                            FileSize = subResult.FileOutput.Length,
                             CreatedAt = DateTime.UtcNow,
                         };
                         db.ExecutionFiles.Add(execFile);
@@ -3237,340 +3129,76 @@ Datos de la ejecucion:
                         });
 
                         await _logger.LogAsync(project.Id, execution.Id, "success",
-                            $"Orquestador [{task.TaskId}]: archivo generado ({result.ContentType}, {result.FileOutput.Length} bytes)",
-                            orchestratorPm.StepOrder, stepName);
+                            $"Orquestador [{output.OutputKey}]: archivo generado ({subResult.ContentType}, {subResult.FileOutput.Length} bytes)",
+                            pm.StepOrder, stepName);
                     }
 
                     // Broadcast task completed
-                    var fileUrl = result.FileOutput is not null
-                        ? Path.Combine($"step_{orchestratorPm.StepOrder}", task.TaskId, $"output{GetExtension(result.ContentType ?? "application/octet-stream")}")
+                    var fileUrl = subResult.FileOutput is not null
+                        ? Path.Combine($"step_{pm.StepOrder}", output.OutputKey, $"output{GetExtension(subResult.ContentType ?? "application/octet-stream")}")
                         : null;
                     await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
-                        task.Order, "completed", fileUrl, result.ContentType, null, DateTime.UtcNow));
+                        output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
+                        output.SortOrder, "completed", fileUrl, subResult.ContentType, null, DateTime.UtcNow));
                 }
                 catch (Exception ex)
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "error",
-                        $"Orquestador [{task.TaskId}]: excepcion: {ex.Message}", orchestratorPm.StepOrder, stepName);
+                        $"Orquestador [{output.OutputKey}]: excepcion: {ex.Message}", pm.StepOrder, stepName);
                     await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        task.TaskId, task.Description, task.ModuleName, task.ModuleType,
-                        task.Order, "error", null, null, ex.Message, DateTime.UtcNow));
-                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {ex.Message}", Label = task.TaskId });
+                        output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
+                        output.SortOrder, "error", null, null, ex.Message, DateTime.UtcNow));
+                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {ex.Message}", Label = output.Label });
                 }
             }
 
-            // Build combined output
+            // 7. Build combined output
             var combinedOutput = new StepOutput
             {
                 Type = "orchestrator",
                 Title = plan.Summary,
-                Content = $"Plan ejecutado: {plan.Tasks.Count} tareas, {orchestratorOutputItems.Count} resultados",
+                Content = $"Orquestador ejecutado: {outputs.Count} salidas, {orchestratorOutputItems.Count} resultados",
                 Summary = plan.Summary,
                 Items = orchestratorOutputItems,
                 Files = orchestratorOutputFiles,
                 Metadata = new Dictionary<string, object>
                 {
-                    ["tasks"] = plan.Tasks.Select(t => new Dictionary<string, object>
+                    ["outputs"] = outputs.Select(o => new Dictionary<string, object>
                     {
-                        ["taskId"] = t.TaskId,
-                        ["description"] = t.Description,
-                        ["moduleName"] = t.ModuleName,
-                        ["moduleType"] = t.ModuleType,
-                        ["order"] = t.Order,
+                        ["outputKey"] = o.OutputKey,
+                        ["label"] = o.Label,
+                        ["targetModule"] = o.TargetModule?.Name ?? "(ninguno)",
+                        ["targetModuleType"] = o.TargetModule?.ModuleType ?? "",
                     }).ToList()
                 }
             };
 
-            orchestratorStep.EstimatedCost += totalSubCost;
-            orchestratorStep.OutputData = JsonSerializer.Serialize(combinedOutput);
-            orchestratorStep.Status = "Completed";
-            orchestratorStep.CompletedAt = DateTime.UtcNow;
+            stepExecution.EstimatedCost += totalSubCost;
+            stepExecution.OutputData = JsonSerializer.Serialize(combinedOutput);
+            stepExecution.Status = "Completed";
+            stepExecution.CompletedAt = DateTime.UtcNow;
 
-            stepOutputs[orchestratorPm.StepOrder] = combinedOutput;
-            stepModuleTypes[orchestratorPm.StepOrder] = "Orchestrator";
+            stepOutputs[pm.StepOrder] = combinedOutput;
+            stepModuleTypes[pm.StepOrder] = "Orchestrator";
 
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(project.Id, execution.Id, "success",
-                $"Orquestador: todas las tareas completadas (costo sub-tareas: ${totalSubCost:F4})",
-                orchestratorPm.StepOrder, stepName);
+                $"Orquestador: todas las salidas completadas (costo sub-tareas: ${totalSubCost:F4})",
+                pm.StepOrder, stepName);
+
+            return false; // never pause — direct execution
         }
 
         /// <summary>
-        /// Resume pipeline after user reviews the orchestrator plan.
-        /// If approved, executes the sub-tasks and continues the pipeline.
-        /// If rejected with comment, stores feedback and marks as failed.
+        /// Legacy method — kept as stub for compilation. The orchestrator no longer pauses for review.
         /// </summary>
         public async Task<ProjectExecution> ResumeFromOrchestratorAsync(
             Guid executionId, bool approved, string? comment,
             UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
-            _logger = _baseLogger.WithDb(db);
-
-            var execution = await db.ProjectExecutions
-                .Include(e => e.StepExecutions.OrderBy(s => s.StepOrder))
-                .FirstOrDefaultAsync(e => e.Id == executionId && e.Status == "WaitingForReview")
-                ?? throw new InvalidOperationException("Ejecucion no encontrada o no esta esperando revision");
-
-            var project = await db.Projects
-                .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
-                    .ThenInclude(pm => pm.AiModule)
-                        .ThenInclude(m => m.ApiKey)
-                .FirstOrDefaultAsync(p => p.Id == execution.ProjectId)
-                ?? throw new InvalidOperationException("Proyecto no encontrado");
-
-            var pausedStep = execution.PausedAtStepOrder
-                ?? throw new InvalidOperationException("No hay paso pausado registrado");
-
-            var orchestratorPm = project.ProjectModules.FirstOrDefault(pm => pm.StepOrder == pausedStep)
-                ?? throw new InvalidOperationException($"Paso {pausedStep} no encontrado en el proyecto");
-
-            var orchestratorStepExec = execution.StepExecutions
-                .FirstOrDefault(s => s.ProjectModuleId == orchestratorPm.Id && s.Status == "WaitingForReview")
-                ?? throw new InvalidOperationException("StepExecution del orquestador no encontrada");
-
-            // Load the plan from step output
-            var plan = OrchestratorSchemaHelper.ParsePlan(orchestratorStepExec.OutputData ?? "")
-                ?? throw new InvalidOperationException("No se pudo leer el plan del orquestador");
-
-            // Store feedback on the ProjectModule
-            var pmConfig = !string.IsNullOrEmpty(orchestratorPm.Configuration)
-                ? JsonSerializer.Deserialize<Dictionary<string, object>>(orchestratorPm.Configuration) ?? new()
-                : new Dictionary<string, object>();
-
-            OrchestratorFeedback feedback;
-            if (pmConfig.TryGetValue("orchestratorFeedback", out var existingFb))
-            {
-                try
-                {
-                    var fbJson = existingFb is JsonElement el ? el.GetRawText() : existingFb?.ToString();
-                    feedback = JsonSerializer.Deserialize<OrchestratorFeedback>(fbJson ?? "{}",
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
-                }
-                catch { feedback = new OrchestratorFeedback(); }
-            }
-            else
-            {
-                feedback = new OrchestratorFeedback();
-            }
-
-            if (!string.IsNullOrWhiteSpace(comment))
-            {
-                feedback.Comments.Add(new OrchestratorComment
-                {
-                    Text = comment.Trim(),
-                    CreatedAt = DateTime.UtcNow,
-                });
-            }
-
-            if (approved)
-            {
-                feedback.Approved = true;
-                await _logger.LogAsync(project.Id, execution.Id, "info",
-                    "Orquestador: plan aprobado por el usuario" +
-                    (!string.IsNullOrWhiteSpace(comment) ? $" con comentario: {comment}" : ""),
-                    pausedStep, orchestratorPm.StepName ?? orchestratorPm.AiModule.Name);
-            }
-            else
-            {
-                feedback.Approved = false;
-                await _logger.LogAsync(project.Id, execution.Id, "info",
-                    $"Orquestador: plan rechazado. Comentario: {comment ?? "(sin comentario)"}",
-                    pausedStep, orchestratorPm.StepName ?? orchestratorPm.AiModule.Name);
-            }
-
-            // Save feedback to ProjectModule.Configuration
-            pmConfig["orchestratorFeedback"] = JsonSerializer.Deserialize<JsonElement>(
-                JsonSerializer.Serialize(feedback));
-            orchestratorPm.Configuration = JsonSerializer.Serialize(pmConfig);
-            await db.SaveChangesAsync();
-
-            if (!approved)
-            {
-                // Mark execution as failed so user can re-run
-                orchestratorStepExec.Status = "Rejected";
-                orchestratorStepExec.ErrorMessage = comment ?? "Plan rechazado por el usuario";
-                orchestratorStepExec.CompletedAt = DateTime.UtcNow;
-
-                execution.PausedAtStepOrder = null;
-                execution.PausedStepData = null;
-                execution.Status = "Failed";
-                execution.CompletedAt = DateTime.UtcNow;
-                await db.SaveChangesAsync();
-
-                await _logger.LogAsync(project.Id, execution.Id, "warning",
-                    "Pipeline detenido: plan del orquestador rechazado. El comentario se aplicara en la proxima ejecucion.");
-                return execution;
-            }
-
-            // Approved — execute the sub-tasks
-            var pauseState = JsonSerializer.Deserialize<PausedPipelineState>(execution.PausedStepData ?? "{}")
-                ?? new PausedPipelineState();
-
-            // Restore previous step outputs
-            var stepOutputs = new Dictionary<int, StepOutput>();
-            var stepModuleTypes = new Dictionary<int, string>();
-            var stepResults = new Dictionary<int, AiResult>();
-
-            foreach (var kv in pauseState.StepOutputs)
-            {
-                if (int.TryParse(kv.Key, out var key))
-                    stepOutputs[key] = JsonSerializer.Deserialize<StepOutput>(kv.Value) ?? new();
-            }
-            foreach (var kv in pauseState.StepModuleTypes)
-            {
-                if (int.TryParse(kv.Key, out var key))
-                    stepModuleTypes[key] = kv.Value;
-            }
-
-            var relativeWorkspace = execution.WorkspacePath;
-            var workspacePath = ResolveWorkspacePath(relativeWorkspace);
-            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, project.Id, execution.Id);
-
-            execution.Status = "Running";
-            execution.PausedAtStepOrder = null;
-            execution.PausedStepData = null;
-            await db.SaveChangesAsync();
-
-            await ExecuteOrchestratorPlanAsync(
-                project, execution, orchestratorStepExec, orchestratorPm, plan,
-                stepResults, stepOutputs, stepModuleTypes,
-                workspacePath, previousSummaryContext, db, tenantDbName, ct);
-
-            // Continue with remaining pipeline steps after orchestrator
-            var allModules = project.ProjectModules.ToList();
-            var mainModules = allModules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList();
-            var remainingSteps = mainModules.Where(m => m.StepOrder > pausedStep).ToList();
-
-            if (remainingSteps.Count > 0)
-            {
-                await _logger.LogAsync(project.Id, execution.Id, "info",
-                    $"Continuando pipeline con {remainingSteps.Count} paso(s) restantes...");
-
-                // Continue the pipeline from the next step
-                var branchModules = allModules.Where(m => m.BranchId != "main")
-                    .GroupBy(m => m.BranchId)
-                    .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
-
-                for (var mi = 0; mi < remainingSteps.Count; mi++)
-                {
-                    var pm = remainingSteps[mi];
-                    var nextModule = mi + 1 < remainingSteps.Count ? remainingSteps[mi + 1] : null;
-
-                    if (ct.IsCancellationRequested)
-                    {
-                        execution.Status = "Cancelled";
-                        execution.CompletedAt = DateTime.UtcNow;
-                        await db.SaveChangesAsync();
-                        return execution;
-                    }
-
-                    var stepExec = new StepExecution
-                    {
-                        Id = Guid.NewGuid(),
-                        ExecutionId = execution.Id,
-                        ProjectModuleId = pm.Id,
-                        StepOrder = pm.StepOrder,
-                        Status = "Running",
-                        CreatedAt = DateTime.UtcNow,
-                    };
-                    db.StepExecutions.Add(stepExec);
-                    await db.SaveChangesAsync();
-
-                    try
-                    {
-                        // Delegate to the appropriate step handler
-                        if (IsInteractionStep(pm.AiModule))
-                        {
-                            var shouldPause = await HandleInteractionStepAsync(
-                                project, execution, stepExec, pm, pauseState.UserInput,
-                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                            if (shouldPause) return execution;
-                            continue;
-                        }
-                        if (IsPublishStep(pm.AiModule))
-                        {
-                            await HandlePublishStepAsync(project, execution, stepExec, pm,
-                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                            continue;
-                        }
-                        if (IsDesignStep(pm.AiModule))
-                        {
-                            await HandleCanvaPublishStepAsync(project, execution, stepExec, pm,
-                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                            continue;
-                        }
-
-                        // For regular AI steps, use generic execution
-                        var apiKey = pm.AiModule.ApiKey?.EncryptedKey
-                            ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
-                        var prov = _registry.GetProvider(pm.AiModule.ProviderType)
-                            ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Proveedor no disponible");
-
-                        var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
-                        var inputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs,
-                            pm.AiModule.ModuleType, pm.AiModule.ModelName,
-                            BuildStepBranches(project.ProjectModules, stepModuleTypes));
-
-                        var ctx = new AiExecutionContext
-                        {
-                            ModuleType = pm.AiModule.ModuleType,
-                            ModelName = pm.AiModule.ModelName,
-                            ApiKey = apiKey,
-                            Input = inputs[0],
-                            ProjectContext = project.Context,
-                            PreviousExecutionsSummary = previousSummaryContext,
-                            Configuration = config,
-                        };
-
-                        var result = await prov.ExecuteAsync(ctx);
-                        stepResults[pm.StepOrder] = result;
-                        stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
-                        stepExec.EstimatedCost += result.EstimatedCost;
-
-                        if (!result.Success)
-                        {
-                            await FailStep(stepExec, execution, result.Error!, db);
-                            return execution;
-                        }
-
-                        if (result.TextOutput is not null)
-                        {
-                            var stepOutput = OutputSchemaHelper.ParseTextOutput(result.TextOutput, result.Metadata);
-                            stepOutputs[pm.StepOrder] = stepOutput;
-                            stepExec.OutputData = JsonSerializer.Serialize(stepOutput);
-                        }
-
-                        stepExec.Status = "Completed";
-                        stepExec.CompletedAt = DateTime.UtcNow;
-                        await db.SaveChangesAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        stepExec.Status = "Failed";
-                        stepExec.ErrorMessage = ex.Message;
-                        stepExec.CompletedAt = DateTime.UtcNow;
-                        await db.SaveChangesAsync();
-                        execution.Status = "Failed";
-                        execution.CompletedAt = DateTime.UtcNow;
-                        await db.SaveChangesAsync();
-                        return execution;
-                    }
-                }
-            }
-
-            execution.Status = "Completed";
-            execution.CompletedAt = DateTime.UtcNow;
-            execution.TotalEstimatedCost = await db.StepExecutions
-                .Where(s => s.ExecutionId == execution.Id)
-                .SumAsync(s => s.EstimatedCost);
-            await db.SaveChangesAsync();
-
-            await _logger.LogAsync(project.Id, execution.Id, "success", "Pipeline completado correctamente");
-            return execution;
+            throw new NotSupportedException("El orquestador ya no requiere revision. Use ejecucion directa.");
         }
-
         // Serializable pause state
         private class PausedPipelineState
         {
@@ -4050,6 +3678,30 @@ Datos de la ejecucion:
                 config["systemPrompt"] = imgRule;
         }
 
+        /// <summary>
+        /// Injects orchestrator output structure into the system prompt of the preceding step,
+        /// so the AI adapts its response to what the orchestrator needs.
+        /// </summary>
+        private async Task InjectOrchestratorOutputContext(
+            ProjectModule orchestratorModule, Dictionary<string, object> config, UserDbContext db)
+        {
+            var orchOutputs = await db.OrchestratorOutputs
+                .Where(o => o.ProjectModuleId == orchestratorModule.Id)
+                .OrderBy(o => o.SortOrder)
+                .ToListAsync();
+
+            if (orchOutputs.Count == 0) return;
+
+            var outputList = string.Join("\n", orchOutputs.Select((o, i) =>
+                $"  {i + 1}. [{o.Label}]: {o.Prompt}"));
+            var orchRule = $"\n\nIMPORTANTE: Tu respuesta sera procesada por un orquestador con estas tareas definidas:\n{outputList}\nEstructura tu respuesta para cubrir todas estas necesidades de forma clara y separada.";
+
+            if (config.TryGetValue("systemPrompt", out var existingSp) && existingSp is string sp)
+                config["systemPrompt"] = sp + orchRule;
+            else
+                config["systemPrompt"] = orchRule;
+        }
+
         // ── Resume a single branch that was paused for user interaction ──
         public async Task<ProjectExecution> ResumeFromBranchInteractionAsync(
             Guid executionId, string branchId, string responseText,
@@ -4498,6 +4150,10 @@ Datos de la ejecucion:
                         else
                             config["systemPrompt"] = rule;
                     }
+
+                    // Inject orchestrator output context if next step is an orchestrator
+                    if (pm.AiModule.ModuleType == "Text" && nextModule is not null && IsOrchestratorStep(nextModule.AiModule))
+                        await InjectOrchestratorOutputContext(nextModule, config, db);
 
                     // Inject image count rule if configured
                     if (pm.AiModule.ModuleType == "Text")

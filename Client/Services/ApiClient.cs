@@ -339,6 +339,39 @@ public class ApiClient
         return (true, null);
     }
 
+    // ── OrchestratorOutput CRUD ──
+
+    public async Task<List<OrchestratorOutputResponse>> GetOrchestratorOutputsAsync(Guid projectId, Guid moduleId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs");
+        if (!resp.IsSuccessStatusCode) return new();
+        return await resp.Content.ReadFromJsonAsync<List<OrchestratorOutputResponse>>() ?? new();
+    }
+
+    public async Task<(OrchestratorOutputResponse? Output, string? Error)> CreateOrchestratorOutputAsync(
+        Guid projectId, Guid moduleId, OrchestratorOutputRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs", req);
+        if (!resp.IsSuccessStatusCode) return (null, await ReadErrorAsync(resp));
+        return (await resp.Content.ReadFromJsonAsync<OrchestratorOutputResponse>(), null);
+    }
+
+    public async Task<(OrchestratorOutputResponse? Output, string? Error)> UpdateOrchestratorOutputAsync(
+        Guid projectId, Guid moduleId, Guid outputId, OrchestratorOutputRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{outputId}", req);
+        if (!resp.IsSuccessStatusCode) return (null, await ReadErrorAsync(resp));
+        return (await resp.Content.ReadFromJsonAsync<OrchestratorOutputResponse>(), null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteOrchestratorOutputAsync(
+        Guid projectId, Guid moduleId, Guid outputId)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{outputId}");
+        if (!resp.IsSuccessStatusCode) return (false, await ReadErrorAsync(resp));
+        return (true, null);
+    }
+
     public async Task<bool> CancelExecutionAsync(Guid projectId)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/cancel");

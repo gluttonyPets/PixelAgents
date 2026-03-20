@@ -41,7 +41,8 @@ namespace Server.Models
     public record ProjectModuleResponse(
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
         int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,
-        string BranchId, int? BranchFromStep, double PosX = 0, double PosY = 0);
+        string BranchId, int? BranchFromStep, double PosX = 0, double PosY = 0,
+        List<OrchestratorOutputResponse>? OrchestratorOutputs = null);
 
     // ── ModuleConnection ──
     public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
@@ -53,6 +54,11 @@ namespace Server.Models
     public record ExecuteProjectRequest(string? UserInput);
     public record RetryFromStepRequest(int StepOrder, string? Comment);
     public record OrchestratorReviewRequest(bool Approved, string? Comment);
+
+    // ── OrchestratorOutput ──
+    public record OrchestratorOutputRequest(string Label, string Prompt, int SortOrder, Guid? TargetModuleId);
+    public record OrchestratorOutputResponse(Guid Id, string OutputKey, string Label, string Prompt,
+        int SortOrder, Guid? TargetModuleId, string? TargetModuleName, string? TargetModuleType);
     public record ExecutionResponse(
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
         DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,

@@ -658,6 +658,9 @@ app.MapGet("/api/projects/{id}", async (
     var project = await db.Projects
         .Include(p => p.ProjectModules.OrderBy(pm => pm.StepOrder))
             .ThenInclude(pm => pm.AiModule)
+        .Include(p => p.ProjectModules)
+            .ThenInclude(pm => pm.OrchestratorOutputs.OrderBy(o => o.SortOrder))
+                .ThenInclude(o => o.TargetModule)
         .FirstOrDefaultAsync(p => p.Id == id);
 
     if (project is null) return Results.NotFound();
@@ -666,7 +669,12 @@ app.MapGet("/api/projects/{id}", async (
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
             pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
             pm.InputMapping, pm.Configuration, pm.IsActive,
-            pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY)).ToList();
+            pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY,
+            pm.AiModule.ModuleType == "Orchestrator"
+                ? pm.OrchestratorOutputs.Select(o => new OrchestratorOutputResponse(
+                    o.Id, o.OutputKey, o.Label, o.Prompt, o.SortOrder,
+                    o.TargetModuleId, o.TargetModule?.Name, o.TargetModule?.ModuleType)).ToList()
+                : null)).ToList();
 
     var connections = await db.ModuleConnections
         .Where(c => c.ProjectId == id)
@@ -1529,6 +1537,110 @@ app.MapPost("/api/executions/{executionId}/orchestrator-review", async (
     });
 
     return Results.Accepted(value: new { message = req.Approved ? "Plan aprobado, ejecutando tareas..." : "Plan rechazado, feedback guardado" });
+}).RequireAuthorization();
+
+// ── OrchestratorOutput CRUD ──
+app.MapGet("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs", async (
+    Guid projectId, Guid moduleId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var outputs = await db.OrchestratorOutputs
+        .Include(o => o.TargetModule)
+        .Where(o => o.ProjectModuleId == moduleId)
+        .OrderBy(o => o.SortOrder)
+        .Select(o => new OrchestratorOutputResponse(
+            o.Id, o.OutputKey, o.Label, o.Prompt, o.SortOrder,
+            o.TargetModuleId, o.TargetModule != null ? o.TargetModule.Name : null,
+            o.TargetModule != null ? o.TargetModule.ModuleType : null))
+        .ToListAsync();
+
+    return Results.Ok(outputs);
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs", async (
+    Guid projectId, Guid moduleId, OrchestratorOutputRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var pm = await db.ProjectModules.Include(p => p.AiModule)
+        .FirstOrDefaultAsync(p => p.Id == moduleId && p.ProjectId == projectId);
+    if (pm is null) return Results.NotFound();
+    if (pm.AiModule.ModuleType != "Orchestrator")
+        return Results.BadRequest(new { error = "El modulo no es de tipo Orchestrator" });
+
+    var existingCount = await db.OrchestratorOutputs.CountAsync(o => o.ProjectModuleId == moduleId);
+    var outputKey = $"output_{existingCount + 1}";
+
+    var output = new OrchestratorOutput
+    {
+        Id = Guid.NewGuid(),
+        ProjectModuleId = moduleId,
+        OutputKey = outputKey,
+        Label = req.Label,
+        Prompt = req.Prompt,
+        SortOrder = req.SortOrder,
+        TargetModuleId = req.TargetModuleId,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+
+    db.OrchestratorOutputs.Add(output);
+    await db.SaveChangesAsync();
+
+    AiModule? target = null;
+    if (req.TargetModuleId.HasValue)
+        target = await db.AiModules.FindAsync(req.TargetModuleId.Value);
+
+    return Results.Created($"/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{output.Id}",
+        new OrchestratorOutputResponse(output.Id, output.OutputKey, output.Label, output.Prompt,
+            output.SortOrder, output.TargetModuleId, target?.Name, target?.ModuleType));
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{outputId}", async (
+    Guid projectId, Guid moduleId, Guid outputId, OrchestratorOutputRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var output = await db.OrchestratorOutputs
+        .FirstOrDefaultAsync(o => o.Id == outputId && o.ProjectModuleId == moduleId);
+    if (output is null) return Results.NotFound();
+
+    output.Label = req.Label;
+    output.Prompt = req.Prompt;
+    output.SortOrder = req.SortOrder;
+    output.TargetModuleId = req.TargetModuleId;
+    output.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    AiModule? target = null;
+    if (req.TargetModuleId.HasValue)
+        target = await db.AiModules.FindAsync(req.TargetModuleId.Value);
+
+    return Results.Ok(new OrchestratorOutputResponse(output.Id, output.OutputKey, output.Label, output.Prompt,
+        output.SortOrder, output.TargetModuleId, target?.Name, target?.ModuleType));
+}).RequireAuthorization();
+
+app.MapDelete("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{outputId}", async (
+    Guid projectId, Guid moduleId, Guid outputId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var output = await db.OrchestratorOutputs
+        .FirstOrDefaultAsync(o => o.Id == outputId && o.ProjectModuleId == moduleId);
+    if (output is null) return Results.NotFound();
+
+    db.OrchestratorOutputs.Remove(output);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
 }).RequireAuthorization();
 
 // Cancel a running pipeline execution

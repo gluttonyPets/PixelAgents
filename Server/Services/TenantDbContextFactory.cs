@@ -111,6 +111,21 @@ namespace Server.Services
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ProjectId"" ON ""ModuleConnections"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_FromModuleId_FromPort"" ON ""ModuleConnections"" (""FromModuleId"", ""FromPort"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ToModuleId_ToPort"" ON ""ModuleConnections"" (""ToModuleId"", ""ToPort"")", log);
+
+            // ── Orchestrator outputs table ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""OrchestratorOutputs"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ProjectModuleId"" uuid NOT NULL REFERENCES ""ProjectModules""(""Id"") ON DELETE CASCADE,
+                    ""OutputKey"" varchar(100) NOT NULL,
+                    ""Label"" varchar(500) NOT NULL,
+                    ""Prompt"" text NOT NULL,
+                    ""SortOrder"" integer NOT NULL DEFAULT 0,
+                    ""TargetModuleId"" uuid REFERENCES ""AiModules""(""Id"") ON DELETE SET NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_OrchestratorOutputs_ProjectModuleId"" ON ""OrchestratorOutputs"" (""ProjectModuleId"")", log);
         }
 
         private static void RunSafe(UserDbContext ctx, string sql, ILogger? log = null)
