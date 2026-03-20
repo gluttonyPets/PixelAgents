@@ -3209,6 +3209,19 @@ Datos de la ejecucion:
                     var bInputs = ResolveInputs(bpm, userInput, stepResults, stepOutputs, bpm.AiModule.ModuleType, bpm.AiModule.ModelName,
                         BuildStepBranches(project.ProjectModules, stepModuleTypes));
 
+                    // Store input data so execution history shows what was sent to this step
+                    var bSystemPrompt = bConfig.TryGetValue("systemPrompt", out var bspVal) && bspVal is string bspStr ? bspStr : null;
+                    branchStepExec.InputData = bInputs.Count == 1
+                        ? JsonSerializer.Serialize(new { systemPrompt = bSystemPrompt, projectContext = project.Context, prompt = bInputs[0] })
+                        : JsonSerializer.Serialize(new { systemPrompt = bSystemPrompt, projectContext = project.Context, prompts = bInputs, count = bInputs.Count });
+
+                    if (bInputs.Count > 1)
+                    {
+                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                            $"Recibidos {bInputs.Count} inputs del paso anterior — se ejecutara {bInputs.Count} veces",
+                            bpm.StepOrder, bStepName);
+                    }
+
                     if (bpm.AiModule.ModuleType == "Text")
                     {
                         if (nextBranchModule is not null)
@@ -3221,6 +3234,12 @@ Datos de la ejecucion:
                                 bConfig["systemPrompt"] = rule;
                         }
                         InjectImageCountRule(bConfig);
+
+                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                            $"Enviando prompt al modelo de texto ({bpm.AiModule.ModelName})...",
+                            bpm.StepOrder, bStepName);
+                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                            $"Prompt: {bInputs[0]}", bpm.StepOrder, bStepName);
 
                         var bCtx = new AiExecutionContext
                         {
@@ -3294,6 +3313,12 @@ Datos de la ejecucion:
                             var bMaxLen = InputAdapter.GetMaxPromptLength(bpm.AiModule.ModelName);
                             if (bSingle.Length > bMaxLen) bSingle = InputAdapter.TruncateAtWord(bSingle, bMaxLen);
 
+                            await _logger.LogAsync(project.Id, execution.Id, "info",
+                                bInputs.Count > 1
+                                    ? $"Generando imagen {bi2 + 1}/{bInputs.Count}: '{bSingle[..Math.Min(bSingle.Length, 100)]}'"
+                                    : $"Prompt imagen: '{bSingle[..Math.Min(bSingle.Length, 100)]}'",
+                                bpm.StepOrder, bStepName);
+
                             var bImgCtx = new AiExecutionContext
                             {
                                 ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
@@ -3342,6 +3367,10 @@ Datos de la ejecucion:
                         if (string.IsNullOrWhiteSpace(bVideoPrompt))
                             throw new InvalidOperationException($"[{branchId}] Prompt de video obligatorio");
 
+                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                            $"Prompt video: '{bVideoPrompt[..Math.Min(bVideoPrompt.Length, 100)]}'",
+                            bpm.StepOrder, bStepName);
+
                         var bVidCtx = new AiExecutionContext
                         {
                             ModuleType = bpm.AiModule.ModuleType, ModelName = bpm.AiModule.ModelName,
@@ -3380,6 +3409,10 @@ Datos de la ejecucion:
                         var bSearchQuery = bInputs[0];
                         if (string.IsNullOrWhiteSpace(bSearchQuery))
                             throw new InvalidOperationException($"[{branchId}] Texto de busqueda obligatorio para VideoSearch");
+
+                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                            $"Buscando video en Pexels: '{bSearchQuery[..Math.Min(bSearchQuery.Length, 100)]}'",
+                            bpm.StepOrder, bStepName);
 
                         var bSearchCtx = new AiExecutionContext
                         {

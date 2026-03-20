@@ -950,6 +950,23 @@ else
                                             <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@step.ErrorMessage</div>
                                         }
 
+                                        @if (step.InputData is not null)
+                                        {
+                                            var inputParsed = ParseInputData(step.InputData);
+                                            @if (inputParsed?.Prompts.Count > 0)
+                                            {
+                                                <details style="margin-bottom: 0.3rem;">
+                                                    <summary style="font-size: 0.7rem; cursor: pointer; color: var(--text-secondary); user-select: none;">
+                                                        Prompt enviado (@(inputParsed.Prompts.Count == 1 ? "1 prompt" : $"{inputParsed.Prompts.Count} prompts"))
+                                                    </summary>
+                                                    @foreach (var prompt in inputParsed.Prompts)
+                                                    {
+                                                        <div class="output-block" style="font-size: 0.7rem; max-height: 80px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.2rem; background: var(--bg-secondary); padding: 0.3rem 0.5rem; border-radius: 4px;">@prompt</div>
+                                                    }
+                                                </details>
+                                            }
+                                        }
+
                                         @if (step.OutputData is not null)
                                         {
                                             var parsed = TryParseOutput(step.OutputData);
