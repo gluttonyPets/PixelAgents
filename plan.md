@@ -1,179 +1,156 @@
-# Plan: Editor Visual de Pipeline (Node-Based)
+# Plan: Orquestador con Salidas Fijas (sin libre albedrío)
 
 ## Resumen
-Reemplazar la vista lineal del pipeline en ProjectDetail.razor con un editor visual de nodos estilo Node-RED/Unreal Blueprints, donde los módulos son tarjetas con puertos de entrada/salida tipados, y las conexiones se hacen visualmente arrastrando cables entre puertos.
 
-## Arquitectura
+Reemplazar el orquestador dinámico (que decide libremente qué módulos usar) por uno con **salidas fijas configuradas por el usuario**. Cada salida es un "enganche" visual que se conecta a un módulo existente, con su propio prompt que define qué debe producir el orquestador para esa salida. Todas las salidas se ejecutan en paralelo una vez el orquestador genera el contenido.
 
-### Enfoque técnico
-- **Pure Blazor + SVG** para las conexiones (sin dependencias JS externas)
-- **JS Interop mínimo** solo para: drag de nodos, coordenadas del mouse durante conexión
-- **Nuevo componente** `PipelineCanvas.razor` que reemplaza el tab Pipeline actual
-- **Datos**: posiciones de nodos y conexiones almacenadas en `Configuration` del proyecto como JSON
+## Concepto
 
-### Modelo de datos del grafo
+```
+[Guionizador] → [Orquestador]
+                    ├── Salida 1 (prompt: "busca video de perro paseando") → [Módulo Pexels]
+                    ├── Salida 2 (prompt: "busca video de perro limpiándose") → [Módulo Pexels]
+                    ├── Salida 3 (prompt: "genera video de gato cepillado") → [Módulo Google Video]
+                    └── Salida 4 (prompt: "genera la voz en off") → [Módulo Audio]
+```
+
+El paso ANTERIOR al orquestador recibe en su contexto la estructura de salidas, para que adapte su respuesta a lo que el orquestador necesita.
+
+---
+
+## 1. Modelo de datos
+
+**Nuevo entity: `OrchestratorOutput`** (`Server/Models/OrchestratorOutput.cs`)
 
 ```csharp
-// Nuevo DTO para el grafo visual
-public class PipelineGraph
+public class OrchestratorOutput
 {
-    public List<PipelineNode> Nodes { get; set; } = [];
-    public List<PipelineConnection> Connections { get; set; } = [];
-}
-
-public class PipelineNode
-{
-    public Guid ModuleId { get; set; }      // Reference to ProjectModule
-    public double X { get; set; }
-    public double Y { get; set; }
-}
-
-public class PipelineConnection
-{
-    public Guid FromModuleId { get; set; }
-    public string FromPort { get; set; }     // e.g. "output", "scene_1_video"
-    public Guid ToModuleId { get; set; }
-    public string ToPort { get; set; }       // e.g. "input_text", "input_video"
+    public Guid Id { get; set; }
+    public Guid ProjectModuleId { get; set; }  // ProjectModule del orquestador
+    public string OutputKey { get; set; }       // "output_1", "output_2"
+    public string Label { get; set; }           // "Video perro paseando"
+    public string Prompt { get; set; }          // "Busca un vídeo de un perro..."
+    public int SortOrder { get; set; }
+    public Guid? TargetModuleId { get; set; }   // AiModule destino (se asigna al conectar)
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    // Navigation
+    public ProjectModule ProjectModule { get; set; }
+    public AiModule? TargetModule { get; set; }
 }
 ```
 
-### Definición de puertos por tipo de módulo
+- Añadir `ICollection<OrchestratorOutput> OrchestratorOutputs` a `ProjectModule`
+- Migración EF para crear tabla `OrchestratorOutputs`
 
-Cada tipo de módulo define sus puertos de entrada/salida:
+## 2. API Endpoints
 
-| ModuleType | Input Ports | Output Ports |
-|------------|-------------|--------------|
-| **Text** | `prompt` (texto) | `text_output` (texto) |
-| **Image** | `prompt` (texto) | `image_output` (imagen) |
-| **Video** | `prompt` (texto), `image_ref` (imagen, opcional) | `video_output` (video) |
-| **VideoSearch** | `query` (texto) | `videos_output` (video[]) |
-| **VideoEdit (Json2Video)** | `scene_N_video` (video) × N escenas, `scene_N_script` (texto) × N escenas, `global_config` (config) | `video_output` (video) |
-| **Audio** | `text` (texto) | `audio_output` (audio) |
-| **Orchestrator** | `prompt` (texto) | `plan_output` (texto) |
-| **Design** | `prompt` (texto) | `design_output` (archivo) |
-| **Publish** | `content` (any) | `result` (texto) |
-| **Interaction** | `message` (texto) | `response` (texto) |
+**CRUD de salidas del orquestador:**
 
-### Tipos de puerto (para colores y validación)
+- `GET /api/projects/{pid}/modules/{mid}/orchestrator-outputs`
+- `POST /api/projects/{pid}/modules/{mid}/orchestrator-outputs`
+- `PUT /api/projects/{pid}/modules/{mid}/orchestrator-outputs/{id}`
+- `DELETE /api/projects/{pid}/modules/{mid}/orchestrator-outputs/{id}`
 
-```
-text     → Azul (#6c63ff)
-image    → Verde (#4caf50)
-video    → Naranja (#ff9800)
-video[]  → Naranja con borde doble
-audio    → Rosa (#e91e63)
-file     → Gris (#888)
-config   → Amarillo (#ffc107)
-any      → Blanco (#e0e0e0)
+**DTOs:**
+```csharp
+record OrchestratorOutputRequest(string Label, string Prompt, int SortOrder, Guid? TargetModuleId);
+record OrchestratorOutputResponse(Guid Id, string OutputKey, string Label, string Prompt,
+    int SortOrder, Guid? TargetModuleId, string? TargetModuleName, string? TargetModuleType);
 ```
 
-## Implementación por fases
+## 3. OrchestratorSchema.cs — Nuevo prompt y schema
 
-### Fase 1: Infraestructura del canvas (archivos nuevos)
+Reescribir `BuildOrchestratorPrompt` para que reciba las salidas configuradas en vez de módulos disponibles:
 
-**1.1 JS Interop** — `wwwroot/js/pipeline-editor.js`
-- `initCanvas(dotNetRef)`: Setup de event listeners para drag
-- `startNodeDrag(nodeId, offsetX, offsetY)`: Tracking de posición durante drag
-- `getMousePosition(canvasElement, event)`: Coordenadas relativas al canvas
-- `startConnectionDrag(portElement)`: Tracking visual del cable temporal
+```
+"Tienes las siguientes salidas que debes rellenar. Para cada outputKey, genera el contenido
+basándote en el input recibido y el prompt específico de cada salida."
+```
 
-**1.2 Modelos del grafo** — `Client/Models/PipelineGraphModels.cs`
-- `PipelineGraph`, `PipelineNode`, `PipelineConnection`
-- `PortDefinition` (Name, Label, DataType, Direction, IsRequired)
-- `ModulePortRegistry` — clase estática que mapea ModuleType → puertos
+**Nuevo schema de respuesta:**
+```json
+{
+  "summary": "Resumen",
+  "outputs": [
+    { "outputKey": "output_1", "content": "texto generado para esta salida" }
+  ]
+}
+```
 
-**1.3 CSS** — Añadir estilos a `app.css`
-- `.pipeline-canvas` — contenedor con scroll, grid de fondo
-- `.pipeline-node` — tarjeta draggable con header coloreado por tipo
-- `.pipeline-port` — círculos de conexión con colores por tipo de dato
-- `.pipeline-port-label` — etiquetas descriptivas junto a cada puerto
-- `.pipeline-connection` — SVG path con curva bezier
-- `.pipeline-connection.temp` — línea temporal durante arrastre
+**Nuevos modelos:**
+- `OrchestratorPlanV2` con `List<OrchestratorOutputResult>`
+- Mantener los viejos temporalmente para no romper nada
 
-### Fase 2: Componente PipelineCanvas
+## 4. PipelineExecutor.cs — HandleOrchestratorStepAsync
 
-**2.1** `Client/Components/Pipeline/PipelineCanvas.razor`
-- Canvas principal con SVG overlay
-- Renderiza nodos y conexiones
-- Maneja: agregar nodo (desde panel lateral), mover nodo, conectar/desconectar
-- Zoom y pan (stretch goal)
+**Reescribir completamente:**
 
-**2.2** `Client/Components/Pipeline/PipelineNode.razor`
-- Tarjeta individual del módulo
-- Header con nombre e icono del tipo
-- Puertos de entrada (lado izquierdo) con etiquetas
-- Puertos de salida (lado derecho) con etiquetas
-- Para Json2Video: muestra N puertos de escena según configuración
-- Botón de configuración inline
-- Indicador de estado (conectado/desconectado)
+1. Cargar `OrchestratorOutputs` del ProjectModule (con TargetModule)
+2. Validar que hay salidas configuradas
+3. Resolver input del paso anterior
+4. Llamar al AI con nuevo prompt (salidas definidas + prompt genérico)
+5. Parsear respuesta → extraer contenido para cada outputKey
+6. **Ejecutar todas las salidas en paralelo** con `Task.WhenAll`:
+   - Para cada output con TargetModule asignado → ejecutar módulo con el contenido como input
+7. Combinar resultados en StepOutput
+8. **Sin pausa de revisión** — ejecución directa
 
-**2.3** `Client/Components/Pipeline/ConnectionRenderer.razor`
-- Renderiza SVG paths (curvas Bézier) entre puertos conectados
-- Color del cable = tipo de dato
-- Línea temporal durante arrastre de conexión
-- Click en cable para desconectar
+## 5. Inyectar estructura al paso anterior
 
-### Fase 3: Integración en ProjectDetail
+Cuando el SIGUIENTE paso es un orquestador, inyectar en el contexto del paso actual:
 
-**3.1** Reemplazar el contenido del tab "Pipeline" con `<PipelineCanvas>`
-- Mantener la funcionalidad existente de ejecución intacta
-- El canvas comunica cambios via EventCallbacks al parent
-- Guardar posiciones/conexiones en el proyecto (nuevo campo o dentro de Configuration)
+```
+"IMPORTANTE: Tu respuesta será procesada por un orquestador que tiene estas tareas definidas:
+1. [Label]: [Prompt]
+2. [Label]: [Prompt]
+...
+Estructura tu respuesta para cubrir todas estas necesidades de forma clara y separada."
+```
 
-**3.2** Panel lateral de módulos disponibles
-- Lista de módulos del usuario filtrable
-- Drag desde panel al canvas para agregar
-- O click para agregar en posición automática
+**Dónde:** En `InitialExecuteAsync`, `ResumeFromInteractionAsync`, y retry path, antes de construir el `AiExecutionContext` de pasos Text. Comprobar si `nextModule` es orquestador y cargar sus outputs.
 
-**3.3** Panel de configuración de nodo
-- Al hacer click en un nodo, se abre panel lateral derecho
-- Muestra config específica del módulo (reutilizar UI existente del step config)
-- Para Json2Video: slider/input para número de escenas → actualiza puertos dinámicamente
+## 6. Frontend — Puertos dinámicos del orquestador
 
-### Fase 4: Backend
+**`PipelineGraphModels.cs` → `ModulePortRegistry.GetPorts()`:**
 
-**4.1** Nuevo campo en Project o ProjectModule para almacenar layout del grafo
-- Opción A: Campo `GraphLayout` en Project (JSON con posiciones)
-- Opción B: Campos `PositionX`, `PositionY` en ProjectModule + tabla de conexiones
+- Para tipo "Orchestrator": generar puertos de salida dinámicos basados en OrchestratorOutputs
+- Cada salida = un puerto de salida con tipo `Any` (el tipo real depende del TargetModule)
+- El puerto de entrada sigue siendo `input_prompt`
 
-Recomiendo **Opción A** por simplicidad — el layout es metadata visual, no lógica de negocio.
+## 7. Frontend — UI de configuración
 
-**4.2** Endpoints:
-- `PUT /api/projects/{id}/graph` — Guardar layout del grafo completo
-- `GET /api/projects/{id}/graph` — Obtener layout
+**`ProjectDetail.razor`:** Al editar un paso orquestador, mostrar sección de salidas:
+- Lista editable: Label + Prompt + Módulo destino (dropdown) por cada salida
+- Botones añadir/eliminar salida
 
-**4.3** Mapper: Convertir grafo visual → pipeline ejecutable
-- Las conexiones definen el InputMapping de cada step
-- El orden topológico de las conexiones define StepOrder
-- Las ramas se detectan automáticamente por la topología
+**`PipelineCanvas.razor` / `PipelineNode.razor`:**
+- Nodos orquestador muestran múltiples puertos de salida (uno por OrchestratorOutput)
+- Conexiones visuales desde cada puerto al módulo destino
 
-### Fase 5: Json2Video específico
+## 8. Frontend — ApiService
 
-**5.1** Puerto dinámico por escenas
-- Config del nodo Json2Video tiene `sceneCount` (1-10)
-- Por cada escena se generan 2 input ports: `scene_N_video` y `scene_N_script`
-- El usuario conecta un VideoSearch/Video output → scene_N_video
-- El usuario conecta un Text output → scene_N_script
+```csharp
+GetOrchestratorOutputsAsync(projectId, moduleId)
+CreateOrchestratorOutputAsync(projectId, moduleId, request)
+UpdateOrchestratorOutputAsync(projectId, moduleId, outputId, request)
+DeleteOrchestratorOutputAsync(projectId, moduleId, outputId)
+```
 
-**5.2** Actualizar PipelineExecutor
-- Leer conexiones del grafo para resolver inputs de cada escena
-- Construir el JSON de escenas dinámicamente según las conexiones
+## Qué se elimina
+
+- `ExecuteOrchestratorPlanAsync` — el orquestador ya no decide módulos
+- `ResumeFromOrchestratorAsync` — ya no hay pausa de revisión
+- Endpoint `/api/executions/{id}/orchestrator-review`
+- `OrchestratorReviewRequest`, `AvailableModule`, `OrchestratorFeedback`, `OrchestratorComment`
+- La lógica de auto-approve y feedback en `HandleOrchestratorStepAsync`
 
 ## Orden de implementación
 
-1. **Modelos + CSS** (PipelineGraphModels.cs, estilos del canvas)
-2. **JS Interop** (pipeline-editor.js, drag & connect)
-3. **PipelineNode.razor** (tarjeta con puertos estáticos)
-4. **PipelineCanvas.razor** (canvas + SVG + render de nodos)
-5. **ConnectionRenderer** (cables SVG entre puertos)
-6. **Integración ProjectDetail** (reemplazar tab Pipeline)
-7. **Panel lateral** (módulos disponibles + config de nodo)
-8. **Backend endpoints** (guardar/cargar grafo)
-9. **Mapper grafo→pipeline** (convertir visual a ejecutable)
-10. **Json2Video dinámico** (puertos por escena)
-11. **Polish** (animaciones, validación visual, UX)
-
-## Notas
-- El pipeline existente (lineal) se puede migrar automáticamente al formato visual asignando posiciones X incrementales
-- La ejecución sigue usando el modelo existente — solo cambia cómo se configura
-- Mantener compatibilidad: si no hay grafo guardado, mostrar vista lineal legacy
+1. Modelo DB + Migración
+2. API endpoints CRUD
+3. OrchestratorSchema nuevo
+4. PipelineExecutor reescrito
+5. Inyección al paso anterior
+6. Frontend ApiService
+7. Frontend UI (configuración + puertos dinámicos)
