@@ -954,6 +954,33 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
         }
     }
 
+    // 6. Persist scene counts into module Configuration
+    if (req.SceneCounts is { Count: > 0 })
+    {
+        foreach (var sc in req.SceneCounts)
+        {
+            var pm = modules.FirstOrDefault(m => m.Id == sc.ModuleId);
+            if (pm is null) continue;
+
+            var configDict = new Dictionary<string, object>();
+            if (!string.IsNullOrWhiteSpace(pm.Configuration))
+            {
+                try
+                {
+                    var existing = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+                    if (existing is not null)
+                        foreach (var kv in existing)
+                            configDict[kv.Key] = kv.Value;
+                }
+                catch { /* ignore malformed config */ }
+            }
+
+            configDict["sceneCount"] = sc.SceneCount;
+            pm.Configuration = JsonSerializer.Serialize(configDict);
+            pm.UpdatedAt = now;
+        }
+    }
+
     project.UpdatedAt = now;
     await db.SaveChangesAsync();
     return Results.Ok();

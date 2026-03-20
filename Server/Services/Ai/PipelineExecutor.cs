@@ -853,25 +853,16 @@ namespace Server.Services.Ai
                             config["subtitleLanguage"] = slStr;
                         }
 
-                        // Collect video URLs from previous VideoSearch steps to pass in config
+                        // Collect video URLs from previous VideoSearch steps (main + branches) to pass in config
                         var videoUrls = new List<string>();
                         foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderBy(k => k))
                         {
                             if (stepModuleTypes.TryGetValue(prevOrder, out var prevType) && prevType == "VideoSearch"
-                                && stepResults.TryGetValue(prevOrder, out var prevResult) && prevResult.Metadata.TryGetValue("pexelsUrl", out var pUrl))
+                                && stepResults.TryGetValue(prevOrder, out var prevResult))
                             {
-                                // Use the downloaded file URL from workspace
-                                var prevOutput = stepOutputs.GetValueOrDefault(prevOrder);
-                                if (prevOutput?.Files.Count > 0)
-                                {
-                                    var filePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevOutput.Files[0].FileName);
-                                    if (File.Exists(filePath))
-                                    {
-                                        // Json2Video needs public URLs — use the download URL from Pexels metadata
-                                        if (prevResult.Metadata.TryGetValue("downloadUrl", out var dlUrl) && dlUrl is string dlUrlStr)
-                                            videoUrls.Add(dlUrlStr);
-                                    }
-                                }
+                                // Json2Video needs public URLs — use the download URL from Pexels metadata
+                                if (prevResult.Metadata.TryGetValue("downloadUrl", out var dlUrl) && dlUrl is string dlUrlStr)
+                                    videoUrls.Add(dlUrlStr);
                             }
                         }
 
@@ -3455,6 +3446,24 @@ Datos de la ejecucion:
                         var bEditInput = bInputs[0];
                         if (string.IsNullOrWhiteSpace(bEditInput))
                             throw new InvalidOperationException($"[{branchId}] Input obligatorio para VideoEdit");
+
+                        // Collect video URLs from previous VideoSearch steps (main + branches)
+                        var bVideoUrls = new List<string>();
+                        foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderBy(k => k))
+                        {
+                            if (stepModuleTypes.TryGetValue(prevOrder, out var bPrevType) && bPrevType == "VideoSearch"
+                                && stepResults.TryGetValue(prevOrder, out var bPrevResult))
+                            {
+                                if (bPrevResult.Metadata.TryGetValue("downloadUrl", out var bDlUrl) && bDlUrl is string bDlUrlStr)
+                                    bVideoUrls.Add(bDlUrlStr);
+                            }
+                        }
+                        if (bVideoUrls.Count > 0 && !bConfig.ContainsKey("videoUrls"))
+                            bConfig["videoUrls"] = JsonSerializer.Serialize(bVideoUrls);
+
+                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                            $"Editando video con Json2Video: input={bEditInput[..Math.Min(bEditInput.Length, 100)]}..., videoUrls={bVideoUrls.Count}",
+                            bpm.StepOrder, bStepName);
 
                         var bEditCtx = new AiExecutionContext
                         {

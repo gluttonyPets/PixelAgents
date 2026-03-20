@@ -523,6 +523,24 @@
     {
         if (_sceneCountOverrides.TryGetValue(moduleId, out var count))
             return Math.Max(1, count);
+
+        // Load from persisted Configuration if not overridden
+        var module = Modules.FirstOrDefault(m => m.Id == moduleId);
+        if (module?.Configuration is not null)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(module.Configuration);
+                if (doc.RootElement.TryGetProperty("sceneCount", out var sc) && sc.ValueKind == System.Text.Json.JsonValueKind.Number)
+                {
+                    var persisted = sc.GetInt32();
+                    _sceneCountOverrides[moduleId] = persisted;
+                    return Math.Max(1, persisted);
+                }
+            }
+            catch { /* ignore */ }
+        }
+
         return 1;
     }
 
@@ -665,7 +683,11 @@
     {
         _error = null;
         var positions = _positions.Select(p => new NodePositionEntry(p.Key, p.Value.X, p.Value.Y)).ToList();
-        var req = new SaveGraphRequest(positions, _connections);
+        var sceneCounts = _sceneCountOverrides
+            .Where(kv => kv.Value > 1)
+            .Select(kv => new SceneCountEntry(kv.Key, kv.Value))
+            .ToList();
+        var req = new SaveGraphRequest(positions, _connections, sceneCounts.Count > 0 ? sceneCounts : null);
         await OnSaveGraph.InvokeAsync(req);
     }
 
