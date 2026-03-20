@@ -967,7 +967,7 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             {
                 try
                 {
-                    var existing = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+                    var existing = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(pm.Configuration);
                     if (existing is not null)
                         foreach (var kv in existing)
                             configDict[kv.Key] = kv.Value;
@@ -976,7 +976,7 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             }
 
             configDict["sceneCount"] = sc.SceneCount;
-            pm.Configuration = JsonSerializer.Serialize(configDict);
+            pm.Configuration = System.Text.Json.JsonSerializer.Serialize(configDict);
             pm.UpdatedAt = now;
         }
     }
