@@ -142,8 +142,6 @@ public static class ModulePortRegistry
                 break;
 
             case "VideoEdit":
-                // Global inputs
-                ports.Add(new("input_config", "Configuracion", PortDataType.Config, isInput: true));
                 ports.Add(new("input_script", "Guion", PortDataType.Text, isInput: true));
                 // Dynamic video inputs (one per scene)
                 var scenes = Math.Max(sceneCount, 1);
