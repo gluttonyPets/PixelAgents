@@ -63,9 +63,9 @@ public record RetryFromStepRequest(int StepOrder, string? Comment);
 public record OrchestratorReviewRequest(bool Approved, string? Comment);
 
 // ── OrchestratorOutput ──
-public record OrchestratorOutputRequest(string Label, string Prompt, int SortOrder, Guid? TargetModuleId);
+public record OrchestratorOutputRequest(string Label, string Prompt, string DataType, int SortOrder);
 public record OrchestratorOutputResponse(Guid Id, string OutputKey, string Label, string Prompt,
-    int SortOrder, Guid? TargetModuleId, string? TargetModuleName, string? TargetModuleType);
+    string DataType, int SortOrder);
 public record ExecutionResponse(
     Guid Id, Guid ProjectId, string Status, string WorkspacePath,
     DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,

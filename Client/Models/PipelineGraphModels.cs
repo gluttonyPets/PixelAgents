@@ -169,7 +169,7 @@ public static class ModulePortRegistry
                 if (orchestratorOutputs?.Count > 0)
                 {
                     foreach (var o in orchestratorOutputs)
-                        ports.Add(new(o.OutputKey, o.Label, PortDataType.Any, isInput: false));
+                        ports.Add(new(o.OutputKey, o.Label, o.DataType, isInput: false));
                 }
                 else
                 {

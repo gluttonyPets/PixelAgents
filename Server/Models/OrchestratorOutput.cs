@@ -7,12 +7,12 @@ namespace Server.Models
         public string OutputKey { get; set; } = "";
         public string Label { get; set; } = "";
         public string Prompt { get; set; } = "";
+        public string DataType { get; set; } = "text";
         public int SortOrder { get; set; }
-        public Guid? TargetModuleId { get; set; }
+        public Guid? TargetModuleId { get; set; } // legacy — ignored
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         public ProjectModule ProjectModule { get; set; } = null!;
-        public AiModule? TargetModule { get; set; }
     }
 }

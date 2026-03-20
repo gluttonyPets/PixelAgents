@@ -660,7 +660,6 @@ app.MapGet("/api/projects/{id}", async (
             .ThenInclude(pm => pm.AiModule)
         .Include(p => p.ProjectModules)
             .ThenInclude(pm => pm.OrchestratorOutputs.OrderBy(o => o.SortOrder))
-                .ThenInclude(o => o.TargetModule)
         .FirstOrDefaultAsync(p => p.Id == id);
 
     if (project is null) return Results.NotFound();
@@ -672,8 +671,7 @@ app.MapGet("/api/projects/{id}", async (
             pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY,
             pm.AiModule.ModuleType == "Orchestrator"
                 ? pm.OrchestratorOutputs.Select(o => new OrchestratorOutputResponse(
-                    o.Id, o.OutputKey, o.Label, o.Prompt, o.SortOrder,
-                    o.TargetModuleId, o.TargetModule?.Name, o.TargetModule?.ModuleType)).ToList()
+                    o.Id, o.OutputKey, o.Label, o.Prompt, o.DataType, o.SortOrder)).ToList()
                 : null)).ToList();
 
     var connections = await db.ModuleConnections
@@ -1548,13 +1546,10 @@ app.MapGet("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs", 
     if (db is null) return Results.Unauthorized();
 
     var outputs = await db.OrchestratorOutputs
-        .Include(o => o.TargetModule)
         .Where(o => o.ProjectModuleId == moduleId)
         .OrderBy(o => o.SortOrder)
         .Select(o => new OrchestratorOutputResponse(
-            o.Id, o.OutputKey, o.Label, o.Prompt, o.SortOrder,
-            o.TargetModuleId, o.TargetModule != null ? o.TargetModule.Name : null,
-            o.TargetModule != null ? o.TargetModule.ModuleType : null))
+            o.Id, o.OutputKey, o.Label, o.Prompt, o.DataType, o.SortOrder))
         .ToListAsync();
 
     return Results.Ok(outputs);
@@ -1583,8 +1578,8 @@ app.MapPost("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs",
         OutputKey = outputKey,
         Label = req.Label,
         Prompt = req.Prompt,
+        DataType = req.DataType,
         SortOrder = req.SortOrder,
-        TargetModuleId = req.TargetModuleId,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow,
     };
@@ -1592,13 +1587,9 @@ app.MapPost("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs",
     db.OrchestratorOutputs.Add(output);
     await db.SaveChangesAsync();
 
-    AiModule? target = null;
-    if (req.TargetModuleId.HasValue)
-        target = await db.AiModules.FindAsync(req.TargetModuleId.Value);
-
     return Results.Created($"/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{output.Id}",
         new OrchestratorOutputResponse(output.Id, output.OutputKey, output.Label, output.Prompt,
-            output.SortOrder, output.TargetModuleId, target?.Name, target?.ModuleType));
+            output.DataType, output.SortOrder));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{outputId}", async (
@@ -1614,17 +1605,13 @@ app.MapPut("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{o
 
     output.Label = req.Label;
     output.Prompt = req.Prompt;
+    output.DataType = req.DataType;
     output.SortOrder = req.SortOrder;
-    output.TargetModuleId = req.TargetModuleId;
     output.UpdatedAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
 
-    AiModule? target = null;
-    if (req.TargetModuleId.HasValue)
-        target = await db.AiModules.FindAsync(req.TargetModuleId.Value);
-
     return Results.Ok(new OrchestratorOutputResponse(output.Id, output.OutputKey, output.Label, output.Prompt,
-        output.SortOrder, output.TargetModuleId, target?.Name, target?.ModuleType));
+        output.DataType, output.SortOrder));
 }).RequireAuthorization();
 
 app.MapDelete("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs/{outputId}", async (

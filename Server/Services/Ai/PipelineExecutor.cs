@@ -2874,8 +2874,6 @@ Datos de la ejecucion:
 
             // 1. Load configured outputs for this orchestrator module
             var outputs = await db.OrchestratorOutputs
-                .Include(o => o.TargetModule)
-                    .ThenInclude(m => m!.ApiKey)
                 .Where(o => o.ProjectModuleId == pm.Id)
                 .OrderBy(o => o.SortOrder)
                 .ToListAsync();
@@ -2982,174 +2980,21 @@ Datos de la ejecucion:
 
             stepExecution.InputData = JsonSerializer.Serialize(new { input, outputCount = outputs.Count });
 
-            // 6. Execute each output's target module
+            // 6. Store generated content as output items (no target module execution)
             var orchestratorOutputItems = new List<OutputItem>();
-            var orchestratorOutputFiles = new List<OutputFile>();
-            decimal totalSubCost = 0;
-
-            // Build a lookup: outputKey -> generated content
             var contentByKey = plan.Outputs.ToDictionary(o => o.OutputKey, o => o.Content);
 
             foreach (var output in outputs)
             {
-                if (ct.IsCancellationRequested) break;
-
-                if (!contentByKey.TryGetValue(output.OutputKey, out var content) || string.IsNullOrWhiteSpace(content))
+                var content = contentByKey.GetValueOrDefault(output.OutputKey, "");
+                if (string.IsNullOrWhiteSpace(content))
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "warning",
                         $"Orquestador [{output.OutputKey}]: sin contenido generado", pm.StepOrder, stepName);
-                    orchestratorOutputItems.Add(new OutputItem { Content = "SIN CONTENIDO", Label = output.Label });
-                    continue;
                 }
-
-                if (output.TargetModule is null)
-                {
-                    // No target module — store content as text output
-                    orchestratorOutputItems.Add(new OutputItem { Content = content, Label = output.Label });
-                    await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"Orquestador [{output.OutputKey}]: contenido guardado (sin modulo destino)", pm.StepOrder, stepName);
-                    continue;
-                }
-
-                var targetModule = output.TargetModule;
+                orchestratorOutputItems.Add(new OutputItem { Content = content, Label = output.Label });
                 await _logger.LogAsync(project.Id, execution.Id, "info",
-                    $"Orquestador [{output.OutputKey}]: ejecutando '{targetModule.Name}' ({targetModule.ModuleType})",
-                    pm.StepOrder, stepName);
-
-                // Broadcast task started
-                await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                    output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
-                    output.SortOrder, "running", null, null, null, DateTime.UtcNow));
-
-                if (targetModule.ApiKey is null || string.IsNullOrEmpty(targetModule.ApiKey.EncryptedKey))
-                {
-                    await _logger.LogAsync(project.Id, execution.Id, "error",
-                        $"Orquestador [{output.OutputKey}]: modulo '{targetModule.Name}' no tiene API Key", pm.StepOrder, stepName);
-                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
-                        output.SortOrder, "error", null, null, "API Key no configurada", DateTime.UtcNow));
-                    orchestratorOutputItems.Add(new OutputItem { Content = "ERROR: API Key no configurada", Label = output.Label });
-                    continue;
-                }
-
-                var targetProvider = _registry.GetProvider(targetModule.ProviderType);
-                if (targetProvider is null)
-                {
-                    await _logger.LogAsync(project.Id, execution.Id, "error",
-                        $"Orquestador [{output.OutputKey}]: proveedor '{targetModule.ProviderType}' no disponible", pm.StepOrder, stepName);
-                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
-                        output.SortOrder, "error", null, null, "Proveedor no disponible", DateTime.UtcNow));
-                    orchestratorOutputItems.Add(new OutputItem { Content = "ERROR: proveedor no disponible", Label = output.Label });
-                    continue;
-                }
-
-                var moduleConfig = !string.IsNullOrEmpty(targetModule.Configuration)
-                    ? JsonSerializer.Deserialize<Dictionary<string, object>>(targetModule.Configuration) ?? new()
-                    : new Dictionary<string, object>();
-
-                // Truncate input if needed for image/video models
-                var taskInput = content;
-                if (targetModule.ModuleType is "Image" or "Video" or "VideoSearch" or "VideoEdit")
-                {
-                    var maxLen = InputAdapter.GetMaxPromptLength(targetModule.ModelName);
-                    if (taskInput.Length > maxLen)
-                        taskInput = InputAdapter.TruncateAtWord(taskInput, maxLen);
-                }
-
-                var targetContext = new AiExecutionContext
-                {
-                    ModuleType = targetModule.ModuleType,
-                    ModelName = targetModule.ModelName,
-                    ApiKey = targetModule.ApiKey.EncryptedKey,
-                    Input = taskInput,
-                    ProjectContext = project.Context,
-                    PreviousExecutionsSummary = previousSummaryContext,
-                    Configuration = moduleConfig,
-                };
-
-                try
-                {
-                    var subResult = await targetProvider.ExecuteAsync(targetContext);
-                    totalSubCost += subResult.EstimatedCost;
-
-                    if (!subResult.Success)
-                    {
-                        await _logger.LogAsync(project.Id, execution.Id, "error",
-                            $"Orquestador [{output.OutputKey}]: error: {subResult.Error}", pm.StepOrder, stepName);
-                        await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                            output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
-                            output.SortOrder, "error", null, null, subResult.Error, DateTime.UtcNow));
-                        orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {subResult.Error}", Label = output.Label });
-                        continue;
-                    }
-
-                    // Handle text output
-                    if (subResult.TextOutput is not null)
-                    {
-                        var parsed = OutputSchemaHelper.ParseTextOutput(subResult.TextOutput);
-                        orchestratorOutputItems.Add(new OutputItem
-                        {
-                            Content = parsed.Content ?? subResult.TextOutput,
-                            Label = output.Label
-                        });
-                        await _logger.LogAsync(project.Id, execution.Id, "success",
-                            $"Orquestador [{output.OutputKey}]: texto generado", pm.StepOrder, stepName);
-                    }
-
-                    // Handle file output
-                    if (subResult.FileOutput is not null)
-                    {
-                        var taskDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}", output.OutputKey);
-                        Directory.CreateDirectory(taskDir);
-
-                        var ext = GetExtension(subResult.ContentType ?? "application/octet-stream");
-                        var fileName = $"output{ext}";
-                        await File.WriteAllBytesAsync(Path.Combine(taskDir, fileName), subResult.FileOutput);
-
-                        var execFile = new ExecutionFile
-                        {
-                            Id = Guid.NewGuid(),
-                            StepExecutionId = stepExecution.Id,
-                            FileName = $"{output.OutputKey}_{fileName}",
-                            ContentType = subResult.ContentType ?? "application/octet-stream",
-                            FilePath = Path.Combine($"step_{pm.StepOrder}", output.OutputKey, fileName),
-                            Direction = "Output",
-                            FileSize = subResult.FileOutput.Length,
-                            CreatedAt = DateTime.UtcNow,
-                        };
-                        db.ExecutionFiles.Add(execFile);
-
-                        orchestratorOutputFiles.Add(new OutputFile
-                        {
-                            FileId = execFile.Id,
-                            FileName = execFile.FileName,
-                            ContentType = execFile.ContentType,
-                            FileSize = execFile.FileSize,
-                        });
-
-                        await _logger.LogAsync(project.Id, execution.Id, "success",
-                            $"Orquestador [{output.OutputKey}]: archivo generado ({subResult.ContentType}, {subResult.FileOutput.Length} bytes)",
-                            pm.StepOrder, stepName);
-                    }
-
-                    // Broadcast task completed
-                    var fileUrl = subResult.FileOutput is not null
-                        ? Path.Combine($"step_{pm.StepOrder}", output.OutputKey, $"output{GetExtension(subResult.ContentType ?? "application/octet-stream")}")
-                        : null;
-                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
-                        output.SortOrder, "completed", fileUrl, subResult.ContentType, null, DateTime.UtcNow));
-                }
-                catch (Exception ex)
-                {
-                    await _logger.LogAsync(project.Id, execution.Id, "error",
-                        $"Orquestador [{output.OutputKey}]: excepcion: {ex.Message}", pm.StepOrder, stepName);
-                    await _logger.LogTaskProgressAsync(project.Id, new OrchestratorTaskProgressEntry(
-                        output.OutputKey, output.Label, targetModule.Name, targetModule.ModuleType,
-                        output.SortOrder, "error", null, null, ex.Message, DateTime.UtcNow));
-                    orchestratorOutputItems.Add(new OutputItem { Content = $"ERROR: {ex.Message}", Label = output.Label });
-                }
+                    $"Orquestador [{output.OutputKey}]: contenido generado para '{output.Label}'", pm.StepOrder, stepName);
             }
 
             // 7. Build combined output
@@ -3157,23 +3002,20 @@ Datos de la ejecucion:
             {
                 Type = "orchestrator",
                 Title = plan.Summary,
-                Content = $"Orquestador ejecutado: {outputs.Count} salidas, {orchestratorOutputItems.Count} resultados",
+                Content = $"Orquestador: {outputs.Count} salidas generadas",
                 Summary = plan.Summary,
                 Items = orchestratorOutputItems,
-                Files = orchestratorOutputFiles,
                 Metadata = new Dictionary<string, object>
                 {
                     ["outputs"] = outputs.Select(o => new Dictionary<string, object>
                     {
                         ["outputKey"] = o.OutputKey,
                         ["label"] = o.Label,
-                        ["targetModule"] = o.TargetModule?.Name ?? "(ninguno)",
-                        ["targetModuleType"] = o.TargetModule?.ModuleType ?? "",
+                        ["dataType"] = o.DataType,
                     }).ToList()
                 }
             };
 
-            stepExecution.EstimatedCost += totalSubCost;
             stepExecution.OutputData = JsonSerializer.Serialize(combinedOutput);
             stepExecution.Status = "Completed";
             stepExecution.CompletedAt = DateTime.UtcNow;
@@ -3184,7 +3026,7 @@ Datos de la ejecucion:
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(project.Id, execution.Id, "success",
-                $"Orquestador: todas las salidas completadas (costo sub-tareas: ${totalSubCost:F4})",
+                $"Orquestador: {outputs.Count} salidas generadas correctamente",
                 pm.StepOrder, stepName);
 
             return false; // never pause — direct execution

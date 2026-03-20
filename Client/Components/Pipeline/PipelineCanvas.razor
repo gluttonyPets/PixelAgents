@@ -196,14 +196,7 @@
                                             <button class="btn btn-xs btn-danger" style="padding: 0.1rem 0.3rem; font-size: 0.65rem;" @onclick="() => DeleteOrchestratorOutput(sel, output.Id)">X</button>
                                         </div>
                                         <div class="text-muted" style="font-size: 0.7rem; margin-bottom: 0.2rem;">@output.Prompt</div>
-                                        @if (output.TargetModuleName is not null)
-                                        {
-                                            <div style="font-size: 0.7rem;">Modulo: <strong>@output.TargetModuleName</strong> (@output.TargetModuleType)</div>
-                                        }
-                                        else
-                                        {
-                                            <div style="font-size: 0.7rem; color: var(--text-muted);">Sin modulo destino</div>
-                                        }
+                                        <div style="font-size: 0.7rem;">Tipo: <strong style="color: @PortDataType.GetColor(output.DataType);">@PortDataType.GetLabel(output.DataType)</strong></div>
                                     </div>
                                 }
                             }
@@ -221,13 +214,13 @@
                                     <textarea @bind="_newOutputPrompt" rows="2" placeholder="Ej: Busca un video de un perro paseando" style="font-size: 0.75rem;"></textarea>
                                 </div>
                                 <div class="inspector-field" style="margin-bottom: 0.2rem;">
-                                    <label>Modulo destino</label>
-                                    <select @bind="_newOutputTargetModuleId">
-                                        <option value="">-- Ninguno --</option>
-                                        @foreach (var m in AvailableModules.Where(m => m.ModuleType != "Orchestrator" && m.ModuleType != "Interaction" && m.ModuleType != "Publish"))
-                                        {
-                                            <option value="@m.Id">@m.Name (@m.ModuleType)</option>
-                                        }
+                                    <label>Tipo de salida</label>
+                                    <select @bind="_newOutputDataType">
+                                        <option value="text">Texto</option>
+                                        <option value="image">Imagen</option>
+                                        <option value="video">Video</option>
+                                        <option value="audio">Audio</option>
+                                        <option value="file">Archivo</option>
                                     </select>
                                 </div>
                                 <button class="btn btn-xs btn-primary" style="width: 100%;" @onclick="() => AddOrchestratorOutput(sel)">Agregar salida</button>
@@ -321,7 +314,7 @@
     // Orchestrator output form state
     private string _newOutputLabel = "";
     private string _newOutputPrompt = "";
-    private string _newOutputTargetModuleId = "";
+    private string _newOutputDataType = "text";
 
     private IEnumerable<AiModuleResponse> FilteredModules => string.IsNullOrWhiteSpace(_searchFilter)
         ? AvailableModules
@@ -560,19 +553,16 @@
     {
         if (string.IsNullOrWhiteSpace(_newOutputLabel)) return;
 
-        Guid? targetId = Guid.TryParse(_newOutputTargetModuleId, out var tid) ? tid : null;
         var sortOrder = (module.OrchestratorOutputs?.Count ?? 0) + 1;
 
         var (output, error) = await Api.CreateOrchestratorOutputAsync(
             ProjectId, module.Id,
-            new OrchestratorOutputRequest(_newOutputLabel, _newOutputPrompt, sortOrder, targetId));
+            new OrchestratorOutputRequest(_newOutputLabel, _newOutputPrompt, _newOutputDataType, sortOrder));
 
         if (output is not null)
         {
-            // Update local state
             var outputs = module.OrchestratorOutputs?.ToList() ?? new();
             outputs.Add(output);
-            // Replace module in the list with updated outputs (records are immutable)
             var idx = Modules.FindIndex(m => m.Id == module.Id);
             if (idx >= 0)
             {
@@ -581,7 +571,7 @@
 
             _newOutputLabel = "";
             _newOutputPrompt = "";
-            _newOutputTargetModuleId = "";
+            _newOutputDataType = "text";
 
             // Rebuild node to show new ports
             await RebuildDrawflow();

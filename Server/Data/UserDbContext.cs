@@ -216,18 +216,16 @@ namespace Server.Data
                 e.Property(x => x.OutputKey).IsRequired().HasMaxLength(100);
                 e.Property(x => x.Label).IsRequired().HasMaxLength(500);
                 e.Property(x => x.Prompt).IsRequired().HasColumnType("text");
+                e.Property(x => x.DataType).IsRequired().HasMaxLength(50).HasDefaultValue("text");
 
                 e.HasOne(x => x.ProjectModule)
                     .WithMany(pm => pm.OrchestratorOutputs)
                     .HasForeignKey(x => x.ProjectModuleId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                e.HasOne(x => x.TargetModule)
-                    .WithMany()
-                    .HasForeignKey(x => x.TargetModuleId)
-                    .OnDelete(DeleteBehavior.SetNull);
-
                 e.HasIndex(x => x.ProjectModuleId);
+
+                e.Ignore(x => x.TargetModuleId);
             });
 
             // ── ModuleFile ──

@@ -610,6 +610,45 @@ else
                     </p>
                 }
 
+                @if (selectedModule?.ModuleType == "Orchestrator")
+                {
+                    <div class="form-group">
+                        <label>Salidas del orquestador</label>
+                        @foreach (var po in _pendingOrchestratorOutputs)
+                        {
+                            <div style="border: 1px solid var(--border-color); border-radius: 0.3rem; padding: 0.4rem; margin-bottom: 0.3rem; font-size: 0.8rem; display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <strong>@po.Label</strong>
+                                    <span class="text-muted" style="font-size: 0.7rem;">(@po.DataType)</span>
+                                    <div class="text-muted" style="font-size: 0.75rem;">@po.Prompt</div>
+                                </div>
+                                <button class="btn btn-xs btn-danger" style="padding: 0.1rem 0.3rem;" @onclick="() => _pendingOrchestratorOutputs.Remove(po)">X</button>
+                            </div>
+                        }
+                        <div style="display: flex; gap: 0.3rem; align-items: end; flex-wrap: wrap; margin-top: 0.3rem;">
+                            <div style="flex: 1; min-width: 80px;">
+                                <label class="text-sm">Label</label>
+                                <input @bind="_poLabel" placeholder="Ej: Guion" />
+                            </div>
+                            <div style="flex: 2; min-width: 120px;">
+                                <label class="text-sm">Prompt</label>
+                                <input @bind="_poPrompt" placeholder="Ej: Genera el guion del video" />
+                            </div>
+                            <div style="min-width: 80px;">
+                                <label class="text-sm">Tipo</label>
+                                <select @bind="_poDataType">
+                                    <option value="text">Texto</option>
+                                    <option value="image">Imagen</option>
+                                    <option value="video">Video</option>
+                                    <option value="audio">Audio</option>
+                                    <option value="file">Archivo</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-xs btn-primary" style="padding: 0.3rem 0.5rem;" @onclick="AddPendingOutput">+</button>
+                        </div>
+                    </div>
+                }
+
                 <button class="btn btn-primary mt-1" @onclick="AddStep" disabled="@_loading">Agregar</button>
             </div>
             </div> @* end linear scroll wrapper *@
@@ -1476,6 +1515,10 @@ else
     private string _publishCaption = "";
     private string _publishType = "post";
 
+    // Orchestrator outputs (pending, before module is created)
+    private List<OrchestratorOutputRequest> _pendingOrchestratorOutputs = new();
+    private string _poLabel = "", _poPrompt = "", _poDataType = "text";
+
     // Publish step (Canva)
     private string _canvaExportFormat = "png";
     private string _canvaDesignTitle = "";
@@ -2218,6 +2261,13 @@ else
         _ => 4000
     };
 
+    private void AddPendingOutput()
+    {
+        if (string.IsNullOrWhiteSpace(_poLabel)) return;
+        _pendingOrchestratorOutputs.Add(new(_poLabel, _poPrompt, _poDataType, _pendingOrchestratorOutputs.Count + 1));
+        _poLabel = ""; _poPrompt = ""; _poDataType = "text";
+    }
+
     private async Task AddStep()
     {
         _stepError = null;
@@ -2304,7 +2354,23 @@ else
             }
             var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig, _stepBranchId, _stepBranchFromStep);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok) { _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _j2vSubtitleLanguage = "es"; _stepBranchId = "main"; _stepBranchFromStep = null; await LoadAll(); CleanPendingBranches(); }
+            if (ok)
+            {
+                // Create orchestrator outputs if any were defined
+                if (mod?.ModuleType == "Orchestrator" && _pendingOrchestratorOutputs.Count > 0)
+                {
+                    await LoadAll();
+                    var newPm = _project.Modules.OrderByDescending(m => m.StepOrder).FirstOrDefault();
+                    if (newPm is not null)
+                    {
+                        foreach (var po in _pendingOrchestratorOutputs)
+                            await Api.CreateOrchestratorOutputAsync(ProjectId, newPm.Id, po);
+                    }
+                    _pendingOrchestratorOutputs.Clear();
+                }
+                _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _j2vSubtitleLanguage = "es"; _stepBranchId = "main"; _stepBranchFromStep = null;
+                await LoadAll(); CleanPendingBranches();
+            }
             else _stepError = error;
         }
         catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
