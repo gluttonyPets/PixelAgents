@@ -690,8 +690,8 @@
         var toModule = Modules.FirstOrDefault(m => m.Id == toId);
         if (fromModule is null || toModule is null) return;
 
-        var fromPorts = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromId), fromModule.InputMapping);
-        var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId), toModule.InputMapping);
+        var fromPorts = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromId), fromModule.InputMapping, fromModule.OrchestratorOutputs);
+        var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId), toModule.InputMapping, toModule.OrchestratorOutputs);
         var fromPortDef = fromPorts.FirstOrDefault(p => p.Id == fromPort && !p.IsInput);
         var toPortDef = toPorts.FirstOrDefault(p => p.Id == toPort && p.IsInput);
         if (fromPortDef is null || toPortDef is null) return;

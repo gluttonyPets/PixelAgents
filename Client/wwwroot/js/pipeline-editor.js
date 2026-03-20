@@ -173,6 +173,14 @@ window.pipelineEditor = {
         this._portMap[nodeId] = { inputs: inputPorts.map(p => p.id), outputs: outputPorts.map(p => p.id) };
         this._moduleMap[nodeId] = moduleId;
         this._reverseMap[moduleId] = nodeId;
+
+        // Ensure node is tall enough for all ports
+        var maxPorts = Math.max(inputPorts.length, outputPorts.length);
+        if (maxPorts > 2) {
+            var el = document.querySelector('#node-' + nodeId);
+            if (el) el.style.minHeight = (maxPorts * 28) + 'px';
+        }
+
         return nodeId;
     },
 
