@@ -340,10 +340,11 @@
             var mappingsHash = string.Join("|", Modules.Select(m => $"{m.Id}:{m.InputMapping}"));
             if (Modules.Count != _lastModuleCount || Connections.Count != _lastConnectionCount || mappingsHash != _lastInputMappingsHash)
             {
-                // Auto-select newly added orchestrator so inspector shows immediately
-                if (_pendingAutoSelectModuleType == "Orchestrator" && Modules.Count > _lastModuleCount)
+                // Auto-select newly added module so inspector shows immediately
+                // (needed for Orchestrator to configure outputs, VideoEdit to set scene count, etc.)
+                if (_pendingAutoSelectModuleType is not null && Modules.Count > _lastModuleCount)
                 {
-                    var newModule = Modules.OrderByDescending(m => m.StepOrder).FirstOrDefault(m => m.ModuleType == "Orchestrator");
+                    var newModule = Modules.OrderByDescending(m => m.StepOrder).FirstOrDefault(m => m.ModuleType == _pendingAutoSelectModuleType);
                     if (newModule is not null)
                         _selectedModuleId = newModule.Id;
                 }
