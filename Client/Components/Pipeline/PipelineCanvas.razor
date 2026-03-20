@@ -179,6 +179,14 @@
                                        @onchange="e => UpdateSceneCount(sel.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1)" />
                             </div>
                             <p class="text-sm text-muted">Cada escena crea un puerto de video. El guion se reparte automaticamente entre las escenas.</p>
+                            <div class="inspector-field" style="margin-top: 0.5rem;">
+                                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                                    <input type="checkbox" checked="@GetRequireConfirmation(sel.Id)"
+                                           @onchange="e => ToggleRequireConfirmation(sel.Id, (bool)(e.Value ?? false))" />
+                                    Confirmar antes de generar
+                                </label>
+                                <p class="text-sm text-muted" style="margin-top: 0.2rem;">Pide confirmacion antes de llamar a la API de Json2Video (evita gastar creditos por error).</p>
+                            </div>
                         </div>
                     }
 
@@ -307,6 +315,7 @@
     private int _lastConnectionCount;
     private string _lastInputMappingsHash = "";
     private Dictionary<Guid, int> _sceneCountOverrides = new();
+    private Dictionary<Guid, bool> _requireConfirmOverrides = new();
     private bool _lastExecuting;
     private int _lastLogCount;
     private string? _pendingAutoSelectModuleType;
@@ -545,6 +554,46 @@
         return 1;
     }
 
+    private bool GetRequireConfirmation(Guid moduleId)
+    {
+        if (_requireConfirmOverrides.TryGetValue(moduleId, out var val))
+            return val;
+
+        var module = Modules.FirstOrDefault(m => m.Id == moduleId);
+        if (module?.Configuration is not null)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(module.Configuration);
+                if (doc.RootElement.TryGetProperty("requireConfirmation", out var rc)
+                    && (rc.ValueKind == System.Text.Json.JsonValueKind.True || rc.ValueKind == System.Text.Json.JsonValueKind.False))
+                {
+                    var persisted = rc.GetBoolean();
+                    _requireConfirmOverrides[moduleId] = persisted;
+                    return persisted;
+                }
+            }
+            catch { /* ignore */ }
+        }
+
+        return false;
+    }
+
+    private async Task ToggleRequireConfirmation(Guid moduleId, bool value)
+    {
+        _requireConfirmOverrides[moduleId] = value;
+        await AutoSaveGraph();
+    }
+
+    /// <summary>
+    /// Returns true if any VideoEdit module in the pipeline has requireConfirmation enabled.
+    /// Called by the parent to show a confirmation dialog before executing.
+    /// </summary>
+    public bool HasVideoEditRequiringConfirmation()
+    {
+        return Modules.Any(m => m.ModuleType == "VideoEdit" && GetRequireConfirmation(m.Id));
+    }
+
     // ── Actions ──
 
     private async Task AddNodeFromPalette(AiModuleResponse module)
@@ -688,7 +737,12 @@
             .Where(kv => kv.Value > 1)
             .Select(kv => new SceneCountEntry(kv.Key, kv.Value))
             .ToList();
-        var req = new SaveGraphRequest(positions, _connections, sceneCounts.Count > 0 ? sceneCounts : null);
+        var moduleConfigs = _requireConfirmOverrides
+            .Select(kv => new ModuleConfigEntry(kv.Key, "requireConfirmation", kv.Value.ToString().ToLower()))
+            .ToList();
+        var req = new SaveGraphRequest(positions, _connections,
+            sceneCounts.Count > 0 ? sceneCounts : null,
+            moduleConfigs.Count > 0 ? moduleConfigs : null);
         await OnSaveGraph.InvokeAsync(req);
     }
 

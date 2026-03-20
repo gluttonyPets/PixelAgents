@@ -167,6 +167,7 @@ namespace Server.Services.Ai
                 ["width"] = bestWidth,
                 ["photographer"] = videoUser,
                 ["pexelsUrl"] = videoUrl,
+                ["downloadUrl"] = downloadUrl!,
                 ["query"] = query,
                 ["totalResults"] = root.TryGetProperty("total_results", out var tr) ? tr.GetInt32() : 0,
             });

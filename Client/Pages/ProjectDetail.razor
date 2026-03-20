@@ -112,7 +112,8 @@ else
 
             @if (_pipelineViewMode == "visual")
             {
-                <PipelineCanvas ProjectId="_project.Id"
+                <PipelineCanvas @ref="_pipelineCanvasRef"
+                                ProjectId="_project.Id"
                                 Modules="_project.Modules.ToList()"
                                 AvailableModules="_modules"
                                 Connections="_projectConnections"
@@ -130,23 +131,36 @@ else
                                 <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
                             }
                             <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
-                            <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
-                                <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
+                            @if (_showVideoEditConfirm)
+                            {
+                                <div class="alert" style="background: #fff3cd; color: #856404; border: 1px solid #ffc107; font-size: 0.75rem; padding: 0.4rem 0.6rem; margin-top: 0.3rem; border-radius: 0.3rem;">
+                                    <strong>Json2Video consume creditos.</strong> Estas seguro de ejecutar?
+                                    <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
+                                        <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute">Si, ejecutar</button>
+                                        <button class="btn btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelVideoEditConfirm">Cancelar</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
+                                    <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
+                                        @if (_executing)
+                                        {
+                                            <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
+                                            <span>Ejecutando...</span>
+                                        }
+                                        else
+                                        {
+                                            <span>Ejecutar</span>
+                                        }
+                                    </button>
                                     @if (_executing)
                                     {
-                                        <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
-                                        <span>Ejecutando...</span>
+                                        <button class="btn btn-danger btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelExecution">Cancelar</button>
                                     }
-                                    else
-                                    {
-                                        <span>Ejecutar</span>
-                                    }
-                                </button>
-                                @if (_executing)
-                                {
-                                    <button class="btn btn-danger btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelExecution">Cancelar</button>
-                                }
-                            </div>
+                                </div>
+                            }
                             @if (_executing || _result is not null)
                             {
                                 <div class="execute-inline-status">
@@ -1503,6 +1517,8 @@ else
 
     private bool _loading;
     private bool _executing;
+    private bool _showVideoEditConfirm;
+    private PipelineCanvas? _pipelineCanvasRef;
 
     // UI state
     private string _activeTab = "pipeline";
@@ -2663,6 +2679,14 @@ else
 
     private async Task Execute()
     {
+        // Check if any VideoEdit module requires confirmation before spending credits
+        if (_pipelineCanvasRef?.HasVideoEditRequiringConfirmation() == true && !_showVideoEditConfirm)
+        {
+            _showVideoEditConfirm = true;
+            return;
+        }
+        _showVideoEditConfirm = false;
+
         _execError = null; _executing = true; _result = null;
         _logEntries.Clear();
         _realtimeStepStatuses.Clear();
@@ -2675,6 +2699,11 @@ else
             else StartPolling(); // Safety net in case SignalR misses completion
         }
         catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; _executing = false; }
+    }
+
+    private void CancelVideoEditConfirm()
+    {
+        _showVideoEditConfirm = false;
     }
 
     private async Task CancelExecution()

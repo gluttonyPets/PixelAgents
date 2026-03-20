@@ -981,6 +981,40 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
         }
     }
 
+    // 7. Persist module config entries (e.g. requireConfirmation for VideoEdit)
+    if (req.ModuleConfigs is { Count: > 0 })
+    {
+        foreach (var mc in req.ModuleConfigs)
+        {
+            var pm = modules.FirstOrDefault(m => m.Id == mc.ModuleId);
+            if (pm is null) continue;
+
+            var configDict = new Dictionary<string, object>();
+            if (!string.IsNullOrWhiteSpace(pm.Configuration))
+            {
+                try
+                {
+                    var existing = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(pm.Configuration);
+                    if (existing is not null)
+                        foreach (var kv in existing)
+                            configDict[kv.Key] = kv.Value;
+                }
+                catch { /* ignore malformed config */ }
+            }
+
+            // Parse value: try bool, then int, then string
+            if (bool.TryParse(mc.Value, out var boolVal))
+                configDict[mc.Key] = boolVal;
+            else if (int.TryParse(mc.Value, out var intVal))
+                configDict[mc.Key] = intVal;
+            else
+                configDict[mc.Key] = mc.Value;
+
+            pm.Configuration = System.Text.Json.JsonSerializer.Serialize(configDict);
+            pm.UpdatedAt = now;
+        }
+    }
+
     project.UpdatedAt = now;
     await db.SaveChangesAsync();
     return Results.Ok();
