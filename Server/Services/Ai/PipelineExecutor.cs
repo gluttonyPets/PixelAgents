@@ -875,9 +875,12 @@ namespace Server.Services.Ai
                             config["subtitleLanguage"] = slStr;
                         }
 
-                        // Collect video URLs from previous VideoSearch steps (main + branches) to pass in config
+                        // Collect video URLs from ALL completed VideoSearch steps (main + branches).
+                        // Branch steps may have higher StepOrder than this VideoEdit step due to
+                        // topological sort, but they execute before this step thanks to orchestrator
+                        // fork handling, so their results are already in the shared dictionaries.
                         var videoUrls = new List<string>();
-                        foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderBy(k => k))
+                        foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
                         {
                             if (stepModuleTypes.TryGetValue(prevOrder, out var prevType) && prevType == "VideoSearch"
                                 && stepResults.TryGetValue(prevOrder, out var prevResult))
@@ -3497,9 +3500,11 @@ Datos de la ejecucion:
                         if (string.IsNullOrWhiteSpace(bEditInput))
                             throw new InvalidOperationException($"[{branchId}] VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'");
 
-                        // Collect video URLs from previous VideoSearch steps (main + branches)
+                        // Collect video URLs from ALL completed VideoSearch steps (main + branches).
+                        // Branch steps may have higher StepOrder due to topological sort but
+                        // execute before this step, so their results are already available.
                         var bVideoUrls = new List<string>();
-                        foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderBy(k => k))
+                        foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
                         {
                             if (stepModuleTypes.TryGetValue(prevOrder, out var bPrevType) && bPrevType == "VideoSearch"
                                 && stepResults.TryGetValue(prevOrder, out var bPrevResult))
