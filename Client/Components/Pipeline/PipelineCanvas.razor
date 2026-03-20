@@ -178,7 +178,7 @@
                                 <input type="number" min="1" max="10" value="@GetSceneCount(sel.Id)"
                                        @onchange="e => UpdateSceneCount(sel.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1)" />
                             </div>
-                            <p class="text-sm text-muted">Cada escena crea puertos de video y guion que puedes conectar a otros modulos.</p>
+                            <p class="text-sm text-muted">Cada escena crea un puerto de video. El guion se reparte automaticamente entre las escenas.</p>
                         </div>
                     }
 
