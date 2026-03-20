@@ -1949,6 +1949,19 @@ a.link:hover { text-decoration: underline; }
     text-overflow: ellipsis;
 }
 
+/* ── Node warning badge ── */
+.df-node-warning {
+    font-size: 0.65rem;
+    color: #ff9800;
+    margin-top: 2px;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+.df-node-warning::before {
+    content: "\26A0\FE0F";
+}
+
 /* ── Order badge ── */
 .df-order-badge {
     display: inline-flex;

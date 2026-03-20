@@ -160,11 +160,11 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, stepOrder, modelName) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, stepOrder, modelName, warning) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
-        var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName, warning);
         var nodeId = this._editor.addNode(
             moduleId, inputPorts.length, outputPorts.length,
             x, y, 'df-type-' + moduleType.toLowerCase(),
@@ -333,18 +333,22 @@ window.pipelineEditor = {
         });
     },
 
-    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName) {
+    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning) {
         var orderBadge = stepLabel
             ? '<span class="df-order-badge">' + stepLabel + '</span>'
             : '<span class="df-order-badge" style="display:none"></span>';
         var modelLine = modelName
             ? '<div class="df-node-model">' + modelName + '</div>'
             : '';
+        var warningLine = warning
+            ? '<div class="df-node-warning">' + warning + '</div>'
+            : '';
         return '<div class="df-node-content">'
             + '<div class="df-node-overlay-spinner"></div>'
             + '<div class="df-node-title">' + orderBadge + icon + ' ' + name + '</div>'
             + '<div class="df-node-type">' + type + '</div>'
             + modelLine
+            + warningLine
             + '</div>';
     },
 
