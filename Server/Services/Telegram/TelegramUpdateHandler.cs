@@ -241,10 +241,20 @@ namespace Server.Services.Telegram
 
                 if (execution.Status != "WaitingForInput")
                 {
-                    Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution status is '{execution.Status}', not WaitingForInput");
-                    candidate.IsResolved = true;
-                    await _coreDb.SaveChangesAsync();
-                    continue;
+                    // For branch correlations, also accept "Running" status if the execution
+                    // has paused branches — the branch may have paused before the main pipeline
+                    // had a chance to update the execution status.
+                    var hasPausedBranches = !string.IsNullOrWhiteSpace(candidate.BranchId)
+                        && execution.Status == "Running"
+                        && !string.IsNullOrWhiteSpace(execution.PausedBranches);
+
+                    if (!hasPausedBranches)
+                    {
+                        Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution status is '{execution.Status}', not WaitingForInput");
+                        candidate.IsResolved = true;
+                        await _coreDb.SaveChangesAsync();
+                        continue;
+                    }
                 }
 
                 return candidate;

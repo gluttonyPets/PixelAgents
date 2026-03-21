@@ -2432,6 +2432,11 @@ Datos de la ejecucion:
                 var existingBranches = DeserializePausedBranches(execution.PausedBranches);
                 existingBranches.Add(branchPause);
                 execution.PausedBranches = JsonSerializer.Serialize(existingBranches);
+
+                // Also mark execution as WaitingForInput so Telegram correlation validation
+                // doesn't reject this as stale before the main pipeline catches up
+                if (execution.Status != "WaitingForInput")
+                    execution.Status = "WaitingForInput";
             }
             else
             {
