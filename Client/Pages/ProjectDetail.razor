@@ -1530,6 +1530,32 @@ else
     </div>
 }
 
+@if (_showCheckpointModal)
+{
+    <div class="modal-overlay" @onclick="@(() => {})">
+        <div class="modal-content" style="max-width: 700px;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <strong>Checkpoint - Revisar datos</strong>
+                <button class="btn btn-sm" style="margin-left: auto; padding: 0.1rem 0.4rem;"
+                        @onclick="@(() => ReviewCheckpoint(false))">X</button>
+            </div>
+            <div class="modal-body">
+                <div class="alert" style="background: #fff3cd; color: #856404; border: 1px solid #ffc107; font-size: 0.8rem; padding: 0.5rem 0.7rem; margin-bottom: 0.7rem; border-radius: 0.3rem;">
+                    El pipeline se ha pausado en un punto de control. Revisa los datos recibidos antes de continuar.
+                </div>
+                @if (!string.IsNullOrEmpty(_checkpointPreviewJson))
+                {
+                    <pre style="background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem; font-size: 0.72rem; max-height: 400px; overflow: auto; white-space: pre-wrap; word-break: break-word;">@_checkpointPreviewJson</pre>
+                }
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.7rem;">
+                    <button class="btn btn-success" style="flex: 1;" @onclick="@(() => ReviewCheckpoint(true))">Continuar</button>
+                    <button class="btn btn-danger" style="flex: 1;" @onclick="@(() => ReviewCheckpoint(false))">Abortar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public Guid ProjectId { get; set; }
 
@@ -1541,6 +1567,11 @@ else
     private bool _loading;
     private bool _executing;
     private PipelineCanvas? _pipelineCanvasRef;
+
+    // Checkpoint state
+    private bool _showCheckpointModal;
+    private Guid? _checkpointExecutionId;
+    private string? _checkpointPreviewJson;
 
     // UI state
     private string _activeTab = "pipeline";
@@ -1764,6 +1795,20 @@ else
             });
         });
 
+        _hubConnection.On<ExecutionDetailResponse>("CheckpointWaitingForReview", result =>
+        {
+            InvokeAsync(() =>
+            {
+                _checkpointExecutionId = result.Id;
+                var pausedStep = result.Steps?.FirstOrDefault(s => s.Status == "WaitingForCheckpoint");
+                _checkpointPreviewJson = pausedStep?.InputData;
+                _showCheckpointModal = true;
+                _executing = false;
+                StopPolling();
+                StateHasChanged();
+            });
+        });
+
         _hubConnection.On<OrchestratorTaskProgressEntry>("OrchestratorTaskProgress", progress =>
         {
             InvokeAsync(() =>
@@ -1817,6 +1862,27 @@ else
 
                 // Still running — nothing to do
                 if (latest.Status == "Running") return;
+
+                // Checkpoint waiting for review — open modal
+                if (latest.Status == "WaitingForCheckpoint")
+                {
+                    var cpDetail = await Api.GetExecutionDetailAsync(latest.Id);
+                    if (cpDetail is not null)
+                    {
+                        _executions = execs;
+                        await InvokeAsync(() =>
+                        {
+                            _checkpointExecutionId = cpDetail.Id;
+                            var pausedStep = cpDetail.Steps?.FirstOrDefault(s => s.Status == "WaitingForCheckpoint");
+                            _checkpointPreviewJson = pausedStep?.InputData;
+                            _showCheckpointModal = true;
+                            _executing = false;
+                            StopPolling();
+                            StateHasChanged();
+                        });
+                    }
+                    return;
+                }
 
                 // Orchestrator waiting for review — open modal
                 if (latest.Status == "WaitingForReview")
@@ -2727,6 +2793,32 @@ else
         await Api.CancelExecutionAsync(ProjectId);
     }
 
+    private async Task ReviewCheckpoint(bool approved)
+    {
+        if (_checkpointExecutionId is null) return;
+        _showCheckpointModal = false;
+        _checkpointPreviewJson = null;
+
+        if (!approved)
+        {
+            _executing = false;
+            _ = Api.CheckpointReviewAsync(_checkpointExecutionId.Value, false);
+            _checkpointExecutionId = null;
+            return;
+        }
+
+        _executing = true;
+        _activeTab = "pipeline";
+        try
+        {
+            var (ok, error) = await Api.CheckpointReviewAsync(_checkpointExecutionId.Value, true);
+            if (!ok) { _execError = error; _executing = false; }
+            else StartPolling();
+        }
+        catch (Exception ex) { _execError = $"Error: {ex.Message}"; _executing = false; }
+        _checkpointExecutionId = null;
+    }
+
     private async Task ViewExecution(Guid id)
     {
         _showExecDetailModal = true;
@@ -3271,6 +3363,7 @@ else
         "Running" => "badge-warning",
         "WaitingForInput" => "badge-info",
         "WaitingForReview" => "badge-info",
+        "WaitingForCheckpoint" => "badge-warning",
         "Rejected" => "badge-danger",
         "Cancelled" => "badge-warning",
         _ => "badge-info"

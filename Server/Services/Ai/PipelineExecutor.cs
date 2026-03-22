@@ -66,6 +66,9 @@ namespace Server.Services.Ai
         private static bool IsOrchestratorStep(AiModule module) =>
             module.ModuleType == "Orchestrator";
 
+        private static bool IsCheckpointStep(AiModule module) =>
+            module.ModuleType == "Checkpoint";
+
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
@@ -93,7 +96,7 @@ namespace Server.Services.Ai
 
                 // Interaction and Publish steps don't need API key validation
                 // Also skip modules without ApiKeyId (e.g. system modules) — they have their own validation
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -311,6 +314,55 @@ namespace Server.Services.Ai
                         }
 
                         continue;
+                    }
+
+                    // ── Checkpoint step: pause pipeline for user review ──
+                    if (IsCheckpointStep(pm.AiModule))
+                    {
+                        var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType,
+                            pm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                        // Collect all received data to show in the review modal
+                        var checkpointData = new Dictionary<string, object>();
+                        for (var ci = 0; ci < inputs.Count; ci++)
+                            checkpointData[$"input_{ci + 1}"] = inputs[ci];
+
+                        // Also include outputs from previous steps connected to this checkpoint
+                        foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderBy(k => k))
+                        {
+                            if (stepOutputs.TryGetValue(prevOrder, out var prevOut))
+                            {
+                                var key = $"step_{prevOrder}";
+                                if (!string.IsNullOrWhiteSpace(prevOut.Content))
+                                    checkpointData[key] = prevOut.Content;
+                                else if (prevOut.Items.Count > 0)
+                                    checkpointData[key] = string.Join("\n", prevOut.Items.Select(i => i.Content));
+                            }
+                        }
+
+                        var inputJson = JsonSerializer.Serialize(checkpointData, new JsonSerializerOptions { WriteIndented = true });
+
+                        // Save pause state
+                        var pauseState = new PausedPipelineState
+                        {
+                            UserInput = userInput,
+                            StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value)),
+                            StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+                        };
+
+                        stepExecution.Status = "WaitingForCheckpoint";
+                        stepExecution.InputData = inputJson;
+                        execution.PausedAtStepOrder = pm.StepOrder;
+                        execution.PausedStepData = JsonSerializer.Serialize(pauseState);
+                        execution.Status = "WaitingForCheckpoint";
+                        await db.SaveChangesAsync();
+
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Checkpoint: pipeline pausado esperando revision del usuario",
+                            pm.StepOrder, stepName);
+                        await _logger.LogStepProgressAsync(projectId, pm.Id, "WaitingForCheckpoint");
+
+                        return execution;
                     }
 
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
@@ -3135,6 +3187,292 @@ Datos de la ejecucion:
             throw new NotSupportedException("El orquestador ya no requiere revision. Use ejecucion directa.");
         }
 
+        public async Task<ProjectExecution> ResumeFromCheckpointAsync(
+            Guid executionId, bool approved, UserDbContext db, string tenantDbName, CancellationToken ct = default)
+        {
+            _logger = _baseLogger.WithDb(db);
+
+            var execution = await db.ProjectExecutions
+                .Include(e => e.StepExecutions)
+                .FirstOrDefaultAsync(e => e.Id == executionId)
+                ?? throw new InvalidOperationException("Ejecucion no encontrada");
+
+            if (execution.Status != "WaitingForCheckpoint")
+                throw new InvalidOperationException($"La ejecucion no esta esperando checkpoint (status={execution.Status})");
+
+            var project = await db.Projects
+                .Include(p => p.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder))
+                    .ThenInclude(pm => pm.AiModule)
+                        .ThenInclude(m => m!.ApiKey)
+                .FirstAsync(p => p.Id == execution.ProjectId);
+
+            var pausedStep = execution.PausedAtStepOrder
+                ?? throw new InvalidOperationException("No se encontro el paso pausado");
+
+            var checkpointStepExec = execution.StepExecutions.First(s => s.StepOrder == pausedStep);
+
+            if (!approved)
+            {
+                checkpointStepExec.Status = "Cancelled";
+                checkpointStepExec.CompletedAt = DateTime.UtcNow;
+                execution.PausedAtStepOrder = null;
+                execution.PausedStepData = null;
+                execution.Status = "Cancelled";
+                execution.CompletedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(project.Id, execution.Id, "warning",
+                    "Checkpoint: el usuario aborto la ejecucion");
+                return execution;
+            }
+
+            // Restore pause state
+            var pauseData = !string.IsNullOrEmpty(execution.PausedStepData)
+                ? JsonSerializer.Deserialize<PausedPipelineState>(execution.PausedStepData) ?? new PausedPipelineState()
+                : new PausedPipelineState();
+
+            var stepOutputs = new Dictionary<int, StepOutput>();
+            foreach (var kv in pauseData.StepOutputs)
+                if (int.TryParse(kv.Key, out var k))
+                    stepOutputs[k] = JsonSerializer.Deserialize<StepOutput>(kv.Value) ?? new StepOutput();
+
+            var stepModuleTypes = new Dictionary<int, string>();
+            foreach (var kv in pauseData.StepModuleTypes)
+                if (int.TryParse(kv.Key, out var k))
+                    stepModuleTypes[k] = kv.Value;
+
+            var stepResults = new Dictionary<int, AiResult>();
+
+            // Mark checkpoint step as completed — pass-through: outputs = inputs
+            checkpointStepExec.Status = "Completed";
+            checkpointStepExec.CompletedAt = DateTime.UtcNow;
+            checkpointStepExec.OutputData = checkpointStepExec.InputData; // pass-through
+
+            // Build StepOutput for the checkpoint so downstream steps can consume it
+            var checkpointOutput = new StepOutput
+            {
+                Type = "checkpoint",
+                Content = checkpointStepExec.InputData ?? "",
+                Summary = "Checkpoint aprobado",
+                Metadata = new Dictionary<string, object> { ["approved"] = true }
+            };
+            stepOutputs[pausedStep] = checkpointOutput;
+            stepModuleTypes[pausedStep] = "Checkpoint";
+
+            // Clear pause state
+            execution.PausedAtStepOrder = null;
+            execution.PausedStepData = null;
+            execution.Status = "Running";
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                "Checkpoint: usuario confirmo, reanudando ejecucion...");
+            await _logger.LogStepProgressAsync(project.Id,
+                project.ProjectModules.First(m => m.StepOrder == pausedStep).Id, "Completed");
+
+            // Continue execution from the step AFTER the checkpoint
+            var allModules = project.ProjectModules.OrderBy(m => m.StepOrder).ToList();
+            var remainingModules = allModules
+                .Where(m => m.BranchId == "main" && m.StepOrder > pausedStep)
+                .OrderBy(m => m.StepOrder).ToList();
+            var branchModules = allModules.Where(m => m.BranchId != "main")
+                .GroupBy(m => m.BranchId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
+
+            var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
+            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, execution.ProjectId, execution.Id);
+            var userInput = pauseData.UserInput;
+            var projectId = project.Id;
+
+            for (var mi = 0; mi < remainingModules.Count; mi++)
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    execution.Status = "Cancelled";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    return execution;
+                }
+
+                var pm = remainingModules[mi];
+                var stepName = pm.StepName ?? pm.AiModule.Name;
+
+                var stepExecution = new StepExecution
+                {
+                    Id = Guid.NewGuid(),
+                    ExecutionId = execution.Id,
+                    ProjectModuleId = pm.Id,
+                    StepOrder = pm.StepOrder,
+                    Status = "Running",
+                    CreatedAt = DateTime.UtcNow,
+                };
+                db.StepExecutions.Add(stepExecution);
+                execution.StepExecutions.Add(stepExecution);
+                await db.SaveChangesAsync();
+                await _logger.LogStepProgressAsync(projectId, pm.Id, "Running");
+
+                try
+                {
+                    // Checkpoint steps in the remaining pipeline also pause
+                    if (IsCheckpointStep(pm.AiModule))
+                    {
+                        var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType,
+                            pm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                        var checkpointData = new Dictionary<string, object>();
+                        for (var ci = 0; ci < inputs.Count; ci++)
+                            checkpointData[$"input_{ci + 1}"] = inputs[ci];
+
+                        foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderBy(k => k))
+                        {
+                            if (stepOutputs.TryGetValue(prevOrder, out var prevOut))
+                            {
+                                var key = $"step_{prevOrder}";
+                                if (!string.IsNullOrWhiteSpace(prevOut.Content))
+                                    checkpointData[key] = prevOut.Content;
+                                else if (prevOut.Items.Count > 0)
+                                    checkpointData[key] = string.Join("\n", prevOut.Items.Select(i => i.Content));
+                            }
+                        }
+
+                        var inputJson = JsonSerializer.Serialize(checkpointData, new JsonSerializerOptions { WriteIndented = true });
+
+                        var newPauseState = new PausedPipelineState
+                        {
+                            UserInput = userInput,
+                            StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value)),
+                            StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+                        };
+
+                        stepExecution.Status = "WaitingForCheckpoint";
+                        stepExecution.InputData = inputJson;
+                        execution.PausedAtStepOrder = pm.StepOrder;
+                        execution.PausedStepData = JsonSerializer.Serialize(newPauseState);
+                        execution.Status = "WaitingForCheckpoint";
+                        await db.SaveChangesAsync();
+                        await _logger.LogStepProgressAsync(projectId, pm.Id, "WaitingForCheckpoint");
+                        return execution;
+                    }
+
+                    // Skip interaction/publish/design/orchestrator — same as main loop
+                    if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule))
+                    {
+                        stepExecution.Status = "Skipped";
+                        stepExecution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        continue;
+                    }
+
+                    var apiKey = pm.AiModule.ApiKey?.EncryptedKey
+                        ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
+                    var provider = _registry.GetProvider(pm.AiModule.ProviderType)
+                        ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: proveedor no encontrado");
+
+                    var config = new Dictionary<string, object>();
+                    if (!string.IsNullOrEmpty(pm.AiModule.Configuration))
+                    {
+                        try
+                        {
+                            using var cfgDoc = JsonDocument.Parse(pm.AiModule.Configuration);
+                            foreach (var prop in cfgDoc.RootElement.EnumerateObject())
+                                config[prop.Name] = prop.Value.Clone();
+                        }
+                        catch { }
+                    }
+
+                    var inputs2 = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType,
+                        pm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                    var ctx2 = new AiExecutionContext
+                    {
+                        ModuleType = pm.AiModule.ModuleType,
+                        ModelName = pm.AiModule.ModelName,
+                        ApiKey = apiKey,
+                        Input = inputs2.Count > 0 ? inputs2[0] : "",
+                        ProjectContext = project.Context,
+                        Configuration = config,
+                    };
+
+                    var result = await provider.ExecuteAsync(ctx2);
+                    stepResults[pm.StepOrder] = result;
+                    stepModuleTypes[pm.StepOrder] = pm.AiModule.ModuleType;
+                    stepExecution.EstimatedCost += result.EstimatedCost;
+
+                    if (!result.Success)
+                    {
+                        await FailStep(stepExecution, execution, result.Error!, db);
+                        return execution;
+                    }
+
+                    // Handle file/text output (simplified — covers common cases)
+                    if (result.FileOutput is not null)
+                    {
+                        var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                        Directory.CreateDirectory(stepDir);
+                        var ext = GetExtension(result.ContentType ?? "application/octet-stream");
+                        var fileName = $"output{ext}";
+                        await File.WriteAllBytesAsync(Path.Combine(stepDir, fileName), result.FileOutput);
+
+                        var execFile = new ExecutionFile
+                        {
+                            Id = Guid.NewGuid(), StepExecutionId = stepExecution.Id,
+                            FileName = fileName, ContentType = result.ContentType ?? "application/octet-stream",
+                            FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
+                            Direction = "Output", FileSize = result.FileOutput.Length,
+                            CreatedAt = DateTime.UtcNow,
+                        };
+                        db.ExecutionFiles.Add(execFile);
+
+                        var outputFiles = new List<OutputFile>
+                        {
+                            new() { FileId = execFile.Id, FileName = fileName, ContentType = execFile.ContentType, FileSize = execFile.FileSize }
+                        };
+
+                        StepOutput fileOutput;
+                        if (result.ContentType?.StartsWith("video/") == true)
+                            fileOutput = OutputSchemaHelper.BuildVideoOutput(outputFiles, pm.AiModule.ModelName, result.Metadata);
+                        else if (result.ContentType?.StartsWith("image/") == true)
+                            fileOutput = OutputSchemaHelper.BuildImageOutput(outputFiles, pm.AiModule.ModelName);
+                        else if (result.ContentType?.StartsWith("audio/") == true)
+                            fileOutput = OutputSchemaHelper.BuildAudioOutput(outputFiles, pm.AiModule.ModelName);
+                        else
+                            fileOutput = OutputSchemaHelper.BuildVideoOutput(outputFiles, pm.AiModule.ModelName, result.Metadata);
+
+                        stepOutputs[pm.StepOrder] = fileOutput;
+                        stepExecution.OutputData = JsonSerializer.Serialize(fileOutput);
+                    }
+                    else if (!string.IsNullOrEmpty(result.TextOutput))
+                    {
+                        var output = new StepOutput
+                        {
+                            Type = "text",
+                            Content = result.TextOutput,
+                            Summary = result.TextOutput.Length > 200 ? result.TextOutput[..200] + "..." : result.TextOutput,
+                            Metadata = new Dictionary<string, object> { ["model"] = pm.AiModule.ModelName }
+                        };
+                        stepOutputs[pm.StepOrder] = output;
+                        stepExecution.OutputData = JsonSerializer.Serialize(output);
+                    }
+
+                    stepExecution.Status = "Completed";
+                    stepExecution.CompletedAt = DateTime.UtcNow;
+                    await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
+                }
+                catch (Exception ex)
+                {
+                    await FailStep(stepExecution, execution, ex.Message, db);
+                    return execution;
+                }
+            }
+
+            execution.Status = "Completed";
+            execution.CompletedAt = DateTime.UtcNow;
+            execution.TotalEstimatedCost = execution.StepExecutions.Sum(s => s.EstimatedCost);
+            await db.SaveChangesAsync();
+            return execution;
+        }
+
         // Serializable pause state
         private class PausedPipelineState
         {
@@ -3919,7 +4257,7 @@ Datos de la ejecucion:
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))

@@ -185,6 +185,15 @@ public static class ModulePortRegistry
                 ports.Add(new("output_response", "Respuesta", PortDataType.Text, isInput: false));
                 break;
 
+            case "Checkpoint":
+                var checkpointPorts = Math.Max(sceneCount, 1);
+                for (int i = 1; i <= checkpointPorts; i++)
+                {
+                    ports.Add(new($"input_{i}", $"Entrada {i}", PortDataType.Any, isInput: true));
+                    ports.Add(new($"output_{i}", $"Salida {i}", PortDataType.Any, isInput: false));
+                }
+                break;
+
             case "Publish":
                 ports.Add(new("input_content", "Contenido", PortDataType.Any, isInput: true, isRequired: true));
                 ports.Add(new("output_result", "Resultado", PortDataType.Text, isInput: false));
@@ -228,6 +237,7 @@ public static class ModulePortRegistry
         "Interaction" => "\u1F4AC",
         "Publish" => "\u1F4E4",
         "Embeddings" => "\u1F9EE",
+        "Checkpoint" => "\u2714",
         _ => "\u2699"
     };
 
@@ -245,6 +255,7 @@ public static class ModulePortRegistry
         "Interaction" => "#26a69a",
         "Publish" => "#ab47bc",
         "Embeddings" => "#78909c",
+        "Checkpoint" => "#f44336",
         _ => "#888"
     };
 }
