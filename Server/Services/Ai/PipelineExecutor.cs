@@ -3423,7 +3423,13 @@ Datos de la ejecucion:
 
                         if (!string.IsNullOrEmpty(result.TextOutput))
                         {
-                            var output = OutputSchemaHelper.BuildTextOutput(result.TextOutput, pm.AiModule.ModelName);
+                            var output = new StepOutput
+                            {
+                                Type = "text",
+                                Content = result.TextOutput,
+                                Summary = result.TextOutput.Length > 200 ? result.TextOutput[..200] + "..." : result.TextOutput,
+                                Metadata = new Dictionary<string, object> { ["model"] = pm.AiModule.ModelName }
+                            };
                             stepOutputs[pm.StepOrder] = output;
                             stepExecution.OutputData = JsonSerializer.Serialize(output);
                         }
