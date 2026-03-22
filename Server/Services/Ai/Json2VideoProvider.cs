@@ -203,7 +203,7 @@ namespace Server.Services.Ai
                     ["projectId"] = projectIdStr,
                     ["duration"] = duration,
                     ["renderingTime"] = renderTime,
-                    ["resolution"] = resolution,
+                    ["resolution"] = settings.Resolution,
                     ["videoUrl"] = videoUrl,
                 });
                 result.EstimatedCost = PricingCatalog.EstimateVideoEditCost(duration);

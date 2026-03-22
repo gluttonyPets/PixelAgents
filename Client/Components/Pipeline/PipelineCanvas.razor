@@ -182,7 +182,7 @@
                             <div class="inspector-field">
                                 <label>Resolucion</label>
                                 <select value="@GetModuleConfig(sel.Id, "resolution", "full-hd")"
-                                        @onchange="e => SetModuleConfig(sel.Id, \"resolution\", e.Value?.ToString() ?? \"full-hd\")">
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "resolution", e.Value?.ToString() ?? "full-hd"))">
                                     <option value="sd">SD (640x480)</option>
                                     <option value="hd">HD (1280x720)</option>
                                     <option value="full-hd">Full HD (1920x1080)</option>
@@ -196,7 +196,7 @@
                             <div class="inspector-field">
                                 <label>Calidad</label>
                                 <select value="@GetModuleConfig(sel.Id, "quality", "high")"
-                                        @onchange="e => SetModuleConfig(sel.Id, \"quality\", e.Value?.ToString() ?? \"high\")">
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "quality", e.Value?.ToString() ?? "high"))">
                                     <option value="low">Baja</option>
                                     <option value="medium">Media</option>
                                     <option value="high">Alta</option>
@@ -205,7 +205,7 @@
                             <div class="inspector-field">
                                 <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
                                     <input type="checkbox" checked="@GetRequireConfirmation(sel.Id)"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"requireConfirmation\", ((bool)(e.Value ?? false)).ToString().ToLower())" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "requireConfirmation", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
                                     Confirmar antes de generar
                                 </label>
                                 <p class="text-sm text-muted" style="margin-top: 0.15rem;">Evita gastar creditos por error.</p>
@@ -213,7 +213,7 @@
                             <div class="inspector-field">
                                 <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
                                     <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "cache", true)"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"cache\", ((bool)(e.Value ?? true)).ToString().ToLower())" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "cache", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
                                     Cache
                                 </label>
                                 <p class="text-sm text-muted" style="margin-top: 0.15rem;">Reutiliza escenas sin cambios para renderizar mas rapido.</p>
@@ -226,7 +226,7 @@
                             <div class="inspector-field">
                                 <label>Estilo</label>
                                 <select value="@GetModuleConfig(sel.Id, "transitionStyle", "none")"
-                                        @onchange="e => SetModuleConfig(sel.Id, \"transitionStyle\", e.Value?.ToString() ?? \"none\")">
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "transitionStyle", e.Value?.ToString() ?? "none"))">
                                     <option value="none">Ninguna</option>
                                     <option value="fade">Fade</option>
                                     <option value="circleopen">Circle Open</option>
@@ -239,7 +239,7 @@
                                     <label>Duracion (s)</label>
                                     <input type="number" min="0.1" max="5" step="0.1"
                                            value="@GetModuleConfig(sel.Id, "transitionDuration", "1")"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"transitionDuration\", e.Value?.ToString() ?? \"1\")" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "transitionDuration", e.Value?.ToString() ?? "1"))" />
                                 </div>
                             }
                         </div>
@@ -250,7 +250,7 @@
                             <div class="inspector-field">
                                 <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
                                     <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "enableVoice", true)"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"enableVoice\", ((bool)(e.Value ?? true)).ToString().ToLower())" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "enableVoice", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
                                     Habilitar voz
                                 </label>
                             </div>
@@ -259,7 +259,7 @@
                                 <div class="inspector-field">
                                     <label>Proveedor</label>
                                     <select value="@GetModuleConfig(sel.Id, "voiceModel", "azure")"
-                                            @onchange="e => SetModuleConfig(sel.Id, \"voiceModel\", e.Value?.ToString() ?? \"azure\")">
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "voiceModel", e.Value?.ToString() ?? "azure"))">
                                         <option value="azure">Azure (gratis)</option>
                                         <option value="elevenlabs">ElevenLabs (60 cred/min)</option>
                                         <option value="elevenlabs-flash-v2-5">ElevenLabs Flash v2.5</option>
@@ -269,7 +269,7 @@
                                     <label>Nombre de voz</label>
                                     <input value="@GetModuleConfig(sel.Id, "voiceName", "es-ES-AlvaroNeural")"
                                            placeholder="es-ES-AlvaroNeural"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"voiceName\", e.Value?.ToString() ?? \"es-ES-AlvaroNeural\")" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "voiceName", e.Value?.ToString() ?? "es-ES-AlvaroNeural"))" />
                                     <p class="text-sm text-muted" style="margin-top: 0.1rem;">Azure: es-ES-AlvaroNeural, en-US-EmmaMultilingualNeural, etc.</p>
                                 </div>
                                 @if (GetModuleConfig(sel.Id, "voiceModel", "azure").StartsWith("elevenlabs"))
@@ -278,7 +278,7 @@
                                         <label>Velocidad (0.7 - 1.2)</label>
                                         <input type="number" min="0.7" max="1.2" step="0.05"
                                                value="@GetModuleConfig(sel.Id, "voiceSpeed", "1.0")"
-                                               @onchange="e => SetModuleConfig(sel.Id, \"voiceSpeed\", e.Value?.ToString() ?? \"1.0\")" />
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "voiceSpeed", e.Value?.ToString() ?? "1.0"))" />
                                     </div>
                                 }
                             }
@@ -290,7 +290,7 @@
                             <div class="inspector-field">
                                 <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
                                     <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "enableSubtitles", true)"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"enableSubtitles\", ((bool)(e.Value ?? true)).ToString().ToLower())" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "enableSubtitles", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
                                     Habilitar subtitulos
                                 </label>
                             </div>
@@ -299,7 +299,7 @@
                                 <div class="inspector-field">
                                     <label>Idioma</label>
                                     <select value="@GetModuleConfig(sel.Id, "subtitleLanguage", "es")"
-                                            @onchange="e => SetModuleConfig(sel.Id, \"subtitleLanguage\", e.Value?.ToString() ?? \"es\")">
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "subtitleLanguage", e.Value?.ToString() ?? "es"))">
                                         <option value="es">Espanol</option>
                                         <option value="en">Ingles</option>
                                         <option value="pt">Portugues</option>
@@ -312,7 +312,7 @@
                                 <div class="inspector-field">
                                     <label>Modelo de transcripcion</label>
                                     <select value="@GetModuleConfig(sel.Id, "subtitleModel", "default")"
-                                            @onchange="e => SetModuleConfig(sel.Id, \"subtitleModel\", e.Value?.ToString() ?? \"default\")">
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "subtitleModel", e.Value?.ToString() ?? "default"))">
                                         <option value="default">Default (mas preciso)</option>
                                         <option value="whisper">Whisper (mas idiomas)</option>
                                     </select>
@@ -320,7 +320,7 @@
                                 <div class="inspector-field">
                                     <label>Estilo</label>
                                     <select value="@GetModuleConfig(sel.Id, "subtitleStyle", "boxed")"
-                                            @onchange="e => SetModuleConfig(sel.Id, \"subtitleStyle\", e.Value?.ToString() ?? \"boxed\")">
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "subtitleStyle", e.Value?.ToString() ?? "boxed"))">
                                         <option value="classic">Classic</option>
                                         <option value="classic-progressive">Classic Progressive</option>
                                         <option value="boxed-line">Boxed Line</option>
@@ -331,18 +331,18 @@
                                     <label>Fuente</label>
                                     <input value="@GetModuleConfig(sel.Id, "subtitleFontFamily", "Arial")"
                                            placeholder="Arial"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"subtitleFontFamily\", e.Value?.ToString() ?? \"Arial\")" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "subtitleFontFamily", e.Value?.ToString() ?? "Arial"))" />
                                 </div>
                                 <div class="inspector-field">
                                     <label>Tamano de fuente</label>
                                     <input type="number" min="20" max="300" step="10"
                                            value="@GetModuleConfig(sel.Id, "subtitleFontSize", "120")"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"subtitleFontSize\", e.Value?.ToString() ?? \"120\")" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "subtitleFontSize", e.Value?.ToString() ?? "120"))" />
                                 </div>
                                 <div class="inspector-field">
                                     <label>Posicion</label>
                                     <select value="@GetModuleConfig(sel.Id, "subtitlePosition", "bottom-center")"
-                                            @onchange="e => SetModuleConfig(sel.Id, \"subtitlePosition\", e.Value?.ToString() ?? \"bottom-center\")">
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "subtitlePosition", e.Value?.ToString() ?? "bottom-center"))">
                                         <option value="top-center">Arriba centro</option>
                                         <option value="center">Centro</option>
                                         <option value="bottom-center">Abajo centro</option>
@@ -352,37 +352,37 @@
                                     <label>Palabras por linea</label>
                                     <input type="number" min="1" max="20" step="1"
                                            value="@GetModuleConfig(sel.Id, "subtitleMaxWordsPerLine", "4")"
-                                           @onchange="e => SetModuleConfig(sel.Id, \"subtitleMaxWordsPerLine\", e.Value?.ToString() ?? \"4\")" />
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "subtitleMaxWordsPerLine", e.Value?.ToString() ?? "4"))" />
                                     <p class="text-sm text-muted" style="margin-top: 0.1rem;">1 = efecto karaoke (palabra por palabra)</p>
                                 </div>
                                 <div class="ve-color-row">
                                     <div class="inspector-field" style="flex: 1;">
                                         <label>Color linea</label>
                                         <input type="color" value="@GetModuleConfig(sel.Id, "subtitleLineColor", "#FFFFFF")"
-                                               @onchange="e => SetModuleConfig(sel.Id, \"subtitleLineColor\", e.Value?.ToString() ?? \"#FFFFFF\")" />
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "subtitleLineColor", e.Value?.ToString() ?? "#FFFFFF"))" />
                                     </div>
                                     <div class="inspector-field" style="flex: 1;">
                                         <label>Color palabra</label>
                                         <input type="color" value="@GetModuleConfig(sel.Id, "subtitleWordColor", "#FFFF00")"
-                                               @onchange="e => SetModuleConfig(sel.Id, \"subtitleWordColor\", e.Value?.ToString() ?? \"#FFFF00\")" />
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "subtitleWordColor", e.Value?.ToString() ?? "#FFFF00"))" />
                                     </div>
                                     <div class="inspector-field" style="flex: 1;">
                                         <label>Color fondo</label>
                                         <input type="color" value="@(GetModuleConfig(sel.Id, "subtitleBoxColor", "#000000CC").Length > 7 ? GetModuleConfig(sel.Id, "subtitleBoxColor", "#000000CC")[..7] : GetModuleConfig(sel.Id, "subtitleBoxColor", "#000000"))"
-                                               @onchange="e => SetModuleConfig(sel.Id, \"subtitleBoxColor\", (e.Value?.ToString() ?? \"#000000\") + \"CC\")" />
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "subtitleBoxColor", (e.Value?.ToString() ?? "#000000") + "CC"))" />
                                     </div>
                                 </div>
                                 <div class="ve-color-row">
                                     <div class="inspector-field" style="flex: 1;">
                                         <label>Color borde</label>
                                         <input type="color" value="@(GetModuleConfig(sel.Id, "subtitleOutlineColor", "#000000"))"
-                                               @onchange="e => SetModuleConfig(sel.Id, \"subtitleOutlineColor\", e.Value?.ToString() ?? \"#000000\")" />
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "subtitleOutlineColor", e.Value?.ToString() ?? "#000000"))" />
                                     </div>
                                     <div class="inspector-field" style="flex: 1;">
                                         <label>Grosor borde</label>
                                         <input type="number" min="0" max="10" step="1"
                                                value="@GetModuleConfig(sel.Id, "subtitleOutlineWidth", "0")"
-                                               @onchange="e => SetModuleConfig(sel.Id, \"subtitleOutlineWidth\", e.Value?.ToString() ?? \"0\")" />
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "subtitleOutlineWidth", e.Value?.ToString() ?? "0"))" />
                                     </div>
                                 </div>
                             }
