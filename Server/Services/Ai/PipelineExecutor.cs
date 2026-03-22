@@ -911,10 +911,14 @@ namespace Server.Services.Ai
                             pm.StepOrder, stepName);
 
                         // ── Check requireConfirmation: pause pipeline so user can review ──
-                        var requireConfirm = config.TryGetValue("requireConfirmation", out var rcVal)
-                            && (rcVal is JsonElement rcEl
-                                ? rcEl.ValueKind == JsonValueKind.True || (rcEl.ValueKind == JsonValueKind.String && rcEl.GetString() == "true")
-                                : rcVal?.ToString()?.Equals("true", StringComparison.OrdinalIgnoreCase) == true);
+                        // Default to TRUE for VideoEdit steps – only skip if explicitly set to "false"
+                        var requireConfirm = true;
+                        if (config.TryGetValue("requireConfirmation", out var rcVal))
+                        {
+                            requireConfirm = rcVal is JsonElement rcEl
+                                ? !(rcEl.ValueKind == JsonValueKind.False || (rcEl.ValueKind == JsonValueKind.String && rcEl.GetString()?.Equals("false", StringComparison.OrdinalIgnoreCase) == true))
+                                : !(rcVal?.ToString()?.Equals("false", StringComparison.OrdinalIgnoreCase) == true);
+                        }
 
                         if (requireConfirm)
                         {
