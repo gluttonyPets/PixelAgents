@@ -860,7 +860,7 @@ a.link:hover { text-decoration: underline; }
     z-index: 1000;
 }
 .modal-content {
-    background: var(--surface);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 0.6rem;
     width: 90%; max-width: 700px; max-height: 85vh;
