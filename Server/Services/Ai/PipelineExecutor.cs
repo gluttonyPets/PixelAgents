@@ -2724,6 +2724,56 @@ Datos de la ejecucion:
                         continue;
                     }
 
+                    // Handle checkpoint step during resume
+                    if (IsCheckpointStep(pm.AiModule))
+                    {
+                        var checkpointInputs = ResolveInputs(pm, pauseState.UserInput, stepResults, stepOutputs, pm.AiModule.ModuleType,
+                            pm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                        var checkpointData = new Dictionary<string, object>();
+                        for (var ci = 0; ci < checkpointInputs.Count; ci++)
+                            checkpointData[$"input_{ci + 1}"] = checkpointInputs[ci];
+
+                        foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderBy(k => k))
+                        {
+                            if (stepOutputs.TryGetValue(prevOrder, out var prevOut))
+                            {
+                                var key = $"step_{prevOrder}";
+                                if (!string.IsNullOrWhiteSpace(prevOut.Content))
+                                    checkpointData[key] = prevOut.Content;
+                                else if (prevOut.Items.Count > 0)
+                                    checkpointData[key] = string.Join("\n", prevOut.Items.Select(i => i.Content));
+                            }
+                        }
+
+                        var inputJson = JsonSerializer.Serialize(checkpointData, new JsonSerializerOptions { WriteIndented = true });
+
+                        var newPauseState = new PausedPipelineState
+                        {
+                            UserInput = pauseState.UserInput,
+                            StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value)),
+                            StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+                        };
+
+                        stepExecution.Status = "WaitingForCheckpoint";
+                        stepExecution.InputData = inputJson;
+                        execution.PausedAtStepOrder = pm.StepOrder;
+                        execution.PausedStepData = JsonSerializer.Serialize(newPauseState);
+                        execution.Status = "WaitingForCheckpoint";
+                        await db.SaveChangesAsync();
+                        await _logger.LogStepProgressAsync(project.Id, pm.Id, "WaitingForCheckpoint");
+                        return execution;
+                    }
+
+                    // Handle orchestrator step during resume
+                    if (IsOrchestratorStep(pm.AiModule))
+                    {
+                        stepExecution.Status = "Skipped";
+                        stepExecution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        continue;
+                    }
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
 
@@ -3575,6 +3625,28 @@ Datos de la ejecucion:
                         await HandleCanvaPublishStepAsync(
                             project, execution, branchStepExec, bpm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // Checkpoint steps in branches — pause the branch
+                    if (IsCheckpointStep(bpm.AiModule))
+                    {
+                        branchStepExec.Status = "WaitingForCheckpoint";
+                        branchStepExec.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                            $"[{branchId}] Checkpoint: rama pausada esperando revision",
+                            bpm.StepOrder, bStepName);
+                        await _logger.LogStepProgressAsync(project.Id, bpm.Id, "WaitingForCheckpoint");
+                        return BranchResult.Paused;
+                    }
+
+                    // Orchestrator steps in branches — skip (orchestration is handled at the main level)
+                    if (IsOrchestratorStep(bpm.AiModule))
+                    {
+                        branchStepExec.Status = "Skipped";
+                        branchStepExec.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
                         continue;
                     }
 
@@ -4490,6 +4562,24 @@ Datos de la ejecucion:
                         await HandleCanvaPublishStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // Handle checkpoint step during retry
+                    if (IsCheckpointStep(pm.AiModule))
+                    {
+                        stepExecution.Status = "Skipped";
+                        stepExecution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        continue;
+                    }
+
+                    // Handle orchestrator step during retry
+                    if (IsOrchestratorStep(pm.AiModule))
+                    {
+                        stepExecution.Status = "Skipped";
+                        stepExecution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
                         continue;
                     }
 
