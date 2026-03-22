@@ -1424,6 +1424,29 @@ app.MapPost("/api/projects/{projectId}/execute", async (
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"[Pipeline] Execution failed for project {projectId}: {ex}");
+
+            // Persist failure in DB so it shows in execution history
+            try
+            {
+                using var errScope = app.Services.CreateScope();
+                var errFactory = errScope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
+                await using var errDb = errFactory.Create(tenantDbName);
+
+                var stuckExec = await errDb.ProjectExecutions
+                    .FirstOrDefaultAsync(e => e.ProjectId == projectId && e.Status == "Running");
+                if (stuckExec is not null)
+                {
+                    stuckExec.Status = "Failed";
+                    stuckExec.CompletedAt = DateTime.UtcNow;
+                    await errDb.SaveChangesAsync();
+                }
+            }
+            catch (Exception dbEx)
+            {
+                Console.WriteLine($"[Pipeline] Failed to persist error state: {dbEx.Message}");
+            }
+
             await hub.Clients.Group(projectId.ToString())
                 .SendAsync("ExecutionFailed", ex.Message);
         }
