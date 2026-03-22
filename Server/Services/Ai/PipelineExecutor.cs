@@ -156,21 +156,32 @@ namespace Server.Services.Ai
                 stuck.PausedAtStepOrder = null;
                 stuck.PausedStepData = null;
                 stuck.PausedBranches = null;
-
-                var staleCorrs = await _coreDb.TelegramCorrelations
-                    .Where(c => !c.IsResolved && c.ExecutionId == stuck.Id)
-                    .ToListAsync();
-                foreach (var sc in staleCorrs) sc.IsResolved = true;
-
-                var staleWa = await _coreDb.WhatsAppCorrelations
-                    .Where(c => !c.IsResolved && c.ExecutionId == stuck.Id)
-                    .ToListAsync();
-                foreach (var sc in staleWa) sc.IsResolved = true;
             }
-            if (stuckExecutions.Count > 0)
+
+            // Also resolve any orphaned correlations from ALL previous executions of this project
+            // (not just WaitingForInput ones — Completed/Failed executions can leave stale correlations)
+            var allPrevExecutionIds = await db.ProjectExecutions
+                .Where(e => e.ProjectId == projectId && e.Id != executionId)
+                .Select(e => e.Id)
+                .ToListAsync();
+
+            var orphanedCorrs = await _coreDb.TelegramCorrelations
+                .Where(c => !c.IsResolved && allPrevExecutionIds.Contains(c.ExecutionId))
+                .ToListAsync();
+            foreach (var sc in orphanedCorrs) sc.IsResolved = true;
+
+            var orphanedWa = await _coreDb.WhatsAppCorrelations
+                .Where(c => !c.IsResolved && allPrevExecutionIds.Contains(c.ExecutionId))
+                .ToListAsync();
+            foreach (var sc in orphanedWa) sc.IsResolved = true;
+
+            if (stuckExecutions.Count > 0 || orphanedCorrs.Count > 0 || orphanedWa.Count > 0)
             {
                 await db.SaveChangesAsync();
                 await _coreDb.SaveChangesAsync();
+
+                if (orphanedCorrs.Count > 0 || orphanedWa.Count > 0)
+                    Console.WriteLine($"[Pipeline] Resolved {orphanedCorrs.Count} orphaned Telegram + {orphanedWa.Count} WhatsApp correlations from previous executions");
             }
 
             await _logger.LogAsync(projectId, executionId, "info",

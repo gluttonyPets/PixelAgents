@@ -164,6 +164,7 @@ namespace Server.Services.Telegram
                 }
 
                 // Default: resume pipeline (branch-aware)
+                Console.WriteLine($"[TG-Update] Resuming execution {correlation.ExecutionId}, branchId={correlation.BranchId ?? "(null)"}, stepOrder={correlation.StepOrder}");
                 if (!string.IsNullOrWhiteSpace(correlation.BranchId))
                 {
                     await _executor.ResumeFromBranchInteractionAsync(
@@ -182,6 +183,15 @@ namespace Server.Services.Telegram
             catch (Exception ex)
             {
                 Console.WriteLine($"[TG-Update] ERROR processing update for correlation {correlation.Id}: {ex}");
+
+                // Resolve the correlation to prevent infinite error loops —
+                // a failed resume should not block subsequent interactions
+                try
+                {
+                    correlation.IsResolved = true;
+                    await _coreDb.SaveChangesAsync();
+                }
+                catch { /* non-critical */ }
 
                 // Try to notify the user about the error
                 try
@@ -206,6 +216,10 @@ namespace Server.Services.Telegram
                 .OrderBy(c => c.CreatedAt) // FIFO: oldest unresolved first so user responds in send order
                 .Take(10) // safety limit
                 .ToListAsync();
+
+            Console.WriteLine($"[TG-Update] FindValidCorrelation: {candidates.Count} candidate(s) for chatId={chatId}");
+            foreach (var c in candidates)
+                Console.WriteLine($"  Candidate {c.Id}: execId={c.ExecutionId}, step={c.StepOrder}, branch={c.BranchId ?? "(null)"}, state={c.State}, created={c.CreatedAt:O}");
 
             foreach (var candidate in candidates)
             {
