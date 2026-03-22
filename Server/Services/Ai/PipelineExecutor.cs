@@ -3196,7 +3196,14 @@ Datos de la ejecucion:
                 CreatedAt = DateTime.UtcNow,
             });
 
-            stepExecution.InputData = JsonSerializer.Serialize(new { input, outputCount = outputs.Count });
+            stepExecution.InputData = JsonSerializer.Serialize(new
+            {
+                systemPrompt,
+                prompt = aiContext.Input,
+                projectContext = project.Context,
+                model = effectiveModel,
+                outputCount = outputs.Count,
+            });
 
             // 6. Store generated content as output items (no target module execution)
             var orchestratorOutputItems = new List<OutputItem>();

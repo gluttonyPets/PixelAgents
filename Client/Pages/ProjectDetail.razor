@@ -1039,15 +1039,24 @@ else
                                         else if (step.InputData is not null)
                                         {
                                             var inputParsed = ParseInputData(step.InputData);
-                                            @if (inputParsed?.Prompts.Count > 0)
+                                            @if (inputParsed is not null && (inputParsed.Prompts.Count > 0 || inputParsed.SystemPrompt is not null))
                                             {
                                                 <details style="margin-bottom: 0.3rem;">
                                                     <summary style="font-size: 0.7rem; cursor: pointer; color: var(--text-secondary); user-select: none;">
-                                                        Prompt enviado (@(inputParsed.Prompts.Count == 1 ? "1 prompt" : $"{inputParsed.Prompts.Count} prompts"))
+                                                        Datos enviados a la API
                                                     </summary>
-                                                    @foreach (var prompt in inputParsed.Prompts)
+                                                    @if (inputParsed.SystemPrompt is not null)
                                                     {
-                                                        <div class="output-block" style="font-size: 0.7rem; max-height: 80px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.2rem; background: var(--bg-secondary); padding: 0.3rem 0.5rem; border-radius: 4px;">@prompt</div>
+                                                        <div style="font-size: 0.65rem; font-weight: 600; color: var(--text-muted); margin-top: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em;">System Prompt</div>
+                                                        <div class="output-block" style="font-size: 0.68rem; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.15rem; background: var(--bg); padding: 0.35rem 0.5rem; border-radius: 4px; border-left: 2px solid var(--accent);">@inputParsed.SystemPrompt</div>
+                                                    }
+                                                    @if (inputParsed.Prompts.Count > 0)
+                                                    {
+                                                        <div style="font-size: 0.65rem; font-weight: 600; color: var(--text-muted); margin-top: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em;">@(inputParsed.Prompts.Count == 1 ? "Prompt" : $"{inputParsed.Prompts.Count} Prompts")</div>
+                                                        @foreach (var prompt in inputParsed.Prompts)
+                                                        {
+                                                            <div class="output-block" style="font-size: 0.68rem; max-height: 100px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.15rem; background: var(--bg); padding: 0.35rem 0.5rem; border-radius: 4px;">@prompt</div>
+                                                        }
                                                     }
                                                 </details>
                                             }
