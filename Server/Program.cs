@@ -1148,17 +1148,11 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     var module = await db.AiModules.FindAsync(req.AiModuleId);
     if (module is null) return Results.BadRequest(new { error = "Modulo no encontrado" });
 
-    // Check for StepOrder conflict and resolve it
-    var stepOrder = req.StepOrder;
-    var conflict = await db.ProjectModules.AnyAsync(x =>
-        x.ProjectId == projectId && x.BranchId == req.BranchId && x.StepOrder == stepOrder);
-    if (conflict)
-    {
-        var maxOrder = await db.ProjectModules
-            .Where(x => x.ProjectId == projectId && x.BranchId == req.BranchId)
-            .MaxAsync(x => (int?)x.StepOrder) ?? 0;
-        stepOrder = maxOrder + 1;
-    }
+    // Always assign next available StepOrder to avoid unique constraint violations
+    var maxOrder = await db.ProjectModules
+        .Where(x => x.ProjectId == projectId && x.BranchId == req.BranchId)
+        .MaxAsync(x => (int?)x.StepOrder) ?? -1;
+    var stepOrder = maxOrder + 1;
 
     var pm = new ProjectModule
     {
