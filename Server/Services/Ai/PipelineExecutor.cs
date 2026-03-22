@@ -309,6 +309,10 @@ namespace Server.Services.Ai
                                 return execution;
                             }
 
+                            // Checkpoint in branch pauses the entire execution
+                            if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                                return execution;
+
                             var orchBranchLevel = branchResult == BranchResult.Failed ? "warning"
                                 : branchResult == BranchResult.Paused ? "info" : "success";
                             var orchBranchMsg = branchResult == BranchResult.Failed
@@ -1149,6 +1153,10 @@ namespace Server.Services.Ai
                         await db.SaveChangesAsync();
                         return execution;
                     }
+
+                    // Checkpoint in branch pauses the entire execution
+                    if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                        return execution;
 
                     var branchLevel = branchResult == BranchResult.Failed ? "warning"
                         : branchResult == BranchResult.Paused ? "info" : "success";
@@ -3002,6 +3010,10 @@ Datos de la ejecucion:
                         return execution;
                     }
 
+                    // Checkpoint in branch pauses the entire execution
+                    if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                        return execution;
+
                     var branchLevel = branchResult == BranchResult.Failed ? "warning"
                         : branchResult == BranchResult.Paused ? "info" : "success";
                     var branchMsg = branchResult == BranchResult.Failed
@@ -3270,7 +3282,8 @@ Datos de la ejecucion:
             var pausedStep = execution.PausedAtStepOrder
                 ?? throw new InvalidOperationException("No se encontro el paso pausado");
 
-            var checkpointStepExec = execution.StepExecutions.First(s => s.StepOrder == pausedStep);
+            var checkpointStepExec = execution.StepExecutions
+                .First(s => s.StepOrder == pausedStep && s.Status == "WaitingForCheckpoint");
 
             if (!approved)
             {
@@ -3333,17 +3346,71 @@ Datos de la ejecucion:
 
             // Continue execution from the step AFTER the checkpoint
             var allModules = project.ProjectModules.OrderBy(m => m.StepOrder).ToList();
+            var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
+            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, execution.ProjectId, execution.Id);
+            var userInput = pauseData.UserInput;
+            var projectId = project.Id;
+
+            // ── Branch checkpoint: resume the branch, then check if everything is done ──
+            if (!string.IsNullOrEmpty(pauseData.BranchId))
+            {
+                var branchSteps = allModules
+                    .Where(m => m.BranchId == pauseData.BranchId && m.StepOrder > pausedStep)
+                    .OrderBy(m => m.StepOrder).ToList();
+
+                if (branchSteps.Count > 0)
+                {
+                    await _logger.LogAsync(projectId, execution.Id, "info",
+                        $"Reanudando rama '{pauseData.BranchId}' tras checkpoint aprobado ({branchSteps.Count} pasos restantes)");
+
+                    var branchResult = await ExecuteBranchStepsAsync(
+                        project, execution, pauseData.BranchId, branchSteps, userInput,
+                        stepResults, stepOutputs, stepModuleTypes,
+                        workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                    if (branchResult == BranchResult.Cancelled)
+                    {
+                        execution.Status = "Cancelled";
+                        execution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        return execution;
+                    }
+
+                    // Another checkpoint in the same branch — pause again
+                    if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                        return execution;
+
+                    var branchLevel = branchResult == BranchResult.Failed ? "warning" : "success";
+                    var branchMsg = branchResult == BranchResult.Failed
+                        ? $"Rama '{pauseData.BranchId}' fallo tras checkpoint"
+                        : $"Rama '{pauseData.BranchId}' completada tras checkpoint";
+                    await _logger.LogAsync(projectId, execution.Id, branchLevel, branchMsg);
+                }
+
+                // Check if all branches and main pipeline are done
+                var remainingPausedBranches = DeserializePausedBranches(execution.PausedBranches);
+                var mainStillPaused = execution.PausedAtStepOrder is not null;
+
+                if (remainingPausedBranches.Count == 0 && !mainStillPaused)
+                {
+                    execution.Status = "Completed";
+                    execution.CompletedAt = DateTime.UtcNow;
+                    execution.TotalEstimatedCost = execution.StepExecutions.Sum(s => s.EstimatedCost);
+                    await db.SaveChangesAsync();
+
+                    await _logger.LogAsync(projectId, execution.Id, "success", "Pipeline completado correctamente");
+                }
+
+                return execution;
+            }
+
+            // ── Main pipeline checkpoint: resume main steps ──
             var remainingModules = allModules
                 .Where(m => m.BranchId == "main" && m.StepOrder > pausedStep)
                 .OrderBy(m => m.StepOrder).ToList();
             var branchModules = allModules.Where(m => m.BranchId != "main")
                 .GroupBy(m => m.BranchId)
                 .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
-
-            var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
-            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, execution.ProjectId, execution.Id);
-            var userInput = pauseData.UserInput;
-            var projectId = project.Id;
 
             for (var mi = 0; mi < remainingModules.Count; mi++)
             {
@@ -3538,6 +3605,7 @@ Datos de la ejecucion:
         private class PausedPipelineState
         {
             public string? UserInput { get; set; }
+            public string? BranchId { get; set; }
             public Dictionary<string, string> StepOutputs { get; set; } = new();
             public Dictionary<string, string> StepModuleTypes { get; set; } = new();
         }
@@ -3633,14 +3701,49 @@ Datos de la ejecucion:
                         continue;
                     }
 
-                    // Checkpoint steps in branches — pause the branch
+                    // Checkpoint steps in branches — pause the ENTIRE execution for user review
                     if (IsCheckpointStep(bpm.AiModule))
                     {
+                        var checkpointInputs = ResolveInputs(bpm, userInput, stepResults, stepOutputs, bpm.AiModule.ModuleType,
+                            bpm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                        // Collect all received data to show in the review modal
+                        var checkpointData = new Dictionary<string, object>();
+                        for (var ci = 0; ci < checkpointInputs.Count; ci++)
+                            checkpointData[$"input_{ci + 1}"] = checkpointInputs[ci];
+
+                        foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderBy(k => k))
+                        {
+                            if (stepOutputs.TryGetValue(prevOrder, out var prevOut))
+                            {
+                                var key = $"step_{prevOrder}";
+                                if (!string.IsNullOrWhiteSpace(prevOut.Content))
+                                    checkpointData[key] = prevOut.Content;
+                                else if (prevOut.Items.Count > 0)
+                                    checkpointData[key] = string.Join("\n", prevOut.Items.Select(i => i.Content));
+                            }
+                        }
+
+                        var inputJson = JsonSerializer.Serialize(checkpointData, new JsonSerializerOptions { WriteIndented = true });
+
+                        // Save pause state with branch info so resume knows where to continue
+                        var pauseState = new PausedPipelineState
+                        {
+                            UserInput = userInput,
+                            BranchId = branchId,
+                            StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value)),
+                            StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+                        };
+
                         branchStepExec.Status = "WaitingForCheckpoint";
-                        branchStepExec.CompletedAt = DateTime.UtcNow;
+                        branchStepExec.InputData = inputJson;
+                        execution.PausedAtStepOrder = bpm.StepOrder;
+                        execution.PausedStepData = JsonSerializer.Serialize(pauseState);
+                        execution.Status = "WaitingForCheckpoint";
                         await db.SaveChangesAsync();
+
                         await _logger.LogAsync(project.Id, execution.Id, "info",
-                            $"[{branchId}] Checkpoint: rama pausada esperando revision",
+                            $"[{branchId}] Checkpoint: pipeline pausado esperando revision del usuario",
                             bpm.StepOrder, bStepName);
                         await _logger.LogStepProgressAsync(project.Id, bpm.Id, "WaitingForCheckpoint");
                         return BranchResult.Paused;
@@ -4496,6 +4599,10 @@ Datos de la ejecucion:
                     return execution;
                 }
 
+                // Checkpoint in branch pauses the entire execution
+                if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                    return execution;
+
                 var branchLevel = branchResult == BranchResult.Failed ? "warning"
                     : branchResult == BranchResult.Paused ? "info" : "success";
                 var branchMsg = branchResult == BranchResult.Failed
@@ -4930,6 +5037,10 @@ Datos de la ejecucion:
                         await db.SaveChangesAsync();
                         return execution;
                     }
+
+                    // Checkpoint in branch pauses the entire execution
+                    if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                        return execution;
 
                     var branchLevel = branchResult == BranchResult.Failed ? "warning"
                         : branchResult == BranchResult.Paused ? "info" : "success";

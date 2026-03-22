@@ -867,7 +867,23 @@ else
                                 <div class="history-card-body">
                                     @foreach (var step in _expandedExecDetail.Steps.OrderBy(s => s.StepOrder))
                                     {
-                                        @if (step.OutputData is not null)
+                                        @if (step.Status == "WaitingForCheckpoint")
+                                        {
+                                            <div class="history-step-preview" style="border-left: 3px solid #ff9800; padding-left: 0.5rem;">
+                                                <div style="display: flex; align-items: center; gap: 0.4rem;">
+                                                    <span class="text-sm" style="color: #ff9800; font-weight: 600;">Checkpoint esperando revision</span>
+                                                    @if (e.Status == "WaitingForCheckpoint")
+                                                    {
+                                                        <button class="btn btn-success btn-xs" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;"
+                                                                @onclick:stopPropagation="true"
+                                                                @onclick="@(() => { _checkpointExecutionId = e.Id; _checkpointPreviewJson = step.InputData; _showCheckpointModal = true; StateHasChanged(); })">
+                                                            Revisar
+                                                        </button>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+                                        else if (step.OutputData is not null)
                                         {
                                             var parsed = TryParseOutput(step.OutputData);
                                             @if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
@@ -997,6 +1013,13 @@ else
                                             {
                                                 <span class="text-sm text-muted">~$@step.EstimatedCost.ToString("F4")</span>
                                             }
+                                            @if (step.Status == "WaitingForCheckpoint" && _execDetailModal.Status == "WaitingForCheckpoint")
+                                            {
+                                                <button class="btn btn-success btn-xs" style="font-size: 0.65rem; margin-left: auto; padding: 0.15rem 0.4rem;"
+                                                        @onclick="@(() => { _checkpointExecutionId = _execDetailModal.Id; _checkpointPreviewJson = step.InputData; _showCheckpointModal = true; StateHasChanged(); })">
+                                                    Revisar
+                                                </button>
+                                            }
                                         </div>
 
                                         @if (step.ErrorMessage is not null)
@@ -1004,7 +1027,16 @@ else
                                             <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@step.ErrorMessage</div>
                                         }
 
-                                        @if (step.InputData is not null)
+                                        @if (step.InputData is not null && (step.Status == "WaitingForCheckpoint" || step.ModuleName?.Contains("Checkpoint", StringComparison.OrdinalIgnoreCase) == true))
+                                        {
+                                            <details open="@(step.Status == "WaitingForCheckpoint")" style="margin-bottom: 0.3rem;">
+                                                <summary style="font-size: 0.7rem; cursor: pointer; color: #856404; user-select: none;">
+                                                    Datos del checkpoint
+                                                </summary>
+                                                <pre style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem; font-size: 0.68rem; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin-top: 0.2rem;">@step.InputData</pre>
+                                            </details>
+                                        }
+                                        else if (step.InputData is not null)
                                         {
                                             var inputParsed = ParseInputData(step.InputData);
                                             @if (inputParsed?.Prompts.Count > 0)
