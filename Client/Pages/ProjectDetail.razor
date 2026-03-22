@@ -800,21 +800,29 @@ else
             {
                 @* ── Date filter bar ── *@
                 <div class="history-date-bar">
-                    <button class="history-date-nav" @onclick="() => HistoryDateNav(-1)" title="Dia anterior">&#x25C0;</button>
-                    <button class="history-date-chip @(_historyDateFilter is null ? "active" : "")"
-                            @onclick="() => _historyDateFilter = null">Todas</button>
-                    @foreach (var day in _executions.Select(e => e.CreatedAt.Date).Distinct().OrderByDescending(d => d).Take(14))
-                    {
-                        var d = day;
-                        var isToday = d == DateTime.Today;
-                        var label = isToday ? "Hoy" : d == DateTime.Today.AddDays(-1) ? "Ayer" : d.ToString("dd MMM");
-                        var count = _executions.Count(e => e.CreatedAt.Date == d);
-                        <button class="history-date-chip @(_historyDateFilter?.Date == d ? "active" : "")"
-                                @onclick="() => _historyDateFilter = d">
-                            @label <span class="history-date-count">@count</span>
+                    <button class="hd-arrow" @onclick="() => HistoryDateNav(-1)" title="Dia anterior">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/></svg>
+                    </button>
+                    <div class="hd-chips">
+                        <button class="hd-chip @(_historyShowAll ? "hd-chip-active" : "")"
+                                @onclick="() => { _historyShowAll = true; }">
+                            Todas <span class="hd-badge">@_executions.Count</span>
                         </button>
-                    }
-                    <button class="history-date-nav" @onclick="() => HistoryDateNav(1)" title="Dia siguiente">&#x25B6;</button>
+                        @foreach (var day in _executions.Select(e => e.CreatedAt.Date).Distinct().OrderByDescending(d => d).Take(14))
+                        {
+                            var d = day;
+                            var isToday = d == DateTime.Today;
+                            var label = isToday ? "Hoy" : d == DateTime.Today.AddDays(-1) ? "Ayer" : d.ToString("dd MMM");
+                            var count = _executions.Count(e => e.CreatedAt.Date == d);
+                            <button class="hd-chip @(!_historyShowAll && _historyDateFilter.Date == d ? "hd-chip-active" : "")"
+                                    @onclick="() => { _historyShowAll = false; _historyDateFilter = d; }">
+                                @label <span class="hd-badge">@count</span>
+                            </button>
+                        }
+                    </div>
+                    <button class="hd-arrow" @onclick="() => HistoryDateNav(1)" title="Dia siguiente">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/></svg>
+                    </button>
                 </div>
 
                 @if (_filteredExecutions.Count > 0)
@@ -1608,11 +1616,12 @@ else
     private Guid? _expandedExecId;
     private ExecutionDetailResponse? _expandedExecDetail;
 
-    // History date filter
-    private DateTime? _historyDateFilter;
-    private List<ExecutionResponse> _filteredExecutions => _historyDateFilter is null
+    // History date filter (defaults to today)
+    private DateTime _historyDateFilter = DateTime.Today;
+    private bool _historyShowAll;
+    private List<ExecutionResponse> _filteredExecutions => _historyShowAll
         ? _executions
-        : _executions.Where(e => e.CreatedAt.Date == _historyDateFilter.Value.Date).ToList();
+        : _executions.Where(e => e.CreatedAt.Date == _historyDateFilter.Date).ToList();
 
     // History detail modal
     private bool _showExecDetailModal;
@@ -2809,22 +2818,26 @@ else
         var days = _executions.Select(e => e.CreatedAt.Date).Distinct().OrderByDescending(d => d).ToList();
         if (days.Count == 0) return;
 
-        if (_historyDateFilter is null)
+        if (_historyShowAll)
         {
-            // From "Todas", go to latest or oldest depending on direction
+            _historyShowAll = false;
             _historyDateFilter = direction < 0 ? days.First() : days.Last();
             return;
         }
 
-        var idx = days.IndexOf(_historyDateFilter.Value.Date);
+        var idx = days.IndexOf(_historyDateFilter.Date);
         if (idx < 0) { _historyDateFilter = days.First(); return; }
 
         // In descending list: "previous day" = next index, "next day" = previous index
         var newIdx = idx - direction;
         if (newIdx < 0 || newIdx >= days.Count)
-            _historyDateFilter = null; // wrap to "Todas"
+        {
+            _historyShowAll = true;
+        }
         else
+        {
             _historyDateFilter = days[newIdx];
+        }
     }
 
     private async Task ToggleHistoryCard(Guid id)

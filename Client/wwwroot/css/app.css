@@ -1721,63 +1721,82 @@ a.link:hover { text-decoration: underline; }
 .history-date-bar {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.5rem 0.2rem 0.6rem;
-    overflow-x: auto;
+    gap: 0.5rem;
+    padding: 0.6rem 0.4rem 0.7rem;
     flex-shrink: 0;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
 }
-.history-date-bar::-webkit-scrollbar { display: none; }
-.history-date-chip {
-    display: inline-flex;
+.hd-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+}
+.hd-arrow:hover {
+    background: var(--bg-input);
+    border-color: var(--accent);
+    color: var(--text);
+}
+.hd-chips {
+    display: flex;
     align-items: center;
     gap: 0.3rem;
-    padding: 0.25rem 0.6rem;
-    border-radius: 20px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex: 1;
+    min-width: 0;
+}
+.hd-chips::-webkit-scrollbar { display: none; }
+.hd-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 8px;
     border: 1px solid var(--border);
-    background: transparent;
+    background: var(--bg-card);
     color: var(--text-muted);
-    font-size: 0.78rem;
+    font-size: 0.8rem;
+    font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.15s;
     flex-shrink: 0;
 }
-.history-date-chip:hover {
-    border-color: var(--accent);
+.hd-chip:hover {
+    background: var(--bg-input);
+    border-color: rgba(108, 99, 255, 0.4);
     color: var(--text);
 }
-.history-date-chip.active {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+.hd-chip-active {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+    color: #fff !important;
+    box-shadow: 0 2px 8px rgba(108, 99, 255, 0.3);
 }
-.history-date-count {
-    font-size: 0.68rem;
-    opacity: 0.7;
-}
-.history-date-chip.active .history-date-count {
-    opacity: 0.9;
-}
-.history-date-nav {
-    display: flex;
+.hd-badge {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 0.65rem;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: all 0.15s;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    line-height: 1;
 }
-.history-date-nav:hover {
-    border-color: var(--accent);
-    color: var(--text);
+.hd-chip-active .hd-badge {
+    background: rgba(255, 255, 255, 0.25);
 }
 
 /* History cards */
