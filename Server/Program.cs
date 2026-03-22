@@ -708,14 +708,30 @@ app.MapGet("/api/projects/{id}", async (
     if (project is null) return Results.NotFound();
 
     var modules = project.ProjectModules.Select(pm =>
-        new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
-            pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
+    {
+        // Resolve effective model: inspector override takes precedence over module default
+        var effectiveModel = pm.AiModule.ModelName;
+        if (!string.IsNullOrEmpty(pm.Configuration))
+        {
+            try
+            {
+                using var cfgDoc = System.Text.Json.JsonDocument.Parse(pm.Configuration);
+                if (cfgDoc.RootElement.TryGetProperty("modelName", out var mnEl)
+                    && mnEl.ValueKind == System.Text.Json.JsonValueKind.String
+                    && !string.IsNullOrEmpty(mnEl.GetString()))
+                    effectiveModel = mnEl.GetString()!;
+            }
+            catch { }
+        }
+        return new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
+            pm.AiModule.ModuleType, effectiveModel, pm.StepOrder, pm.StepName,
             pm.InputMapping, pm.Configuration, pm.IsActive,
             pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY,
             pm.AiModule.ModuleType == "Orchestrator"
                 ? pm.OrchestratorOutputs.Select(o => new OrchestratorOutputResponse(
                     o.Id, o.OutputKey, o.Label, o.Prompt, o.DataType, o.SortOrder)).ToList()
-                : null)).ToList();
+                : null);
+    }).ToList();
 
     var connections = await db.ModuleConnections
         .Where(c => c.ProjectId == id)
@@ -1173,9 +1189,23 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     db.ProjectModules.Add(pm);
     await db.SaveChangesAsync();
 
+    // Resolve effective model from configuration override
+    var addEffectiveModel = module.ModelName;
+    if (!string.IsNullOrEmpty(pm.Configuration))
+    {
+        try
+        {
+            using var cfgDoc = System.Text.Json.JsonDocument.Parse(pm.Configuration);
+            if (cfgDoc.RootElement.TryGetProperty("modelName", out var mnEl)
+                && mnEl.ValueKind == System.Text.Json.JsonValueKind.String
+                && !string.IsNullOrEmpty(mnEl.GetString()))
+                addEffectiveModel = mnEl.GetString()!;
+        }
+        catch { }
+    }
     return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
-            module.ModuleType, module.ModelName, pm.StepOrder, pm.StepName,
+            module.ModuleType, addEffectiveModel, pm.StepOrder, pm.StepName,
             pm.InputMapping, pm.Configuration, pm.IsActive,
             pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY));
 }).RequireAuthorization();
@@ -1200,8 +1230,22 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
     pm.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
+    // Resolve effective model from configuration override
+    var updateEffectiveModel = pm.AiModule.ModelName;
+    if (!string.IsNullOrEmpty(pm.Configuration))
+    {
+        try
+        {
+            using var cfgDoc = System.Text.Json.JsonDocument.Parse(pm.Configuration);
+            if (cfgDoc.RootElement.TryGetProperty("modelName", out var mnEl)
+                && mnEl.ValueKind == System.Text.Json.JsonValueKind.String
+                && !string.IsNullOrEmpty(mnEl.GetString()))
+                updateEffectiveModel = mnEl.GetString()!;
+        }
+        catch { }
+    }
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
-        pm.AiModule.ModuleType, pm.AiModule.ModelName, pm.StepOrder, pm.StepName,
+        pm.AiModule.ModuleType, updateEffectiveModel, pm.StepOrder, pm.StepName,
         pm.InputMapping, pm.Configuration, pm.IsActive,
         pm.BranchId, pm.BranchFromStep));
 }).RequireAuthorization();

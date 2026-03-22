@@ -246,7 +246,7 @@ namespace Server.Services.Ai
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
                     await _logger.LogAsync(projectId, executionId, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // ── Interaction step: send message, optionally pause pipeline ──
@@ -1417,6 +1417,16 @@ namespace Server.Services.Ai
 
         /// <summary>
         /// Compute a branch-prefixed step label (e.g., "A5", "B5") for display in logs.
+        /// Returns the effective model name, considering inspector overrides in Configuration.
+        /// </summary>
+        private string GetEffectiveModelName(ProjectModule pm)
+        {
+            var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+            return config.TryGetValue("modelName", out var mn) && mn is string mnStr && !string.IsNullOrEmpty(mnStr)
+                ? mnStr : pm.AiModule.ModelName;
+        }
+
+        /// <summary>
         /// Pre-fork trunk steps show plain numbers. Post-fork: main = A, branches = B, C...
         /// </summary>
         private static string GetStepLabel(ProjectModule pm, ICollection<ProjectModule> allModules)
@@ -2728,7 +2738,7 @@ Datos de la ejecucion:
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
                     await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // Handle another interaction step
@@ -3979,7 +3989,7 @@ Datos de la ejecucion:
                     var bStepName = bpm.StepName ?? bpm.AiModule.Name;
                     var bStepLabel = GetStepLabel(bpm, project.ProjectModules);
                     await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"[{branchId}] Ejecutando paso {bStepLabel}: {bStepName} ({bpm.AiModule.ProviderType}/{bpm.AiModule.ModelName})",
+                        $"[{branchId}] Ejecutando paso {bStepLabel}: {bStepName} ({bpm.AiModule.ProviderType}/{GetEffectiveModelName(bpm)})",
                         bpm.StepOrder, bStepName);
 
                     var bConfig = MergeConfiguration(bpm.AiModule.Configuration, bpm.Configuration);
@@ -4965,7 +4975,7 @@ Datos de la ejecucion:
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
                     await _logger.LogAsync(projectId, executionId, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{pm.AiModule.ModelName})",
+                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // Handle interaction step during retry
