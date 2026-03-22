@@ -319,13 +319,13 @@ namespace Server.Services.Ai
                     // ── Checkpoint step: pause pipeline for user review ──
                     if (IsCheckpointStep(pm.AiModule))
                     {
-                        var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType,
+                        var checkpointInputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType,
                             pm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
 
                         // Collect all received data to show in the review modal
                         var checkpointData = new Dictionary<string, object>();
-                        for (var ci = 0; ci < inputs.Count; ci++)
-                            checkpointData[$"input_{ci + 1}"] = inputs[ci];
+                        for (var ci = 0; ci < checkpointInputs.Count; ci++)
+                            checkpointData[$"input_{ci + 1}"] = checkpointInputs[ci];
 
                         // Also include outputs from previous steps connected to this checkpoint
                         foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderBy(k => k))
