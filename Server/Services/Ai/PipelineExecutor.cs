@@ -3398,15 +3398,278 @@ Datos de la ejecucion:
                 var remainingPausedBranches = DeserializePausedBranches(execution.PausedBranches);
                 var mainStillPaused = execution.PausedAtStepOrder is not null;
 
-                if (remainingPausedBranches.Count == 0 && !mainStillPaused)
-                {
-                    execution.Status = "Completed";
-                    execution.CompletedAt = DateTime.UtcNow;
-                    execution.TotalEstimatedCost = execution.StepExecutions.Sum(s => s.EstimatedCost);
-                    await db.SaveChangesAsync();
+                if (remainingPausedBranches.Count > 0 || mainStillPaused)
+                    return execution;
 
-                    await _logger.LogAsync(projectId, execution.Id, "success", "Pipeline completado correctamente");
+                // After branch checkpoint resume, check if there are remaining main steps
+                // that were never executed (e.g. main steps after an orchestrator whose branch had a checkpoint)
+                var branchForkStep = allModules
+                    .Where(m => m.BranchId == pauseData.BranchId)
+                    .Select(m => m.BranchFromStep)
+                    .FirstOrDefault();
+
+                var remainingMainAfterFork = branchForkStep.HasValue
+                    ? allModules.Where(m => m.BranchId == "main" && m.StepOrder > branchForkStep.Value).OrderBy(m => m.StepOrder).ToList()
+                    : new List<ProjectModule>();
+
+                // Also check for any unexecuted branches that fork from the same step
+                var executedStepOrders = execution.StepExecutions.Select(s => s.StepOrder).ToHashSet();
+                var unexecutedBranches = branchForkStep.HasValue
+                    ? allModules.Where(m => m.BranchId != "main" && m.BranchFromStep == branchForkStep.Value && !executedStepOrders.Contains(m.StepOrder))
+                        .GroupBy(m => m.BranchId)
+                        .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList())
+                    : new Dictionary<string, List<ProjectModule>>();
+
+                // If there are unexecuted branches or remaining main steps, don't mark as completed — continue execution
+                if (unexecutedBranches.Count > 0 || remainingMainAfterFork.Any(m => !executedStepOrders.Contains(m.StepOrder)))
+                {
+                    await _logger.LogAsync(projectId, execution.Id, "info",
+                        "Checkpoint aprobado — reanudando pasos pendientes del pipeline...");
+
+                    // Execute any remaining branches from the fork point
+                    foreach (var (ubId, ubSteps) in unexecutedBranches)
+                    {
+                        await _logger.LogAsync(projectId, execution.Id, "info",
+                            $"Iniciando rama '{ubId}' (pendiente tras checkpoint, {ubSteps.Count} pasos)");
+
+                        var brResult = await ExecuteBranchStepsAsync(
+                            project, execution, ubId, ubSteps, userInput,
+                            stepResults, stepOutputs, stepModuleTypes,
+                            workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                        if (brResult == BranchResult.Cancelled)
+                        {
+                            execution.Status = "Cancelled";
+                            execution.CompletedAt = DateTime.UtcNow;
+                            await db.SaveChangesAsync();
+                            return execution;
+                        }
+
+                        if (brResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                            return execution;
+                    }
+
+                    // Execute remaining main steps
+                    var mainRemaining = remainingMainAfterFork.Where(m => !executedStepOrders.Contains(m.StepOrder)).ToList();
+                    // Fall through to the main pipeline resume logic below
+                    if (mainRemaining.Count > 0)
+                    {
+                        // Use the main resume logic — set pausedStep to fork step so it picks up from there
+                        // We cannot fall through because BranchId is set, so replicate the loop here
+                        var branchModulesForResume = allModules.Where(m => m.BranchId != "main")
+                            .GroupBy(m => m.BranchId)
+                            .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
+
+                        for (var ri = 0; ri < mainRemaining.Count; ri++)
+                        {
+                            if (ct.IsCancellationRequested)
+                            {
+                                execution.Status = "Cancelled";
+                                execution.CompletedAt = DateTime.UtcNow;
+                                await db.SaveChangesAsync();
+                                return execution;
+                            }
+
+                            var rpm = mainRemaining[ri];
+                            var rStepName = rpm.StepName ?? rpm.AiModule.Name;
+
+                            var rStepExec = new StepExecution
+                            {
+                                Id = Guid.NewGuid(),
+                                ExecutionId = execution.Id,
+                                ProjectModuleId = rpm.Id,
+                                StepOrder = rpm.StepOrder,
+                                Status = "Running",
+                                CreatedAt = DateTime.UtcNow,
+                            };
+                            db.StepExecutions.Add(rStepExec);
+                            execution.StepExecutions.Add(rStepExec);
+                            await db.SaveChangesAsync();
+                            await _logger.LogStepProgressAsync(projectId, rpm.Id, "Running");
+
+                            try
+                            {
+                                // Checkpoint steps
+                                if (IsCheckpointStep(rpm.AiModule))
+                                {
+                                    var cpInputs = ResolveInputs(rpm, userInput, stepResults, stepOutputs, rpm.AiModule.ModuleType,
+                                        rpm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                                    var cpData = new Dictionary<string, object>();
+                                    for (var ci = 0; ci < cpInputs.Count; ci++)
+                                        cpData[$"input_{ci + 1}"] = cpInputs[ci];
+
+                                    foreach (var prevOrder in stepOutputs.Keys.Where(k => k < rpm.StepOrder).OrderBy(k => k))
+                                    {
+                                        if (stepOutputs.TryGetValue(prevOrder, out var prevOut))
+                                        {
+                                            var key = $"step_{prevOrder}";
+                                            if (!string.IsNullOrWhiteSpace(prevOut.Content))
+                                                cpData[key] = prevOut.Content;
+                                            else if (prevOut.Items.Count > 0)
+                                                cpData[key] = string.Join("\n", prevOut.Items.Select(i => i.Content));
+                                        }
+                                    }
+
+                                    var cpJson = JsonSerializer.Serialize(cpData, new JsonSerializerOptions { WriteIndented = true });
+                                    var cpPause = new PausedPipelineState
+                                    {
+                                        UserInput = userInput,
+                                        StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value)),
+                                        StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value),
+                                    };
+
+                                    rStepExec.Status = "WaitingForCheckpoint";
+                                    rStepExec.InputData = cpJson;
+                                    execution.PausedAtStepOrder = rpm.StepOrder;
+                                    execution.PausedStepData = JsonSerializer.Serialize(cpPause);
+                                    execution.Status = "WaitingForCheckpoint";
+                                    await db.SaveChangesAsync();
+                                    await _logger.LogStepProgressAsync(projectId, rpm.Id, "WaitingForCheckpoint");
+                                    return execution;
+                                }
+
+                                // Interaction / Publish / Design / Orchestrator — skip in resume
+                                if (IsInteractionStep(rpm.AiModule) || IsPublishStep(rpm.AiModule) || IsDesignStep(rpm.AiModule) || IsOrchestratorStep(rpm.AiModule))
+                                {
+                                    rStepExec.Status = "Skipped";
+                                    rStepExec.CompletedAt = DateTime.UtcNow;
+                                    await db.SaveChangesAsync();
+                                    continue;
+                                }
+
+                                var rApiKey = rpm.AiModule.ApiKey?.EncryptedKey
+                                    ?? throw new InvalidOperationException($"Paso {rpm.StepOrder}: ApiKey no configurada");
+                                var rProvider = _registry.GetProvider(rpm.AiModule.ProviderType)
+                                    ?? throw new InvalidOperationException($"Paso {rpm.StepOrder}: proveedor no encontrado");
+
+                                var rConfig = MergeConfiguration(rpm.AiModule.Configuration, rpm.Configuration);
+
+                                var rInputs = ResolveInputs(rpm, userInput, stepResults, stepOutputs, rpm.AiModule.ModuleType,
+                                    rpm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                                var rSp = rConfig.TryGetValue("systemPrompt", out var rSpVal) && rSpVal is string rSpStr ? rSpStr : null;
+                                rStepExec.InputData = rInputs.Count == 1
+                                    ? JsonSerializer.Serialize(new { systemPrompt = rSp, projectContext = project.Context, prompt = rInputs[0] })
+                                    : JsonSerializer.Serialize(new { systemPrompt = rSp, projectContext = project.Context, prompts = rInputs, count = rInputs.Count });
+
+                                var rCtx = new AiExecutionContext
+                                {
+                                    ModuleType = rpm.AiModule.ModuleType,
+                                    ModelName = rpm.AiModule.ModelName,
+                                    ApiKey = rApiKey,
+                                    Input = rInputs.Count > 0 ? rInputs[0] : "",
+                                    ProjectContext = project.Context,
+                                    PreviousExecutionsSummary = previousSummaryContext,
+                                    Configuration = rConfig,
+                                };
+
+                                var rResult = await rProvider.ExecuteAsync(rCtx);
+                                stepResults[rpm.StepOrder] = rResult;
+                                stepModuleTypes[rpm.StepOrder] = rpm.AiModule.ModuleType;
+                                rStepExec.EstimatedCost += rResult.EstimatedCost;
+
+                                if (!rResult.Success)
+                                {
+                                    await FailStep(rStepExec, execution, rResult.Error!, db);
+                                    return execution;
+                                }
+
+                                if (rResult.FileOutput is not null)
+                                {
+                                    var stepDir = Path.Combine(workspacePath, $"step_{rpm.StepOrder}");
+                                    Directory.CreateDirectory(stepDir);
+                                    var ext = GetExtension(rResult.ContentType ?? "application/octet-stream");
+                                    var fileName = $"output{ext}";
+                                    await File.WriteAllBytesAsync(Path.Combine(stepDir, fileName), rResult.FileOutput);
+
+                                    var execFile = new ExecutionFile
+                                    {
+                                        Id = Guid.NewGuid(), StepExecutionId = rStepExec.Id,
+                                        FileName = fileName, ContentType = rResult.ContentType ?? "application/octet-stream",
+                                        FilePath = Path.Combine($"step_{rpm.StepOrder}", fileName),
+                                        Direction = "Output", FileSize = rResult.FileOutput.Length,
+                                        CreatedAt = DateTime.UtcNow,
+                                    };
+                                    db.ExecutionFiles.Add(execFile);
+
+                                    var outputFiles = new List<OutputFile>
+                                    {
+                                        new() { FileId = execFile.Id, FileName = fileName, ContentType = execFile.ContentType, FileSize = execFile.FileSize }
+                                    };
+
+                                    StepOutput fileOutput;
+                                    if (rResult.ContentType?.StartsWith("video/") == true)
+                                        fileOutput = OutputSchemaHelper.BuildVideoOutput(outputFiles, rpm.AiModule.ModelName, rResult.Metadata);
+                                    else if (rResult.ContentType?.StartsWith("image/") == true)
+                                        fileOutput = OutputSchemaHelper.BuildImageOutput(outputFiles, rpm.AiModule.ModelName);
+                                    else if (rResult.ContentType?.StartsWith("audio/") == true)
+                                        fileOutput = OutputSchemaHelper.BuildAudioOutput(outputFiles, rpm.AiModule.ModelName);
+                                    else
+                                        fileOutput = OutputSchemaHelper.BuildVideoOutput(outputFiles, rpm.AiModule.ModelName, rResult.Metadata);
+
+                                    stepOutputs[rpm.StepOrder] = fileOutput;
+                                    rStepExec.OutputData = JsonSerializer.Serialize(fileOutput);
+                                }
+                                else if (!string.IsNullOrEmpty(rResult.TextOutput))
+                                {
+                                    var output = new StepOutput
+                                    {
+                                        Type = "text",
+                                        Content = rResult.TextOutput,
+                                        Summary = rResult.TextOutput.Length > 200 ? rResult.TextOutput[..200] + "..." : rResult.TextOutput,
+                                        Metadata = new Dictionary<string, object> { ["model"] = rpm.AiModule.ModelName }
+                                    };
+                                    stepOutputs[rpm.StepOrder] = output;
+                                    rStepExec.OutputData = JsonSerializer.Serialize(output);
+                                }
+
+                                rStepExec.Status = "Completed";
+                                rStepExec.CompletedAt = DateTime.UtcNow;
+                                await db.SaveChangesAsync();
+                                await _logger.LogStepProgressAsync(projectId, rpm.Id, "Completed");
+
+                                // Launch sub-branches forking from this main step
+                                var postForks = branchModulesForResume
+                                    .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == rpm.StepOrder)
+                                    .ToList();
+                                foreach (var (fBranchId, fBranchSteps) in postForks)
+                                {
+                                    await _logger.LogAsync(projectId, execution.Id, "info",
+                                        $"Iniciando rama '{fBranchId}' (bifurcacion desde paso {rpm.StepOrder}, {fBranchSteps.Count} pasos)");
+
+                                    var fResult = await ExecuteBranchStepsAsync(
+                                        project, execution, fBranchId, fBranchSteps, userInput,
+                                        stepResults, stepOutputs, stepModuleTypes,
+                                        workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                                    if (fResult == BranchResult.Cancelled)
+                                    {
+                                        execution.Status = "Cancelled";
+                                        execution.CompletedAt = DateTime.UtcNow;
+                                        await db.SaveChangesAsync();
+                                        return execution;
+                                    }
+
+                                    if (fResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                                        return execution;
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                await FailStep(rStepExec, execution, ex.Message, db);
+                                return execution;
+                            }
+                        }
+                    }
                 }
+
+                execution.Status = "Completed";
+                execution.CompletedAt = DateTime.UtcNow;
+                execution.TotalEstimatedCost = execution.StepExecutions.Sum(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(projectId, execution.Id, "success", "Pipeline completado correctamente");
 
                 return execution;
             }
