@@ -617,7 +617,8 @@
             catch { /* ignore */ }
         }
 
-        return false;
+        // VideoEdit defaults to requiring confirmation to avoid spending credits
+        return module?.ModuleType == "VideoEdit";
     }
 
     private async Task ToggleRequireConfirmation(Guid moduleId, bool value)
