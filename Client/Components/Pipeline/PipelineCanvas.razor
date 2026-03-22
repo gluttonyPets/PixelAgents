@@ -397,6 +397,19 @@
                     @if (sel.ModuleType == "Orchestrator")
                     {
                         <div class="inspector-section">
+                            <div class="inspector-section-title">Modelo</div>
+                            <div class="inspector-field">
+                                <select value="@GetOrchestratorModel(sel)"
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "modelName", e.Value?.ToString() ?? ""))">
+                                    <option value="">@sel.ModelName (por defecto)</option>
+                                    @foreach (var m in _orchestratorModels.Where(m => m != sel.ModelName))
+                                    {
+                                        <option value="@m">@m</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                        <div class="inspector-section">
                             <div class="inspector-section-title">Salidas del orquestador</div>
                             @if (sel.OrchestratorOutputs is { Count: > 0 })
                             {
@@ -554,6 +567,11 @@
     private int _lastConnectionCount;
     private string _lastInputMappingsHash = "";
     private Dictionary<Guid, int> _sceneCountOverrides = new();
+    private static readonly string[] _orchestratorModels = [
+        "gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
+        "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-haiku-20241022",
+        "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro",
+    ];
     private Dictionary<Guid, Dictionary<string, string>> _moduleConfigs = new();
     private bool _lastExecuting;
     private int _lastLogCount;
@@ -832,6 +850,12 @@
         }
 
         return fallback;
+    }
+
+    private string GetOrchestratorModel(ProjectModuleResponse sel)
+    {
+        var val = GetModuleConfig(sel.Id, "modelName", "");
+        return string.IsNullOrEmpty(val) ? "" : val;
     }
 
     private bool GetModuleConfigBool(Guid moduleId, string key, bool fallback = false)

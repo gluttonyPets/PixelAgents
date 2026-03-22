@@ -3085,11 +3085,16 @@ Datos de la ejecucion:
                 return false;
             }
 
+            // Allow per-step model override from Configuration (set in inspector)
+            var orchConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+            var effectiveModel = orchConfig.TryGetValue("modelName", out var mn) && mn is string mnStr && !string.IsNullOrEmpty(mnStr)
+                ? mnStr : pm.AiModule.ModelName;
+
             // 2. Resolve input from previous step
             var input = userInput ?? "";
             if (pm.InputMapping is not null)
             {
-                var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, "Text", pm.AiModule.ModelName,
+                var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, "Text", effectiveModel,
                     BuildStepBranches(project.ProjectModules, stepModuleTypes));
                 input = string.Join("\n\n", inputs);
             }
@@ -3114,7 +3119,7 @@ Datos de la ejecucion:
             var aiContext = new AiExecutionContext
             {
                 ModuleType = "Text",
-                ModelName = pm.AiModule.ModelName,
+                ModelName = effectiveModel,
                 ApiKey = orchestratorApiKey,
                 Input = $"Analyze the following input and generate content for each output:\n\n{input}",
                 ProjectContext = project.Context,
