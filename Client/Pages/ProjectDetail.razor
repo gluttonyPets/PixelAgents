@@ -798,92 +798,120 @@ else
         <div class="tab-content tab-content-scroll">
             @if (_executions.Count > 0)
             {
-                @foreach (var e in _executions)
-                {
-                    var isExpanded = _expandedExecId == e.Id;
-                    <div class="history-card" @key="e.Id">
-                        <div class="history-card-header" @onclick="() => ToggleHistoryCard(e.Id)">
-                            <div class="history-card-info">
-                                <span class="badge @StatusBadge(e.Status)">@e.Status</span>
-                                <span class="text-sm text-muted">@e.CreatedAt.ToString("dd MMM yyyy HH:mm")</span>
-                                @if (e.TotalEstimatedCost > 0)
-                                {
-                                    <span class="text-sm text-muted">~$@e.TotalEstimatedCost.ToString("F4")</span>
-                                }
-                            </div>
-                            <div class="history-card-prompt">
-                                @if (e.UserInput is not null)
-                                {
-                                    <span class="text-sm">@(e.UserInput.Length > 120 ? e.UserInput[..120] + "..." : e.UserInput)</span>
-                                }
-                                else
-                                {
-                                    <span class="text-sm text-muted">Sin prompt</span>
-                                }
-                            </div>
-                            <div class="history-card-actions">
-                                <button class="btn btn-sm btn-primary" @onclick="() => ViewExecution(e.Id)" @onclick:stopPropagation="true">
-                                    Abrir
-                                </button>
-                                <span class="history-expand-icon">@(isExpanded ? "&#x25B2;" : "&#x25BC;")</span>
-                            </div>
-                        </div>
+                @* ── Date filter bar ── *@
+                <div class="history-date-bar">
+                    <button class="history-date-nav" @onclick="() => HistoryDateNav(-1)" title="Dia anterior">&#x25C0;</button>
+                    <button class="history-date-chip @(_historyDateFilter is null ? "active" : "")"
+                            @onclick="() => _historyDateFilter = null">Todas</button>
+                    @foreach (var day in _executions.Select(e => e.CreatedAt.Date).Distinct().OrderByDescending(d => d).Take(14))
+                    {
+                        var d = day;
+                        var isToday = d == DateTime.Today;
+                        var label = isToday ? "Hoy" : d == DateTime.Today.AddDays(-1) ? "Ayer" : d.ToString("dd MMM");
+                        var count = _executions.Count(e => e.CreatedAt.Date == d);
+                        <button class="history-date-chip @(_historyDateFilter?.Date == d ? "active" : "")"
+                                @onclick="() => _historyDateFilter = d">
+                            @label <span class="history-date-count">@count</span>
+                        </button>
+                    }
+                    <button class="history-date-nav" @onclick="() => HistoryDateNav(1)" title="Dia siguiente">&#x25B6;</button>
+                </div>
 
-                        @if (isExpanded && _expandedExecDetail is not null && _expandedExecDetail.Id == e.Id)
-                        {
-                            <div class="history-card-body">
-                                @foreach (var step in _expandedExecDetail.Steps.OrderBy(s => s.StepOrder))
-                                {
-                                    @if (step.OutputData is not null)
+                @if (_filteredExecutions.Count > 0)
+                {
+                    @foreach (var e in _filteredExecutions)
+                    {
+                        var isExpanded = _expandedExecId == e.Id;
+                        <div class="history-card" @key="e.Id">
+                            <div class="history-card-header" @onclick="() => ToggleHistoryCard(e.Id)">
+                                <div class="history-card-info">
+                                    <span class="badge @StatusBadge(e.Status)">@e.Status</span>
+                                    <span class="text-sm text-muted">@e.CreatedAt.ToString("dd MMM yyyy HH:mm")</span>
+                                    @if (e.TotalEstimatedCost > 0)
                                     {
-                                        var parsed = TryParseOutput(step.OutputData);
-                                        @if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
+                                        <span class="text-sm text-muted">~$@e.TotalEstimatedCost.ToString("F4")</span>
+                                    }
+                                </div>
+                                <div class="history-card-prompt">
+                                    @if (e.UserInput is not null)
+                                    {
+                                        <span class="text-sm">@(e.UserInput.Length > 120 ? e.UserInput[..120] + "..." : e.UserInput)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-sm text-muted">Sin prompt</span>
+                                    }
+                                </div>
+                                <div class="history-card-actions">
+                                    <button class="btn btn-sm btn-primary" @onclick="() => ViewExecution(e.Id)" @onclick:stopPropagation="true">
+                                        Abrir
+                                    </button>
+                                    <span class="history-expand-icon">@(isExpanded ? "&#x25B2;" : "&#x25BC;")</span>
+                                </div>
+                            </div>
+
+                            @if (isExpanded && _expandedExecDetail is not null && _expandedExecDetail.Id == e.Id)
+                            {
+                                <div class="history-card-body">
+                                    @foreach (var step in _expandedExecDetail.Steps.OrderBy(s => s.StepOrder))
+                                    {
+                                        @if (step.OutputData is not null)
                                         {
-                                            <div class="history-step-preview">
-                                                <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
-                                                <div class="history-image-grid">
+                                            var parsed = TryParseOutput(step.OutputData);
+                                            @if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
+                                            {
+                                                <div class="history-step-preview">
+                                                    <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
+                                                    <div class="history-image-grid">
+                                                        @foreach (var f in parsed.Files)
+                                                        {
+                                                            var fileUrl = $"{_apiBase}/api/executions/{_expandedExecDetail.Id}/files/{f.FileId}";
+                                                            <div class="history-image-item">
+                                                                <img src="@fileUrl" alt="@f.FileName" class="history-image-thumb" crossorigin="use-credentials" />
+                                                            </div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            }
+                                            else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
+                                            {
+                                                <div class="history-step-preview">
+                                                    <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
                                                     @foreach (var f in parsed.Files)
                                                     {
                                                         var fileUrl = $"{_apiBase}/api/executions/{_expandedExecDetail.Id}/files/{f.FileId}";
-                                                        <div class="history-image-item">
-                                                            <img src="@fileUrl" alt="@f.FileName" class="history-image-thumb" crossorigin="use-credentials" />
-                                                        </div>
+                                                        <video controls style="max-width: 200px; border-radius: 6px; margin-top: 0.3rem;" crossorigin="use-credentials">
+                                                            <source src="@fileUrl" type="@f.ContentType" />
+                                                        </video>
                                                     }
                                                 </div>
-                                            </div>
-                                        }
-                                        else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
-                                        {
-                                            <div class="history-step-preview">
-                                                <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
-                                                @foreach (var f in parsed.Files)
-                                                {
-                                                    var fileUrl = $"{_apiBase}/api/executions/{_expandedExecDetail.Id}/files/{f.FileId}";
-                                                    <video controls style="max-width: 200px; border-radius: 6px; margin-top: 0.3rem;" crossorigin="use-credentials">
-                                                        <source src="@fileUrl" type="@f.ContentType" />
-                                                    </video>
-                                                }
-                                            </div>
-                                        }
-                                        else if (parsed?.Type == "text" && parsed.Content is not null)
-                                        {
-                                            <div class="history-step-preview">
-                                                <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
-                                                <div class="output-block" style="font-size: 0.8rem; max-height: 80px; overflow: hidden;">
-                                                    @(parsed.Content.Length > 200 ? parsed.Content[..200] + "..." : parsed.Content)
+                                            }
+                                            else if (parsed?.Type == "text" && parsed.Content is not null)
+                                            {
+                                                <div class="history-step-preview">
+                                                    <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
+                                                    <div class="output-block" style="font-size: 0.8rem; max-height: 80px; overflow: hidden;">
+                                                        @(parsed.Content.Length > 200 ? parsed.Content[..200] + "..." : parsed.Content)
+                                                    </div>
                                                 </div>
-                                            </div>
+                                            }
                                         }
                                     }
-                                }
-                            </div>
-                        }
-                        else if (isExpanded && _expandedExecDetail is null)
-                        {
-                            <div class="history-card-body">
-                                <p class="text-sm text-muted">Cargando...</p>
-                            </div>
-                        }
+                                </div>
+                            }
+                            else if (isExpanded && _expandedExecDetail is null)
+                            {
+                                <div class="history-card-body">
+                                    <p class="text-sm text-muted">Cargando...</p>
+                                </div>
+                            }
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="empty-state" style="padding: 2rem 1rem;">
+                        <p class="text-sm text-muted">Sin ejecuciones en este dia</p>
                     </div>
                 }
             }
@@ -1579,6 +1607,12 @@ else
     // History expansion
     private Guid? _expandedExecId;
     private ExecutionDetailResponse? _expandedExecDetail;
+
+    // History date filter
+    private DateTime? _historyDateFilter;
+    private List<ExecutionResponse> _filteredExecutions => _historyDateFilter is null
+        ? _executions
+        : _executions.Where(e => e.CreatedAt.Date == _historyDateFilter.Value.Date).ToList();
 
     // History detail modal
     private bool _showExecDetailModal;
@@ -2768,6 +2802,29 @@ else
             await JS.InvokeVoidAsync("downloadFileWithCredentials", url, fileName);
         }
         catch { }
+    }
+
+    private void HistoryDateNav(int direction)
+    {
+        var days = _executions.Select(e => e.CreatedAt.Date).Distinct().OrderByDescending(d => d).ToList();
+        if (days.Count == 0) return;
+
+        if (_historyDateFilter is null)
+        {
+            // From "Todas", go to latest or oldest depending on direction
+            _historyDateFilter = direction < 0 ? days.First() : days.Last();
+            return;
+        }
+
+        var idx = days.IndexOf(_historyDateFilter.Value.Date);
+        if (idx < 0) { _historyDateFilter = days.First(); return; }
+
+        // In descending list: "previous day" = next index, "next day" = previous index
+        var newIdx = idx - direction;
+        if (newIdx < 0 || newIdx >= days.Count)
+            _historyDateFilter = null; // wrap to "Todas"
+        else
+            _historyDateFilter = days[newIdx];
     }
 
     private async Task ToggleHistoryCard(Guid id)
