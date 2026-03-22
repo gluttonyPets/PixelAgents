@@ -291,6 +291,7 @@ namespace Server.Services.Ai
                         var orchForks = branchModules
                             .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
                             .ToList();
+                        var orchHasPausedCheckpoint = false;
                         foreach (var (branchId, branchSteps) in orchForks)
                         {
                             await _logger.LogAsync(projectId, executionId, "info",
@@ -309,9 +310,16 @@ namespace Server.Services.Ai
                                 return execution;
                             }
 
-                            // Checkpoint in branch pauses the entire execution
+                            // Don't return immediately on branch checkpoint — continue with remaining
+                            // branches and main steps so they can execute. The pipeline will pause
+                            // at the end of the main loop when it detects the WaitingForCheckpoint status.
                             if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
-                                return execution;
+                            {
+                                orchHasPausedCheckpoint = true;
+                                await _logger.LogAsync(projectId, executionId, "info",
+                                    $"Rama '{branchId}' pausada en checkpoint — continuando con pasos pendientes");
+                                continue;
+                            }
 
                             var orchBranchLevel = branchResult == BranchResult.Failed ? "warning"
                                 : branchResult == BranchResult.Paused ? "info" : "success";
@@ -1154,9 +1162,14 @@ namespace Server.Services.Ai
                         return execution;
                     }
 
-                    // Checkpoint in branch pauses the entire execution
+                    // Don't return immediately on branch checkpoint — continue with remaining
+                    // branches and main steps. The pipeline will pause at the end of the main loop.
                     if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
-                        return execution;
+                    {
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Rama '{branchId}' pausada en checkpoint — continuando con pasos pendientes");
+                        continue;
+                    }
 
                     var branchLevel = branchResult == BranchResult.Failed ? "warning"
                         : branchResult == BranchResult.Paused ? "info" : "success";
@@ -1169,11 +1182,25 @@ namespace Server.Services.Ai
                 }
             }
 
-            // ── Check if branches are still paused before marking as Completed ──
+            // ── Check if a branch checkpoint or interaction is still pending ──
             var hasPausedBranches = !string.IsNullOrWhiteSpace(execution.PausedBranches)
                 && DeserializePausedBranches(execution.PausedBranches).Count > 0;
+            var hasPendingCheckpoint = execution.Status == "WaitingForCheckpoint"
+                && execution.PausedAtStepOrder is not null;
 
-            if (hasPausedBranches)
+            if (hasPendingCheckpoint)
+            {
+                // A branch checkpoint paused the execution — all other work has been done
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(projectId, executionId, "info",
+                    "Pasos pendientes completados — esperando aprobacion del checkpoint");
+                return execution;
+            }
+            else if (hasPausedBranches)
             {
                 // Main pipeline finished but branches still waiting for user input
                 if (execution.PausedAtStepOrder is null)
@@ -3010,9 +3037,13 @@ Datos de la ejecucion:
                         return execution;
                     }
 
-                    // Checkpoint in branch pauses the entire execution
+                    // Don't return immediately on branch checkpoint — continue with remaining steps
                     if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
-                        return execution;
+                    {
+                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                            $"Rama '{branchId}' pausada en checkpoint — continuando con pasos pendientes");
+                        continue;
+                    }
 
                     var branchLevel = branchResult == BranchResult.Failed ? "warning"
                         : branchResult == BranchResult.Paused ? "info" : "success";
@@ -3028,8 +3059,20 @@ Datos de la ejecucion:
             // ── Check if branches are still paused before marking as Completed ──
             var resumeHasPausedBranches = !string.IsNullOrWhiteSpace(execution.PausedBranches)
                 && DeserializePausedBranches(execution.PausedBranches).Count > 0;
+            var resumeHasPendingCheckpoint = execution.Status == "WaitingForCheckpoint"
+                && execution.PausedAtStepOrder is not null;
 
-            if (resumeHasPausedBranches)
+            if (resumeHasPendingCheckpoint)
+            {
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    "Pasos pendientes completados — esperando aprobacion del checkpoint");
+            }
+            else if (resumeHasPausedBranches)
             {
                 if (execution.PausedAtStepOrder is null)
                     execution.Status = "WaitingForInput";
@@ -4871,9 +4914,13 @@ Datos de la ejecucion:
                     return execution;
                 }
 
-                // Checkpoint in branch pauses the entire execution
+                // Don't return immediately on branch checkpoint — continue with remaining steps
                 if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
-                    return execution;
+                {
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Rama '{branchId}' pausada en checkpoint — continuando con pasos pendientes");
+                    continue;
+                }
 
                 var branchLevel = branchResult == BranchResult.Failed ? "warning"
                     : branchResult == BranchResult.Paused ? "info" : "success";
@@ -5310,9 +5357,13 @@ Datos de la ejecucion:
                         return execution;
                     }
 
-                    // Checkpoint in branch pauses the entire execution
+                    // Don't return immediately on branch checkpoint — continue with remaining steps
                     if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
-                        return execution;
+                    {
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Rama '{branchId}' pausada en checkpoint — continuando con pasos pendientes");
+                        continue;
+                    }
 
                     var branchLevel = branchResult == BranchResult.Failed ? "warning"
                         : branchResult == BranchResult.Paused ? "info" : "success";
@@ -5328,6 +5379,20 @@ Datos de la ejecucion:
             // ── Check if branches are still paused before marking as Completed ──
             var retryHasPausedBranches = !string.IsNullOrWhiteSpace(execution.PausedBranches)
                 && DeserializePausedBranches(execution.PausedBranches).Count > 0;
+            var retryHasPendingCheckpoint = execution.Status == "WaitingForCheckpoint"
+                && execution.PausedAtStepOrder is not null;
+
+            if (retryHasPendingCheckpoint)
+            {
+                execution.TotalEstimatedCost = await db.StepExecutions
+                    .Where(s => s.ExecutionId == execution.Id)
+                    .SumAsync(s => s.EstimatedCost);
+                await db.SaveChangesAsync();
+
+                await _logger.LogAsync(projectId, executionId, "info",
+                    "Pasos pendientes completados — esperando aprobacion del checkpoint");
+                return execution;
+            }
 
             if (retryHasPausedBranches)
             {
