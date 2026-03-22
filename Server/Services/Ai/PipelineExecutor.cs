@@ -3412,16 +3412,18 @@ Datos de la ejecucion:
                     ? allModules.Where(m => m.BranchId == "main" && m.StepOrder > branchForkStep.Value).OrderBy(m => m.StepOrder).ToList()
                     : new List<ProjectModule>();
 
+                // Use ProjectModuleId (not StepOrder) to detect executed steps — StepOrder can collide across branches
+                var executedModuleIds = execution.StepExecutions.Select(s => s.ProjectModuleId).ToHashSet();
+
                 // Also check for any unexecuted branches that fork from the same step
-                var executedStepOrders = execution.StepExecutions.Select(s => s.StepOrder).ToHashSet();
                 var unexecutedBranches = branchForkStep.HasValue
-                    ? allModules.Where(m => m.BranchId != "main" && m.BranchFromStep == branchForkStep.Value && !executedStepOrders.Contains(m.StepOrder))
+                    ? allModules.Where(m => m.BranchId != "main" && m.BranchFromStep == branchForkStep.Value && !executedModuleIds.Contains(m.Id))
                         .GroupBy(m => m.BranchId)
                         .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList())
                     : new Dictionary<string, List<ProjectModule>>();
 
                 // If there are unexecuted branches or remaining main steps, don't mark as completed — continue execution
-                if (unexecutedBranches.Count > 0 || remainingMainAfterFork.Any(m => !executedStepOrders.Contains(m.StepOrder)))
+                if (unexecutedBranches.Count > 0 || remainingMainAfterFork.Any(m => !executedModuleIds.Contains(m.Id)))
                 {
                     await _logger.LogAsync(projectId, execution.Id, "info",
                         "Checkpoint aprobado — reanudando pasos pendientes del pipeline...");
@@ -3450,7 +3452,7 @@ Datos de la ejecucion:
                     }
 
                     // Execute remaining main steps
-                    var mainRemaining = remainingMainAfterFork.Where(m => !executedStepOrders.Contains(m.StepOrder)).ToList();
+                    var mainRemaining = remainingMainAfterFork.Where(m => !executedModuleIds.Contains(m.Id)).ToList();
                     // Fall through to the main pipeline resume logic below
                     if (mainRemaining.Count > 0)
                     {
