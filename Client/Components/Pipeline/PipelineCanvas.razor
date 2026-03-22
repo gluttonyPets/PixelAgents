@@ -775,6 +775,8 @@
                 "Running" => "running",
                 "Completed" => "completed",
                 "Failed" => "failed",
+                "WaitingForCheckpoint" => "waiting",
+                "WaitingForReview" => "waiting",
                 _ => "idle"
             };
             await JS.InvokeVoidAsync("pipelineEditor.setNodeState", pm.Id.ToString(), state);

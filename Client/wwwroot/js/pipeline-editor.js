@@ -300,7 +300,7 @@ window.pipelineEditor = {
         if (nodeId === undefined) return;
         var el = document.querySelector('#node-' + nodeId);
         if (!el) return;
-        el.classList.remove('df-state-running', 'df-state-completed', 'df-state-failed');
+        el.classList.remove('df-state-running', 'df-state-completed', 'df-state-failed', 'df-state-waiting');
         if (state && state !== 'idle') {
             el.classList.add('df-state-' + state);
         }
@@ -334,7 +334,7 @@ window.pipelineEditor = {
         var container = this._editor.precanvas;
         if (!container) return;
         container.querySelectorAll('.df-state-running, .df-state-completed, .df-state-failed').forEach(function (el) {
-            el.classList.remove('df-state-running', 'df-state-completed', 'df-state-failed');
+            el.classList.remove('df-state-running', 'df-state-completed', 'df-state-failed', 'df-state-waiting');
         });
         container.querySelectorAll('.df-conn-active').forEach(function (el) {
             el.classList.remove('df-conn-active');

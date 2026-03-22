@@ -2115,6 +2115,22 @@ a.link:hover { text-decoration: underline; }
     background: var(--danger);
 }
 
+.drawflow .drawflow-node.df-state-waiting {
+    border-color: #ff9800 !important;
+    box-shadow: 0 0 12px rgba(255, 152, 0, 0.4);
+    animation: df-pulse-orange 2s ease-in-out infinite;
+}
+
+.drawflow .drawflow-node.df-state-waiting .df-order-badge {
+    background: #ff9800;
+    box-shadow: 0 2px 6px rgba(255, 152, 0, 0.5);
+}
+
+@keyframes df-pulse-orange {
+    0%, 100% { box-shadow: 0 0 12px rgba(255, 152, 0, 0.4); }
+    50% { box-shadow: 0 0 18px rgba(255, 152, 0, 0.6); }
+}
+
 /* ── Active connection (green animated) ── */
 .drawflow .connection.df-conn-active .main-path {
     stroke: var(--success) !important;

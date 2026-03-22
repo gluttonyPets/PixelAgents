@@ -168,6 +168,22 @@ else
                                     }
                                 </div>
                             }
+                            @if (_showCheckpointModal || _result?.Status == "WaitingForCheckpoint")
+                            {
+                                <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 0.4rem 0.6rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="font-size: 0.75rem; color: #856404; flex: 1;">Checkpoint esperando revision</span>
+                                    <button class="btn btn-success btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" @onclick="@(() => ReviewCheckpoint(true))">Continuar</button>
+                                    <button class="btn btn-danger btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" @onclick="@(() => ReviewCheckpoint(false))">Abortar</button>
+                                    <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border: 1px solid var(--border-color);" @onclick="@(() => { _showCheckpointModal = true; StateHasChanged(); })">Ver datos</button>
+                                </div>
+                            }
+                            @if (_showOrchestratorModal || _result?.Status == "WaitingForReview")
+                            {
+                                <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 6px; padding: 0.4rem 0.6rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="font-size: 0.75rem; color: #1565c0; flex: 1;">Orquestador esperando revision</span>
+                                    <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; background: #2196f3; color: #fff; border: none;" @onclick="@(() => { _showOrchestratorModal = true; StateHasChanged(); })">Revisar plan</button>
+                                </div>
+                            }
                         </div>
                     </TopPanel>
                 </PipelineCanvas>
@@ -1937,6 +1953,28 @@ else
             _executions = await Api.GetExecutionsAsync(ProjectId);
             if (_project is not null)
                 _stepOrder = _project.Modules.Count + 1;
+
+            // Check if latest execution is waiting for checkpoint or orchestrator review
+            var latestExec = _executions.FirstOrDefault();
+            if (latestExec is not null && (latestExec.Status == "WaitingForCheckpoint" || latestExec.Status == "WaitingForReview"))
+            {
+                var detail = await Api.GetExecutionDetailAsync(latestExec.Id);
+                if (detail is not null)
+                {
+                    _result = detail;
+                    if (latestExec.Status == "WaitingForCheckpoint")
+                    {
+                        _checkpointExecutionId = detail.Id;
+                        var pausedStep = detail.Steps?.FirstOrDefault(s => s.Status == "WaitingForCheckpoint");
+                        _checkpointPreviewJson = pausedStep?.InputData;
+                        _showCheckpointModal = false; // banner visible, modal on demand
+                    }
+                    else if (latestExec.Status == "WaitingForReview")
+                    {
+                        OpenOrchestratorModal(detail);
+                    }
+                }
+            }
 
             // Load Telegram config
             var tgConfig = await Api.GetTelegramConfigAsync(ProjectId);
