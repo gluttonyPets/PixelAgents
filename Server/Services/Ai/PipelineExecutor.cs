@@ -3380,14 +3380,27 @@ Datos de la ejecucion:
             // Mark checkpoint step as completed — pass-through: outputs = inputs
             checkpointStepExec.Status = "Completed";
             checkpointStepExec.CompletedAt = DateTime.UtcNow;
-            checkpointStepExec.OutputData = checkpointStepExec.InputData; // pass-through
+            checkpointStepExec.OutputData = checkpointStepExec.InputData; // keep display data for history
 
-            // Build StepOutput for the checkpoint so downstream steps can consume it
+            // Build StepOutput for the checkpoint so downstream steps can consume it.
+            // The checkpoint is a pass-through: resolve its inputs from the restored stepOutputs
+            // so that the next step receives the actual content (not the checkpoint display JSON).
+            var checkpointModule = project.ProjectModules.FirstOrDefault(m => m.StepOrder == pausedStep);
+            var checkpointResolvedInputs = checkpointModule is not null
+                ? ResolveInputs(checkpointModule, userInput, stepResults, stepOutputs, checkpointModule.AiModule.ModuleType,
+                    checkpointModule.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes))
+                : new List<string>();
+
             var checkpointOutput = new StepOutput
             {
                 Type = "checkpoint",
-                Content = checkpointStepExec.InputData ?? "",
+                Content = checkpointResolvedInputs.Count > 0
+                    ? string.Join("\n\n", checkpointResolvedInputs)
+                    : checkpointStepExec.InputData ?? "",
                 Summary = "Checkpoint aprobado",
+                Items = checkpointResolvedInputs.Count > 1
+                    ? checkpointResolvedInputs.Select(i => new OutputItem { Content = i }).ToList()
+                    : new List<OutputItem>(),
                 Metadata = new Dictionary<string, object> { ["approved"] = true }
             };
             stepOutputs[pausedStep] = checkpointOutput;
