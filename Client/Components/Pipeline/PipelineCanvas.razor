@@ -204,14 +204,6 @@
                             </div>
                             <div class="inspector-field">
                                 <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
-                                    <input type="checkbox" checked="@GetRequireConfirmation(sel.Id)"
-                                           @onchange="@(e => SetModuleConfig(sel.Id, "requireConfirmation", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
-                                    Pedir confirmacion antes de ejecutar
-                                </label>
-                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Si esta activado, al pulsar Ejecutar aparecera un aviso para que confirmes antes de gastar creditos de Json2Video.</p>
-                            </div>
-                            <div class="inspector-field">
-                                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
                                     <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "cache", true)"
                                            @onchange="@(e => SetModuleConfig(sel.Id, "cache", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
                                     Cache
@@ -842,16 +834,6 @@
             _moduleConfigs[moduleId] = new();
         _moduleConfigs[moduleId][key] = value;
         await AutoSaveGraph();
-    }
-
-    private bool GetRequireConfirmation(Guid moduleId)
-    {
-        var val = GetModuleConfig(moduleId, "requireConfirmation", "");
-        if (!string.IsNullOrEmpty(val))
-            return val.Equals("true", StringComparison.OrdinalIgnoreCase);
-        // VideoEdit defaults to requiring confirmation
-        var module = Modules.FirstOrDefault(m => m.Id == moduleId);
-        return module?.ModuleType == "VideoEdit";
     }
 
     // ── Actions ──

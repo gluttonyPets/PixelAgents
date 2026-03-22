@@ -981,7 +981,7 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
         }
     }
 
-    // 7. Persist module config entries (e.g. requireConfirmation for VideoEdit)
+    // 7. Persist module config entries
     if (req.ModuleConfigs is { Count: > 0 })
     {
         foreach (var mc in req.ModuleConfigs)
@@ -1362,11 +1362,6 @@ app.MapPost("/api/projects/{projectId}/execute", async (
                 await hub.Clients.Group(projectId.ToString())
                     .SendAsync("OrchestratorWaitingForReview", detail);
             }
-            else if (exec.Status == "WaitingForVideoEditConfirm")
-            {
-                await hub.Clients.Group(projectId.ToString())
-                    .SendAsync("VideoEditWaitingForConfirm", detail);
-            }
             else
             {
                 await hub.Clients.Group(projectId.ToString())
@@ -1535,82 +1530,6 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
     });
 
     return Results.Accepted(value: new { message = "Reintento iniciado" });
-}).RequireAuthorization();
-
-// Confirm or reject a paused VideoEdit step
-app.MapPost("/api/executions/{executionId}/confirm-video-edit", async (
-    Guid executionId, VideoEditConfirmRequest req, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    ExecutionCancellationService cancellation,
-    IHubContext<ExecutionHub> hub) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var user = await um.GetUserAsync(ctx.User);
-    var userClaims = await um.GetClaimsAsync(user!);
-    var tenantDbName = userClaims.First(c => c.Type == "db_name").Value;
-
-    Guid projectId;
-    try
-    {
-        projectId = await db.ProjectExecutions.Where(e => e.Id == executionId).Select(e => e.ProjectId).FirstAsync();
-    }
-    catch
-    {
-        return Results.NotFound(new { error = "Ejecucion no encontrada" });
-    }
-
-    var ct = cancellation.Register(projectId);
-
-    _ = Task.Run(async () =>
-    {
-        try
-        {
-            using var scope = app.Services.CreateScope();
-            var bgFactory = scope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
-            await using var bgDb = bgFactory.Create(tenantDbName);
-            var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
-
-            var execution = await executor.ResumeFromVideoEditConfirmAsync(executionId, req.Approved, bgDb, tenantDbName, ct);
-
-            var exec = await bgDb.ProjectExecutions
-                .Include(e => e.StepExecutions)
-                    .ThenInclude(s => s.Files)
-                .Include(e => e.StepExecutions)
-                    .ThenInclude(s => s.ProjectModule)
-                        .ThenInclude(pm => pm.AiModule)
-                .FirstAsync(e => e.Id == execution.Id);
-
-            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
-                new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.StepOrder,
-                    s.Status, s.InputData, s.OutputData, s.ErrorMessage,
-                    s.CreatedAt, s.CompletedAt, s.EstimatedCost,
-                    s.Files.Select(f => new ExecutionFileResponse(
-                        f.Id, f.FileName, f.ContentType, f.FilePath,
-                        f.Direction, f.FileSize, f.CreatedAt)).ToList()
-                )).ToList();
-
-            var detail = new ExecutionDetailResponse(
-                exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
-
-            await hub.Clients.Group(projectId.ToString())
-                .SendAsync("ExecutionCompleted", detail);
-        }
-        catch (Exception ex)
-        {
-            await hub.Clients.Group(projectId.ToString())
-                .SendAsync("ExecutionFailed", ex.Message);
-        }
-        finally
-        {
-            cancellation.Remove(projectId);
-        }
-    });
-
-    return Results.Accepted(value: new { message = req.Approved ? "VideoEdit confirmado" : "VideoEdit cancelado" });
 }).RequireAuthorization();
 
 // Resume orchestrator after user review

@@ -1530,32 +1530,6 @@ else
     </div>
 }
 
-@if (_showVideoEditConfirmModal)
-{
-    <div class="modal-overlay" @onclick="@(() => {})">
-        <div class="modal-content" style="max-width: 640px;" @onclick:stopPropagation="true">
-            <div class="modal-header">
-                <strong>Confirmar VideoEdit (Json2Video)</strong>
-                <button class="btn btn-sm" style="margin-left: auto; padding: 0.1rem 0.4rem;"
-                        @onclick="@(() => ConfirmVideoEdit(false))">X</button>
-            </div>
-            <div class="modal-body">
-                <div class="alert" style="background: #fff3cd; color: #856404; border: 1px solid #ffc107; font-size: 0.8rem; padding: 0.5rem 0.7rem; margin-bottom: 0.7rem; border-radius: 0.3rem;">
-                    <strong>Json2Video consume creditos.</strong> Revisa que el contenido sea correcto antes de enviar.
-                </div>
-                @if (!string.IsNullOrEmpty(_videoEditPreviewJson))
-                {
-                    <pre style="background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 6px; padding: 0.6rem; font-size: 0.72rem; max-height: 350px; overflow: auto; white-space: pre-wrap; word-break: break-word;">@_videoEditPreviewJson</pre>
-                }
-                <div style="display: flex; gap: 0.5rem; margin-top: 0.7rem;">
-                    <button class="btn btn-success" style="flex: 1;" @onclick="@(() => ConfirmVideoEdit(true))">Confirmar y enviar</button>
-                    <button class="btn" style="flex: 1;" @onclick="@(() => ConfirmVideoEdit(false))">Cancelar</button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
-
 @code {
     [Parameter] public Guid ProjectId { get; set; }
 
@@ -1566,9 +1540,6 @@ else
 
     private bool _loading;
     private bool _executing;
-    private bool _showVideoEditConfirmModal;
-    private Guid? _videoEditConfirmExecutionId;
-    private string? _videoEditPreviewJson;
     private PipelineCanvas? _pipelineCanvasRef;
 
     // UI state
@@ -1793,21 +1764,6 @@ else
             });
         });
 
-        _hubConnection.On<ExecutionDetailResponse>("VideoEditWaitingForConfirm", result =>
-        {
-            InvokeAsync(() =>
-            {
-                _videoEditConfirmExecutionId = result.Id;
-                // Find the paused step's InputData (contains the preview JSON)
-                var pausedStep = result.Steps?.FirstOrDefault(s => s.Status == "WaitingForVideoEditConfirm");
-                _videoEditPreviewJson = pausedStep?.InputData;
-                _showVideoEditConfirmModal = true;
-                _executing = false;
-                StopPolling();
-                StateHasChanged();
-            });
-        });
-
         _hubConnection.On<OrchestratorTaskProgressEntry>("OrchestratorTaskProgress", progress =>
         {
             InvokeAsync(() =>
@@ -1861,27 +1817,6 @@ else
 
                 // Still running — nothing to do
                 if (latest.Status == "Running") return;
-
-                // VideoEdit waiting for confirm — open modal
-                if (latest.Status == "WaitingForVideoEditConfirm")
-                {
-                    var veDetail = await Api.GetExecutionDetailAsync(latest.Id);
-                    if (veDetail is not null)
-                    {
-                        _executions = execs;
-                        await InvokeAsync(() =>
-                        {
-                            _videoEditConfirmExecutionId = veDetail.Id;
-                            var pausedStep = veDetail.Steps?.FirstOrDefault(s => s.Status == "WaitingForVideoEditConfirm");
-                            _videoEditPreviewJson = pausedStep?.InputData;
-                            _showVideoEditConfirmModal = true;
-                            _executing = false;
-                            StopPolling();
-                            StateHasChanged();
-                        });
-                    }
-                    return;
-                }
 
                 // Orchestrator waiting for review — open modal
                 if (latest.Status == "WaitingForReview")
@@ -2787,33 +2722,6 @@ else
         catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; _executing = false; }
     }
 
-    private async Task ConfirmVideoEdit(bool approved)
-    {
-        if (_videoEditConfirmExecutionId is null) return;
-        _showVideoEditConfirmModal = false;
-        _videoEditPreviewJson = null;
-
-        if (!approved)
-        {
-            _executing = false;
-            // Fire and forget the cancel
-            _ = Api.ConfirmVideoEditAsync(_videoEditConfirmExecutionId.Value, false);
-            _videoEditConfirmExecutionId = null;
-            return;
-        }
-
-        _executing = true;
-        _activeTab = "pipeline";
-        try
-        {
-            var (ok, error) = await Api.ConfirmVideoEditAsync(_videoEditConfirmExecutionId.Value, true);
-            if (!ok) { _execError = error; _executing = false; }
-            else StartPolling();
-        }
-        catch (Exception ex) { _execError = $"Error: {ex.Message}"; _executing = false; }
-        _videoEditConfirmExecutionId = null;
-    }
-
     private async Task CancelExecution()
     {
         await Api.CancelExecutionAsync(ProjectId);
@@ -3363,7 +3271,6 @@ else
         "Running" => "badge-warning",
         "WaitingForInput" => "badge-info",
         "WaitingForReview" => "badge-info",
-        "WaitingForVideoEditConfirm" => "badge-info",
         "Rejected" => "badge-danger",
         "Cancelled" => "badge-warning",
         _ => "badge-info"
