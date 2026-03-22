@@ -427,25 +427,41 @@ app.MapGet("/api/modules", async (
     {
         if (!modules.Any(m => m.ModuleType == "Checkpoint"))
         {
-            // Auto-create Checkpoint system module in DB
-            var checkpoint = new AiModule
-            {
-                Id = Guid.NewGuid(),
-                Name = "Checkpoint",
-                Description = "Pausa la ejecucion para revisar los datos antes de continuar",
-                ProviderType = "System",
-                ModuleType = "Checkpoint",
-                ModelName = "checkpoint",
-                IsEnabled = true,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            db.AiModules.Add(checkpoint);
-            await db.SaveChangesAsync();
+            // Check DB directly in case another request already created it
+            var existing = await db.AiModules
+                .FirstOrDefaultAsync(m => m.ModuleType == "Checkpoint" && m.ProviderType == "System");
 
-            modules.Add(new AiModuleResponse(checkpoint.Id, checkpoint.Name, checkpoint.Description,
-                checkpoint.ProviderType, checkpoint.ModuleType, checkpoint.ModelName,
-                null, null, null, true, checkpoint.CreatedAt, checkpoint.UpdatedAt));
+            if (existing is null)
+            {
+                existing = new AiModule
+                {
+                    Id = Guid.NewGuid(),
+                    Name = "Checkpoint",
+                    Description = "Pausa la ejecucion para revisar los datos antes de continuar",
+                    ProviderType = "System",
+                    ModuleType = "Checkpoint",
+                    ModelName = "checkpoint",
+                    IsEnabled = true,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                db.AiModules.Add(existing);
+                try { await db.SaveChangesAsync(); }
+                catch
+                {
+                    // Race condition: another request created it — reload
+                    db.ChangeTracker.Clear();
+                    existing = await db.AiModules
+                        .FirstOrDefaultAsync(m => m.ModuleType == "Checkpoint" && m.ProviderType == "System");
+                }
+            }
+
+            if (existing is not null)
+            {
+                modules.Add(new AiModuleResponse(existing.Id, existing.Name, existing.Description,
+                    existing.ProviderType, existing.ModuleType, existing.ModelName,
+                    null, null, null, true, existing.CreatedAt, existing.UpdatedAt));
+            }
         }
     }
 
