@@ -2340,6 +2340,22 @@ a.link:hover { text-decoration: underline; }
     letter-spacing: 0.03em;
 }
 
+/* VideoEdit color picker row */
+.ve-color-row {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 0.3rem;
+}
+.ve-color-row input[type="color"] {
+    width: 100%;
+    height: 28px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 2px;
+    cursor: pointer;
+    background: var(--bg-card);
+}
+
 .inspector-field {
     margin-bottom: 0.5rem;
 }

@@ -84,38 +84,46 @@ namespace Server.Services.Ai
 
             var config = context.Configuration;
 
-            // Read configuration options
-            var resolution = GetStringValue(config, "resolution", "full-hd");
-            var subtitleLanguage = GetStringValue(config, "subtitleLanguage", "es");
-            var subtitleModel = GetStringValue(config, "subtitleModel", "default");
-            var subtitleStyle = GetStringValue(config, "subtitleStyle", "boxed");
-            var subtitleFontSize = GetIntValue(config, "subtitleFontSize", 120);
-            var subtitleFontFamily = GetStringValue(config, "subtitleFontFamily", "Arial");
-            var subtitlePosition = GetStringValue(config, "subtitlePosition", "bottom-center");
-            var subtitleLineColor = GetStringValue(config, "subtitleLineColor", "#FFFFFF");
-            var subtitleWordColor = GetStringValue(config, "subtitleWordColor", "#FFFF00");
-            var subtitleBoxColor = GetStringValue(config, "subtitleBoxColor", "#000000CC");
-            var voiceModel = GetStringValue(config, "voiceModel", "azure");
-            var voiceName = GetStringValue(config, "voiceName", "es-ES-AlvaroNeural");
-            var enableSubtitles = GetBoolValue(config, "enableSubtitles", true);
-            var enableVoice = GetBoolValue(config, "enableVoice", true);
+            // Read all configuration options into a settings record
+            var settings = new VideoSettings
+            {
+                // Movie-level
+                Resolution = GetStringValue(config, "resolution", "full-hd"),
+                Quality = GetStringValue(config, "quality", "high"),
+                Cache = GetBoolValue(config, "cache", true),
+                // Transitions
+                TransitionStyle = GetStringValue(config, "transitionStyle", "none"),
+                TransitionDuration = GetDoubleValue(config, "transitionDuration", 1.0),
+                // Voice
+                EnableVoice = GetBoolValue(config, "enableVoice", true),
+                VoiceModel = GetStringValue(config, "voiceModel", "azure"),
+                VoiceName = GetStringValue(config, "voiceName", "es-ES-AlvaroNeural"),
+                VoiceSpeed = GetDoubleValue(config, "voiceSpeed", 1.0),
+                // Subtitles
+                EnableSubtitles = GetBoolValue(config, "enableSubtitles", true),
+                SubtitleLanguage = GetStringValue(config, "subtitleLanguage", "es"),
+                SubtitleModel = GetStringValue(config, "subtitleModel", "default"),
+                SubtitleStyle = GetStringValue(config, "subtitleStyle", "boxed"),
+                SubtitleFontSize = GetIntValue(config, "subtitleFontSize", 120),
+                SubtitleFontFamily = GetStringValue(config, "subtitleFontFamily", "Arial"),
+                SubtitlePosition = GetStringValue(config, "subtitlePosition", "bottom-center"),
+                SubtitleLineColor = GetStringValue(config, "subtitleLineColor", "#FFFFFF"),
+                SubtitleWordColor = GetStringValue(config, "subtitleWordColor", "#FFFF00"),
+                SubtitleBoxColor = GetStringValue(config, "subtitleBoxColor", "#000000CC"),
+                SubtitleOutlineColor = GetStringValue(config, "subtitleOutlineColor", ""),
+                SubtitleOutlineWidth = GetIntValue(config, "subtitleOutlineWidth", 0),
+                SubtitleMaxWordsPerLine = GetIntValue(config, "subtitleMaxWordsPerLine", 4),
+            };
 
             // Try to parse input as JSON with scenes
             object moviePayload;
             if (input.TrimStart().StartsWith("{") || input.TrimStart().StartsWith("["))
             {
-                moviePayload = BuildFromJsonInput(input, resolution, enableSubtitles, enableVoice,
-                    subtitleLanguage, subtitleModel, subtitleStyle, subtitleFontSize, subtitleFontFamily,
-                    subtitlePosition, subtitleLineColor, subtitleWordColor, subtitleBoxColor,
-                    voiceModel, voiceName);
+                moviePayload = BuildFromJsonInput(input, settings);
             }
             else
             {
-                // Plain text mode: use input as voiceover script, video URLs from config
-                moviePayload = BuildFromTextInput(input, config, resolution, enableSubtitles, enableVoice,
-                    subtitleLanguage, subtitleModel, subtitleStyle, subtitleFontSize, subtitleFontFamily,
-                    subtitlePosition, subtitleLineColor, subtitleWordColor, subtitleBoxColor,
-                    voiceModel, voiceName);
+                moviePayload = BuildFromTextInput(input, config, settings);
             }
 
             // Submit render job
@@ -209,12 +217,7 @@ namespace Server.Services.Ai
         /// Build movie payload from structured JSON input.
         /// Expected format: { "scenes": [{ "videoUrl": "...", "script": "..." }, ...] }
         /// </summary>
-        private static object BuildFromJsonInput(string jsonInput, string resolution,
-            bool enableSubtitles, bool enableVoice,
-            string subtitleLang, string subtitleModel, string subtitleStyle,
-            int subtitleFontSize, string subtitleFontFamily, string subtitlePosition,
-            string subtitleLineColor, string subtitleWordColor, string subtitleBoxColor,
-            string voiceModel, string voiceName)
+        private static object BuildFromJsonInput(string jsonInput, VideoSettings s)
         {
             var doc = JsonDocument.Parse(jsonInput);
             var root = doc.RootElement;
@@ -223,7 +226,7 @@ namespace Server.Services.Ai
 
             var scenesArray = root.ValueKind == JsonValueKind.Array
                 ? root
-                : root.TryGetProperty("scenes", out var s) ? s : root;
+                : root.TryGetProperty("scenes", out var sa) ? sa : root;
 
             if (scenesArray.ValueKind == JsonValueKind.Array)
             {
@@ -231,30 +234,21 @@ namespace Server.Services.Ai
                 {
                     var videoUrl = scene.TryGetProperty("videoUrl", out var vu) ? vu.GetString() : null;
                     var script = scene.TryGetProperty("script", out var sc) ? sc.GetString() : null;
-
-                    scenes.Add(BuildScene(videoUrl, script, enableSubtitles, enableVoice,
-                        subtitleLang, subtitleModel, subtitleStyle, subtitleFontSize,
-                        subtitleFontFamily, subtitlePosition, subtitleLineColor,
-                        subtitleWordColor, subtitleBoxColor, voiceModel, voiceName));
+                    scenes.Add(BuildScene(videoUrl, script, s));
                 }
             }
 
             if (scenes.Count == 0)
                 throw new InvalidOperationException("Json2Video: no se encontraron escenas en el input JSON");
 
-            return new { resolution, scenes };
+            return BuildMoviePayload(s, scenes);
         }
 
         /// <summary>
         /// Build movie payload from plain text input (voiceover script).
         /// Video URLs come from configuration.
         /// </summary>
-        private static object BuildFromTextInput(string textInput, Dictionary<string, object> config,
-            string resolution, bool enableSubtitles, bool enableVoice,
-            string subtitleLang, string subtitleModel, string subtitleStyle,
-            int subtitleFontSize, string subtitleFontFamily, string subtitlePosition,
-            string subtitleLineColor, string subtitleWordColor, string subtitleBoxColor,
-            string voiceModel, string voiceName)
+        private static object BuildFromTextInput(string textInput, Dictionary<string, object> config, VideoSettings s)
         {
             // Get video URLs from config (comma-separated or JSON array)
             var videoUrls = new List<string>();
@@ -276,38 +270,43 @@ namespace Server.Services.Ai
 
             if (videoUrls.Count > 0)
             {
-                // Distribute script across scenes with video clips
                 var scriptParts = SplitScript(textInput, videoUrls.Count);
                 for (var i = 0; i < videoUrls.Count; i++)
                 {
                     var script = i < scriptParts.Count ? scriptParts[i] : null;
-                    scenes.Add(BuildScene(videoUrls[i], script, enableSubtitles, enableVoice,
-                        subtitleLang, subtitleModel, subtitleStyle, subtitleFontSize,
-                        subtitleFontFamily, subtitlePosition, subtitleLineColor,
-                        subtitleWordColor, subtitleBoxColor, voiceModel, voiceName));
+                    scenes.Add(BuildScene(videoUrls[i], script, s));
                 }
             }
             else
             {
-                // No video URLs: create a single scene with just voice + subtitles
-                scenes.Add(BuildScene(null, textInput, enableSubtitles, enableVoice,
-                    subtitleLang, subtitleModel, subtitleStyle, subtitleFontSize,
-                    subtitleFontFamily, subtitlePosition, subtitleLineColor,
-                    subtitleWordColor, subtitleBoxColor, voiceModel, voiceName));
+                scenes.Add(BuildScene(null, textInput, s));
             }
 
-            return new { resolution, scenes };
+            return BuildMoviePayload(s, scenes);
         }
 
         /// <summary>
-        /// Build a single scene with optional video, voice, and subtitles.
+        /// Build the top-level movie object with all settings.
         /// </summary>
-        private static object BuildScene(string? videoUrl, string? script,
-            bool enableSubtitles, bool enableVoice,
-            string subtitleLang, string subtitleModel, string subtitleStyle,
-            int subtitleFontSize, string subtitleFontFamily, string subtitlePosition,
-            string subtitleLineColor, string subtitleWordColor, string subtitleBoxColor,
-            string voiceModel, string voiceName)
+        private static Dictionary<string, object> BuildMoviePayload(VideoSettings s, List<object> scenes)
+        {
+            var movie = new Dictionary<string, object>
+            {
+                ["resolution"] = s.Resolution,
+                ["quality"] = s.Quality,
+                ["scenes"] = scenes,
+            };
+
+            if (!s.Cache)
+                movie["cache"] = false;
+
+            return movie;
+        }
+
+        /// <summary>
+        /// Build a single scene with optional video, voice, subtitles and transition.
+        /// </summary>
+        private static object BuildScene(string? videoUrl, string? script, VideoSettings s)
         {
             var elements = new List<Dictionary<string, object>>();
 
@@ -323,40 +322,75 @@ namespace Server.Services.Ai
             }
 
             // Voice element
-            if (enableVoice && !string.IsNullOrEmpty(script))
+            if (s.EnableVoice && !string.IsNullOrEmpty(script))
             {
-                elements.Add(new Dictionary<string, object>
+                var voice = new Dictionary<string, object>
                 {
                     ["type"] = "voice",
                     ["text"] = script,
-                    ["voice"] = voiceName,
-                    ["model"] = voiceModel
-                });
+                    ["voice"] = s.VoiceName,
+                    ["model"] = s.VoiceModel
+                };
+
+                // ElevenLabs speed setting
+                if (s.VoiceModel.StartsWith("elevenlabs") && Math.Abs(s.VoiceSpeed - 1.0) > 0.01)
+                {
+                    voice["model-settings"] = new Dictionary<string, object>
+                    {
+                        ["voice_settings"] = new Dictionary<string, object>
+                        {
+                            ["speed"] = s.VoiceSpeed
+                        }
+                    };
+                }
+
+                elements.Add(voice);
             }
 
             // Subtitle element (auto-generated from audio)
-            if (enableSubtitles)
+            if (s.EnableSubtitles)
             {
-                elements.Add(new Dictionary<string, object>
+                var sub = new Dictionary<string, object>
                 {
                     ["type"] = "subtitles",
-                    ["model"] = subtitleModel,
-                    ["language"] = subtitleLang,
-                    ["font-family"] = subtitleFontFamily,
-                    ["font-size"] = subtitleFontSize,
-                    ["position"] = subtitlePosition,
-                    ["line-color"] = subtitleLineColor,
-                    ["word-color"] = subtitleWordColor,
-                    ["box-color"] = subtitleBoxColor,
-                    ["style"] = subtitleStyle
-                });
+                    ["model"] = s.SubtitleModel,
+                    ["language"] = s.SubtitleLanguage,
+                    ["font-family"] = s.SubtitleFontFamily,
+                    ["font-size"] = s.SubtitleFontSize,
+                    ["position"] = s.SubtitlePosition,
+                    ["line-color"] = s.SubtitleLineColor,
+                    ["word-color"] = s.SubtitleWordColor,
+                    ["box-color"] = s.SubtitleBoxColor,
+                    ["style"] = s.SubtitleStyle,
+                    ["max-words-per-line"] = s.SubtitleMaxWordsPerLine,
+                };
+
+                if (s.SubtitleOutlineWidth > 0 && !string.IsNullOrEmpty(s.SubtitleOutlineColor))
+                {
+                    sub["outline-color"] = s.SubtitleOutlineColor;
+                    sub["outline-width"] = s.SubtitleOutlineWidth;
+                }
+
+                elements.Add(sub);
             }
 
-            return new Dictionary<string, object>
+            var scene = new Dictionary<string, object>
             {
                 ["duration"] = -1,
                 ["elements"] = elements
             };
+
+            // Scene transition
+            if (s.TransitionStyle != "none" && !string.IsNullOrEmpty(s.TransitionStyle))
+            {
+                scene["transition"] = new Dictionary<string, object>
+                {
+                    ["style"] = s.TransitionStyle,
+                    ["duration"] = s.TransitionDuration
+                };
+            }
+
+            return scene;
         }
 
         /// <summary>
@@ -422,5 +456,48 @@ namespace Server.Services.Ai
             if (bool.TryParse(value?.ToString(), out var parsed)) return parsed;
             return fallback;
         }
+
+        private static double GetDoubleValue(Dictionary<string, object> config, string key, double fallback)
+        {
+            if (!config.TryGetValue(key, out var value)) return fallback;
+            if (value is JsonElement el)
+            {
+                if (el.ValueKind == JsonValueKind.Number) return el.GetDouble();
+                if (el.ValueKind == JsonValueKind.String && double.TryParse(el.GetString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var d)) return d;
+            }
+            if (value is double dv) return dv;
+            if (double.TryParse(value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed)) return parsed;
+            return fallback;
+        }
+    }
+
+    internal class VideoSettings
+    {
+        // Movie-level
+        public string Resolution { get; set; } = "full-hd";
+        public string Quality { get; set; } = "high";
+        public bool Cache { get; set; } = true;
+        // Transitions
+        public string TransitionStyle { get; set; } = "none";
+        public double TransitionDuration { get; set; } = 1.0;
+        // Voice
+        public bool EnableVoice { get; set; } = true;
+        public string VoiceModel { get; set; } = "azure";
+        public string VoiceName { get; set; } = "es-ES-AlvaroNeural";
+        public double VoiceSpeed { get; set; } = 1.0;
+        // Subtitles
+        public bool EnableSubtitles { get; set; } = true;
+        public string SubtitleLanguage { get; set; } = "es";
+        public string SubtitleModel { get; set; } = "default";
+        public string SubtitleStyle { get; set; } = "boxed";
+        public int SubtitleFontSize { get; set; } = 120;
+        public string SubtitleFontFamily { get; set; } = "Arial";
+        public string SubtitlePosition { get; set; } = "bottom-center";
+        public string SubtitleLineColor { get; set; } = "#FFFFFF";
+        public string SubtitleWordColor { get; set; } = "#FFFF00";
+        public string SubtitleBoxColor { get; set; } = "#000000CC";
+        public string SubtitleOutlineColor { get; set; } = "";
+        public int SubtitleOutlineWidth { get; set; }
+        public int SubtitleMaxWordsPerLine { get; set; } = 4;
     }
 }
