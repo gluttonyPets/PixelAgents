@@ -86,6 +86,26 @@ namespace Server.Services.Ai
             if (!project.ProjectModules.Any())
                 throw new InvalidOperationException("El proyecto no tiene modulos asignados");
 
+            var executionId = Guid.NewGuid();
+            // Store relative path so it survives app restarts / redeployments
+            var relativeWorkspace = Path.Combine(tenantDbName, projectId.ToString(), executionId.ToString());
+            var workspacePath = Path.Combine(_mediaRoot, relativeWorkspace);
+
+            var execution = new ProjectExecution
+            {
+                Id = executionId,
+                ProjectId = projectId,
+                Status = "Running",
+                WorkspacePath = relativeWorkspace,
+                CreatedAt = DateTime.UtcNow,
+                UserInput = userInput,
+            };
+
+            db.ProjectExecutions.Add(execution);
+            await db.SaveChangesAsync();
+
+            Directory.CreateDirectory(workspacePath);
+
             // ── Pre-flight: validate all API keys before starting ──
             var validatedKeys = new HashSet<string>();
             var errors = new List<string>();
@@ -123,28 +143,14 @@ namespace Server.Services.Ai
             }
 
             if (errors.Count > 0)
-                throw new InvalidOperationException(
-                    "Validacion pre-ejecucion fallida:\n" + string.Join("\n", errors));
-
-            var executionId = Guid.NewGuid();
-            // Store relative path so it survives app restarts / redeployments
-            var relativeWorkspace = Path.Combine(tenantDbName, projectId.ToString(), executionId.ToString());
-            var workspacePath = Path.Combine(_mediaRoot, relativeWorkspace);
-
-            var execution = new ProjectExecution
             {
-                Id = executionId,
-                ProjectId = projectId,
-                Status = "Running",
-                WorkspacePath = relativeWorkspace,
-                CreatedAt = DateTime.UtcNow,
-                UserInput = userInput,
-            };
-
-            db.ProjectExecutions.Add(execution);
-            await db.SaveChangesAsync();
-
-            Directory.CreateDirectory(workspacePath);
+                var errorMsg = "Validacion pre-ejecucion fallida:\n" + string.Join("\n", errors);
+                execution.Status = "Failed";
+                execution.CompletedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync();
+                await _logger.LogAsync(projectId, executionId, "error", errorMsg);
+                throw new InvalidOperationException(errorMsg);
+            }
 
             // Cancel old executions of this project still stuck in WaitingForInput/WaitingForReview
             // and resolve their correlations to prevent stale Telegram/WhatsApp interactions
