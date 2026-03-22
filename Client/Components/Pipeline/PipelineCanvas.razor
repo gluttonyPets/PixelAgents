@@ -198,14 +198,49 @@
                             {
                                 @foreach (var output in sel.OrchestratorOutputs.OrderBy(o => o.SortOrder))
                                 {
-                                    <div class="orchestrator-output-card" style="border: 1px solid var(--border-color); border-radius: 0.3rem; padding: 0.4rem; margin-bottom: 0.4rem; font-size: 0.75rem;">
-                                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
-                                            <strong>@output.Label</strong>
-                                            <button class="btn btn-xs btn-danger" style="padding: 0.1rem 0.3rem; font-size: 0.65rem;" @onclick="() => DeleteOrchestratorOutput(sel, output.Id)">X</button>
+                                    var oid = output.Id;
+                                    var isEditing = _editingOutputId == oid;
+
+                                    @if (isEditing)
+                                    {
+                                        <div class="orch-output-card orch-output-editing">
+                                            <div class="inspector-field" style="margin-bottom: 0.25rem;">
+                                                <label>Label</label>
+                                                <input @bind="_editLabel" placeholder="Label" />
+                                            </div>
+                                            <div class="inspector-field" style="margin-bottom: 0.25rem;">
+                                                <label>Prompt</label>
+                                                <textarea @bind="_editPrompt" rows="3" placeholder="Prompt de esta salida..." style="font-size: 0.75rem;"></textarea>
+                                            </div>
+                                            <div class="inspector-field" style="margin-bottom: 0.35rem;">
+                                                <label>Tipo</label>
+                                                <select @bind="_editDataType">
+                                                    <option value="text">Texto</option>
+                                                    <option value="image">Imagen</option>
+                                                    <option value="video">Video</option>
+                                                    <option value="audio">Audio</option>
+                                                    <option value="file">Archivo</option>
+                                                </select>
+                                            </div>
+                                            <div style="display: flex; gap: 0.3rem;">
+                                                <button class="btn btn-xs btn-primary" style="flex: 1;" @onclick="() => SaveOrchestratorOutput(sel, output)">Guardar</button>
+                                                <button class="btn btn-xs" style="flex: 1; border: 1px solid var(--border-color);" @onclick="() => _editingOutputId = null">Cancelar</button>
+                                            </div>
                                         </div>
-                                        <div class="text-muted" style="font-size: 0.7rem; margin-bottom: 0.2rem;">@output.Prompt</div>
-                                        <div style="font-size: 0.7rem;">Tipo: <strong style="color: @PortDataType.GetColor(output.DataType);">@PortDataType.GetLabel(output.DataType)</strong></div>
-                                    </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="orch-output-card" @onclick="() => StartEditingOutput(output)">
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                                                <strong>@output.Label</strong>
+                                                <div style="display: flex; gap: 0.2rem; align-items: center;">
+                                                    <span class="orch-type-badge" style="color: @PortDataType.GetColor(output.DataType); border-color: @PortDataType.GetColor(output.DataType);">@PortDataType.GetLabel(output.DataType)</span>
+                                                    <button class="btn btn-xs btn-danger" style="padding: 0.1rem 0.3rem; font-size: 0.6rem;" @onclick="() => DeleteOrchestratorOutput(sel, output.Id)" @onclick:stopPropagation="true">X</button>
+                                                </div>
+                                            </div>
+                                            <div class="text-muted orch-prompt-preview">@(string.IsNullOrWhiteSpace(output.Prompt) ? "Sin prompt — click para editar" : output.Prompt)</div>
+                                        </div>
+                                    }
                                 }
                             }
                             else
@@ -324,6 +359,12 @@
     private string _newOutputLabel = "";
     private string _newOutputPrompt = "";
     private string _newOutputDataType = "text";
+
+    // Orchestrator output editing state
+    private Guid? _editingOutputId;
+    private string _editLabel = "";
+    private string _editPrompt = "";
+    private string _editDataType = "text";
 
     private IEnumerable<AiModuleResponse> FilteredModules => string.IsNullOrWhiteSpace(_searchFilter)
         ? AvailableModules
@@ -647,6 +688,41 @@
         else
         {
             _error = error ?? "Error al crear salida";
+        }
+        StateHasChanged();
+    }
+
+    private void StartEditingOutput(OrchestratorOutputResponse output)
+    {
+        _editingOutputId = output.Id;
+        _editLabel = output.Label;
+        _editPrompt = output.Prompt;
+        _editDataType = output.DataType;
+    }
+
+    private async Task SaveOrchestratorOutput(ProjectModuleResponse module, OrchestratorOutputResponse output)
+    {
+        if (string.IsNullOrWhiteSpace(_editLabel)) return;
+
+        var req = new OrchestratorOutputRequest(_editLabel, _editPrompt, _editDataType, output.SortOrder);
+        var (updated, error) = await Api.UpdateOrchestratorOutputAsync(ProjectId, module.Id, output.Id, req);
+
+        if (updated is not null)
+        {
+            var outputs = module.OrchestratorOutputs?.ToList() ?? new();
+            var oi = outputs.FindIndex(o => o.Id == output.Id);
+            if (oi >= 0) outputs[oi] = updated;
+
+            var idx = Modules.FindIndex(m => m.Id == module.Id);
+            if (idx >= 0)
+                Modules[idx] = module with { OrchestratorOutputs = outputs };
+
+            _editingOutputId = null;
+            await RebuildDrawflow();
+        }
+        else
+        {
+            _error = error ?? "Error al actualizar salida";
         }
         StateHasChanged();
     }
