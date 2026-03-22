@@ -6,6 +6,7 @@
 @inject ApiClient Api
 @inject IConfiguration Config
 @inject IJSRuntime JS
+@inject NavigationManager Nav
 @implements IAsyncDisposable
 
 @if (_project is null)
@@ -1754,15 +1755,15 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        _apiBase = (Config["ApiBaseUrl"] ?? "http://localhost:5000").TrimEnd('/');
+        var cfgUrl = Config["ApiBaseUrl"];
+        _apiBase = !string.IsNullOrWhiteSpace(cfgUrl) ? cfgUrl.TrimEnd('/') : Nav.BaseUri.TrimEnd('/');
         await LoadAll();
         await InitializeSignalR();
     }
 
     private async Task InitializeSignalR()
     {
-        var apiBase = (Config["ApiBaseUrl"] ?? "http://localhost:5000").TrimEnd('/');
-        var hubUrl = apiBase + "/hubs/execution";
+        var hubUrl = _apiBase + "/hubs/execution";
 
         _hubConnection = new HubConnectionBuilder()
             .WithUrl(hubUrl)
