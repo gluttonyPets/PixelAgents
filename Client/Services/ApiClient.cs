@@ -339,6 +339,19 @@ public class ApiClient
         return (true, null);
     }
 
+    public async Task<(bool Ok, string? Error)> ConfirmVideoEditAsync(
+        Guid executionId, bool approved)
+    {
+        var resp = await SendAsync(HttpMethod.Post,
+            $"/api/executions/{executionId}/confirm-video-edit",
+            new VideoEditConfirmRequest(approved));
+        if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
+        {
+            return (false, await ReadErrorAsync(resp));
+        }
+        return (true, null);
+    }
+
     // ── OrchestratorOutput CRUD ──
 
     public async Task<List<OrchestratorOutputResponse>> GetOrchestratorOutputsAsync(Guid projectId, Guid moduleId)

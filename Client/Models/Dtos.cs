@@ -63,6 +63,7 @@ public record ExecutionLogEntry(string Level, string Message, int? StepOrder, st
 public record ExecuteProjectRequest(string? UserInput);
 public record RetryFromStepRequest(int StepOrder, string? Comment);
 public record OrchestratorReviewRequest(bool Approved, string? Comment);
+public record VideoEditConfirmRequest(bool Approved);
 
 // ── OrchestratorOutput ──
 public record OrchestratorOutputRequest(string Label, string Prompt, string DataType, int SortOrder);

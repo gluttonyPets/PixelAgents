@@ -11,6 +11,7 @@ namespace Server.Services.Ai
         Task<ProjectExecution> ResumeFromBranchInteractionAsync(Guid executionId, string branchId, string responseText, UserDbContext db, string tenantDbName, CancellationToken ct = default);
         Task<ProjectExecution> AbortFromInteractionAsync(Guid executionId, UserDbContext db, string tenantDbName);
         Task<ProjectExecution> ResumeFromOrchestratorAsync(Guid executionId, bool approved, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default);
+        Task<ProjectExecution> ResumeFromVideoEditConfirmAsync(Guid executionId, bool approved, UserDbContext db, string tenantDbName, CancellationToken ct = default);
         Task SendNextQueuedInteractionAsync(Guid executionId, string chatId);
         Task CancelQueuedInteractionsAsync(Guid executionId);
     }

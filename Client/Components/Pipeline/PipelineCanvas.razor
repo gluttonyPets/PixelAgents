@@ -854,15 +854,6 @@
         return module?.ModuleType == "VideoEdit";
     }
 
-    /// <summary>
-    /// Returns true if any VideoEdit module in the pipeline has requireConfirmation enabled.
-    /// Called by the parent to show a confirmation dialog before executing.
-    /// </summary>
-    public bool HasVideoEditRequiringConfirmation()
-    {
-        return Modules.Any(m => m.ModuleType == "VideoEdit" && GetRequireConfirmation(m.Id));
-    }
-
     // ── Actions ──
 
     private async Task AddNodeFromPalette(AiModuleResponse module)
