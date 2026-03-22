@@ -206,9 +206,9 @@
                                 <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
                                     <input type="checkbox" checked="@GetRequireConfirmation(sel.Id)"
                                            @onchange="@(e => SetModuleConfig(sel.Id, "requireConfirmation", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
-                                    Confirmar antes de generar
+                                    Pedir confirmacion antes de ejecutar
                                 </label>
-                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Evita gastar creditos por error.</p>
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Si esta activado, al pulsar Ejecutar aparecera un aviso para que confirmes antes de gastar creditos de Json2Video.</p>
                             </div>
                             <div class="inspector-field">
                                 <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
