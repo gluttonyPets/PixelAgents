@@ -113,7 +113,8 @@ RULES:
 3. Each ""content"" must follow the specific prompt instructions for that output.
 4. Plain ASCII only — no emojis, no markdown, no special characters in the content.
 5. Keep content concise but complete. Each output's content will be sent as a prompt to another AI module.
-6. Analyze the input thoroughly and distribute relevant information to each output as needed.";
+6. Analyze the input thoroughly and distribute relevant information to each output as needed.
+7. CRITICAL: Each output is completely INDEPENDENT. They will be processed separately by different modules with NO shared context. NEVER reference content from another output (e.g. ""as mentioned above"", ""same as output_1"", ""following the previous format""). NEVER reference the summary. Each content must be fully self-contained and understandable on its own without any other output.";
         }
 
         /// <summary>
