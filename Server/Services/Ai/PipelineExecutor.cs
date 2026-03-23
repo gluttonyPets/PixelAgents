@@ -3387,32 +3387,56 @@ Datos de la ejecucion:
 
             var stepResults = new Dictionary<int, AiResult>();
 
+            // Restore user input early — needed for ResolveInputs below
+            var userInput = pauseData.UserInput;
+            var projectId = project.Id;
+
             // Mark checkpoint step as completed — pass-through: outputs = inputs
             checkpointStepExec.Status = "Completed";
             checkpointStepExec.CompletedAt = DateTime.UtcNow;
             checkpointStepExec.OutputData = checkpointStepExec.InputData; // keep display data for history
 
             // Build StepOutput for the checkpoint so downstream steps can consume it.
-            // The checkpoint is a pass-through: resolve its inputs from the restored stepOutputs
-            // so that the next step receives the actual content (not the checkpoint display JSON).
+            // The checkpoint is a pure pass-through: find the nearest previous step's output
+            // and forward it directly so the next step receives the real content.
             var checkpointModule = project.ProjectModules.FirstOrDefault(m => m.StepOrder == pausedStep);
-            var checkpointResolvedInputs = checkpointModule is not null
-                ? ResolveInputs(checkpointModule, userInput, stepResults, stepOutputs, checkpointModule.AiModule.ModuleType,
-                    checkpointModule.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes))
-                : new List<string>();
+            StepOutput? upstreamOutput = null;
 
-            var checkpointOutput = new StepOutput
+            // Try to find the upstream step output via the same branch-aware logic
+            if (checkpointModule is not null)
             {
-                Type = "checkpoint",
-                Content = checkpointResolvedInputs.Count > 0
-                    ? string.Join("\n\n", checkpointResolvedInputs)
-                    : checkpointStepExec.InputData ?? "",
-                Summary = "Checkpoint aprobado",
-                Items = checkpointResolvedInputs.Count > 1
-                    ? checkpointResolvedInputs.Select(i => new OutputItem { Content = i }).ToList()
-                    : new List<OutputItem>(),
-                Metadata = new Dictionary<string, object> { ["approved"] = true }
-            };
+                var branches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+                var prevOrder = FindPreviousStepInBranch(
+                    pausedStep, checkpointModule.BranchId, checkpointModule.BranchFromStep,
+                    stepOutputs, stepResults, branches);
+                stepOutputs.TryGetValue(prevOrder, out upstreamOutput);
+            }
+
+            // Fallback: grab the highest-ordered step output before the checkpoint
+            if (upstreamOutput is null)
+            {
+                var prevKey = stepOutputs.Keys.Where(k => k < pausedStep).OrderByDescending(k => k).FirstOrDefault();
+                if (prevKey > 0)
+                    stepOutputs.TryGetValue(prevKey, out upstreamOutput);
+            }
+
+            var checkpointOutput = upstreamOutput is not null
+                ? new StepOutput
+                {
+                    Type = "checkpoint",
+                    Content = upstreamOutput.Content,
+                    Summary = "Checkpoint aprobado",
+                    Items = upstreamOutput.Items,
+                    Files = upstreamOutput.Files,
+                    Metadata = new Dictionary<string, object> { ["approved"] = true }
+                }
+                : new StepOutput
+                {
+                    Type = "checkpoint",
+                    Content = checkpointStepExec.InputData ?? "",
+                    Summary = "Checkpoint aprobado",
+                    Metadata = new Dictionary<string, object> { ["approved"] = true }
+                };
             stepOutputs[pausedStep] = checkpointOutput;
             stepModuleTypes[pausedStep] = "Checkpoint";
 
@@ -3431,8 +3455,6 @@ Datos de la ejecucion:
             var allModules = project.ProjectModules.OrderBy(m => m.StepOrder).ToList();
             var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
             var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, execution.ProjectId, execution.Id);
-            var userInput = pauseData.UserInput;
-            var projectId = project.Id;
 
             // ── Branch checkpoint: resume the branch, then check if everything is done ──
             if (!string.IsNullOrEmpty(pauseData.BranchId))
