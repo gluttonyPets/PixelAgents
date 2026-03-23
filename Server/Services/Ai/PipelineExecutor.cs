@@ -1835,6 +1835,7 @@ Datos de la ejecucion:
             {
                 mediaFiles = prevStepExec.Files
                     .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
+                    .OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
                     .ToList();
             }
 
@@ -1844,10 +1845,17 @@ Datos de la ejecucion:
                 var fileIds = mediaOutput.Files.Select(f => f.FileId).Where(id => id != Guid.Empty).ToList();
                 if (fileIds.Count > 0)
                 {
-                    mediaFiles = await db.ExecutionFiles
+                    var unorderedFiles = await db.ExecutionFiles
                         .Where(f => fileIds.Contains(f.Id))
                         .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
                         .ToListAsync();
+
+                    // Preserve the original order from StepOutput.Files
+                    var fileById = unorderedFiles.ToDictionary(f => f.Id);
+                    mediaFiles = fileIds
+                        .Where(id => fileById.ContainsKey(id))
+                        .Select(id => fileById[id])
+                        .ToList();
 
                     await _logger.LogAsync(projectId, executionId, "info",
                         $"[Publish Debug] Fallback via stepOutputs FileIds: found {mediaFiles.Count} file(s) from {fileIds.Count} IDs",
@@ -2466,7 +2474,9 @@ Datos de la ejecucion:
 
                 if (prevStepExec?.Files is not null)
                 {
-                    foreach (var file in prevStepExec.Files.Where(f => f.ContentType.StartsWith("image/")))
+                    foreach (var file in prevStepExec.Files
+                        .Where(f => f.ContentType.StartsWith("image/"))
+                        .OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase))
                     {
                         var filePath = Path.Combine(ResolveWorkspacePath(execution.WorkspacePath), file.FilePath);
                         if (System.IO.File.Exists(filePath))
