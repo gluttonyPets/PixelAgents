@@ -408,6 +408,32 @@
                         </div>
                     }
 
+                    @if (sel.ModuleType == "Publish")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Configuracion de publicacion</div>
+                            <div class="inspector-field">
+                                <label>Tipo de publicacion</label>
+                                <select value="@GetModuleConfig(sel.Id, "publishType", "post")"
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "publishType", e.Value?.ToString() ?? "post"))">
+                                    <option value="post">Post</option>
+                                    <option value="reel">Reel</option>
+                                    <option value="story">Story</option>
+                                </select>
+                            </div>
+                            <div class="inspector-field">
+                                <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
+                                <textarea rows="3" placeholder="{previous_output}"
+                                          value="@GetModuleConfig(sel.Id, "caption", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "caption", e.Value?.ToString() ?? ""))"></textarea>
+                            </div>
+                            <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                                Las imagenes/videos del paso anterior se adjuntan automaticamente.
+                                Buffer publica en el canal configurado. Programacion automatica.
+                            </p>
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "Orchestrator")
                     {
                         <div class="inspector-section">
