@@ -963,12 +963,25 @@ namespace Server.Services.Ai
                         var videoUrls = new List<string>();
                         foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
                         {
-                            if (stepModuleTypes.TryGetValue(prevOrder, out var prevType) && prevType == "VideoSearch"
-                                && stepResults.TryGetValue(prevOrder, out var prevResult))
+                            if (!stepModuleTypes.TryGetValue(prevOrder, out var prevType) || prevType != "VideoSearch")
+                                continue;
+
+                            // Try stepResults first (available during normal execution)
+                            if (stepResults.TryGetValue(prevOrder, out var prevResult)
+                                && prevResult.Metadata.TryGetValue("downloadUrl", out var dlUrl) && dlUrl is string dlUrlStr)
                             {
-                                // Json2Video needs public URLs — use the download URL from Pexels metadata
-                                if (prevResult.Metadata.TryGetValue("downloadUrl", out var dlUrl) && dlUrl is string dlUrlStr)
-                                    videoUrls.Add(dlUrlStr);
+                                videoUrls.Add(dlUrlStr);
+                                continue;
+                            }
+
+                            // Fallback to stepOutputs.Metadata (available after checkpoint resume,
+                            // where stepResults is empty but stepOutputs was restored from pause data)
+                            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput)
+                                && prevOutput.Metadata.TryGetValue("downloadUrl", out var dlMeta))
+                            {
+                                var url = dlMeta is JsonElement je ? je.GetString() : dlMeta?.ToString();
+                                if (!string.IsNullOrEmpty(url))
+                                    videoUrls.Add(url);
                             }
                         }
 
@@ -4417,11 +4430,25 @@ Datos de la ejecucion:
                         var bVideoUrls = new List<string>();
                         foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
                         {
-                            if (stepModuleTypes.TryGetValue(prevOrder, out var bPrevType) && bPrevType == "VideoSearch"
-                                && stepResults.TryGetValue(prevOrder, out var bPrevResult))
+                            if (!stepModuleTypes.TryGetValue(prevOrder, out var bPrevType) || bPrevType != "VideoSearch")
+                                continue;
+
+                            // Try stepResults first (available during normal execution)
+                            if (stepResults.TryGetValue(prevOrder, out var bPrevResult)
+                                && bPrevResult.Metadata.TryGetValue("downloadUrl", out var bDlUrl) && bDlUrl is string bDlUrlStr)
                             {
-                                if (bPrevResult.Metadata.TryGetValue("downloadUrl", out var bDlUrl) && bDlUrl is string bDlUrlStr)
-                                    bVideoUrls.Add(bDlUrlStr);
+                                bVideoUrls.Add(bDlUrlStr);
+                                continue;
+                            }
+
+                            // Fallback to stepOutputs.Metadata (available after checkpoint resume,
+                            // where stepResults is empty but stepOutputs was restored from pause data)
+                            if (stepOutputs.TryGetValue(prevOrder, out var bPrevOutput)
+                                && bPrevOutput.Metadata.TryGetValue("downloadUrl", out var bDlMeta))
+                            {
+                                var url = bDlMeta is JsonElement je ? je.GetString() : bDlMeta?.ToString();
+                                if (!string.IsNullOrEmpty(url))
+                                    bVideoUrls.Add(url);
                             }
                         }
                         if (bVideoUrls.Count > 0 && !bConfig.ContainsKey("videoUrls"))
