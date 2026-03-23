@@ -3476,6 +3476,56 @@ Datos de la ejecucion:
                     .Where(m => m.BranchId == pauseData.BranchId && m.StepOrder > pausedStep)
                     .OrderBy(m => m.StepOrder).ToList();
 
+                // Before resuming the paused branch, execute any sibling branches that
+                // haven't run yet. This is critical when the paused branch's remaining steps
+                // (e.g. VideoEdit) depend on outputs from sibling branches (e.g. VideoSearch).
+                var branchForkStep = allModules
+                    .Where(m => m.BranchId == pauseData.BranchId)
+                    .Select(m => m.BranchFromStep)
+                    .FirstOrDefault();
+
+                var executedModuleIds = execution.StepExecutions.Select(s => s.ProjectModuleId).ToHashSet();
+
+                var unexecutedSiblingBranches = branchForkStep.HasValue
+                    ? allModules
+                        .Where(m => m.BranchId != "main" && m.BranchId != pauseData.BranchId
+                            && m.BranchFromStep == branchForkStep.Value && !executedModuleIds.Contains(m.Id))
+                        .GroupBy(m => m.BranchId)
+                        .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList())
+                    : new Dictionary<string, List<ProjectModule>>();
+
+                if (unexecutedSiblingBranches.Count > 0)
+                {
+                    await _logger.LogAsync(projectId, execution.Id, "info",
+                        $"Ejecutando {unexecutedSiblingBranches.Count} rama(s) hermana(s) pendiente(s) antes de reanudar '{pauseData.BranchId}'");
+
+                    foreach (var (sibId, sibSteps) in unexecutedSiblingBranches)
+                    {
+                        await _logger.LogAsync(projectId, execution.Id, "info",
+                            $"Iniciando rama hermana '{sibId}' ({sibSteps.Count} pasos)");
+
+                        var sibResult = await ExecuteBranchStepsAsync(
+                            project, execution, sibId, sibSteps, userInput,
+                            stepResults, stepOutputs, stepModuleTypes,
+                            workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                        if (sibResult == BranchResult.Cancelled)
+                        {
+                            execution.Status = "Cancelled";
+                            execution.CompletedAt = DateTime.UtcNow;
+                            await db.SaveChangesAsync();
+                            return execution;
+                        }
+
+                        if (sibResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                            return execution;
+
+                        var sibLevel = sibResult == BranchResult.Failed ? "warning" : "success";
+                        await _logger.LogAsync(projectId, execution.Id, sibLevel,
+                            $"Rama hermana '{sibId}' {(sibResult == BranchResult.Failed ? "fallo" : "completada")}");
+                    }
+                }
+
                 if (branchSteps.Count > 0)
                 {
                     await _logger.LogAsync(projectId, execution.Id, "info",
@@ -3514,17 +3564,12 @@ Datos de la ejecucion:
 
                 // After branch checkpoint resume, check if there are remaining main steps
                 // that were never executed (e.g. main steps after an orchestrator whose branch had a checkpoint)
-                var branchForkStep = allModules
-                    .Where(m => m.BranchId == pauseData.BranchId)
-                    .Select(m => m.BranchFromStep)
-                    .FirstOrDefault();
-
                 var remainingMainAfterFork = branchForkStep.HasValue
                     ? allModules.Where(m => m.BranchId == "main" && m.StepOrder > branchForkStep.Value).OrderBy(m => m.StepOrder).ToList()
                     : new List<ProjectModule>();
 
-                // Use ProjectModuleId (not StepOrder) to detect executed steps — StepOrder can collide across branches
-                var executedModuleIds = execution.StepExecutions.Select(s => s.ProjectModuleId).ToHashSet();
+                // Refresh executed module IDs — sibling branches may have run above
+                executedModuleIds = execution.StepExecutions.Select(s => s.ProjectModuleId).ToHashSet();
 
                 // Also check for any unexecuted branches that fork from the same step
                 var unexecutedBranches = branchForkStep.HasValue
