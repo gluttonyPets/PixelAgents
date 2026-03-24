@@ -406,8 +406,8 @@
                                 </div>
                                 <div class="inspector-field">
                                     <label>Estilo</label>
-                                    <select value="@GetModuleConfig(sel.Id, "subtitleStyle", "boxed")"
-                                            @onchange="@(e => SetModuleConfig(sel.Id, "subtitleStyle", e.Value?.ToString() ?? "boxed"))">
+                                    <select value="@GetModuleConfig(sel.Id, "subtitleStyle", "boxed-word")"
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "subtitleStyle", e.Value?.ToString() ?? "boxed-word"))">
                                         <option value="classic">Classic</option>
                                         <option value="classic-progressive">Classic Progressive</option>
                                         <option value="boxed-line">Boxed Line</option>

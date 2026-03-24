@@ -106,7 +106,7 @@ namespace Server.Services.Ai
                 EnableSubtitles = GetBoolValue(config, "enableSubtitles", true),
                 SubtitleLanguage = GetStringValue(config, "subtitleLanguage", "es"),
                 SubtitleModel = GetStringValue(config, "subtitleModel", "default"),
-                SubtitleStyle = GetStringValue(config, "subtitleStyle", "boxed"),
+                SubtitleStyle = GetStringValue(config, "subtitleStyle", "boxed-word"),
                 SubtitleFontSize = GetIntValue(config, "subtitleFontSize", 120),
                 SubtitleFontFamily = GetStringValue(config, "subtitleFontFamily", "Arial"),
                 SubtitlePosition = GetStringValue(config, "subtitlePosition", "bottom-center"),
@@ -272,6 +272,26 @@ namespace Server.Services.Ai
             if (root.TryGetProperty("audio", out var audioEl) && audioEl.ValueKind == JsonValueKind.Object)
                 movie["audio"] = ConvertJsonElement(audioEl)!;
 
+            // If input JSON already has movie-level elements (e.g. subtitles from LLM),
+            // merge them but avoid duplicate subtitles
+            if (root.TryGetProperty("elements", out var inputElements) && inputElements.ValueKind == JsonValueKind.Array)
+            {
+                var movieElements = movie.ContainsKey("elements")
+                    ? (List<object>)movie["elements"]
+                    : new List<object>();
+                var hasSubtitles = movieElements.Any(e => e is Dictionary<string, object> d && d.TryGetValue("type", out var t) && t?.ToString() == "subtitles");
+
+                foreach (var el in inputElements.EnumerateArray())
+                {
+                    var elType = el.TryGetProperty("type", out var tp) ? tp.GetString() : null;
+                    if (elType == "subtitles" && hasSubtitles) continue; // skip duplicate
+                    var converted = ConvertJsonElement(el);
+                    if (converted is not null) movieElements.Add(converted);
+                }
+
+                movie["elements"] = movieElements;
+            }
+
             return movie;
         }
 
@@ -284,7 +304,6 @@ namespace Server.Services.Ai
             var elementsJson = sceneElement.GetProperty("elements");
             var elements = new List<object>();
             var hasVoice = false;
-            var hasSubtitles = false;
 
             foreach (var el in elementsJson.EnumerateArray())
             {
@@ -296,7 +315,6 @@ namespace Server.Services.Ai
                 {
                     var type = typeEl.GetString();
                     if (type == "voice") hasVoice = true;
-                    if (type == "subtitles") hasSubtitles = true;
                 }
 
                 elements.Add(converted);
@@ -323,30 +341,10 @@ namespace Server.Services.Ai
                 elements.Add(voice);
             }
 
-            // Auto-inject subtitles from module config if not present
-            if (s.EnableSubtitles && !hasSubtitles)
-            {
-                var sub = new Dictionary<string, object>
-                {
-                    ["type"] = "subtitles",
-                    ["model"] = s.SubtitleModel,
-                    ["language"] = s.SubtitleLanguage,
-                    ["font-family"] = s.SubtitleFontFamily,
-                    ["font-size"] = s.SubtitleFontSize,
-                    ["position"] = s.SubtitlePosition,
-                    ["line-color"] = s.SubtitleLineColor,
-                    ["word-color"] = s.SubtitleWordColor,
-                    ["box-color"] = s.SubtitleBoxColor,
-                    ["style"] = s.SubtitleStyle,
-                    ["max-words-per-line"] = s.SubtitleMaxWordsPerLine,
-                };
-                if (s.SubtitleOutlineWidth > 0 && !string.IsNullOrEmpty(s.SubtitleOutlineColor))
-                {
-                    sub["outline-color"] = s.SubtitleOutlineColor;
-                    sub["outline-width"] = s.SubtitleOutlineWidth;
-                }
-                elements.Add(sub);
-            }
+            // NOTE: subtitles are injected at movie level in BuildMoviePayload, not per-scene.
+            // If the LLM included a subtitles element inside scene elements, filter it out
+            // so it doesn't conflict with the movie-level subtitles.
+            elements.RemoveAll(el => el is Dictionary<string, object?> d && d.TryGetValue("type", out var t) && t?.ToString() == "subtitles");
 
             // Build scene dict
             var duration = sceneElement.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.Number
@@ -475,6 +473,41 @@ namespace Server.Services.Ai
             if (!s.Cache)
                 movie["cache"] = false;
 
+            // Subtitles: must be at movie level in the "elements" array (not per-scene).
+            // The API transcribes the full audio track after rendering all scenes.
+            if (s.EnableSubtitles)
+            {
+                var subtitleSettings = new Dictionary<string, object>
+                {
+                    ["style"] = s.SubtitleStyle,
+                    ["font-family"] = s.SubtitleFontFamily,
+                    ["font-size"] = s.SubtitleFontSize,
+                    ["position"] = s.SubtitlePosition,
+                    ["line-color"] = s.SubtitleLineColor,
+                    ["word-color"] = s.SubtitleWordColor,
+                    ["max-words-per-line"] = s.SubtitleMaxWordsPerLine,
+                };
+
+                if (!string.IsNullOrEmpty(s.SubtitleBoxColor))
+                    subtitleSettings["box-color"] = s.SubtitleBoxColor;
+
+                if (s.SubtitleOutlineWidth > 0 && !string.IsNullOrEmpty(s.SubtitleOutlineColor))
+                {
+                    subtitleSettings["outline-color"] = s.SubtitleOutlineColor;
+                    subtitleSettings["outline-width"] = s.SubtitleOutlineWidth;
+                }
+
+                var subtitleElement = new Dictionary<string, object>
+                {
+                    ["type"] = "subtitles",
+                    ["language"] = s.SubtitleLanguage,
+                    ["model"] = s.SubtitleModel,
+                    ["settings"] = subtitleSettings,
+                };
+
+                movie["elements"] = new List<object> { subtitleElement };
+            }
+
             return movie;
         }
 
@@ -500,16 +533,30 @@ namespace Server.Services.Ai
                         ["duration"] = hasVoice ? -1 : s.ImageDuration
                     };
 
-                    // Apply Ken Burns / pan animation to avoid flat static images
+                    // Apply Ken Burns animation to avoid flat static images
+                    // Json2Video: pan = direction (left/right/top/bottom), zoom = numeric (-10 to 10)
                     var anim = s.ImageAnimation;
                     if (anim == "random")
                     {
                         var options = new[] { "zoom-in", "zoom-out", "pan-left", "pan-right" };
                         anim = options[Random.Shared.Next(options.Length)];
                     }
-                    if (anim != "none" && !string.IsNullOrEmpty(anim))
+                    switch (anim)
                     {
-                        imgElement["pan"] = anim;
+                        case "zoom-in":
+                            imgElement["zoom"] = 3;
+                            break;
+                        case "zoom-out":
+                            imgElement["zoom"] = -3;
+                            break;
+                        case "pan-left":
+                            imgElement["pan"] = "left";
+                            imgElement["zoom"] = 2;
+                            break;
+                        case "pan-right":
+                            imgElement["pan"] = "right";
+                            imgElement["zoom"] = 2;
+                            break;
                     }
 
                     elements.Add(imgElement);
@@ -551,32 +598,7 @@ namespace Server.Services.Ai
                 elements.Add(voice);
             }
 
-            // Subtitle element (auto-generated from audio)
-            if (s.EnableSubtitles)
-            {
-                var sub = new Dictionary<string, object>
-                {
-                    ["type"] = "subtitles",
-                    ["model"] = s.SubtitleModel,
-                    ["language"] = s.SubtitleLanguage,
-                    ["font-family"] = s.SubtitleFontFamily,
-                    ["font-size"] = s.SubtitleFontSize,
-                    ["position"] = s.SubtitlePosition,
-                    ["line-color"] = s.SubtitleLineColor,
-                    ["word-color"] = s.SubtitleWordColor,
-                    ["box-color"] = s.SubtitleBoxColor,
-                    ["style"] = s.SubtitleStyle,
-                    ["max-words-per-line"] = s.SubtitleMaxWordsPerLine,
-                };
-
-                if (s.SubtitleOutlineWidth > 0 && !string.IsNullOrEmpty(s.SubtitleOutlineColor))
-                {
-                    sub["outline-color"] = s.SubtitleOutlineColor;
-                    sub["outline-width"] = s.SubtitleOutlineWidth;
-                }
-
-                elements.Add(sub);
-            }
+            // NOTE: subtitles are added at movie level, not scene level (see BuildMoviePayload)
 
             var scene = new Dictionary<string, object>
             {
@@ -697,7 +719,7 @@ namespace Server.Services.Ai
         public bool EnableSubtitles { get; set; } = true;
         public string SubtitleLanguage { get; set; } = "es";
         public string SubtitleModel { get; set; } = "default";
-        public string SubtitleStyle { get; set; } = "boxed";
+        public string SubtitleStyle { get; set; } = "boxed-word";
         public int SubtitleFontSize { get; set; } = 120;
         public string SubtitleFontFamily { get; set; } = "Arial";
         public string SubtitlePosition { get; set; } = "bottom-center";
