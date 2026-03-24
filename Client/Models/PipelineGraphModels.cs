@@ -225,20 +225,20 @@ public static class ModulePortRegistry
 
     public static string GetModuleIcon(string moduleType) => moduleType switch
     {
-        "Text" => "\u270E",           // ✎
-        "Image" => "\u25A3",          // ▣
-        "Video" => "\u25B6",          // ▶
-        "VideoSearch" => "\u25CE",    // ◎
-        "VideoEdit" => "\u2702",      // ✂
-        "Audio" => "\u266A",          // ♪
-        "Transcription" => "\u2261",  // ≡
-        "Orchestrator" => "\u25C8",   // ◈
-        "Design" => "\u2726",         // ✦
-        "Interaction" => "\u21C4",    // ⇄
-        "Publish" => "\u2197",        // ↗
-        "Embeddings" => "\u229E",     // ⊞
-        "Checkpoint" => "\u2713",     // ✓
-        _ => "\u2699"                 // ⚙
+        "Text" => "bi-chat-left-text",
+        "Image" => "bi-image",
+        "Video" => "bi-camera-video",
+        "VideoSearch" => "bi-search",
+        "VideoEdit" => "bi-scissors",
+        "Audio" => "bi-volume-up",
+        "Transcription" => "bi-mic",
+        "Orchestrator" => "bi-diagram-3",
+        "Design" => "bi-palette",
+        "Interaction" => "bi-chat-dots",
+        "Publish" => "bi-send",
+        "Embeddings" => "bi-grid-3x3",
+        "Checkpoint" => "bi-check-circle",
+        _ => "bi-gear"
     };
 
     public static string GetModuleColor(string moduleType) => moduleType switch

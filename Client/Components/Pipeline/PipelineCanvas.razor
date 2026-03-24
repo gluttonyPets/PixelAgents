@@ -39,7 +39,7 @@
 
                             <div class="module-category">
                                 <button class="module-category-header" @onclick="() => ToggleCategory(category.Key)">
-                                    <span class="module-category-icon">@category.Icon</span>
+                                    <span class="module-category-icon"><i class="bi @category.Icon"></i></span>
                                     <span class="module-category-label">@category.Label</span>
                                     <span class="module-category-count">@modulesInCategory.Count</span>
                                     <span class="module-category-chevron @(_expandedCategories.Contains(category.Key) ? "expanded" : "")">&#x25B6;</span>
@@ -51,7 +51,7 @@
                                         {
                                             <div class="palette-item" @onclick="() => AddNodeFromPalette(m)">
                                                 <div class="palette-item-icon" style="background: @ModulePortRegistry.GetModuleColor(m.ModuleType);">
-                                                    @ModulePortRegistry.GetModuleIcon(m.ModuleType)
+                                                    <i class="bi @ModulePortRegistry.GetModuleIcon(m.ModuleType)"></i>
                                                 </div>
                                                 <div class="palette-item-info">
                                                     <div class="palette-item-name">@m.Name</div>
@@ -660,10 +660,10 @@
     private record ModuleCategory(string Key, string Icon, string Label, string[] Types);
     private static readonly ModuleCategory[] _moduleCategories =
     [
-        new("ai", "\u25C8", "IA y Texto", ["Text", "Interaction", "Orchestrator"]),
-        new("media", "\u2726", "Generacion", ["Image", "Video", "Audio", "Design"]),
-        new("search", "\u25CE", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
-        new("control", "\u2699", "Control y Salida", ["VideoEdit", "Checkpoint", "Publish"]),
+        new("ai", "bi-cpu", "IA y Texto", ["Text", "Interaction", "Orchestrator"]),
+        new("media", "bi-brush", "Generacion", ["Image", "Video", "Audio", "Design"]),
+        new("search", "bi-search", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
+        new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Checkpoint", "Publish"]),
     ];
 
     private void ToggleModulePanel() => _showModulePanel = !_showModulePanel;

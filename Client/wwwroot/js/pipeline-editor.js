@@ -353,7 +353,7 @@ window.pipelineEditor = {
             : '';
         return '<div class="df-node-content">'
             + '<div class="df-node-overlay-spinner"></div>'
-            + '<div class="df-node-title">' + orderBadge + icon + ' ' + name + '</div>'
+            + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + name + '</div>'
             + '<div class="df-node-type">' + type + '</div>'
             + modelLine
             + warningLine

@@ -11,7 +11,7 @@
          @onmousedown:preventDefault
          @ontouchstart="OnHeaderTouchStart"
          @ontouchstart:preventDefault>
-        <span class="node-header-icon">@ModulePortRegistry.GetModuleIcon(Module.ModuleType)</span>
+        <span class="node-header-icon"><i class="bi @ModulePortRegistry.GetModuleIcon(Module.ModuleType)"></i></span>
         <span class="node-header-title" title="@Module.AiModuleName">
             @(Module.StepName ?? Module.AiModuleName)
         </span>
