@@ -226,17 +226,17 @@ public static class ModulePortRegistry
     public static string GetModuleIcon(string moduleType) => moduleType switch
     {
         "Text" => "\u270E",
-        "Image" => "\u1F5BC",
-        "Video" => "\u1F3AC",
-        "VideoSearch" => "\u1F50D",
-        "VideoEdit" => "\u1F3AC",
-        "Audio" => "\u1F3B5",
-        "Transcription" => "\u1F399",
-        "Orchestrator" => "\u1F9E0",
-        "Design" => "\u1F3A8",
-        "Interaction" => "\u1F4AC",
-        "Publish" => "\u1F4E4",
-        "Embeddings" => "\u1F9EE",
+        "Image" => "\U0001F5BC",
+        "Video" => "\U0001F3AC",
+        "VideoSearch" => "\U0001F50D",
+        "VideoEdit" => "\U0001F3AC",
+        "Audio" => "\U0001F3B5",
+        "Transcription" => "\U0001F399",
+        "Orchestrator" => "\U0001F9E0",
+        "Design" => "\U0001F3A8",
+        "Interaction" => "\U0001F4AC",
+        "Publish" => "\U0001F4E4",
+        "Embeddings" => "\U0001F9EE",
         "Checkpoint" => "\u2714",
         _ => "\u2699"
     };
