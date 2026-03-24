@@ -1104,9 +1104,16 @@ app.MapPost("/api/projects/{id}/duplicate", async (
     var source = await db.Projects
         .Include(p => p.ProjectModules)
             .ThenInclude(pm => pm.AiModule)
+        .Include(p => p.ProjectModules)
+            .ThenInclude(pm => pm.OrchestratorOutputs)
         .FirstOrDefaultAsync(p => p.Id == id);
 
     if (source is null) return Results.NotFound();
+
+    // Load connections from source project
+    var sourceConnections = await db.ModuleConnections
+        .Where(c => c.ProjectId == id)
+        .ToListAsync();
 
     var newProject = new Project
     {
@@ -1123,11 +1130,17 @@ app.MapPost("/api/projects/{id}/duplicate", async (
 
     db.Projects.Add(newProject);
 
+    // Map old module IDs to new module IDs
+    var moduleIdMap = new Dictionary<Guid, Guid>();
+
     foreach (var pm in source.ProjectModules)
     {
+        var newId = Guid.NewGuid();
+        moduleIdMap[pm.Id] = newId;
+
         db.ProjectModules.Add(new ProjectModule
         {
-            Id = Guid.NewGuid(),
+            Id = newId,
             ProjectId = newProject.Id,
             AiModuleId = pm.AiModuleId,
             StepOrder = pm.StepOrder,
@@ -1137,9 +1150,51 @@ app.MapPost("/api/projects/{id}/duplicate", async (
             IsActive = pm.IsActive,
             BranchId = pm.BranchId,
             BranchFromStep = pm.BranchFromStep,
+            PosX = pm.PosX,
+            PosY = pm.PosY,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
+    }
+
+    // Copy connections, remapping module IDs
+    foreach (var conn in sourceConnections)
+    {
+        if (moduleIdMap.TryGetValue(conn.FromModuleId, out var newFromId)
+            && moduleIdMap.TryGetValue(conn.ToModuleId, out var newToId))
+        {
+            db.ModuleConnections.Add(new ModuleConnection
+            {
+                Id = Guid.NewGuid(),
+                ProjectId = newProject.Id,
+                FromModuleId = newFromId,
+                FromPort = conn.FromPort,
+                ToModuleId = newToId,
+                ToPort = conn.ToPort,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+    }
+
+    // Copy orchestrator outputs, remapping module IDs
+    foreach (var pm in source.ProjectModules)
+    {
+        if (pm.OrchestratorOutputs is null) continue;
+        foreach (var o in pm.OrchestratorOutputs)
+        {
+            db.OrchestratorOutputs.Add(new OrchestratorOutput
+            {
+                Id = Guid.NewGuid(),
+                ProjectModuleId = moduleIdMap[pm.Id],
+                OutputKey = o.OutputKey,
+                Label = o.Label,
+                Prompt = o.Prompt,
+                DataType = o.DataType,
+                SortOrder = o.SortOrder,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
+        }
     }
 
     await db.SaveChangesAsync();
