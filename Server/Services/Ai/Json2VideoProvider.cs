@@ -135,7 +135,6 @@ namespace Server.Services.Ai
 
             var jsonPayload = JsonSerializer.Serialize(moviePayload, new JsonSerializerOptions
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
             });
 
