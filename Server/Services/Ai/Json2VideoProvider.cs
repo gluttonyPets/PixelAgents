@@ -215,12 +215,23 @@ namespace Server.Services.Ai
 
         /// <summary>
         /// Build movie payload from structured JSON input.
-        /// Expected format: { "scenes": [{ "videoUrl": "...", "script": "..." }, ...] }
+        /// Supports two scene formats (can be mixed):
+        ///   - Rich: scene has "elements" array → pass-through to API, auto-inject voice/subtitles if missing
+        ///   - Legacy: scene has "videoUrl"/"script" → auto-build video+voice+subtitles
+        /// Movie-level overrides: "resolution", "quality", "cache", "audio" (background music)
         /// </summary>
         private static object BuildFromJsonInput(string jsonInput, VideoSettings s)
         {
             var doc = JsonDocument.Parse(jsonInput);
             var root = doc.RootElement;
+
+            // Movie-level overrides from input JSON
+            if (root.TryGetProperty("resolution", out var resEl) && resEl.ValueKind == JsonValueKind.String)
+                s.Resolution = resEl.GetString()!;
+            if (root.TryGetProperty("quality", out var qualEl) && qualEl.ValueKind == JsonValueKind.String)
+                s.Quality = qualEl.GetString()!;
+            if (root.TryGetProperty("cache", out var cacheEl) && (cacheEl.ValueKind == JsonValueKind.True || cacheEl.ValueKind == JsonValueKind.False))
+                s.Cache = cacheEl.GetBoolean();
 
             var scenes = new List<object>();
 
@@ -232,16 +243,152 @@ namespace Server.Services.Ai
             {
                 foreach (var scene in scenesArray.EnumerateArray())
                 {
-                    var videoUrl = scene.TryGetProperty("videoUrl", out var vu) ? vu.GetString() : null;
-                    var script = scene.TryGetProperty("script", out var sc) ? sc.GetString() : null;
-                    scenes.Add(BuildScene(videoUrl, script, s));
+                    if (scene.TryGetProperty("elements", out var elementsEl) && elementsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        // Rich mode: pass-through elements with smart defaults
+                        scenes.Add(BuildSceneFromElements(scene, s));
+                    }
+                    else
+                    {
+                        // Legacy mode: auto-build from videoUrl + script
+                        var videoUrl = scene.TryGetProperty("videoUrl", out var vu) ? vu.GetString() : null;
+                        var script = scene.TryGetProperty("script", out var sc) ? sc.GetString() : null;
+                        scenes.Add(BuildScene(videoUrl, script, s));
+                    }
                 }
             }
 
             if (scenes.Count == 0)
                 throw new InvalidOperationException("Json2Video: no se encontraron escenas en el input JSON");
 
-            return BuildMoviePayload(s, scenes);
+            var movie = BuildMoviePayload(s, scenes);
+
+            // Movie-level audio (background music)
+            if (root.TryGetProperty("audio", out var audioEl) && audioEl.ValueKind == JsonValueKind.Object)
+                movie["audio"] = ConvertJsonElement(audioEl)!;
+
+            return movie;
+        }
+
+        /// <summary>
+        /// Build a scene from an explicit "elements" array in the input JSON.
+        /// Auto-injects voice and subtitles from module config if not present.
+        /// </summary>
+        private static Dictionary<string, object> BuildSceneFromElements(JsonElement sceneElement, VideoSettings s)
+        {
+            var elementsJson = sceneElement.GetProperty("elements");
+            var elements = new List<object>();
+            var hasVoice = false;
+            var hasSubtitles = false;
+
+            foreach (var el in elementsJson.EnumerateArray())
+            {
+                var converted = ConvertJsonElement(el);
+                if (converted is null) continue;
+
+                // Track which element types the LLM already provided
+                if (el.TryGetProperty("type", out var typeEl))
+                {
+                    var type = typeEl.GetString();
+                    if (type == "voice") hasVoice = true;
+                    if (type == "subtitles") hasSubtitles = true;
+                }
+
+                elements.Add(converted);
+            }
+
+            // Auto-inject voice from module config if script is present but no voice element
+            var script = sceneElement.TryGetProperty("script", out var scriptEl) ? scriptEl.GetString() : null;
+            if (s.EnableVoice && !hasVoice && !string.IsNullOrEmpty(script))
+            {
+                var voice = new Dictionary<string, object>
+                {
+                    ["type"] = "voice",
+                    ["text"] = script,
+                    ["voice"] = s.VoiceName,
+                    ["model"] = s.VoiceModel
+                };
+                if (s.VoiceModel.StartsWith("elevenlabs") && Math.Abs(s.VoiceSpeed - 1.0) > 0.01)
+                {
+                    voice["model-settings"] = new Dictionary<string, object>
+                    {
+                        ["voice_settings"] = new Dictionary<string, object> { ["speed"] = s.VoiceSpeed }
+                    };
+                }
+                elements.Add(voice);
+            }
+
+            // Auto-inject subtitles from module config if not present
+            if (s.EnableSubtitles && !hasSubtitles)
+            {
+                var sub = new Dictionary<string, object>
+                {
+                    ["type"] = "subtitles",
+                    ["model"] = s.SubtitleModel,
+                    ["language"] = s.SubtitleLanguage,
+                    ["font-family"] = s.SubtitleFontFamily,
+                    ["font-size"] = s.SubtitleFontSize,
+                    ["position"] = s.SubtitlePosition,
+                    ["line-color"] = s.SubtitleLineColor,
+                    ["word-color"] = s.SubtitleWordColor,
+                    ["box-color"] = s.SubtitleBoxColor,
+                    ["style"] = s.SubtitleStyle,
+                    ["max-words-per-line"] = s.SubtitleMaxWordsPerLine,
+                };
+                if (s.SubtitleOutlineWidth > 0 && !string.IsNullOrEmpty(s.SubtitleOutlineColor))
+                {
+                    sub["outline-color"] = s.SubtitleOutlineColor;
+                    sub["outline-width"] = s.SubtitleOutlineWidth;
+                }
+                elements.Add(sub);
+            }
+
+            // Build scene dict
+            var duration = sceneElement.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.Number
+                ? durEl.GetDouble()
+                : -1.0;
+
+            var scene = new Dictionary<string, object>
+            {
+                ["duration"] = duration,
+                ["elements"] = elements
+            };
+
+            // Transition: use scene-level if provided, otherwise fall back to module config
+            if (sceneElement.TryGetProperty("transition", out var transEl) && transEl.ValueKind == JsonValueKind.Object)
+            {
+                scene["transition"] = ConvertJsonElement(transEl)!;
+            }
+            else if (s.TransitionStyle != "none" && !string.IsNullOrEmpty(s.TransitionStyle))
+            {
+                scene["transition"] = new Dictionary<string, object>
+                {
+                    ["style"] = s.TransitionStyle,
+                    ["duration"] = s.TransitionDuration
+                };
+            }
+
+            return scene;
+        }
+
+        /// <summary>
+        /// Recursively convert a JsonElement into a plain .NET object graph
+        /// (Dictionary, List, string, number, bool, null) for serialization.
+        /// </summary>
+        private static object? ConvertJsonElement(JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                JsonValueKind.Object => element.EnumerateObject()
+                    .ToDictionary(p => p.Name, p => ConvertJsonElement(p.Value)),
+                JsonValueKind.Array => element.EnumerateArray()
+                    .Select(ConvertJsonElement).ToList<object?>(),
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number => element.TryGetInt64(out var l) ? (l >= int.MinValue && l <= int.MaxValue ? (object)(int)l : l) : (object)element.GetDouble(),
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => null
+            };
         }
 
         /// <summary>
