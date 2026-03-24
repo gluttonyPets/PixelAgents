@@ -5,43 +5,92 @@
 @inject ApiClient Api
 
 <div class="pipeline-editor-container">
-    <!-- ── Left: Module palette ── -->
-    <div class="pipeline-palette">
-        <div class="palette-header">Modulos</div>
-        <div class="palette-search">
-            <input type="text" placeholder="Buscar modulo..." @bind="_searchFilter" @bind:event="oninput" />
-        </div>
-        <div class="palette-list">
-            @foreach (var m in FilteredModules)
-            {
-                <div class="palette-item" @onclick="() => AddNodeFromPalette(m)">
-                    <div class="palette-item-icon" style="background: @ModulePortRegistry.GetModuleColor(m.ModuleType);">
-                        @ModulePortRegistry.GetModuleIcon(m.ModuleType)
-                    </div>
-                    <div class="palette-item-info">
-                        <div class="palette-item-name">@m.Name</div>
-                        <div class="palette-item-type">@m.ProviderType / @m.ModuleType</div>
-                    </div>
-                </div>
-            }
-        </div>
-    </div>
-
-    <!-- ── Center: Drawflow canvas ── -->
+    <!-- ── Center: Drawflow canvas (now full width) ── -->
     <div class="pipeline-canvas-wrapper">
         <div id="drawflow-@_canvasId" class="drawflow-container"></div>
 
         <!-- Toolbar -->
         <div class="canvas-toolbar">
-            <button @onclick="AutoLayout" title="Organizar automaticamente">&#x2B50; Auto-layout</button>
+            <button class="toolbar-btn toolbar-btn-primary" @onclick="ToggleModulePanel" title="Agregar modulo">
+                <span class="toolbar-btn-icon">&#x2795;</span> Modulo
+            </button>
+            <button class="toolbar-btn" @onclick="AutoLayout" title="Organizar automaticamente">&#x2B50; Auto-layout</button>
         </div>
+
+        <!-- Floating module selector panel -->
+        @if (_showModulePanel)
+        {
+            <div class="module-panel-backdrop" @onclick="CloseModulePanel"></div>
+            <div class="module-panel">
+                <div class="module-panel-header">
+                    <span>Agregar modulo</span>
+                    <button class="node-btn" @onclick="CloseModulePanel">&#x2715;</button>
+                </div>
+                <div class="module-panel-search">
+                    <input type="text" placeholder="Buscar modulo..." @bind="_searchFilter" @bind:event="oninput" />
+                </div>
+                <div class="module-panel-body">
+                    @if (string.IsNullOrWhiteSpace(_searchFilter))
+                    {
+                        @foreach (var category in _moduleCategories)
+                        {
+                            var modulesInCategory = AvailableModules.Where(m => category.Types.Contains(m.ModuleType)).ToList();
+                            if (modulesInCategory.Count == 0) continue;
+
+                            <div class="module-category">
+                                <button class="module-category-header" @onclick="() => ToggleCategory(category.Key)">
+                                    <span class="module-category-icon">@category.Icon</span>
+                                    <span class="module-category-label">@category.Label</span>
+                                    <span class="module-category-count">@modulesInCategory.Count</span>
+                                    <span class="module-category-chevron @(_expandedCategories.Contains(category.Key) ? "expanded" : "")">&#x25B6;</span>
+                                </button>
+                                @if (_expandedCategories.Contains(category.Key))
+                                {
+                                    <div class="module-category-items">
+                                        @foreach (var m in modulesInCategory)
+                                        {
+                                            <div class="palette-item" @onclick="() => AddNodeFromPalette(m)">
+                                                <div class="palette-item-icon" style="background: @ModulePortRegistry.GetModuleColor(m.ModuleType);">
+                                                    @ModulePortRegistry.GetModuleIcon(m.ModuleType)
+                                                </div>
+                                                <div class="palette-item-info">
+                                                    <div class="palette-item-name">@m.Name</div>
+                                                    <div class="palette-item-type">@m.ProviderType</div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div class="module-category-items">
+                            @foreach (var m in FilteredModules)
+                            {
+                                <div class="palette-item" @onclick="() => AddNodeFromPalette(m)">
+                                    <div class="palette-item-icon" style="background: @ModulePortRegistry.GetModuleColor(m.ModuleType);">
+                                        @ModulePortRegistry.GetModuleIcon(m.ModuleType)
+                                    </div>
+                                    <div class="palette-item-info">
+                                        <div class="palette-item-name">@m.Name</div>
+                                        <div class="palette-item-type">@m.ProviderType / @m.ModuleType</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
 
         @if (Modules.Count == 0 && _jsInitialized)
         {
             <div class="canvas-empty-overlay">
                 <span class="canvas-empty-state-icon">&#x1F9E9;</span>
                 <p>Pipeline vacio</p>
-                <p class="text-sm">Haz clic en un modulo del panel izquierdo para agregarlo</p>
+                <p class="text-sm">Pulsa <strong>+ Modulo</strong> para empezar a construir tu pipeline</p>
             </div>
         }
     </div>
@@ -604,6 +653,31 @@
     private int _lastLogCount;
     private string? _pendingAutoSelectModuleType;
 
+    // Module panel state
+    private bool _showModulePanel;
+    private HashSet<string> _expandedCategories = new() { "ai" };
+
+    private record ModuleCategory(string Key, string Icon, string Label, string[] Types);
+    private static readonly ModuleCategory[] _moduleCategories =
+    [
+        new("ai", "\u270E", "IA y Texto", ["Text", "Interaction", "Orchestrator"]),
+        new("media", "\u1F3A8", "Generacion", ["Image", "Video", "Audio", "Design"]),
+        new("search", "\u1F50D", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
+        new("control", "\u2699", "Control y Salida", ["VideoEdit", "Checkpoint", "Publish"]),
+    ];
+
+    private void ToggleModulePanel() => _showModulePanel = !_showModulePanel;
+    private void CloseModulePanel()
+    {
+        _showModulePanel = false;
+        _searchFilter = "";
+    }
+    private void ToggleCategory(string key)
+    {
+        if (!_expandedCategories.Add(key))
+            _expandedCategories.Remove(key);
+    }
+
     // Orchestrator output form state
     private string _newOutputLabel = "";
     private string _newOutputPrompt = "";
@@ -907,6 +981,8 @@
     private async Task AddNodeFromPalette(AiModuleResponse module)
     {
         _pendingAutoSelectModuleType = module.ModuleType;
+        _showModulePanel = false;
+        _searchFilter = "";
         await OnAddModule.InvokeAsync(module.Id);
     }
 
