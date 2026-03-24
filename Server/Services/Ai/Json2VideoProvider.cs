@@ -481,7 +481,7 @@ namespace Server.Services.Ai
                 {
                     ["style"] = s.SubtitleStyle,
                     ["font-family"] = s.SubtitleFontFamily,
-                    ["font-size"] = s.SubtitleFontSize,
+                    ["font-size"] = s.SubtitleFontSize.ToString(),
                     ["position"] = s.SubtitlePosition,
                     ["line-color"] = s.SubtitleLineColor,
                     ["word-color"] = s.SubtitleWordColor,
@@ -519,8 +519,9 @@ namespace Server.Services.Ai
             var elements = new List<Dictionary<string, object>>();
 
             // Media element (video or image)
-            // When voice is present, use duration=-1 so the image/video stretches to match
-            // the audio length. Only use fixed ImageDuration when there's no voiceover.
+            // When voice is present, use duration=-2 (match parent scene) so the image
+            // fills the entire scene which is sized by the voice duration.
+            // duration=-1 means "intrinsic length" which doesn't apply to static images.
             if (!string.IsNullOrEmpty(mediaUrl))
             {
                 var hasVoice = s.EnableVoice && !string.IsNullOrEmpty(script);
@@ -530,7 +531,7 @@ namespace Server.Services.Ai
                     {
                         ["type"] = "image",
                         ["src"] = mediaUrl,
-                        ["duration"] = hasVoice ? -1 : s.ImageDuration
+                        ["duration"] = hasVoice ? -2 : s.ImageDuration
                     };
 
                     // Apply Ken Burns animation to avoid flat static images
