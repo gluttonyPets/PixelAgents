@@ -486,15 +486,18 @@ namespace Server.Services.Ai
             var elements = new List<Dictionary<string, object>>();
 
             // Media element (video or image)
+            // When voice is present, use duration=-1 so the image/video stretches to match
+            // the audio length. Only use fixed ImageDuration when there's no voiceover.
             if (!string.IsNullOrEmpty(mediaUrl))
             {
+                var hasVoice = s.EnableVoice && !string.IsNullOrEmpty(script);
                 if (mediaType == "image")
                 {
                     elements.Add(new Dictionary<string, object>
                     {
                         ["type"] = "image",
                         ["src"] = mediaUrl,
-                        ["duration"] = s.ImageDuration
+                        ["duration"] = hasVoice ? -1 : s.ImageDuration
                     });
                 }
                 else
