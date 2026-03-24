@@ -956,41 +956,60 @@ namespace Server.Services.Ai
                             config["subtitleLanguage"] = slStr;
                         }
 
-                        // Collect video URLs from ALL completed VideoSearch steps (main + branches).
-                        // Branch steps may have higher StepOrder than this VideoEdit step due to
-                        // topological sort, but they execute before this step thanks to orchestrator
-                        // fork handling, so their results are already in the shared dictionaries.
-                        var videoUrls = new List<string>();
+                        // Collect media URLs from ALL completed VideoSearch and Image steps.
+                        // Each entry is a JSON object: {"url":"...","type":"video"|"image"}
+                        var mediaEntries = new List<Dictionary<string, string>>();
+                        var serverBase = (_configuration["BaseUrl"]
+                            ?? _configuration["AllowedOrigin"]
+                            ?? "").TrimEnd('/');
+
                         foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
                         {
-                            if (!stepModuleTypes.TryGetValue(prevOrder, out var prevType) || prevType != "VideoSearch")
+                            if (!stepModuleTypes.TryGetValue(prevOrder, out var prevType))
                                 continue;
 
-                            // Try stepResults first (available during normal execution)
-                            if (stepResults.TryGetValue(prevOrder, out var prevResult)
-                                && prevResult.Metadata.TryGetValue("downloadUrl", out var dlUrl) && dlUrl is string dlUrlStr)
+                            if (prevType == "VideoSearch")
                             {
-                                videoUrls.Add(dlUrlStr);
-                                continue;
+                                // VideoSearch: downloadUrl from result metadata
+                                string? dlUrl = null;
+                                if (stepResults.TryGetValue(prevOrder, out var prevResult)
+                                    && prevResult.Metadata.TryGetValue("downloadUrl", out var dl) && dl is string dlStr)
+                                    dlUrl = dlStr;
+                                else if (stepOutputs.TryGetValue(prevOrder, out var prevOutput)
+                                    && prevOutput.Metadata.TryGetValue("downloadUrl", out var dlMeta))
+                                    dlUrl = dlMeta is JsonElement je ? je.GetString() : dlMeta?.ToString();
+
+                                if (!string.IsNullOrEmpty(dlUrl))
+                                    mediaEntries.Add(new Dictionary<string, string> { ["url"] = dlUrl, ["type"] = "video" });
                             }
-
-                            // Fallback to stepOutputs.Metadata (available after checkpoint resume,
-                            // where stepResults is empty but stepOutputs was restored from pause data)
-                            if (stepOutputs.TryGetValue(prevOrder, out var prevOutput)
-                                && prevOutput.Metadata.TryGetValue("downloadUrl", out var dlMeta))
+                            else if (prevType == "Image")
                             {
-                                var url = dlMeta is JsonElement je ? je.GetString() : dlMeta?.ToString();
-                                if (!string.IsNullOrEmpty(url))
-                                    videoUrls.Add(url);
+                                // Image: build public URL for each generated file
+                                if (stepOutputs.TryGetValue(prevOrder, out var imgOutput))
+                                {
+                                    foreach (var file in imgOutput.Files)
+                                    {
+                                        if (file.FileId == Guid.Empty) continue;
+                                        var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                                        mediaEntries.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                                    }
+                                }
                             }
                         }
 
-                        // Inject collected video URLs into config if not already set
-                        if (videoUrls.Count > 0 && !config.ContainsKey("videoUrls"))
-                            config["videoUrls"] = JsonSerializer.Serialize(videoUrls);
+                        // Inject collected media into config
+                        if (mediaEntries.Count > 0 && !config.ContainsKey("mediaEntries"))
+                            config["mediaEntries"] = JsonSerializer.Serialize(mediaEntries);
 
+                        // Legacy compat: also set videoUrls for plain-text video-only flows
+                        var videoOnlyUrls = mediaEntries.Where(m => m["type"] == "video").Select(m => m["url"]).ToList();
+                        if (videoOnlyUrls.Count > 0 && !config.ContainsKey("videoUrls"))
+                            config["videoUrls"] = JsonSerializer.Serialize(videoOnlyUrls);
+
+                        var imgCount = mediaEntries.Count(m => m["type"] == "image");
+                        var vidCount = mediaEntries.Count(m => m["type"] == "video");
                         await _logger.LogAsync(projectId, executionId, "info",
-                            $"Editando video con Json2Video: input={editInput[..Math.Min(editInput.Length, 100)]}..., videoUrls={videoUrls.Count}",
+                            $"Editando video con Json2Video: input={editInput[..Math.Min(editInput.Length, 100)]}..., videos={vidCount}, imagenes={imgCount}",
                             pm.StepOrder, stepName);
 
                         var editContext = new AiExecutionContext
@@ -4469,38 +4488,54 @@ Datos de la ejecucion:
                         if (string.IsNullOrWhiteSpace(bEditInput))
                             throw new InvalidOperationException($"[{branchId}] VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'");
 
-                        // Collect video URLs from ALL completed VideoSearch steps (main + branches).
-                        // Branch steps may have higher StepOrder due to topological sort but
-                        // execute before this step, so their results are already available.
-                        var bVideoUrls = new List<string>();
+                        // Collect media URLs from ALL completed VideoSearch and Image steps.
+                        var bMediaEntries = new List<Dictionary<string, string>>();
+                        var bServerBase = (_configuration["BaseUrl"]
+                            ?? _configuration["AllowedOrigin"]
+                            ?? "").TrimEnd('/');
+
                         foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
                         {
-                            if (!stepModuleTypes.TryGetValue(prevOrder, out var bPrevType) || bPrevType != "VideoSearch")
+                            if (!stepModuleTypes.TryGetValue(prevOrder, out var bPrevType))
                                 continue;
 
-                            // Try stepResults first (available during normal execution)
-                            if (stepResults.TryGetValue(prevOrder, out var bPrevResult)
-                                && bPrevResult.Metadata.TryGetValue("downloadUrl", out var bDlUrl) && bDlUrl is string bDlUrlStr)
+                            if (bPrevType == "VideoSearch")
                             {
-                                bVideoUrls.Add(bDlUrlStr);
-                                continue;
+                                string? bDlUrl = null;
+                                if (stepResults.TryGetValue(prevOrder, out var bPrevResult)
+                                    && bPrevResult.Metadata.TryGetValue("downloadUrl", out var dl) && dl is string dlStr)
+                                    bDlUrl = dlStr;
+                                else if (stepOutputs.TryGetValue(prevOrder, out var bPrevOutput)
+                                    && bPrevOutput.Metadata.TryGetValue("downloadUrl", out var bDlMeta))
+                                    bDlUrl = bDlMeta is JsonElement je ? je.GetString() : bDlMeta?.ToString();
+
+                                if (!string.IsNullOrEmpty(bDlUrl))
+                                    bMediaEntries.Add(new Dictionary<string, string> { ["url"] = bDlUrl, ["type"] = "video" });
                             }
-
-                            // Fallback to stepOutputs.Metadata (available after checkpoint resume,
-                            // where stepResults is empty but stepOutputs was restored from pause data)
-                            if (stepOutputs.TryGetValue(prevOrder, out var bPrevOutput)
-                                && bPrevOutput.Metadata.TryGetValue("downloadUrl", out var bDlMeta))
+                            else if (bPrevType == "Image")
                             {
-                                var url = bDlMeta is JsonElement je ? je.GetString() : bDlMeta?.ToString();
-                                if (!string.IsNullOrEmpty(url))
-                                    bVideoUrls.Add(url);
+                                if (stepOutputs.TryGetValue(prevOrder, out var bImgOutput))
+                                {
+                                    foreach (var file in bImgOutput.Files)
+                                    {
+                                        if (file.FileId == Guid.Empty) continue;
+                                        var publicUrl = $"{bServerBase}/api/public/files/{tenantDbName}/{execution.Id}/{file.FileId}/{file.FileName}";
+                                        bMediaEntries.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                                    }
+                                }
                             }
                         }
-                        if (bVideoUrls.Count > 0 && !bConfig.ContainsKey("videoUrls"))
-                            bConfig["videoUrls"] = JsonSerializer.Serialize(bVideoUrls);
 
+                        if (bMediaEntries.Count > 0 && !bConfig.ContainsKey("mediaEntries"))
+                            bConfig["mediaEntries"] = JsonSerializer.Serialize(bMediaEntries);
+                        var bVideoOnlyUrls = bMediaEntries.Where(m => m["type"] == "video").Select(m => m["url"]).ToList();
+                        if (bVideoOnlyUrls.Count > 0 && !bConfig.ContainsKey("videoUrls"))
+                            bConfig["videoUrls"] = JsonSerializer.Serialize(bVideoOnlyUrls);
+
+                        var bImgCount = bMediaEntries.Count(m => m["type"] == "image");
+                        var bVidCount = bMediaEntries.Count(m => m["type"] == "video");
                         await _logger.LogAsync(project.Id, execution.Id, "info",
-                            $"Editando video con Json2Video: input={bEditInput[..Math.Min(bEditInput.Length, 100)]}..., videoUrls={bVideoUrls.Count}",
+                            $"Editando video con Json2Video: input={bEditInput[..Math.Min(bEditInput.Length, 100)]}..., videos={bVidCount}, imagenes={bImgCount}",
                             bpm.StepOrder, bStepName);
 
                         var bEditCtx = new AiExecutionContext

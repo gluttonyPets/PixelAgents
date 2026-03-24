@@ -435,6 +435,10 @@
                         <label><input type="checkbox" @bind="_j2vEnableSubtitles" /> Habilitar subtitulos</label>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label>Duracion de escenas con imagen (seg)</label>
+                    <input type="number" min="1" max="30" step="0.5" @bind="_j2vImageDuration" />
+                </div>
             }
             else if (_moduleType == "Embeddings")
             {
@@ -877,6 +881,10 @@
                                             <label><input type="checkbox" @bind="_editJ2vEnableSubtitles" /> Habilitar subtitulos</label>
                                         </div>
                                     </div>
+                                    <div class="form-group">
+                                        <label>Duracion de escenas con imagen (seg)</label>
+                                        <input type="number" min="1" max="30" step="0.5" @bind="_editJ2vImageDuration" />
+                                    </div>
                                 }
                                 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
                                 {
@@ -1116,6 +1124,7 @@ else if (!_loading)
     private string _j2vSubtitleStyle = "boxed";
     private int _j2vSubtitleFontSize = 120;
     private string _j2vSubtitleWordColor = "#FFFF00";
+    private double _j2vImageDuration = 5.0;
 
     // ── Edit: Json2Video VideoEdit config ──
     private string _editJ2vResolution = "full-hd";
@@ -1127,6 +1136,7 @@ else if (!_loading)
     private string _editJ2vSubtitleStyle = "boxed";
     private int _editJ2vSubtitleFontSize = 120;
     private string _editJ2vSubtitleWordColor = "#FFFF00";
+    private double _editJ2vImageDuration = 5.0;
 
     // ── Form: transcription ──
     private string _transcriptionLang = "";
@@ -1385,6 +1395,7 @@ else if (!_loading)
         _j2vSubtitleStyle = "boxed";
         _j2vSubtitleFontSize = 120;
         _j2vSubtitleWordColor = "#FFFF00";
+        _j2vImageDuration = 5.0;
     }
 
     // ── Build config JSON ──
@@ -1510,6 +1521,8 @@ else if (!_loading)
                 parts.Add($"\"subtitleFontSize\":{_j2vSubtitleFontSize}");
             if (_j2vSubtitleWordColor != "#FFFF00")
                 parts.Add($"\"subtitleWordColor\":\"{_j2vSubtitleWordColor}\"");
+            if (Math.Abs(_j2vImageDuration - 5.0) > 0.01)
+                parts.Add($"\"imageDuration\":{_j2vImageDuration.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
@@ -1681,6 +1694,7 @@ else if (!_loading)
                 if (root.TryGetProperty("subtitleStyle", out var j2vSs)) _editJ2vSubtitleStyle = j2vSs.GetString() ?? "boxed";
                 if (root.TryGetProperty("subtitleFontSize", out var j2vSf)) _editJ2vSubtitleFontSize = j2vSf.GetInt32();
                 if (root.TryGetProperty("subtitleWordColor", out var j2vSw)) _editJ2vSubtitleWordColor = j2vSw.GetString() ?? "#FFFF00";
+                if (root.TryGetProperty("imageDuration", out var j2vId)) _editJ2vImageDuration = j2vId.GetDouble();
             }
             catch { }
         }
@@ -1868,6 +1882,8 @@ else if (!_loading)
                 parts.Add($"\"subtitleFontSize\":{_editJ2vSubtitleFontSize}");
             if (_editJ2vSubtitleWordColor != "#FFFF00")
                 parts.Add($"\"subtitleWordColor\":\"{_editJ2vSubtitleWordColor}\"");
+            if (Math.Abs(_editJ2vImageDuration - 5.0) > 0.01)
+                parts.Add($"\"imageDuration\":{_editJ2vImageDuration.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;

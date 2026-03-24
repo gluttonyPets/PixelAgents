@@ -99,6 +99,8 @@ namespace Server.Services.Ai
                 VoiceModel = GetStringValue(config, "voiceModel", "azure"),
                 VoiceName = GetStringValue(config, "voiceName", "es-ES-AlvaroNeural"),
                 VoiceSpeed = GetDoubleValue(config, "voiceSpeed", 1.0),
+                // Image scenes
+                ImageDuration = GetDoubleValue(config, "imageDuration", 5.0),
                 // Subtitles
                 EnableSubtitles = GetBoolValue(config, "enableSubtitles", true),
                 SubtitleLanguage = GetStringValue(config, "subtitleLanguage", "es"),
@@ -250,10 +252,13 @@ namespace Server.Services.Ai
                     }
                     else
                     {
-                        // Legacy mode: auto-build from videoUrl + script
+                        // Legacy mode: auto-build from videoUrl/imageUrl + script
                         var videoUrl = scene.TryGetProperty("videoUrl", out var vu) ? vu.GetString() : null;
+                        var imageUrl = scene.TryGetProperty("imageUrl", out var iu) ? iu.GetString() : null;
                         var script = scene.TryGetProperty("script", out var sc) ? sc.GetString() : null;
-                        scenes.Add(BuildScene(videoUrl, script, s));
+                        var mediaUrl = videoUrl ?? imageUrl;
+                        var mediaType = imageUrl is not null && videoUrl is null ? "image" : "video";
+                        scenes.Add(BuildScene(mediaUrl, mediaType, script, s));
                     }
                 }
             }
@@ -393,40 +398,63 @@ namespace Server.Services.Ai
 
         /// <summary>
         /// Build movie payload from plain text input (voiceover script).
-        /// Video URLs come from configuration.
+        /// Media URLs (video/image) come from configuration.
         /// </summary>
         private static object BuildFromTextInput(string textInput, Dictionary<string, object> config, VideoSettings s)
         {
-            // Get video URLs from config (comma-separated or JSON array)
-            var videoUrls = new List<string>();
-            if (config.TryGetValue("videoUrls", out var urls))
+            // Try rich media entries first (with type info), fallback to legacy videoUrls
+            var mediaList = new List<(string Url, string Type)>();
+
+            if (config.TryGetValue("mediaEntries", out var meVal))
+            {
+                var meStr = meVal is JsonElement meEl ? meEl.GetString() ?? "" : meVal?.ToString() ?? "";
+                if (!string.IsNullOrEmpty(meStr))
+                {
+                    var entries = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(meStr);
+                    if (entries is not null)
+                    {
+                        foreach (var entry in entries)
+                        {
+                            var url = entry.GetValueOrDefault("url", "");
+                            var type = entry.GetValueOrDefault("type", "video");
+                            if (!string.IsNullOrEmpty(url))
+                                mediaList.Add((url, type));
+                        }
+                    }
+                }
+            }
+
+            // Fallback: legacy videoUrls (all treated as video)
+            if (mediaList.Count == 0 && config.TryGetValue("videoUrls", out var urls))
             {
                 var urlStr = urls is JsonElement el ? el.GetString() ?? "" : urls?.ToString() ?? "";
                 if (urlStr.TrimStart().StartsWith("["))
                 {
                     var arr = JsonSerializer.Deserialize<string[]>(urlStr);
-                    if (arr is not null) videoUrls.AddRange(arr);
+                    if (arr is not null)
+                        mediaList.AddRange(arr.Select(u => (u, "video")));
                 }
                 else
                 {
-                    videoUrls.AddRange(urlStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+                    mediaList.AddRange(urlStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Select(u => (u, "video")));
                 }
             }
 
             var scenes = new List<object>();
 
-            if (videoUrls.Count > 0)
+            if (mediaList.Count > 0)
             {
-                var scriptParts = SplitScript(textInput, videoUrls.Count);
-                for (var i = 0; i < videoUrls.Count; i++)
+                var scriptParts = SplitScript(textInput, mediaList.Count);
+                for (var i = 0; i < mediaList.Count; i++)
                 {
                     var script = i < scriptParts.Count ? scriptParts[i] : null;
-                    scenes.Add(BuildScene(videoUrls[i], script, s));
+                    scenes.Add(BuildScene(mediaList[i].Url, mediaList[i].Type, script, s));
                 }
             }
             else
             {
-                scenes.Add(BuildScene(null, textInput, s));
+                scenes.Add(BuildScene(null, "video", textInput, s));
             }
 
             return BuildMoviePayload(s, scenes);
@@ -451,21 +479,33 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// Build a single scene with optional video, voice, subtitles and transition.
+        /// Build a single scene with optional video/image, voice, subtitles and transition.
         /// </summary>
-        private static object BuildScene(string? videoUrl, string? script, VideoSettings s)
+        private static object BuildScene(string? mediaUrl, string mediaType, string? script, VideoSettings s)
         {
             var elements = new List<Dictionary<string, object>>();
 
-            // Video element
-            if (!string.IsNullOrEmpty(videoUrl))
+            // Media element (video or image)
+            if (!string.IsNullOrEmpty(mediaUrl))
             {
-                elements.Add(new Dictionary<string, object>
+                if (mediaType == "image")
                 {
-                    ["type"] = "video",
-                    ["src"] = videoUrl,
-                    ["duration"] = -1
-                });
+                    elements.Add(new Dictionary<string, object>
+                    {
+                        ["type"] = "image",
+                        ["src"] = mediaUrl,
+                        ["duration"] = s.ImageDuration
+                    });
+                }
+                else
+                {
+                    elements.Add(new Dictionary<string, object>
+                    {
+                        ["type"] = "video",
+                        ["src"] = mediaUrl,
+                        ["duration"] = -1
+                    });
+                }
             }
 
             // Voice element
@@ -632,6 +672,8 @@ namespace Server.Services.Ai
         public string VoiceModel { get; set; } = "azure";
         public string VoiceName { get; set; } = "es-ES-AlvaroNeural";
         public double VoiceSpeed { get; set; } = 1.0;
+        // Image scenes: duration in seconds for each image scene
+        public double ImageDuration { get; set; } = 5.0;
         // Subtitles
         public bool EnableSubtitles { get; set; } = true;
         public string SubtitleLanguage { get; set; } = "es";
