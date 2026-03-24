@@ -47,6 +47,8 @@ namespace Server.Services.Ai
                 ["dall-e-2"]   = 0.020m,
                 // gpt-image-1 (medium quality 1024x1024 approx)
                 ["gpt-image-1"] = 0.042m,
+                // gpt-image-1-mini (medium quality 1024x1024 approx)
+                ["gpt-image-1-mini"] = 0.015m,
 
                 // Gemini Imagen (via Gemini native image gen)
                 ["gemini-2.0-flash"]          = 0.039m,
@@ -109,6 +111,21 @@ namespace Server.Services.Ai
                 ["high-1536x1024"]   = 0.248m,
             };
 
+        // ── gpt-image-1-mini detailed pricing by quality+size ──
+        private static readonly Dictionary<string, decimal> GptImageMiniDetailed =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["low-1024x1024"]    = 0.005m,
+                ["low-1024x1536"]    = 0.0075m,
+                ["low-1536x1024"]    = 0.0075m,
+                ["medium-1024x1024"] = 0.015m,
+                ["medium-1024x1536"] = 0.0225m,
+                ["medium-1536x1024"] = 0.0225m,
+                ["high-1024x1024"]   = 0.060m,
+                ["high-1024x1536"]   = 0.090m,
+                ["high-1536x1024"]   = 0.090m,
+            };
+
         /// <summary>
         /// Estimates cost for a text generation based on token counts.
         /// </summary>
@@ -159,7 +176,18 @@ namespace Server.Services.Ai
                 return 0.020m;
             }
 
-            // gpt-image detailed
+            // gpt-image-1-mini detailed
+            if (modelName.Equals("gpt-image-1-mini", StringComparison.OrdinalIgnoreCase))
+            {
+                if (quality == "hd") quality = "high";
+                if (quality == "auto") quality = "medium";
+                var key = $"{quality}-{size}";
+                if (GptImageMiniDetailed.TryGetValue(key, out var price))
+                    return price;
+                return 0.015m;
+            }
+
+            // gpt-image detailed (gpt-image-1, gpt-image-1.5, etc.)
             if (modelName.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase))
             {
                 // Map "hd" quality alias to "high"
