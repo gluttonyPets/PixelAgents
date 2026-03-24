@@ -240,6 +240,13 @@
                                 <label>Numero de escenas</label>
                                 <input type="number" min="1" max="10" value="@GetSceneCount(sel.Id)"
                                        @onchange="e => UpdateSceneCount(sel.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1)" />
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cada escena acepta video o imagen.</p>
+                            </div>
+                            <div class="inspector-field">
+                                <label>Duracion de escenas con imagen (seg)</label>
+                                <input type="number" min="1" max="30" step="0.5"
+                                       value="@GetModuleConfig(sel.Id, "imageDuration", "5")"
+                                       @onchange="@(e => SetModuleConfig(sel.Id, "imageDuration", e.Value?.ToString() ?? "5"))" />
                             </div>
                             <div class="inspector-field">
                                 <label>Resolucion</label>
@@ -747,8 +754,18 @@
     private void LoadFromParameters()
     {
         _positions = Modules.ToDictionary(m => m.Id, m => (m.PosX, m.PosY));
-        _connections = Connections.Select(c => new ConnectionEntry(c.FromModuleId, c.FromPort, c.ToModuleId, c.ToPort)).ToList();
+        _connections = Connections.Select(c => new ConnectionEntry(c.FromModuleId,
+            MigratePortId(c.FromPort), c.ToModuleId, MigratePortId(c.ToPort))).ToList();
         Console.WriteLine($"[PipelineCanvas] LoadFromParameters: {Modules.Count} modules, {Connections.Count} connections from parent, {_connections.Count} local connections");
+    }
+
+    /// <summary>Migrate legacy port IDs to current names.</summary>
+    private static string MigratePortId(string portId)
+    {
+        // input_scene_X_video → input_scene_X_media (renamed in scene port refactor)
+        if (portId.StartsWith("input_scene_") && portId.EndsWith("_video"))
+            return portId[..^"_video".Length] + "_media";
+        return portId;
     }
 
     private async Task RebuildDrawflow()
