@@ -288,8 +288,11 @@ namespace Server.Services.Ai
 
                         // Launch sub-branches forking from this orchestrator step
                         // (must run before 'continue' so branches aren't skipped)
+                        // Execute branches WITHOUT checkpoints first so their outputs are available
+                        // when a checkpoint branch pauses and shows data to the user.
                         var orchForks = branchModules
                             .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
+                            .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
                             .ToList();
                         var orchHasPausedCheckpoint = false;
                         foreach (var (branchId, branchSteps) in orchForks)
@@ -1183,8 +1186,11 @@ namespace Server.Services.Ai
                 }
 
                 // ── Execute sub-branches that fork from this main step ──
+                // Execute branches WITHOUT checkpoints first so their outputs are available
+                // when a checkpoint branch pauses and shows data to the user.
                 var forksFromHere = branchModules
                     .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
+                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
                     .ToList();
 
                 foreach (var (branchId, branchSteps) in forksFromHere)
@@ -3087,8 +3093,11 @@ Datos de la ejecucion:
                 }
 
                 // ── Execute sub-branches that fork from this main step (resume path) ──
+                // Execute branches WITHOUT checkpoints first so their outputs are available
+                // when a checkpoint branch pauses and shows data to the user.
                 var forksFromHere = branchModules
                     .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
+                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
                     .ToList();
 
                 foreach (var (branchId, branchSteps) in forksFromHere)
@@ -3835,8 +3844,11 @@ Datos de la ejecucion:
                                 await _logger.LogStepProgressAsync(projectId, rpm.Id, "Completed");
 
                                 // Launch sub-branches forking from this main step
+                                // Execute branches WITHOUT checkpoints first so their outputs are available
+                                // when a checkpoint branch pauses and shows data to the user.
                                 var postForks = branchModulesForResume
                                     .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == rpm.StepOrder)
+                                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
                                     .ToList();
                                 foreach (var (fBranchId, fBranchSteps) in postForks)
                                 {
@@ -5558,8 +5570,11 @@ Datos de la ejecucion:
                 }
 
                 // ── Execute sub-branches that fork from this main step (same as ExecuteAsync) ──
+                // Execute branches WITHOUT checkpoints first so their outputs are available
+                // when a checkpoint branch pauses and shows data to the user.
                 var retryForksFromHere = retryBranchModules
                     .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
+                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
                     .ToList();
 
                 foreach (var (branchId, branchSteps) in retryForksFromHere)
