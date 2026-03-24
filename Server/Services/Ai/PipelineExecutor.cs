@@ -4596,7 +4596,12 @@ Datos de la ejecucion:
                         stepResults[bpm.StepOrder] = bResult;
                         stepModuleTypes[bpm.StepOrder] = bpm.AiModule.ModuleType;
                         branchStepExec.EstimatedCost += bResult.EstimatedCost;
-                        if (!bResult.Success) throw new InvalidOperationException(bResult.Error ?? "Error en edicion de video");
+                        if (!bResult.Success)
+                        {
+                            await _logger.LogAsync(project.Id, execution.Id, "error",
+                                $"[{branchId}] Json2Video error: {bResult.Error}", bpm.StepOrder, bStepName);
+                            throw new InvalidOperationException(bResult.Error ?? "Error en edicion de video");
+                        }
 
                         var bEditFiles = new List<OutputFile>();
                         if (bResult.FileOutput is not null)

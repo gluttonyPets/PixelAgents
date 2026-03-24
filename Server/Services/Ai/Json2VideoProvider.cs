@@ -145,7 +145,13 @@ namespace Server.Services.Ai
             if (!submitResp.IsSuccessStatusCode)
                 return AiResult.Fail($"Json2Video: error al crear video (HTTP {(int)submitResp.StatusCode}): {submitBody}");
 
+            // Check for API-level errors in the response (can return 200 with error)
             var submitDoc = JsonDocument.Parse(submitBody);
+            if (submitDoc.RootElement.TryGetProperty("error", out var errEl) && errEl.ValueKind == JsonValueKind.String)
+                return AiResult.Fail($"Json2Video: {errEl.GetString()}");
+            if (submitDoc.RootElement.TryGetProperty("message", out var msgSubmit) && !submitDoc.RootElement.TryGetProperty("project", out _))
+                return AiResult.Fail($"Json2Video: {msgSubmit.GetString() ?? submitBody}");
+
             if (!submitDoc.RootElement.TryGetProperty("project", out var projectId))
                 return AiResult.Fail($"Json2Video: respuesta inesperada, no se encontro 'project': {submitBody}");
 
@@ -527,11 +533,14 @@ namespace Server.Services.Ai
                 var hasVoice = s.EnableVoice && !string.IsNullOrEmpty(script);
                 if (mediaType == "image")
                 {
+                    // For images without voice, use configured duration (min 1s to avoid API errors).
+                    // For images with voice, use -2 (match parent scene = voice duration).
+                    var imgDuration = hasVoice ? -2 : Math.Max(s.ImageDuration, 1.0);
                     var imgElement = new Dictionary<string, object>
                     {
                         ["type"] = "image",
                         ["src"] = mediaUrl,
-                        ["duration"] = hasVoice ? -2 : s.ImageDuration
+                        ["duration"] = imgDuration
                     };
 
                     // Apply Ken Burns animation to avoid flat static images
