@@ -226,7 +226,7 @@ public static class ModulePortRegistry
     public static string GetModuleIcon(string moduleType) => moduleType switch
     {
         "Text" => "\u270E",
-        "Image" => "\U0001F5BC",
+        "Image" => "\U0001F4F7",
         "Video" => "\U0001F3AC",
         "VideoSearch" => "\U0001F50D",
         "VideoEdit" => "\U0001F3AC",
