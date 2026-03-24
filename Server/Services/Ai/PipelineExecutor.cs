@@ -1234,6 +1234,15 @@ namespace Server.Services.Ai
             if (hasPendingCheckpoint)
             {
                 // A branch checkpoint paused the execution — all other work has been done
+                // Re-serialize PausedStepData so it includes outputs from steps that ran
+                // AFTER the checkpoint branch paused (e.g. sibling branches like Image generation).
+                var existingPause = !string.IsNullOrEmpty(execution.PausedStepData)
+                    ? JsonSerializer.Deserialize<PausedPipelineState>(execution.PausedStepData) ?? new PausedPipelineState()
+                    : new PausedPipelineState();
+                existingPause.StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value));
+                existingPause.StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
+                execution.PausedStepData = JsonSerializer.Serialize(existingPause);
+
                 execution.TotalEstimatedCost = await db.StepExecutions
                     .Where(s => s.ExecutionId == execution.Id)
                     .SumAsync(s => s.EstimatedCost);
@@ -3127,6 +3136,14 @@ Datos de la ejecucion:
 
             if (resumeHasPendingCheckpoint)
             {
+                // Re-serialize PausedStepData with updated outputs from sibling branches
+                var existingPause2 = !string.IsNullOrEmpty(execution.PausedStepData)
+                    ? JsonSerializer.Deserialize<PausedPipelineState>(execution.PausedStepData) ?? new PausedPipelineState()
+                    : new PausedPipelineState();
+                existingPause2.StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value));
+                existingPause2.StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
+                execution.PausedStepData = JsonSerializer.Serialize(existingPause2);
+
                 execution.TotalEstimatedCost = await db.StepExecutions
                     .Where(s => s.ExecutionId == execution.Id)
                     .SumAsync(s => s.EstimatedCost);
@@ -5590,6 +5607,14 @@ Datos de la ejecucion:
 
             if (retryHasPendingCheckpoint)
             {
+                // Re-serialize PausedStepData with updated outputs from sibling branches
+                var existingPause3 = !string.IsNullOrEmpty(execution.PausedStepData)
+                    ? JsonSerializer.Deserialize<PausedPipelineState>(execution.PausedStepData) ?? new PausedPipelineState()
+                    : new PausedPipelineState();
+                existingPause3.StepOutputs = stepOutputs.ToDictionary(kv => kv.Key.ToString(), kv => JsonSerializer.Serialize(kv.Value));
+                existingPause3.StepModuleTypes = stepModuleTypes.ToDictionary(kv => kv.Key.ToString(), kv => kv.Value);
+                execution.PausedStepData = JsonSerializer.Serialize(existingPause3);
+
                 execution.TotalEstimatedCost = await db.StepExecutions
                     .Where(s => s.ExecutionId == execution.Id)
                     .SumAsync(s => s.EstimatedCost);
