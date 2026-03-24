@@ -263,6 +263,18 @@
                                        @onchange="@(e => SetModuleConfig(sel.Id, "imageDuration", e.Value?.ToString() ?? "5"))" />
                             </div>
                             <div class="inspector-field">
+                                <label>Animacion de imagenes</label>
+                                <select value="@GetModuleConfig(sel.Id, "imageAnimation", "zoom-in")"
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "imageAnimation", e.Value?.ToString() ?? "zoom-in"))">
+                                    <option value="none">Sin animacion</option>
+                                    <option value="zoom-in">Zoom in</option>
+                                    <option value="zoom-out">Zoom out</option>
+                                    <option value="pan-left">Pan izquierda</option>
+                                    <option value="pan-right">Pan derecha</option>
+                                    <option value="random">Aleatorio</option>
+                                </select>
+                            </div>
+                            <div class="inspector-field">
                                 <label>Resolucion</label>
                                 <select value="@GetModuleConfig(sel.Id, "resolution", "full-hd")"
                                         @onchange="@(e => SetModuleConfig(sel.Id, "resolution", e.Value?.ToString() ?? "full-hd"))">

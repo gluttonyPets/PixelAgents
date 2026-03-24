@@ -101,6 +101,7 @@ namespace Server.Services.Ai
                 VoiceSpeed = GetDoubleValue(config, "voiceSpeed", 1.0),
                 // Image scenes
                 ImageDuration = GetDoubleValue(config, "imageDuration", 5.0),
+                ImageAnimation = GetStringValue(config, "imageAnimation", "zoom-in"),
                 // Subtitles
                 EnableSubtitles = GetBoolValue(config, "enableSubtitles", true),
                 SubtitleLanguage = GetStringValue(config, "subtitleLanguage", "es"),
@@ -493,12 +494,26 @@ namespace Server.Services.Ai
                 var hasVoice = s.EnableVoice && !string.IsNullOrEmpty(script);
                 if (mediaType == "image")
                 {
-                    elements.Add(new Dictionary<string, object>
+                    var imgElement = new Dictionary<string, object>
                     {
                         ["type"] = "image",
                         ["src"] = mediaUrl,
                         ["duration"] = hasVoice ? -1 : s.ImageDuration
-                    });
+                    };
+
+                    // Apply Ken Burns / pan animation to avoid flat static images
+                    var anim = s.ImageAnimation;
+                    if (anim == "random")
+                    {
+                        var options = new[] { "zoom-in", "zoom-out", "pan-left", "pan-right" };
+                        anim = options[Random.Shared.Next(options.Length)];
+                    }
+                    if (anim != "none" && !string.IsNullOrEmpty(anim))
+                    {
+                        imgElement["pan"] = anim;
+                    }
+
+                    elements.Add(imgElement);
                 }
                 else
                 {
@@ -677,6 +692,8 @@ namespace Server.Services.Ai
         public double VoiceSpeed { get; set; } = 1.0;
         // Image scenes: duration in seconds for each image scene
         public double ImageDuration { get; set; } = 5.0;
+        // Image animation: none, zoom-in, zoom-out, pan-left, pan-right, random
+        public string ImageAnimation { get; set; } = "zoom-in";
         // Subtitles
         public bool EnableSubtitles { get; set; } = true;
         public string SubtitleLanguage { get; set; } = "es";
