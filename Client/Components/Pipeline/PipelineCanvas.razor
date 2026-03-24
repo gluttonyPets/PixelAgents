@@ -238,9 +238,9 @@
                             <div class="inspector-field">
                                 <label>Numero de imagenes</label>
                                 <input type="number" min="1" max="20"
-                                       value="@GetModuleConfig(sel.Id, "n", "1")"
-                                       @onchange="@(e => SetModuleConfig(sel.Id, "n", e.Value?.ToString() ?? "1"))" />
-                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cuantas imagenes generar con el mismo prompt.</p>
+                                       value="@GetSceneCount(sel.Id)"
+                                       @onchange="@(e => OnImageCountChange(sel.Id, e))" />
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cada imagen tendra su propia salida.</p>
                             </div>
                         </div>
                     }
@@ -937,11 +937,15 @@
             try
             {
                 using var doc = System.Text.Json.JsonDocument.Parse(module.Configuration);
-                if (doc.RootElement.TryGetProperty("sceneCount", out var sc) && sc.ValueKind == System.Text.Json.JsonValueKind.Number)
+                // VideoEdit: sceneCount; Image: n or numberOfImages
+                foreach (var key in new[] { "sceneCount", "n", "numberOfImages" })
                 {
-                    var persisted = sc.GetInt32();
-                    _sceneCountOverrides[moduleId] = persisted;
-                    return Math.Max(1, persisted);
+                    if (doc.RootElement.TryGetProperty(key, out var sc) && sc.ValueKind == System.Text.Json.JsonValueKind.Number)
+                    {
+                        var persisted = sc.GetInt32();
+                        _sceneCountOverrides[moduleId] = persisted;
+                        return Math.Max(1, persisted);
+                    }
                 }
             }
             catch { /* ignore */ }
@@ -1118,6 +1122,18 @@
             _error = error ?? "Error al eliminar salida";
         }
         StateHasChanged();
+    }
+
+    private async Task OnImageCountChange(Guid moduleId, ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var count) || count < 1) count = 1;
+        if (count > 20) count = 20;
+        // Persist to module config as "n" so executor and GetSceneCount can read it
+        if (!_moduleConfigs.ContainsKey(moduleId))
+            _moduleConfigs[moduleId] = new();
+        _moduleConfigs[moduleId]["n"] = count.ToString();
+        // UpdateSceneCount rebuilds drawflow with new ports and calls AutoSaveGraph
+        await UpdateSceneCount(moduleId, count);
     }
 
     private async Task UpdateSceneCount(Guid moduleId, int count)

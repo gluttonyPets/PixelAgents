@@ -127,7 +127,16 @@ public static class ModulePortRegistry
 
             case "Image":
                 ports.Add(new("input_prompt", "Prompt", PortDataType.Text, isInput: true));
-                ports.Add(new("output_image", "Imagen", PortDataType.Image, isInput: false));
+                var imgCount = Math.Max(sceneCount, 1);
+                if (imgCount == 1)
+                {
+                    ports.Add(new("output_image", "Imagen", PortDataType.Image, isInput: false));
+                }
+                else
+                {
+                    for (int i = 1; i <= imgCount; i++)
+                        ports.Add(new($"output_image_{i}", $"Imagen {i}", PortDataType.Image, isInput: false));
+                }
                 break;
 
             case "Video":
