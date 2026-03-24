@@ -231,6 +231,20 @@
                         </div>
                     </div>
 
+                    @if (sel.ModuleType == "Image")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Generacion</div>
+                            <div class="inspector-field">
+                                <label>Numero de imagenes</label>
+                                <input type="number" min="1" max="20"
+                                       value="@GetModuleConfig(sel.Id, "n", "1")"
+                                       @onchange="@(e => SetModuleConfig(sel.Id, "n", e.Value?.ToString() ?? "1"))" />
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cuantas imagenes generar con el mismo prompt.</p>
+                            </div>
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "VideoEdit")
                     {
                         @* ── General ── *@

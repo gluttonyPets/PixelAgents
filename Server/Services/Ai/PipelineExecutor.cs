@@ -561,6 +561,17 @@ namespace Server.Services.Ai
                         }
 
                         // Image modules: may execute multiple times if previous step had items
+                        // If module config specifies a count (n/numberOfImages), expand inputs to match
+                        var imageRepeatCount = GetImageRepeatCount(config);
+                        if (imageRepeatCount > 1 && inputs.Count == 1)
+                        {
+                            var singlePrompt = inputs[0];
+                            inputs = Enumerable.Repeat(singlePrompt, imageRepeatCount).ToList();
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Configuracion solicita {imageRepeatCount} imagenes — se repetira el prompt {imageRepeatCount} veces",
+                                pm.StepOrder, stepName);
+                        }
+
                         var outputFiles = new List<OutputFile>();
                         string? imageError = null;
 
@@ -4310,6 +4321,14 @@ Datos de la ejecucion:
                             }
                         }
 
+                        // Expand inputs if image count is configured
+                        var bImgRepeat = GetImageRepeatCount(bConfig);
+                        if (bImgRepeat > 1 && bInputs.Count == 1)
+                        {
+                            var bSinglePrompt = bInputs[0];
+                            bInputs = Enumerable.Repeat(bSinglePrompt, bImgRepeat).ToList();
+                        }
+
                         var bOutputFiles = new List<OutputFile>();
                         for (var bi2 = 0; bi2 < bInputs.Count; bi2++)
                         {
@@ -4672,6 +4691,31 @@ Datos de la ejecucion:
         /// If the Text step is configured as an image prompt generator, injects a rule
         /// forcing the model to return exactly N items in the output.
         /// </summary>
+        /// <summary>
+        /// Reads the desired image count from module config (n, numberOfImages, or imageCount).
+        /// Returns 1 if not configured.
+        /// </summary>
+        private static int GetImageRepeatCount(Dictionary<string, object> config)
+        {
+            // Check "n" (OpenAI convention), "numberOfImages" (Gemini), "imageCount" (legacy)
+            foreach (var key in new[] { "n", "numberOfImages", "imageCount" })
+            {
+                if (config.TryGetValue(key, out var val))
+                {
+                    var count = val switch
+                    {
+                        JsonElement je when je.ValueKind == JsonValueKind.Number => je.GetInt32(),
+                        JsonElement je when je.ValueKind == JsonValueKind.String && int.TryParse(je.GetString(), out var p) => p,
+                        int i => i,
+                        _ when int.TryParse(val?.ToString(), out var p) => p,
+                        _ => 0
+                    };
+                    if (count > 1) return Math.Min(count, 20); // cap at 20
+                }
+            }
+            return 1;
+        }
+
         private static void InjectImageCountRule(Dictionary<string, object> config)
         {
             if (!config.TryGetValue("isImagePrompt", out var ipVal))
