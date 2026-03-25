@@ -406,14 +406,10 @@
                                                 <option value="en-GB-RyanNeural">Ryan (hombre)</option>
                                             </optgroup>
                                         </select>
-                                        @{
-                                            var voiceId = GetModuleConfig(sel.Id, "voiceName", "es-ES-AlvaroNeural");
-                                            var voiceSlug = voiceId.ToLower().Replace("neural", "neural");
-                                        }
-                                        <a href="https://json2video.com/ai-voices/azure/voices/@(voiceSlug)/"
+                                        <a href="https://json2video.com/ai-voices/azure/voices/@(GetModuleConfig(sel.Id, "voiceName", "es-ES-AlvaroNeural").ToLower())/"
                                            target="_blank" rel="noopener"
                                            style="display: inline-block; margin-top: 0.25rem; font-size: 0.75rem; color: var(--accent);">
-                                            Escuchar muestra de @voiceId
+                                            Escuchar muestra de @GetModuleConfig(sel.Id, "voiceName", "es-ES-AlvaroNeural")
                                         </a>
                                     }
                                     else
@@ -521,12 +517,8 @@
                                             <option value="Nanum Pen Script">Nanum Pen Script</option>
                                         </optgroup>
                                     </select>
-                                    @{
-                                        var selectedFont = GetModuleConfig(sel.Id, "subtitleFontFamily", "Montserrat");
-                                        var fontUrl = $"https://fonts.googleapis.com/css2?family={Uri.EscapeDataString(selectedFont)}:wght@700&display=swap";
-                                    }
-                                    <link href="@fontUrl" rel="stylesheet" />
-                                    <div style="font-family: '@selectedFont', sans-serif; font-size: 1.1rem; font-weight: 700;
+                                    <link href="https://fonts.googleapis.com/css2?family=@(Uri.EscapeDataString(GetModuleConfig(sel.Id, "subtitleFontFamily", "Montserrat"))):wght@@@(700)&display=swap" rel="stylesheet" />
+                                    <div style="font-family: '@(GetModuleConfig(sel.Id, "subtitleFontFamily", "Montserrat"))', sans-serif; font-size: 1.1rem; font-weight: 700;
                                                 background: #000; color: @GetModuleConfig(sel.Id, "subtitleWordColor", "#FFFF00");
                                                 padding: 0.4rem 0.6rem; border-radius: 4px; margin-top: 0.3rem; text-align: center;">
                                         Subtitulo de ejemplo
