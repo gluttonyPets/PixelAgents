@@ -449,8 +449,19 @@ namespace Server.Services.Ai
 
             if (mediaList.Count > 0)
             {
+                // Split script into sentences first to know how many voiced scenes we can make
                 var scriptParts = SplitScript(textInput, mediaList.Count);
-                for (var i = 0; i < mediaList.Count; i++)
+
+                // Only create scenes that have both media AND voice text.
+                // Scenes without voice cause silent gaps and potential API timeouts.
+                var voicedCount = scriptParts.Count(p => !string.IsNullOrWhiteSpace(p));
+                var sceneCount = voicedCount > 0 ? Math.Min(mediaList.Count, voicedCount) : mediaList.Count;
+
+                // Re-split the script to match the actual scene count (better distribution)
+                if (sceneCount < mediaList.Count && sceneCount > 0)
+                    scriptParts = SplitScript(textInput, sceneCount);
+
+                for (var i = 0; i < sceneCount; i++)
                 {
                     var script = i < scriptParts.Count ? scriptParts[i] : null;
                     scenes.Add(BuildScene(mediaList[i].Url, mediaList[i].Type, script, s));
@@ -639,9 +650,8 @@ namespace Server.Services.Ai
             var sentences = script.Split(new[] { ". ", "! ", "? " }, StringSplitOptions.RemoveEmptyEntries);
             if (sentences.Length <= parts)
             {
-                var result = sentences.Select(s => s.TrimEnd('.', '!', '?') + ".").ToList();
-                while (result.Count < parts) result.Add("");
-                return result;
+                // Return only as many parts as we have sentences — no empty padding
+                return sentences.Select(s => s.TrimEnd('.', '!', '?') + ".").ToList();
             }
 
             var perPart = sentences.Length / parts;
