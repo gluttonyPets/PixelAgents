@@ -457,7 +457,16 @@
                                             <option value="Nanum Pen Script">Nanum Pen Script</option>
                                         </optgroup>
                                     </select>
-                                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cualquier Google Font es valida.</p>
+                                    @{
+                                        var selectedFont = GetModuleConfig(sel.Id, "subtitleFontFamily", "Montserrat");
+                                        var fontUrl = $"https://fonts.googleapis.com/css2?family={Uri.EscapeDataString(selectedFont)}:wght@700&display=swap";
+                                    }
+                                    <link href="@fontUrl" rel="stylesheet" />
+                                    <div style="font-family: '@selectedFont', sans-serif; font-size: 1.1rem; font-weight: 700;
+                                                background: #000; color: @GetModuleConfig(sel.Id, "subtitleWordColor", "#FFFF00");
+                                                padding: 0.4rem 0.6rem; border-radius: 4px; margin-top: 0.3rem; text-align: center;">
+                                        Subtitulo de ejemplo
+                                    </div>
                                 </div>
                                 <div class="inspector-field">
                                     <label>Tamano de fuente</label>
