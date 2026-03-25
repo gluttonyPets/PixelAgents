@@ -358,10 +358,74 @@
                                 </div>
                                 <div class="inspector-field">
                                     <label>Nombre de voz</label>
-                                    <input value="@GetModuleConfig(sel.Id, "voiceName", "es-ES-AlvaroNeural")"
-                                           placeholder="es-ES-AlvaroNeural"
-                                           @onchange="@(e => SetModuleConfig(sel.Id, "voiceName", e.Value?.ToString() ?? "es-ES-AlvaroNeural"))" />
-                                    <p class="text-sm text-muted" style="margin-top: 0.1rem;">Azure: es-ES-AlvaroNeural, en-US-EmmaMultilingualNeural, etc.</p>
+                                    @if (GetModuleConfig(sel.Id, "voiceModel", "azure") == "azure")
+                                    {
+                                        <select value="@GetModuleConfig(sel.Id, "voiceName", "es-ES-AlvaroNeural")"
+                                                @onchange="@(e => SetModuleConfig(sel.Id, "voiceName", e.Value?.ToString() ?? "es-ES-AlvaroNeural"))">
+                                            <optgroup label="Espanol (Espana)">
+                                                <option value="es-ES-AlvaroNeural">Alvaro (hombre)</option>
+                                                <option value="es-ES-ElviraNeural">Elvira (mujer)</option>
+                                                <option value="es-ES-IsidoraMultilingualNeural">Isidora (mujer, multilingue)</option>
+                                                <option value="es-ES-XimenaMultilingualNeural">Ximena (mujer, multilingue)</option>
+                                                <option value="es-ES-AbrilNeural">Abril (mujer)</option>
+                                                <option value="es-ES-ArnauNeural">Arnau (hombre)</option>
+                                                <option value="es-ES-DarioNeural">Dario (hombre)</option>
+                                                <option value="es-ES-EliasNeural">Elias (hombre)</option>
+                                                <option value="es-ES-EstrellaNeural">Estrella (mujer)</option>
+                                                <option value="es-ES-IreneNeural">Irene (mujer)</option>
+                                                <option value="es-ES-LaiaNeural">Laia (mujer)</option>
+                                                <option value="es-ES-NilNeural">Nil (hombre)</option>
+                                                <option value="es-ES-SaulNeural">Saul (hombre)</option>
+                                                <option value="es-ES-TeoNeural">Teo (hombre)</option>
+                                                <option value="es-ES-TrianaNeural">Triana (mujer)</option>
+                                                <option value="es-ES-VeraNeural">Vera (mujer)</option>
+                                            </optgroup>
+                                            <optgroup label="Espanol (Mexico)">
+                                                <option value="es-MX-JorgeNeural">Jorge (hombre)</option>
+                                                <option value="es-MX-DaliaNeural">Dalia (mujer)</option>
+                                                <option value="es-MX-BeatrizNeural">Beatriz (mujer)</option>
+                                                <option value="es-MX-MarinaNeural">Marina (mujer)</option>
+                                            </optgroup>
+                                            <optgroup label="Espanol (Argentina)">
+                                                <option value="es-AR-TomasNeural">Tomas (hombre)</option>
+                                                <option value="es-AR-ElenaNeural">Elena (mujer)</option>
+                                            </optgroup>
+                                            <optgroup label="Espanol (Colombia)">
+                                                <option value="es-CO-GonzaloNeural">Gonzalo (hombre)</option>
+                                                <option value="es-CO-SalomeNeural">Salome (mujer)</option>
+                                            </optgroup>
+                                            <optgroup label="Ingles (US)">
+                                                <option value="en-US-EmmaMultilingualNeural">Emma (mujer, multilingue)</option>
+                                                <option value="en-US-AndrewMultilingualNeural">Andrew (hombre, multilingue)</option>
+                                                <option value="en-US-AriaNeural">Aria (mujer)</option>
+                                                <option value="en-US-GuyNeural">Guy (hombre)</option>
+                                                <option value="en-US-JennyNeural">Jenny (mujer)</option>
+                                            </optgroup>
+                                            <optgroup label="Ingles (UK)">
+                                                <option value="en-GB-SoniaNeural">Sonia (mujer)</option>
+                                                <option value="en-GB-RyanNeural">Ryan (hombre)</option>
+                                            </optgroup>
+                                        </select>
+                                        @{
+                                            var voiceId = GetModuleConfig(sel.Id, "voiceName", "es-ES-AlvaroNeural");
+                                            var voiceSlug = voiceId.ToLower().Replace("neural", "neural");
+                                        }
+                                        <a href="https://json2video.com/ai-voices/azure/voices/@(voiceSlug)/"
+                                           target="_blank" rel="noopener"
+                                           style="display: inline-block; margin-top: 0.25rem; font-size: 0.75rem; color: var(--accent);">
+                                            Escuchar muestra de @voiceId
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <input value="@GetModuleConfig(sel.Id, "voiceName", "Brian")"
+                                               placeholder="Brian, Rachel, Adam..."
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "voiceName", e.Value?.ToString() ?? "Brian"))" />
+                                        <p class="text-sm text-muted" style="margin-top: 0.1rem;">
+                                            <a href="https://json2video.com/ai-voices/elevenlabs/" target="_blank" rel="noopener"
+                                               style="color: var(--accent);">Ver voces disponibles</a>
+                                        </p>
+                                    }
                                 </div>
                                 @if (GetModuleConfig(sel.Id, "voiceModel", "azure").StartsWith("elevenlabs"))
                                 {
