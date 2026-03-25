@@ -564,7 +564,9 @@ namespace Server.Services.Ai
                         }
 
                         // Image modules: may execute multiple times if previous step had items
-                        // If module config specifies a count (n/numberOfImages), expand inputs to match
+                        // If module config specifies a count (n/numberOfImages), use it as the target:
+                        //   - If 1 input → expand (repeat prompt) to fill the count
+                        //   - If more inputs than count → trim to the count
                         var imageRepeatCount = GetImageRepeatCount(config);
                         if (imageRepeatCount > 1 && inputs.Count == 1)
                         {
@@ -573,6 +575,13 @@ namespace Server.Services.Ai
                             await _logger.LogAsync(projectId, executionId, "info",
                                 $"Configuracion solicita {imageRepeatCount} imagenes — se repetira el prompt {imageRepeatCount} veces",
                                 pm.StepOrder, stepName);
+                        }
+                        else if (imageRepeatCount > 0 && inputs.Count > imageRepeatCount)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Recibidos {inputs.Count} prompts pero configuracion limita a {imageRepeatCount} imagenes — se usaran los primeros {imageRepeatCount}",
+                                pm.StepOrder, stepName);
+                            inputs = inputs.Take(imageRepeatCount).ToList();
                         }
 
                         var outputFiles = new List<OutputFile>();
@@ -928,13 +937,15 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
-                        // Resolve script: prefer videoPrompt from config, then resolved input,
-                        // then search previous steps for text content (skip VideoSearch steps)
+                        // Resolve script: prefer videoPrompt from config, then resolved inputs
+                        // (combine all inputs into full script), then search previous steps.
                         var editInput = "";
                         if (config.TryGetValue("videoPrompt", out var vp2))
                             editInput = vp2 is JsonElement vp2El ? vp2El.GetString() ?? "" : vp2?.ToString() ?? "";
                         if (string.IsNullOrWhiteSpace(editInput))
-                            editInput = inputs[0];
+                            editInput = inputs.Count > 1
+                                ? string.Join(" ", inputs.Where(s => !string.IsNullOrWhiteSpace(s)))
+                                : inputs[0];
                         if (string.IsNullOrWhiteSpace(editInput))
                         {
                             // Fallback: find text from previous non-video steps
@@ -2989,6 +3000,11 @@ Datos de la ejecucion:
                             }
                         }
 
+                        // Trim inputs to configured image count (resume path)
+                        var resumeImgCount = GetImageRepeatCount(config);
+                        if (resumeImgCount > 0 && inputs.Count > resumeImgCount)
+                            inputs = inputs.Take(resumeImgCount).ToList();
+
                         var outputFiles = new List<OutputFile>();
                         string? imageError = null;
 
@@ -4350,12 +4366,19 @@ Datos de la ejecucion:
                             }
                         }
 
-                        // Expand inputs if image count is configured
+                        // Expand or trim inputs based on configured image count
                         var bImgRepeat = GetImageRepeatCount(bConfig);
                         if (bImgRepeat > 1 && bInputs.Count == 1)
                         {
                             var bSinglePrompt = bInputs[0];
                             bInputs = Enumerable.Repeat(bSinglePrompt, bImgRepeat).ToList();
+                        }
+                        else if (bImgRepeat > 0 && bInputs.Count > bImgRepeat)
+                        {
+                            await _logger.LogAsync(project.Id, execution.Id, "info",
+                                $"[{branchId}] Recibidos {bInputs.Count} prompts pero configuracion limita a {bImgRepeat} imagenes",
+                                bpm.StepOrder, bStepName);
+                            bInputs = bInputs.Take(bImgRepeat).ToList();
                         }
 
                         var bOutputFiles = new List<OutputFile>();
@@ -4504,13 +4527,15 @@ Datos de la ejecucion:
                     }
                     else if (bpm.AiModule.ModuleType == "VideoEdit")
                     {
-                        // Resolve script: prefer videoPrompt from config, then resolved input,
-                        // then search previous steps for text content (skip VideoSearch steps)
+                        // Resolve script: prefer videoPrompt from config, then resolved inputs
+                        // (combine all inputs into full script), then search previous steps.
                         var bEditInput = "";
                         if (bConfig.TryGetValue("videoPrompt", out var bVp))
                             bEditInput = bVp is JsonElement bVpEl ? bVpEl.GetString() ?? "" : bVp?.ToString() ?? "";
                         if (string.IsNullOrWhiteSpace(bEditInput))
-                            bEditInput = bInputs[0];
+                            bEditInput = bInputs.Count > 1
+                                ? string.Join(" ", bInputs.Where(s => !string.IsNullOrWhiteSpace(s)))
+                                : bInputs[0];
                         if (string.IsNullOrWhiteSpace(bEditInput))
                         {
                             // Fallback: find text from previous non-video steps (orchestrator, text, etc.)
