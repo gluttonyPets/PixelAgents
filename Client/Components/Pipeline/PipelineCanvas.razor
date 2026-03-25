@@ -414,12 +414,38 @@
                                     }
                                     else
                                     {
-                                        <input value="@GetModuleConfig(sel.Id, "voiceName", "Brian")"
-                                               placeholder="Brian, Rachel, Adam..."
-                                               @onchange="@(e => SetModuleConfig(sel.Id, "voiceName", e.Value?.ToString() ?? "Brian"))" />
-                                        <p class="text-sm text-muted" style="margin-top: 0.1rem;">
+                                        <select value="@GetModuleConfig(sel.Id, "voiceName", "Brian")"
+                                                @onchange="@(e => SetModuleConfig(sel.Id, "voiceName", e.Value?.ToString() ?? "Brian"))">
+                                            <optgroup label="Hombres (Ingles)">
+                                                <option value="Brian">Brian (americano, narrador)</option>
+                                                <option value="Adam">Adam (americano, profundo)</option>
+                                                <option value="Daniel">Daniel (britanico, autoritario)</option>
+                                                <option value="George">George (britanico, calido)</option>
+                                                <option value="Charlie">Charlie (australiano, natural)</option>
+                                                <option value="Chris">Chris (americano, casual)</option>
+                                                <option value="Bill">Bill (americano, confiable)</option>
+                                                <option value="Antoni">Antoni (americano, joven)</option>
+                                                <option value="Arnold">Arnold (americano, serio)</option>
+                                                <option value="Callum">Callum (transatlantico, intenso)</option>
+                                                <option value="Jackson">Jackson (americano, seguro)</option>
+                                            </optgroup>
+                                            <optgroup label="Mujeres (Ingles)">
+                                                <option value="Rachel">Rachel (americana, default)</option>
+                                                <option value="Aria">Aria (americana, expresiva)</option>
+                                                <option value="Alice">Alice (britanica, segura)</option>
+                                                <option value="Jessica">Jessica (americana, juvenil)</option>
+                                                <option value="Laura">Laura (americana, entusiasta)</option>
+                                                <option value="Emily">Emily (americana, calmada)</option>
+                                                <option value="Charlotte">Charlotte (sueca, suave)</option>
+                                                <option value="Dorothy">Dorothy (britanica, agradable)</option>
+                                                <option value="Grace">Grace (americana, surena)</option>
+                                                <option value="Freya">Freya (americana, expresiva)</option>
+                                            </optgroup>
+                                        </select>
+                                        <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                                            Tambien puedes escribir un voice ID de
                                             <a href="https://json2video.com/ai-voices/elevenlabs/" target="_blank" rel="noopener"
-                                               style="color: var(--accent);">Ver voces disponibles</a>
+                                               style="color: var(--accent);">la galeria</a>.
                                         </p>
                                     }
                                 </div>
