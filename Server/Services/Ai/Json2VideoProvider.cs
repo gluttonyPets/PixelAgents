@@ -108,7 +108,7 @@ namespace Server.Services.Ai
                 SubtitleModel = GetStringValue(config, "subtitleModel", "default"),
                 SubtitleStyle = GetStringValue(config, "subtitleStyle", "boxed-word"),
                 SubtitleFontSize = GetIntValue(config, "subtitleFontSize", 120),
-                SubtitleFontFamily = GetStringValue(config, "subtitleFontFamily", "Arial"),
+                SubtitleFontFamily = GetStringValue(config, "subtitleFontFamily", "Montserrat"),
                 SubtitlePosition = GetStringValue(config, "subtitlePosition", "bottom-center"),
                 SubtitleLineColor = GetStringValue(config, "subtitleLineColor", "#FFFFFF"),
                 SubtitleWordColor = GetStringValue(config, "subtitleWordColor", "#FFFF00"),
@@ -731,7 +731,7 @@ namespace Server.Services.Ai
         public string SubtitleModel { get; set; } = "default";
         public string SubtitleStyle { get; set; } = "boxed-word";
         public int SubtitleFontSize { get; set; } = 120;
-        public string SubtitleFontFamily { get; set; } = "Arial";
+        public string SubtitleFontFamily { get; set; } = "Montserrat";
         public string SubtitlePosition { get; set; } = "bottom-center";
         public string SubtitleLineColor { get; set; } = "#FFFFFF";
         public string SubtitleWordColor { get; set; } = "#FFFF00";
