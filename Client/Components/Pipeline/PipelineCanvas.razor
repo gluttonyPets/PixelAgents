@@ -550,8 +550,8 @@
                                             <option value="Nanum Pen Script">Nanum Pen Script</option>
                                         </optgroup>
                                     </select>
-                                    <link href="https://fonts.googleapis.com/css2?family=@(Uri.EscapeDataString(GetModuleConfig(sel.Id, "subtitleFontFamily", "Montserrat"))):wght@@@(700)&display=swap" rel="stylesheet" />
-                                    <div style="font-family: '@(GetModuleConfig(sel.Id, "subtitleFontFamily", "Montserrat"))', sans-serif; font-size: 1.1rem; font-weight: 700;
+                                    <link href="https://fonts.googleapis.com/css2?family=@(Uri.EscapeDataString(GetModuleConfig(sel.Id, "subtitleFontFamily", "Montserrat"))):wght@@@(GetModuleConfig(sel.Id, "subtitleFontWeight", "700"))&display=swap" rel="stylesheet" />
+                                    <div style="font-family: '@(GetModuleConfig(sel.Id, "subtitleFontFamily", "Montserrat"))', sans-serif; font-size: 1.1rem; font-weight: @GetModuleConfig(sel.Id, "subtitleFontWeight", "700");
                                                 background: #000; color: @GetModuleConfig(sel.Id, "subtitleWordColor", "#FFFF00");
                                                 padding: 0.4rem 0.6rem; border-radius: 4px; margin-top: 0.3rem; text-align: center;">
                                         Subtitulo de ejemplo
@@ -562,6 +562,21 @@
                                     <input type="number" min="20" max="300" step="10"
                                            value="@GetModuleConfig(sel.Id, "subtitleFontSize", "120")"
                                            @onchange="@(e => SetModuleConfig(sel.Id, "subtitleFontSize", e.Value?.ToString() ?? "120"))" />
+                                </div>
+                                <div class="inspector-field">
+                                    <label>Grosor de fuente</label>
+                                    <select value="@GetModuleConfig(sel.Id, "subtitleFontWeight", "700")"
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "subtitleFontWeight", e.Value?.ToString() ?? "700"))">
+                                        <option value="100">100 - Thin</option>
+                                        <option value="200">200 - Extra Light</option>
+                                        <option value="300">300 - Light</option>
+                                        <option value="400">400 - Regular</option>
+                                        <option value="500">500 - Medium</option>
+                                        <option value="600">600 - Semi Bold</option>
+                                        <option value="700">700 - Bold</option>
+                                        <option value="800">800 - Extra Bold</option>
+                                        <option value="900">900 - Black</option>
+                                    </select>
                                 </div>
                                 <div class="inspector-field">
                                     <label>Posicion</label>
