@@ -643,29 +643,38 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// Split a script into roughly equal parts by sentences.
+        /// Split a script into parts for scenes. Each part should have enough text
+        /// for a meaningful voiceover (at least ~2 sentences / ~8 seconds of speech).
+        /// The number of parts is capped so each scene has substantial content.
         /// </summary>
-        private static List<string> SplitScript(string script, int parts)
+        private static List<string> SplitScript(string script, int maxParts)
         {
-            if (parts <= 1) return new List<string> { script };
+            if (maxParts <= 1) return new List<string> { script };
 
             var sentences = script.Split(new[] { ". ", "! ", "? " }, StringSplitOptions.RemoveEmptyEntries);
-            if (sentences.Length <= parts)
+            if (sentences.Length == 0) return new List<string> { script };
+
+            // Ensure at least 2 sentences per part for meaningful voice duration (~6-10s each).
+            // This prevents ultra-short scenes (1 sentence = ~2-3s) that make the video too brief.
+            const int minSentencesPerPart = 2;
+            var effectiveParts = Math.Min(maxParts, Math.Max(1, sentences.Length / minSentencesPerPart));
+
+            if (sentences.Length <= effectiveParts)
             {
-                // Return only as many parts as we have sentences — no empty padding
-                return sentences.Select(s => s.TrimEnd('.', '!', '?') + ".").ToList();
+                // Not enough sentences to split — return all as one part
+                return new List<string> { string.Join(". ", sentences.Select(s => s.TrimEnd('.', '!', '?'))) + "." };
             }
 
-            var perPart = sentences.Length / parts;
-            var remainder = sentences.Length % parts;
+            var perPart = sentences.Length / effectiveParts;
+            var remainder = sentences.Length % effectiveParts;
             var scriptParts = new List<string>();
             var idx = 0;
 
-            for (var i = 0; i < parts; i++)
+            for (var i = 0; i < effectiveParts; i++)
             {
                 var count = perPart + (i < remainder ? 1 : 0);
                 var partSentences = sentences.Skip(idx).Take(count);
-                scriptParts.Add(string.Join(". ", partSentences).TrimEnd() + ".");
+                scriptParts.Add(string.Join(". ", partSentences.Select(s => s.TrimEnd('.', '!', '?'))) + ".");
                 idx += count;
             }
 
