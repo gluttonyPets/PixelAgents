@@ -937,37 +937,35 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
-                        // Resolve script: prefer videoPrompt from config, then resolved inputs
-                        // (combine all inputs into full script), then search previous steps.
+                        // Resolve script: the voiceover script for the video.
+                        // Priority: videoPrompt config > Content from upstream text step > combined items
+                        // Content has the full narrative text; Items are just short bullet points.
                         var editInput = "";
                         if (config.TryGetValue("videoPrompt", out var vp2))
                             editInput = vp2 is JsonElement vp2El ? vp2El.GetString() ?? "" : vp2?.ToString() ?? "";
+
+                        // Search upstream steps for the full narrative Content (not items)
+                        if (string.IsNullOrWhiteSpace(editInput))
+                        {
+                            foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k))
+                            {
+                                if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video" || pt == "Image"))
+                                    continue;
+                                if (stepOutputs.TryGetValue(prevOrder, out var po) && !string.IsNullOrWhiteSpace(po.Content))
+                                {
+                                    editInput = po.Content;
+                                    break;
+                                }
+                                }
+                            }
+                        }
+
+                        // Fallback: combine resolved inputs (items)
                         if (string.IsNullOrWhiteSpace(editInput))
                             editInput = inputs.Count > 1
                                 ? string.Join(" ", inputs.Where(s => !string.IsNullOrWhiteSpace(s)))
                                 : inputs[0];
-                        if (string.IsNullOrWhiteSpace(editInput))
-                        {
-                            // Fallback: find text from previous non-video steps
-                            foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k))
-                            {
-                                if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video"))
-                                    continue;
-                                if (stepOutputs.TryGetValue(prevOrder, out var po))
-                                {
-                                    if (po.Items.Count > 0)
-                                    {
-                                        editInput = string.Join("\n\n", po.Items.Select(i => i.Content));
-                                        break;
-                                    }
-                                    if (!string.IsNullOrWhiteSpace(po.Content))
-                                    {
-                                        editInput = po.Content;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
+
                         if (string.IsNullOrWhiteSpace(editInput))
                         {
                             await FailStep(stepExecution, execution, "VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'", db);
@@ -4527,37 +4525,33 @@ Datos de la ejecucion:
                     }
                     else if (bpm.AiModule.ModuleType == "VideoEdit")
                     {
-                        // Resolve script: prefer videoPrompt from config, then resolved inputs
-                        // (combine all inputs into full script), then search previous steps.
+                        // Resolve script: the voiceover script for the video.
+                        // Priority: videoPrompt config > Content from upstream text step > combined items
+                        // Content has the full narrative text; Items are just short bullet points.
                         var bEditInput = "";
                         if (bConfig.TryGetValue("videoPrompt", out var bVp))
                             bEditInput = bVp is JsonElement bVpEl ? bVpEl.GetString() ?? "" : bVp?.ToString() ?? "";
+
+                        // Search upstream steps for the full narrative Content (not items)
+                        if (string.IsNullOrWhiteSpace(bEditInput))
+                        {
+                            foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderByDescending(k => k))
+                            {
+                                if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video" || pt == "Image"))
+                                    continue;
+                                if (stepOutputs.TryGetValue(prevOrder, out var po) && !string.IsNullOrWhiteSpace(po.Content))
+                                {
+                                    bEditInput = po.Content;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Fallback: combine resolved inputs (items)
                         if (string.IsNullOrWhiteSpace(bEditInput))
                             bEditInput = bInputs.Count > 1
                                 ? string.Join(" ", bInputs.Where(s => !string.IsNullOrWhiteSpace(s)))
                                 : bInputs[0];
-                        if (string.IsNullOrWhiteSpace(bEditInput))
-                        {
-                            // Fallback: find text from previous non-video steps (orchestrator, text, etc.)
-                            foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderByDescending(k => k))
-                            {
-                                if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video"))
-                                    continue;
-                                if (stepOutputs.TryGetValue(prevOrder, out var po))
-                                {
-                                    if (po.Items.Count > 0)
-                                    {
-                                        bEditInput = string.Join("\n\n", po.Items.Select(i => i.Content));
-                                        break;
-                                    }
-                                    if (!string.IsNullOrWhiteSpace(po.Content))
-                                    {
-                                        bEditInput = po.Content;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
                         if (string.IsNullOrWhiteSpace(bEditInput))
                             throw new InvalidOperationException($"[{branchId}] VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'");
 
