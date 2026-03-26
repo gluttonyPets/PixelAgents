@@ -465,12 +465,12 @@ namespace Server.Services.Ai
                 for (var i = 0; i < sceneCount; i++)
                 {
                     var script = i < scriptParts.Count ? scriptParts[i] : null;
-                    scenes.Add(BuildScene(mediaList[i].Url, mediaList[i].Type, script, s));
+                    scenes.Add(BuildScene(mediaList[i].Url, mediaList[i].Type, script, s, isLast: i == sceneCount - 1));
                 }
             }
             else
             {
-                scenes.Add(BuildScene(null, "video", textInput, s));
+                scenes.Add(BuildScene(null, "video", textInput, s, isLast: true));
             }
 
             return BuildMoviePayload(s, scenes);
@@ -531,34 +531,29 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// Build a single scene with optional video/image, voice, subtitles and transition.
+        /// Build a single scene with optional video/image and voice.
+        /// isLast=true skips transition to avoid cutting audio at the end.
         /// </summary>
-        private static object BuildScene(string? mediaUrl, string mediaType, string? script, VideoSettings s)
+        private static object BuildScene(string? mediaUrl, string mediaType, string? script, VideoSettings s, bool isLast = false)
         {
             var elements = new List<Dictionary<string, object>>();
+            var hasVoice = s.EnableVoice && !string.IsNullOrEmpty(script);
 
             // Media element (video or image)
-            // When voice is present, use duration=-2 (match parent scene) so the image
-            // fills the entire scene which is sized by the voice duration.
-            // duration=-1 means "intrinsic length" which doesn't apply to static images.
             if (!string.IsNullOrEmpty(mediaUrl))
             {
-                var hasVoice = s.EnableVoice && !string.IsNullOrEmpty(script);
                 if (mediaType == "image")
                 {
-                    // For images without voice, use configured duration (min 1s to avoid API errors).
-                    // For images with voice, use -2 (match parent scene = voice duration).
-                    var imgDuration = hasVoice ? -2 : Math.Max(s.ImageDuration, 1.0);
                     var imgElement = new Dictionary<string, object>
                     {
                         ["type"] = "image",
                         ["src"] = mediaUrl,
-                        ["duration"] = imgDuration,
-                        ["extra-time"] = 0.5
+                        // -2 = match parent scene duration (set by voice).
+                        // Without voice, use fixed duration (min 1s).
+                        ["duration"] = hasVoice ? -2 : Math.Max(s.ImageDuration, 1.0)
                     };
 
-                    // Apply Ken Burns animation to avoid flat static images
-                    // Json2Video: pan = direction (left/right/top/bottom), zoom = numeric (-10 to 10)
+                    // Apply Ken Burns animation
                     var anim = s.ImageAnimation;
                     if (anim == "random")
                     {
@@ -596,16 +591,18 @@ namespace Server.Services.Ai
                 }
             }
 
-            // Voice element — small start delay so voice doesn't begin abruptly on scene change
-            if (s.EnableVoice && !string.IsNullOrEmpty(script))
+            // Voice element — small start delay for natural pacing
+            if (hasVoice)
             {
                 var voice = new Dictionary<string, object>
                 {
                     ["type"] = "voice",
-                    ["text"] = script,
+                    ["text"] = script!,
                     ["voice"] = s.VoiceName,
                     ["model"] = s.VoiceModel,
-                    ["start"] = 0.4
+                    ["start"] = 0.4,
+                    // Extra time after voice ends so it doesn't cut abruptly
+                    ["extra-time"] = isLast ? 1.0 : 0.3
                 };
 
                 // ElevenLabs speed setting
@@ -623,18 +620,14 @@ namespace Server.Services.Ai
                 elements.Add(voice);
             }
 
-            // NOTE: subtitles are added at movie level, not scene level (see BuildMoviePayload)
-
             var scene = new Dictionary<string, object>
             {
                 ["duration"] = -1,
                 ["elements"] = elements
             };
 
-            // Scene transition — cap duration to avoid audio overlap between scenes.
-            // Transitions cause scenes to overlap in time, so a 2s transition on a 3s voice
-            // means 2s of audio from both scenes playing simultaneously.
-            if (s.TransitionStyle != "none" && !string.IsNullOrEmpty(s.TransitionStyle))
+            // Transition between scenes — skip on last scene to avoid cutting final audio
+            if (!isLast && s.TransitionStyle != "none" && !string.IsNullOrEmpty(s.TransitionStyle))
             {
                 scene["transition"] = new Dictionary<string, object>
                 {
