@@ -553,7 +553,8 @@ namespace Server.Services.Ai
                     {
                         ["type"] = "image",
                         ["src"] = mediaUrl,
-                        ["duration"] = imgDuration
+                        ["duration"] = imgDuration,
+                        ["extra-time"] = 0.5
                     };
 
                     // Apply Ken Burns animation to avoid flat static images
@@ -595,7 +596,7 @@ namespace Server.Services.Ai
                 }
             }
 
-            // Voice element
+            // Voice element — small start delay so voice doesn't begin abruptly on scene change
             if (s.EnableVoice && !string.IsNullOrEmpty(script))
             {
                 var voice = new Dictionary<string, object>
@@ -603,7 +604,8 @@ namespace Server.Services.Ai
                     ["type"] = "voice",
                     ["text"] = script,
                     ["voice"] = s.VoiceName,
-                    ["model"] = s.VoiceModel
+                    ["model"] = s.VoiceModel,
+                    ["start"] = 0.4
                 };
 
                 // ElevenLabs speed setting
