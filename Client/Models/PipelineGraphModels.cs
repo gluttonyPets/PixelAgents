@@ -152,6 +152,7 @@ public static class ModulePortRegistry
 
             case "VideoEdit":
                 ports.Add(new("input_script", "Guion", PortDataType.Text, isInput: true));
+                ports.Add(new("input_overlays", "Overlays", PortDataType.Text, isInput: true));
                 // Dynamic media inputs (one per scene) — accept video, image, or any file
                 var scenes = Math.Max(sceneCount, 1);
                 for (int i = 1; i <= scenes; i++)

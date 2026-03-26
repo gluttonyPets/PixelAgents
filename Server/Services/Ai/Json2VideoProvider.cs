@@ -473,6 +473,13 @@ namespace Server.Services.Ai
                 scenes.Add(BuildScene(null, "video", textInput, s, isLast: true));
             }
 
+            // Inject overlays into scenes if provided
+            if (config.TryGetValue("overlays", out var overlaysVal))
+            {
+                var overlaysStr = overlaysVal is JsonElement olEl ? olEl.GetString() ?? "" : overlaysVal?.ToString() ?? "";
+                InjectOverlays(scenes, overlaysStr);
+            }
+
             return BuildMoviePayload(s, scenes);
         }
 
@@ -715,6 +722,78 @@ namespace Server.Services.Ai
             if (value is double dv) return dv;
             if (double.TryParse(value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed)) return parsed;
             return fallback;
+        }
+    }
+
+        /// <summary>
+        /// Parse overlay instructions (JSON array) and inject elements into corresponding scenes.
+        /// Format: [{"scene":1,"type":"text","text":"Hook!","style":"002","position":"top-center"}, ...]
+        /// Supported overlay types: text, component.
+        /// Scene numbers are 1-based. scene=0 or omitted → movie-level overlay (on top of all scenes).
+        /// </summary>
+        private static void InjectOverlays(List<object> scenes, string overlaysJson)
+        {
+            if (string.IsNullOrWhiteSpace(overlaysJson)) return;
+
+            // Try to extract JSON array from the text (LLM might wrap it in markdown or extra text)
+            var jsonStart = overlaysJson.IndexOf('[');
+            var jsonEnd = overlaysJson.LastIndexOf(']');
+            if (jsonStart < 0 || jsonEnd < 0 || jsonEnd <= jsonStart) return;
+
+            List<JsonElement>? overlays;
+            try
+            {
+                overlays = JsonSerializer.Deserialize<List<JsonElement>>(overlaysJson[jsonStart..(jsonEnd + 1)]);
+            }
+            catch { return; }
+            if (overlays is null || overlays.Count == 0) return;
+
+            foreach (var overlay in overlays)
+            {
+                var sceneIdx = overlay.TryGetProperty("scene", out var sceneProp) && sceneProp.ValueKind == JsonValueKind.Number
+                    ? sceneProp.GetInt32() - 1  // 1-based → 0-based
+                    : -1;
+
+                if (sceneIdx < 0 || sceneIdx >= scenes.Count) continue;
+
+                var elementType = overlay.TryGetProperty("type", out var tp) ? tp.GetString() ?? "text" : "text";
+
+                var element = new Dictionary<string, object> { ["type"] = elementType };
+
+                // Copy all properties except "scene" and "type"
+                foreach (var prop in overlay.EnumerateObject())
+                {
+                    if (prop.Name == "scene" || prop.Name == "type") continue;
+
+                    // Properties that need a "settings" wrapper for text elements
+                    var settingsProps = new HashSet<string> {
+                        "font-family", "font-size", "font-weight", "color",
+                        "background-color", "text-align", "vertical-align",
+                        "text-shadow", "shadow", "all-caps"
+                    };
+
+                    if (elementType == "text" && settingsProps.Contains(prop.Name))
+                    {
+                        if (!element.ContainsKey("settings"))
+                            element["settings"] = new Dictionary<string, object>();
+                        ((Dictionary<string, object>)element["settings"])[prop.Name] = ConvertJsonElement(prop.Value)!;
+                    }
+                    else
+                    {
+                        element[prop.Name] = ConvertJsonElement(prop.Value)!;
+                    }
+                }
+
+                // Add to the scene's elements array
+                if (scenes[sceneIdx] is Dictionary<string, object> sceneDict
+                    && sceneDict.TryGetValue("elements", out var elementsObj))
+                {
+                    if (elementsObj is List<Dictionary<string, object>> typedList)
+                        typedList.Add(element);
+                    else if (elementsObj is List<object> genericList)
+                        genericList.Add(element);
+                }
+            }
         }
     }
 

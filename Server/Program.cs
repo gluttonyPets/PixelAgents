@@ -910,6 +910,28 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
                 pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\"}}";
             }
         }
+
+        // For VideoEdit: detect connections to the input_overlays port and store the source step
+        if (pm.AiModule?.ModuleType == "VideoEdit")
+        {
+            var overlayConn = req.Connections.FirstOrDefault(c => c.ToModuleId == pm.Id && c.ToPort == "input_overlays");
+            if (overlayConn is not null)
+            {
+                var overlayModule = modules.FirstOrDefault(m => m.Id == overlayConn.FromModuleId);
+                if (overlayModule is not null)
+                {
+                    // Merge overlaySourceStep into the module's Configuration
+                    var cfgDict = new Dictionary<string, object>();
+                    if (!string.IsNullOrEmpty(pm.Configuration))
+                    {
+                        try { cfgDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(pm.Configuration) ?? new(); }
+                        catch { cfgDict = new(); }
+                    }
+                    cfgDict["overlaySourceStep"] = overlayModule.StepOrder;
+                    pm.Configuration = System.Text.Json.JsonSerializer.Serialize(cfgDict);
+                }
+            }
+        }
     }
 
     // 5. Auto-detect branches from fork points in the connection graph
