@@ -627,13 +627,15 @@ namespace Server.Services.Ai
                 ["elements"] = elements
             };
 
-            // Scene transition
+            // Scene transition — cap duration to avoid audio overlap between scenes.
+            // Transitions cause scenes to overlap in time, so a 2s transition on a 3s voice
+            // means 2s of audio from both scenes playing simultaneously.
             if (s.TransitionStyle != "none" && !string.IsNullOrEmpty(s.TransitionStyle))
             {
                 scene["transition"] = new Dictionary<string, object>
                 {
                     ["style"] = s.TransitionStyle,
-                    ["duration"] = s.TransitionDuration
+                    ["duration"] = Math.Min(s.TransitionDuration, 1.0)
                 };
             }
 
