@@ -548,9 +548,9 @@ namespace Server.Services.Ai
                     {
                         ["type"] = "image",
                         ["src"] = mediaUrl,
-                        // -2 = match parent scene duration (set by voice).
-                        // Without voice, use fixed duration (min 1s).
-                        ["duration"] = hasVoice ? -2 : Math.Max(s.ImageDuration, 1.0)
+                        // Use configured imageDuration directly.
+                        // -1 = auto (scene sizes from voice), positive = fixed seconds.
+                        ["duration"] = s.ImageDuration
                     };
 
                     // Apply Ken Burns animation
@@ -651,16 +651,9 @@ namespace Server.Services.Ai
             var sentences = script.Split(new[] { ". ", "! ", "? " }, StringSplitOptions.RemoveEmptyEntries);
             if (sentences.Length == 0) return new List<string> { script };
 
-            // Ensure at least 2 sentences per part for meaningful voice duration (~6-10s each).
-            // This prevents ultra-short scenes (1 sentence = ~2-3s) that make the video too brief.
-            const int minSentencesPerPart = 2;
-            var effectiveParts = Math.Min(maxParts, Math.Max(1, sentences.Length / minSentencesPerPart));
-
-            if (sentences.Length <= effectiveParts)
-            {
-                // Not enough sentences to split — return all as one part
-                return new List<string> { string.Join(". ", sentences.Select(s => s.TrimEnd('.', '!', '?'))) + "." };
-            }
+            // Use all available parts (one scene per image). If there are fewer
+            // sentences than images, group into fewer parts (no empty scenes).
+            var effectiveParts = Math.Min(maxParts, sentences.Length);
 
             var perPart = sentences.Length / effectiveParts;
             var remainder = sentences.Length % effectiveParts;
