@@ -949,23 +949,6 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
-                        // PRE-CHECK: ensure all Image/VideoSearch/Coordinator modules have completed.
-                        var pendingMediaSteps = project.ProjectModules
-                            .Where(m => m.AiModule.ModuleType is "Image" or "VideoSearch" or "Coordinator"
-                                && m.StepOrder < pm.StepOrder
-                                && !stepOutputs.ContainsKey(m.StepOrder))
-                            .Select(m => $"{m.StepName ?? m.AiModule.Name} (paso {m.StepOrder})")
-                            .ToList();
-                        if (pendingMediaSteps.Count > 0)
-                        {
-                            await _logger.LogAsync(projectId, executionId, "error",
-                                $"VideoEdit no puede ejecutarse: faltan resultados de {pendingMediaSteps.Count} paso(s): {string.Join(", ", pendingMediaSteps)}",
-                                pm.StepOrder, stepName);
-                            await FailStep(stepExecution, execution,
-                                $"VideoEdit necesita que completen primero: {string.Join(", ", pendingMediaSteps)}", db);
-                            return execution;
-                        }
-
                         // Resolve script: the voiceover script for the video.
                         // Priority: videoPrompt config > Content from upstream text step > combined items
                         // Content has the full narrative text; Items are just short bullet points.
@@ -1073,6 +1056,23 @@ namespace Server.Services.Ai
 
                         var imgCount = mediaEntries.Count(m => m["type"] == "image");
                         var vidCount = mediaEntries.Count(m => m["type"] == "video");
+
+                        // Guard: don't render without media if there are Image/VideoSearch modules
+                        if (imgCount + vidCount == 0)
+                        {
+                            var hasMediaModules = project.ProjectModules
+                                .Any(m => m.AiModule.ModuleType is "Image" or "VideoSearch");
+                            if (hasMediaModules)
+                            {
+                                await _logger.LogAsync(projectId, executionId, "error",
+                                    "VideoEdit: hay modulos de imagen/video en el pipeline pero no se encontraron archivos.",
+                                    pm.StepOrder, stepName);
+                                await FailStep(stepExecution, execution,
+                                    "VideoEdit: no se encontraron imagenes/videos. Asegurate de que se ejecuten antes del VideoEdit.", db);
+                                return execution;
+                            }
+                        }
+
                         await _logger.LogAsync(projectId, executionId, "info",
                             $"Editando video con Json2Video: input={editInput[..Math.Min(editInput.Length, 100)]}..., videos={vidCount}, imagenes={imgCount}",
                             pm.StepOrder, stepName);
@@ -4707,21 +4707,6 @@ Datos de la ejecucion:
                     }
                     else if (bpm.AiModule.ModuleType == "VideoEdit")
                     {
-                        // PRE-CHECK: ensure all Image/VideoSearch/Coordinator modules have completed.
-                        // VideoEdit collects media from ALL completed steps, so it MUST wait for all
-                        // media-producing modules before executing — otherwise it renders without images.
-                        var pendingMediaSteps = project.ProjectModules
-                            .Where(m => m.AiModule.ModuleType is "Image" or "VideoSearch" or "Coordinator"
-                                && m.StepOrder < bpm.StepOrder
-                                && !stepOutputs.ContainsKey(m.StepOrder))
-                            .Select(m => $"{m.StepName ?? m.AiModule.Name} (paso {m.StepOrder})")
-                            .ToList();
-                        if (pendingMediaSteps.Count > 0)
-                        {
-                            throw new InvalidOperationException(
-                                $"[{branchId}] VideoEdit no puede ejecutarse: faltan resultados de {pendingMediaSteps.Count} paso(s): {string.Join(", ", pendingMediaSteps)}. " +
-                                "Verifica que los modulos de imagen/video esten conectados y se ejecuten antes del checkpoint.");
-                        }
 
                         // Resolve script: the voiceover script for the video.
                         // Priority: videoPrompt config > Content from upstream text step > combined items
@@ -4817,6 +4802,21 @@ Datos de la ejecucion:
 
                         var bImgCount = bMediaEntries.Count(m => m["type"] == "image");
                         var bVidCount = bMediaEntries.Count(m => m["type"] == "video");
+
+                        // Guard: if there are Image/VideoSearch modules in the pipeline but 0 media collected,
+                        // something went wrong — don't waste API credits rendering without media.
+                        if (bImgCount + bVidCount == 0)
+                        {
+                            var hasMediaModules = project.ProjectModules
+                                .Any(m => m.AiModule.ModuleType is "Image" or "VideoSearch");
+                            if (hasMediaModules)
+                            {
+                                throw new InvalidOperationException(
+                                    $"[{branchId}] VideoEdit: hay modulos de imagen/video en el pipeline pero no se encontraron archivos. " +
+                                    "Asegurate de que se ejecuten antes del VideoEdit.");
+                            }
+                        }
+
                         await _logger.LogAsync(project.Id, execution.Id, "info",
                             $"Editando video con Json2Video: input={bEditInput[..Math.Min(bEditInput.Length, 100)]}..., videos={bVidCount}, imagenes={bImgCount}",
                             bpm.StepOrder, bStepName);
