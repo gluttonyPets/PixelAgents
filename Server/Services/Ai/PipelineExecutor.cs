@@ -69,6 +69,9 @@ namespace Server.Services.Ai
         private static bool IsCheckpointStep(AiModule module) =>
             module.ModuleType == "Checkpoint";
 
+        private static bool IsCoordinatorStep(AiModule module) =>
+            module.ModuleType == "Coordinator";
+
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
         {
@@ -384,6 +387,15 @@ namespace Server.Services.Ai
                         await _logger.LogStepProgressAsync(projectId, pm.Id, "WaitingForCheckpoint");
 
                         return execution;
+                    }
+
+                    // ── Coordinator step: collect all connected inputs and send to AI ──
+                    if (IsCoordinatorStep(pm.AiModule))
+                    {
+                        await HandleCoordinatorStepAsync(
+                            project, execution, stepExecution, pm, userInput,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
                     }
 
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
@@ -4116,6 +4128,137 @@ Datos de la ejecucion:
         }
 
         // Serializable pause state
+        /// <summary>
+        /// Coordinator: collects outputs from all connected inputs, builds a context prompt,
+        /// sends it to the AI, and stores the result as a single text output.
+        /// </summary>
+        private async Task HandleCoordinatorStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm, string? userInput,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            UserDbContext db, string tenantDbName)
+        {
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+            var projectId = project.Id;
+            var executionId = execution.Id;
+            var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+            // 1. Collect data from all connected inputs via coordinatorInputs map
+            var inputDataParts = new List<string>();
+            var serverBase = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+
+            if (config.TryGetValue("coordinatorInputs", out var ciVal))
+            {
+                Dictionary<string, JsonElement>? coordInputs = null;
+                if (ciVal is JsonElement ciEl && ciEl.ValueKind == JsonValueKind.Object)
+                    coordInputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(ciEl.GetRawText());
+                else if (ciVal is string ciStr)
+                    coordInputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(ciStr);
+
+                if (coordInputs is not null)
+                {
+                    foreach (var (portName, sourceInfo) in coordInputs.OrderBy(kv => kv.Key))
+                    {
+                        var stepOrder = sourceInfo.TryGetProperty("stepOrder", out var soProp) ? soProp.GetInt32() : 0;
+                        var moduleType = sourceInfo.TryGetProperty("moduleType", out var mtProp) ? mtProp.GetString() ?? "" : "";
+
+                        var part = $"## {portName} (tipo: {moduleType}, paso: {stepOrder})\n";
+
+                        if (stepOutputs.TryGetValue(stepOrder, out var srcOutput))
+                        {
+                            // Text content
+                            if (!string.IsNullOrWhiteSpace(srcOutput.Content))
+                                part += srcOutput.Content + "\n";
+                            else if (srcOutput.Items.Count > 0)
+                                part += string.Join("\n", srcOutput.Items.Select(i => i.Content)) + "\n";
+
+                            // File references (images, videos, audio)
+                            if (srcOutput.Files.Count > 0)
+                            {
+                                part += "Archivos:\n";
+                                foreach (var file in srcOutput.Files)
+                                {
+                                    if (file.FileId == Guid.Empty) continue;
+                                    var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                                    part += $"- {file.FileName} ({file.ContentType}): {publicUrl}\n";
+                                }
+                            }
+                        }
+
+                        inputDataParts.Add(part);
+                    }
+                }
+            }
+
+            if (inputDataParts.Count == 0)
+            {
+                // Fallback: use resolved inputs from standard flow
+                var fallbackInputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, "Text",
+                    pm.AiModule.ModelName, BuildStepBranches(project.ProjectModules, stepModuleTypes));
+                inputDataParts.AddRange(fallbackInputs.Select((inp, idx) => $"## Entrada {idx + 1}\n{inp}"));
+            }
+
+            var combinedInput = string.Join("\n\n", inputDataParts);
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Coordinator: procesando {inputDataParts.Count} entrada(s)", pm.StepOrder, stepName);
+
+            // 2. Send to AI with system prompt
+            var apiKey = pm.AiModule.ApiKey?.EncryptedKey
+                ?? throw new InvalidOperationException($"Coordinator: ApiKey no configurada");
+            var provider = _registry.GetProvider(pm.AiModule.ProviderType)
+                ?? throw new InvalidOperationException($"Coordinator: proveedor no disponible");
+
+            var systemPrompt = config.TryGetValue("systemPrompt", out var spVal) && spVal is string sp ? sp : "";
+
+            var aiContext = new AiExecutionContext
+            {
+                ModuleType = "Text",
+                ModelName = pm.AiModule.ModelName,
+                ApiKey = apiKey,
+                Input = combinedInput,
+                ProjectContext = project.Context,
+                SkipOutputSchema = true,
+                Configuration = new Dictionary<string, object>
+                {
+                    ["systemPrompt"] = systemPrompt
+                }
+            };
+
+            var result = await provider.ExecuteAsync(aiContext);
+            stepExecution.EstimatedCost += result.EstimatedCost;
+
+            if (!result.Success)
+            {
+                await _logger.LogAsync(projectId, executionId, "error",
+                    $"Coordinator error: {result.Error}", pm.StepOrder, stepName);
+                throw new InvalidOperationException(result.Error ?? "Error en Coordinator");
+            }
+
+            // 3. Store output
+            var output = new StepOutput
+            {
+                Type = "text",
+                Content = result.TextOutput ?? "",
+                Summary = $"Coordinator: resultado generado",
+                Items = new List<OutputItem> { new() { Content = result.TextOutput ?? "" } },
+            };
+
+            stepOutputs[pm.StepOrder] = output;
+            stepModuleTypes[pm.StepOrder] = "Coordinator";
+            stepExecution.OutputData = JsonSerializer.Serialize(output);
+            stepExecution.InputData = JsonSerializer.Serialize(new { systemPrompt, input = combinedInput[..Math.Min(combinedInput.Length, 500)] });
+            stepExecution.Status = "Completed";
+            stepExecution.CompletedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(projectId, executionId, "success",
+                $"Coordinator: resultado generado correctamente", pm.StepOrder, stepName);
+            await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
+        }
+
         private class PausedPipelineState
         {
             public string? UserInput { get; set; }
@@ -4269,6 +4412,15 @@ Datos de la ejecucion:
                         branchStepExec.Status = "Skipped";
                         branchStepExec.CompletedAt = DateTime.UtcNow;
                         await db.SaveChangesAsync();
+                        continue;
+                    }
+
+                    // Coordinator in branches
+                    if (IsCoordinatorStep(bpm.AiModule))
+                    {
+                        await HandleCoordinatorStepAsync(
+                            project, execution, branchStepExec, bpm, userInput,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
 

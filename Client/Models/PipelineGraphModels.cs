@@ -204,6 +204,13 @@ public static class ModulePortRegistry
                 }
                 break;
 
+            case "Coordinator":
+                var coordInputs = Math.Max(sceneCount, 1);
+                for (int i = 1; i <= coordInputs; i++)
+                    ports.Add(new($"input_{i}", $"Entrada {i}", PortDataType.Any, isInput: true));
+                ports.Add(new("output_result", "Resultado", PortDataType.Text, isInput: false));
+                break;
+
             case "Publish":
                 ports.Add(new("input_content", "Contenido", PortDataType.Any, isInput: true, isRequired: true));
                 ports.Add(new("output_result", "Resultado", PortDataType.Text, isInput: false));

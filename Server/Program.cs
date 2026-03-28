@@ -931,6 +931,37 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
                 }
             }
         }
+
+        // For Coordinator: store all input connections as inputSources map
+        if (pm.AiModule?.ModuleType == "Coordinator")
+        {
+            var coordConns = req.Connections.Where(c => c.ToModuleId == pm.Id && c.ToPort.StartsWith("input_")).ToList();
+            if (coordConns.Count > 0)
+            {
+                var cfgDict = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(pm.Configuration))
+                {
+                    try { cfgDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(pm.Configuration) ?? new(); }
+                    catch { cfgDict = new(); }
+                }
+                var inputSources = new Dictionary<string, object>();
+                foreach (var conn in coordConns)
+                {
+                    var srcModule = modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+                    if (srcModule is not null)
+                    {
+                        inputSources[conn.ToPort] = new Dictionary<string, object>
+                        {
+                            ["stepOrder"] = srcModule.StepOrder,
+                            ["moduleType"] = srcModule.AiModule?.ModuleType ?? "Unknown",
+                            ["fromPort"] = conn.FromPort
+                        };
+                    }
+                }
+                cfgDict["coordinatorInputs"] = inputSources;
+                pm.Configuration = System.Text.Json.JsonSerializer.Serialize(cfgDict);
+            }
+        }
     }
 
     // 5. Auto-detect branches from fork points in the connection graph

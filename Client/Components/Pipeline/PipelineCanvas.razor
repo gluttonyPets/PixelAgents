@@ -642,6 +642,19 @@
                         </div>
                     }
 
+                    @if (sel.ModuleType == "Coordinator")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Configuracion del Coordinator</div>
+                            <div class="inspector-field">
+                                <label>Numero de entradas</label>
+                                <input type="number" min="1" max="20" value="@GetSceneCount(sel.Id)"
+                                       @onchange="e => UpdateSceneCount(sel.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1)" />
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Conecta imagenes, textos, audio u otros modulos a cada entrada.</p>
+                            </div>
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "Publish")
                     {
                         <div class="inspector-section">
@@ -848,7 +861,7 @@
         new("ai", "bi-cpu", "IA y Texto", ["Text", "Interaction", "Orchestrator"]),
         new("media", "bi-brush", "Generacion", ["Image", "Video", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
-        new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Checkpoint", "Publish"]),
+        new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Checkpoint", "Publish", "Coordinator"]),
     ];
 
     private void ToggleModulePanel() => _showModulePanel = !_showModulePanel;
