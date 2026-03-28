@@ -949,6 +949,23 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
+                        // PRE-CHECK: ensure all Image/VideoSearch/Coordinator modules have completed.
+                        var pendingMediaSteps = project.ProjectModules
+                            .Where(m => m.AiModule.ModuleType is "Image" or "VideoSearch" or "Coordinator"
+                                && m.StepOrder < pm.StepOrder
+                                && !stepOutputs.ContainsKey(m.StepOrder))
+                            .Select(m => $"{m.StepName ?? m.AiModule.Name} (paso {m.StepOrder})")
+                            .ToList();
+                        if (pendingMediaSteps.Count > 0)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "error",
+                                $"VideoEdit no puede ejecutarse: faltan resultados de {pendingMediaSteps.Count} paso(s): {string.Join(", ", pendingMediaSteps)}",
+                                pm.StepOrder, stepName);
+                            await FailStep(stepExecution, execution,
+                                $"VideoEdit necesita que completen primero: {string.Join(", ", pendingMediaSteps)}", db);
+                            return execution;
+                        }
+
                         // Resolve script: the voiceover script for the video.
                         // Priority: videoPrompt config > Content from upstream text step > combined items
                         // Content has the full narrative text; Items are just short bullet points.
@@ -4690,6 +4707,22 @@ Datos de la ejecucion:
                     }
                     else if (bpm.AiModule.ModuleType == "VideoEdit")
                     {
+                        // PRE-CHECK: ensure all Image/VideoSearch/Coordinator modules have completed.
+                        // VideoEdit collects media from ALL completed steps, so it MUST wait for all
+                        // media-producing modules before executing — otherwise it renders without images.
+                        var pendingMediaSteps = project.ProjectModules
+                            .Where(m => m.AiModule.ModuleType is "Image" or "VideoSearch" or "Coordinator"
+                                && m.StepOrder < bpm.StepOrder
+                                && !stepOutputs.ContainsKey(m.StepOrder))
+                            .Select(m => $"{m.StepName ?? m.AiModule.Name} (paso {m.StepOrder})")
+                            .ToList();
+                        if (pendingMediaSteps.Count > 0)
+                        {
+                            throw new InvalidOperationException(
+                                $"[{branchId}] VideoEdit no puede ejecutarse: faltan resultados de {pendingMediaSteps.Count} paso(s): {string.Join(", ", pendingMediaSteps)}. " +
+                                "Verifica que los modulos de imagen/video esten conectados y se ejecuten antes del checkpoint.");
+                        }
+
                         // Resolve script: the voiceover script for the video.
                         // Priority: videoPrompt config > Content from upstream text step > combined items
                         // Content has the full narrative text; Items are just short bullet points.
