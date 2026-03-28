@@ -1029,7 +1029,7 @@ namespace Server.Services.Ai
                             config["videoUrls"] = JsonSerializer.Serialize(videoOnlyUrls);
 
                         // Resolve overlays from connected overlay source step
-                        if (config.TryGetValue("overlaySourceStep", out var mainOlsSrc))
+                        if (config.TryGetValue("resourceSourceStep", out var mainOlsSrc))
                         {
                             var olsStep = mainOlsSrc is JsonElement olsEl ? olsEl.GetInt32() : Convert.ToInt32(mainOlsSrc);
                             if (stepOutputs.TryGetValue(olsStep, out var olsOutput))
@@ -1038,7 +1038,7 @@ namespace Server.Services.Ai
                                 if (string.IsNullOrWhiteSpace(overlayText) && olsOutput.Items.Count > 0)
                                     overlayText = string.Join("\n", olsOutput.Items.Select(i => i.Content));
                                 if (!string.IsNullOrWhiteSpace(overlayText))
-                                    config["overlays"] = overlayText;
+                                    config["resources"] = overlayText;
                             }
                         }
 
@@ -4613,7 +4613,7 @@ Datos de la ejecucion:
                             bConfig["videoUrls"] = JsonSerializer.Serialize(bVideoOnlyUrls);
 
                         // Resolve overlays from connected overlay source step
-                        if (bConfig.TryGetValue("overlaySourceStep", out var olsSrc))
+                        if (bConfig.TryGetValue("resourceSourceStep", out var olsSrc))
                         {
                             var olsStep = olsSrc is JsonElement olsEl ? olsEl.GetInt32() : Convert.ToInt32(olsSrc);
                             if (stepOutputs.TryGetValue(olsStep, out var olsOutput))
@@ -4623,9 +4623,9 @@ Datos de la ejecucion:
                                     overlayText = string.Join("\n", olsOutput.Items.Select(i => i.Content));
                                 if (!string.IsNullOrWhiteSpace(overlayText))
                                 {
-                                    bConfig["overlays"] = overlayText;
+                                    bConfig["resources"] = overlayText;
                                     await _logger.LogAsync(project.Id, execution.Id, "info",
-                                        $"[{branchId}] Overlays recibidos del paso {olsStep}", bpm.StepOrder, bStepName);
+                                        $"[{branchId}] Recursos recibidos del paso {olsStep}", bpm.StepOrder, bStepName);
                                 }
                             }
                         }

@@ -914,20 +914,19 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
         // For VideoEdit: detect connections to the input_overlays port and store the source step
         if (pm.AiModule?.ModuleType == "VideoEdit")
         {
-            var overlayConn = req.Connections.FirstOrDefault(c => c.ToModuleId == pm.Id && c.ToPort == "input_overlays");
-            if (overlayConn is not null)
+            var resourceConn = req.Connections.FirstOrDefault(c => c.ToModuleId == pm.Id && c.ToPort == "input_resources");
+            if (resourceConn is not null)
             {
-                var overlayModule = modules.FirstOrDefault(m => m.Id == overlayConn.FromModuleId);
-                if (overlayModule is not null)
+                var resourceModule = modules.FirstOrDefault(m => m.Id == resourceConn.FromModuleId);
+                if (resourceModule is not null)
                 {
-                    // Merge overlaySourceStep into the module's Configuration
                     var cfgDict = new Dictionary<string, object>();
                     if (!string.IsNullOrEmpty(pm.Configuration))
                     {
                         try { cfgDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(pm.Configuration) ?? new(); }
                         catch { cfgDict = new(); }
                     }
-                    cfgDict["overlaySourceStep"] = overlayModule.StepOrder;
+                    cfgDict["resourceSourceStep"] = resourceModule.StepOrder;
                     pm.Configuration = System.Text.Json.JsonSerializer.Serialize(cfgDict);
                 }
             }
