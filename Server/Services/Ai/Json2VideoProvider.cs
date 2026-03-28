@@ -725,7 +725,6 @@ namespace Server.Services.Ai
             if (double.TryParse(value?.ToString(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed)) return parsed;
             return fallback;
         }
-    }
 
         /// <summary>
         /// Parse resource instructions (JSON array) and inject them as movie-level elements.
