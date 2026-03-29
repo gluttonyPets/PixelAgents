@@ -3654,6 +3654,46 @@ Datos de la ejecucion:
                     }
                 }
 
+                // Also execute any unexecuted branches from OTHER fork points that contain
+                // Image/VideoSearch/Coordinator steps. VideoEdit needs ALL media to be ready,
+                // not just media from sibling branches of the same fork point.
+                var allUnexecutedBranches = allModules
+                    .Where(m => m.BranchId != "main" && m.BranchId != pauseData.BranchId
+                        && !executedModuleIds.Contains(m.Id)
+                        && !(unexecutedSiblingBranches.ContainsKey(m.BranchId ?? "")))
+                    .GroupBy(m => m.BranchId)
+                    .Where(g => g.Any(m => m.AiModule.ModuleType is "Image" or "VideoSearch" or "Coordinator"))
+                    .ToDictionary(g => g.Key!, g => g.OrderBy(m => m.StepOrder).ToList());
+
+                if (allUnexecutedBranches.Count > 0)
+                {
+                    await _logger.LogAsync(projectId, execution.Id, "info",
+                        $"Ejecutando {allUnexecutedBranches.Count} rama(s) con media pendiente antes de reanudar VideoEdit");
+
+                    foreach (var (depId, depSteps) in allUnexecutedBranches)
+                    {
+                        await _logger.LogAsync(projectId, execution.Id, "info",
+                            $"Iniciando rama de media '{depId}' ({depSteps.Count} pasos)");
+
+                        var depResult = await ExecuteBranchStepsAsync(
+                            project, execution, depId, depSteps, userInput,
+                            stepResults, stepOutputs, stepModuleTypes,
+                            workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                        if (depResult == BranchResult.Cancelled)
+                        {
+                            execution.Status = "Cancelled";
+                            execution.CompletedAt = DateTime.UtcNow;
+                            await db.SaveChangesAsync();
+                            return execution;
+                        }
+
+                        var depLevel = depResult == BranchResult.Failed ? "warning" : "success";
+                        await _logger.LogAsync(projectId, execution.Id, depLevel,
+                            $"Rama de media '{depId}' {(depResult == BranchResult.Failed ? "fallo" : "completada")}");
+                    }
+                }
+
                 if (branchSteps.Count > 0)
                 {
                     await _logger.LogAsync(projectId, execution.Id, "info",
