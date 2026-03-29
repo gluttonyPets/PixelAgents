@@ -67,6 +67,7 @@ window.pipelineEditor = {
         });
 
         this._editor.on('connectionCreated', conn => {
+            console.log('[pipelineEditor] connectionCreated event:', conn.output_id, conn.output_class, '→', conn.input_id, conn.input_class, 'suppressed:', this._suppressEvents);
             if (this._suppressEvents) return;
             var fromPorts = this._portMap[conn.output_id];
             var toPorts = this._portMap[conn.input_id];
@@ -82,6 +83,7 @@ window.pipelineEditor = {
         });
 
         this._editor.on('connectionRemoved', conn => {
+            console.log('[pipelineEditor] connectionRemoved event:', conn.output_id, conn.output_class, '→', conn.input_id, conn.input_class, 'suppressed:', this._suppressEvents);
             if (this._suppressEvents) return;
             var fromPorts = this._portMap[conn.output_id];
             var toPorts = this._portMap[conn.input_id];
@@ -199,10 +201,16 @@ window.pipelineEditor = {
         if (!this._editor) return;
         var fromNodeId = this._reverseMap[fromModuleId];
         var toNodeId = this._reverseMap[toModuleId];
-        if (fromNodeId === undefined || toNodeId === undefined) return;
+        if (fromNodeId === undefined || toNodeId === undefined) {
+            console.warn('[pipelineEditor] addConnection: node not found', fromModuleId, toModuleId);
+            return;
+        }
         var fromPorts = this._portMap[fromNodeId];
         var toPorts = this._portMap[toNodeId];
-        if (!fromPorts || !toPorts) return;
+        if (!fromPorts || !toPorts) {
+            console.warn('[pipelineEditor] addConnection: portMap not found', fromNodeId, toNodeId);
+            return;
+        }
         var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
         var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
         if (fromIdx > 0 && toIdx > 0) {
@@ -213,9 +221,14 @@ window.pipelineEditor = {
             var wasSuppressed = this._suppressEvents;
             this._suppressEvents = true;
             try {
+                console.log('[pipelineEditor] addConnection:', fromNodeId, 'output_' + fromIdx, '→', toNodeId, 'input_' + toIdx);
                 this._editor.addConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
-            } catch (e) { }
+            } catch (e) {
+                console.error('[pipelineEditor] addConnection error:', e);
+            }
             this._suppressEvents = wasSuppressed;
+        } else {
+            console.warn('[pipelineEditor] addConnection: port index not found', fromPortId, '→', toPortId, 'fromIdx:', fromIdx, 'toIdx:', toIdx);
         }
     },
 

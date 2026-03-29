@@ -2125,13 +2125,20 @@ else
     /// </summary>
     private async Task SaveGraph(SaveGraphRequest req)
     {
-        await Api.SaveGraphAsync(ProjectId, req);
+        Console.WriteLine($"[ProjectDetail] SaveGraph: saving {req.Connections.Count} connections");
+        var (ok, error) = await Api.SaveGraphAsync(ProjectId, req);
+        if (!ok)
+        {
+            Console.WriteLine($"[ProjectDetail] SaveGraph FAILED: {error}");
+            return; // Don't re-fetch on failure — preserve local state
+        }
         // Reload to get updated StepOrder from server-side topological sort
         if (_project is not null)
         {
             var updated = await Api.GetProjectDetailAsync(ProjectId);
             if (updated is not null)
             {
+                Console.WriteLine($"[ProjectDetail] SaveGraph: re-fetched {updated.Connections?.Count ?? 0} connections from server");
                 _project = updated;
                 _projectConnections = updated.Connections ?? new();
             }

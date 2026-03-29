@@ -938,12 +938,14 @@
             await RebuildDrawflow();
             _lastModuleCount = Modules.Count;
             _lastConnectionCount = Connections.Count;
+            _lastInputMappingsHash = string.Join("|", Modules.Select(m => $"{m.Id}:{m.InputMapping}"));
         }
         else if (_jsInitialized)
         {
             var mappingsHash = string.Join("|", Modules.Select(m => $"{m.Id}:{m.InputMapping}"));
             if (Modules.Count != _lastModuleCount || Connections.Count != _lastConnectionCount || mappingsHash != _lastInputMappingsHash)
             {
+                Console.WriteLine($"[PipelineCanvas] Rebuild triggered: modules {_lastModuleCount}→{Modules.Count}, conns {_lastConnectionCount}→{Connections.Count}, hashChanged={mappingsHash != _lastInputMappingsHash}");
                 // Auto-select newly added module so inspector shows immediately
                 // (needed for Orchestrator to configure outputs, VideoEdit to set scene count, etc.)
                 if (_pendingAutoSelectModuleType is not null && Modules.Count > _lastModuleCount)
@@ -1038,8 +1040,10 @@
         }
 
         // Add all connections from DB
+        Console.WriteLine($"[PipelineCanvas] RebuildDrawflow: adding {_connections.Count} connections");
         foreach (var conn in _connections)
         {
+            Console.WriteLine($"[PipelineCanvas]   conn: {conn.FromPort} → {conn.ToPort}");
             await JS.InvokeVoidAsync("pipelineEditor.addConnection",
                 conn.FromModuleId.ToString(), conn.FromPort,
                 conn.ToModuleId.ToString(), conn.ToPort);
@@ -1407,6 +1411,7 @@
 
     private async Task AutoSaveGraph()
     {
+        Console.WriteLine($"[PipelineCanvas] AutoSaveGraph: saving {_connections.Count} connections");
         _error = null;
         var positions = _positions.Select(p => new NodePositionEntry(p.Key, p.Value.X, p.Value.Y)).ToList();
         var sceneCounts = _sceneCountOverrides
@@ -1435,6 +1440,7 @@
     [JSInvokable]
     public async Task OnConnectionMade(string fromModuleId, string fromPort, string toModuleId, string toPort)
     {
+        Console.WriteLine($"[PipelineCanvas] OnConnectionMade: {fromPort} → {toPort}");
         if (!Guid.TryParse(fromModuleId, out var fromId) || !Guid.TryParse(toModuleId, out var toId))
             return;
 
@@ -1477,22 +1483,8 @@
             _connections.Add(new ConnectionEntry(fromId, fromPort, toId, toPort));
         }
 
-        // For AllowMultiple ports: Drawflow may have removed existing connections during
-        // its internal "replace" flow. Re-add them visually so all connections show.
-        if (toPortDef.AllowMultiple)
-        {
-            var allConnsToPort = _connections.Where(c => c.ToModuleId == toId && c.ToPort == toPort).ToList();
-            foreach (var existingConn in allConnsToPort)
-            {
-                // Skip the connection that was just created by Drawflow (it already exists visually)
-                if (existingConn.FromModuleId == fromId && existingConn.FromPort == fromPort)
-                    continue;
-                // Re-add the visual connection that Drawflow removed
-                await JS.InvokeVoidAsync("pipelineEditor.addConnection",
-                    existingConn.FromModuleId.ToString(), existingConn.FromPort,
-                    existingConn.ToModuleId.ToString(), existingConn.ToPort);
-            }
-        }
+        var connsToSamePort = _connections.Count(c => c.ToModuleId == toId && c.ToPort == toPort);
+        Console.WriteLine($"[PipelineCanvas] After add: {_connections.Count} total connections, {connsToSamePort} to port {toPort}");
 
         await NotifyGraphChanged();
         await InvokeAsync(StateHasChanged);
@@ -1504,24 +1496,13 @@
         if (!Guid.TryParse(fromModuleId, out var fromId) || !Guid.TryParse(toModuleId, out var toId))
             return;
 
-        // If the target port allows multiple connections, Drawflow may be removing it
-        // during its internal "replace connection" flow. Don't remove from _connections —
-        // OnConnectionMade will re-add the visual connection after the new one is created.
-        var toModule = Modules.FirstOrDefault(m => m.Id == toId);
-        if (toModule is not null)
-        {
-            var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId), toModule.InputMapping, toModule.OrchestratorOutputs);
-            var toPortDef = toPorts.FirstOrDefault(p => p.Id == toPort && p.IsInput);
-            if (toPortDef?.AllowMultiple == true)
-            {
-                // Keep in _connections — it will be re-synced visually
-                return;
-            }
-        }
+        Console.WriteLine($"[PipelineCanvas] OnConnectionRemoved: {fromPort} → {toPort}");
 
         _connections.RemoveAll(c =>
             c.FromModuleId == fromId && c.FromPort == fromPort &&
             c.ToModuleId == toId && c.ToPort == toPort);
+
+        Console.WriteLine($"[PipelineCanvas] After remove: {_connections.Count} total connections");
 
         await NotifyGraphChanged();
         await InvokeAsync(StateHasChanged);

@@ -811,13 +811,18 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
     var oldConnections = await db.ModuleConnections
         .Where(c => c.ProjectId == projectId)
         .ToListAsync();
+    Console.WriteLine($"[SaveGraph] Removing {oldConnections.Count} old connections, inserting {req.Connections.Count} new");
     db.ModuleConnections.RemoveRange(oldConnections);
 
     var moduleIds = modules.Select(m => m.Id).ToHashSet();
+    var insertedCount = 0;
     foreach (var conn in req.Connections)
     {
         if (!moduleIds.Contains(conn.FromModuleId) || !moduleIds.Contains(conn.ToModuleId))
+        {
+            Console.WriteLine($"[SaveGraph] Skipping connection {conn.FromPort}→{conn.ToPort}: module not found");
             continue;
+        }
         db.ModuleConnections.Add(new ModuleConnection
         {
             Id = Guid.NewGuid(),
@@ -828,7 +833,9 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             ToPort = conn.ToPort,
             CreatedAt = now
         });
+        insertedCount++;
     }
+    Console.WriteLine($"[SaveGraph] Inserted {insertedCount} connections");
 
     // 3. Topological sort: derive StepOrder from connections
     var incomingEdges = moduleIds.ToDictionary(id => id, _ => new List<Guid>());
