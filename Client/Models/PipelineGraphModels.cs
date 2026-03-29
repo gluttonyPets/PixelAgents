@@ -59,11 +59,13 @@ public class PortDefinition
     public string DataType { get; set; } = PortDataType.Any;
     public bool IsInput { get; set; }
     public bool IsRequired { get; set; }
+    /// <summary>When true, this input port accepts multiple connections (data is aggregated).</summary>
+    public bool AllowMultiple { get; set; }
 
     public PortDefinition() { }
-    public PortDefinition(string id, string label, string dataType, bool isInput, bool isRequired = false)
+    public PortDefinition(string id, string label, string dataType, bool isInput, bool isRequired = false, bool allowMultiple = false)
     {
-        Id = id; Label = label; DataType = dataType; IsInput = isInput; IsRequired = isRequired;
+        Id = id; Label = label; DataType = dataType; IsInput = isInput; IsRequired = isRequired; AllowMultiple = allowMultiple;
     }
 }
 
@@ -154,10 +156,11 @@ public static class ModulePortRegistry
                 ports.Add(new("input_script", "Guion", PortDataType.Text, isInput: true));
                 ports.Add(new("input_resources", "Recursos", PortDataType.Text, isInput: true));
                 // Dynamic media inputs (one per scene) — accept video, image, or any file
+                // AllowMultiple: each scene port can receive multiple files (e.g. image + text overlay)
                 var scenes = Math.Max(sceneCount, 1);
                 for (int i = 1; i <= scenes; i++)
                 {
-                    ports.Add(new($"input_scene_{i}_media", $"Escena {i}", PortDataType.Any, isInput: true, isRequired: true));
+                    ports.Add(new($"input_scene_{i}_media", $"Escena {i}", PortDataType.Any, isInput: true, isRequired: true, allowMultiple: true));
                 }
                 ports.Add(new("output_video", "Video final", PortDataType.Video, isInput: false));
                 break;
@@ -207,7 +210,7 @@ public static class ModulePortRegistry
             case "Coordinator":
                 var coordInputs = Math.Max(sceneCount, 1);
                 for (int i = 1; i <= coordInputs; i++)
-                    ports.Add(new($"input_{i}", $"Entrada {i}", PortDataType.Any, isInput: true));
+                    ports.Add(new($"input_{i}", $"Entrada {i}", PortDataType.Any, isInput: true, allowMultiple: true));
                 ports.Add(new("output_result", "Resultado", PortDataType.Text, isInput: false));
                 break;
 

@@ -990,46 +990,64 @@ namespace Server.Services.Ai
                             config["subtitleLanguage"] = slStr;
                         }
 
-                        // Collect media URLs from ALL completed VideoSearch and Image steps.
-                        // Each entry is a JSON object: {"url":"...","type":"video"|"image"}
+                        // Collect media URLs from scene-level connections or ALL completed steps.
                         var mediaEntries = new List<Dictionary<string, string>>();
                         var serverBase = (_configuration["BaseUrl"]
                             ?? _configuration["AllowedOrigin"]
                             ?? "").TrimEnd('/');
 
-                        foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
+                        // Per-scene media: if sceneInputs config exists, collect media per scene port
+                        var perSceneMedia = new Dictionary<string, List<Dictionary<string, string>>>();
+                        if (config.TryGetValue("sceneInputs", out var sceneInputsVal))
                         {
-                            if (!stepModuleTypes.TryGetValue(prevOrder, out var prevType))
-                                continue;
+                            Dictionary<string, JsonElement>? sceneInputsMap = null;
+                            if (sceneInputsVal is JsonElement siEl && siEl.ValueKind == JsonValueKind.Object)
+                                sceneInputsMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(siEl.GetRawText());
+                            else if (sceneInputsVal is string siStr)
+                                sceneInputsMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(siStr);
 
-                            if (prevType == "VideoSearch")
+                            if (sceneInputsMap is not null)
                             {
-                                // VideoSearch: downloadUrl from result metadata
-                                string? dlUrl = null;
-                                if (stepResults.TryGetValue(prevOrder, out var prevResult)
-                                    && prevResult.Metadata.TryGetValue("downloadUrl", out var dl) && dl is string dlStr)
-                                    dlUrl = dlStr;
-                                else if (stepOutputs.TryGetValue(prevOrder, out var prevOutput)
-                                    && prevOutput.Metadata.TryGetValue("downloadUrl", out var dlMeta))
-                                    dlUrl = dlMeta is JsonElement je ? je.GetString() : dlMeta?.ToString();
-
-                                if (!string.IsNullOrEmpty(dlUrl))
-                                    mediaEntries.Add(new Dictionary<string, string> { ["url"] = dlUrl, ["type"] = "video" });
-                            }
-                            else if (prevType == "Image")
-                            {
-                                // Image: build public URL for each generated file
-                                if (stepOutputs.TryGetValue(prevOrder, out var imgOutput))
+                                foreach (var (portId, sourcesEl) in sceneInputsMap)
                                 {
-                                    foreach (var file in imgOutput.Files)
+                                    var sceneMedia = new List<Dictionary<string, string>>();
+                                    if (sourcesEl.ValueKind == JsonValueKind.Array)
                                     {
-                                        if (file.FileId == Guid.Empty) continue;
-                                        var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
-                                        mediaEntries.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                                        foreach (var src in sourcesEl.EnumerateArray())
+                                        {
+                                            var srcStep = src.TryGetProperty("stepOrder", out var soEl) ? soEl.GetInt32() : 0;
+                                            var srcType = src.TryGetProperty("moduleType", out var mtEl) ? mtEl.GetString() ?? "" : "";
+                                            var srcPort = src.TryGetProperty("fromPort", out var fpEl) ? fpEl.GetString() ?? "" : "";
+
+                                            // Collect files/urls from the source step
+                                            CollectMediaFromStep(srcStep, srcType, srcPort, stepResults, stepOutputs,
+                                                stepModuleTypes, serverBase, tenantDbName, executionId, sceneMedia);
+                                        }
+                                    }
+                                    if (sceneMedia.Count > 0)
+                                    {
+                                        perSceneMedia[portId] = sceneMedia;
+                                        mediaEntries.AddRange(sceneMedia);
                                     }
                                 }
                             }
                         }
+
+                        // Fallback: if no scene connections, collect from ALL steps (legacy behavior)
+                        if (mediaEntries.Count == 0)
+                        {
+                            foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
+                            {
+                                if (!stepModuleTypes.TryGetValue(prevOrder, out var prevType))
+                                    continue;
+                                CollectMediaFromStep(prevOrder, prevType, "", stepResults, stepOutputs,
+                                    stepModuleTypes, serverBase, tenantDbName, executionId, mediaEntries);
+                            }
+                        }
+
+                        // Inject per-scene media if available
+                        if (perSceneMedia.Count > 0)
+                            config["perSceneMedia"] = JsonSerializer.Serialize(perSceneMedia);
 
                         // Inject collected media into config
                         if (mediaEntries.Count > 0 && !config.ContainsKey("mediaEntries"))
@@ -1484,6 +1502,116 @@ namespace Server.Services.Ai
 
                 default:
                     return [userInput ?? ""];
+            }
+        }
+
+        /// <summary>
+        /// Collect media URLs from a specific step, optionally filtered by output port.
+        /// Adds entries to the provided list in {"url":"...","type":"image"|"video"|"text"} format.
+        /// </summary>
+        private static void CollectMediaFromStep(
+            int stepOrder, string moduleType, string fromPort,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            string serverBase, string tenantDbName, Guid executionId,
+            List<Dictionary<string, string>> mediaList)
+        {
+            if (moduleType == "VideoSearch")
+            {
+                string? dlUrl = null;
+                if (stepResults.TryGetValue(stepOrder, out var prevResult)
+                    && prevResult.Metadata.TryGetValue("downloadUrl", out var dl) && dl is string dlStr)
+                    dlUrl = dlStr;
+                else if (stepOutputs.TryGetValue(stepOrder, out var prevOutput)
+                    && prevOutput.Metadata.TryGetValue("downloadUrl", out var dlMeta))
+                    dlUrl = dlMeta is JsonElement je ? je.GetString() : dlMeta?.ToString();
+
+                if (!string.IsNullOrEmpty(dlUrl))
+                    mediaList.Add(new Dictionary<string, string> { ["url"] = dlUrl, ["type"] = "video" });
+            }
+            else if (moduleType == "Image")
+            {
+                if (stepOutputs.TryGetValue(stepOrder, out var imgOutput))
+                {
+                    // If a specific output port is specified (e.g. output_image_2), only get that file
+                    if (!string.IsNullOrEmpty(fromPort) && fromPort.StartsWith("output_image_"))
+                    {
+                        // output_image_1 → index 0, output_image_2 → index 1, etc.
+                        if (int.TryParse(fromPort.AsSpan("output_image_".Length), out var imgIdx))
+                        {
+                            var fileIdx = imgIdx - 1;
+                            if (fileIdx >= 0 && fileIdx < imgOutput.Files.Count)
+                            {
+                                var file = imgOutput.Files[fileIdx];
+                                if (file.FileId != Guid.Empty)
+                                {
+                                    var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                                    mediaList.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // No specific port: get all files
+                        foreach (var file in imgOutput.Files)
+                        {
+                            if (file.FileId == Guid.Empty) continue;
+                            var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                            mediaList.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                        }
+                    }
+                }
+            }
+            else if (moduleType == "Text" || moduleType == "Orchestrator")
+            {
+                // Text/Orchestrator output: include as text content for the scene
+                if (stepOutputs.TryGetValue(stepOrder, out var textOutput))
+                {
+                    var content = textOutput.Content;
+                    if (string.IsNullOrWhiteSpace(content) && textOutput.Items.Count > 0)
+                    {
+                        // If specific port, try to get that item
+                        if (!string.IsNullOrEmpty(fromPort) && fromPort.StartsWith("output_")
+                            && int.TryParse(fromPort.AsSpan("output_".Length), out var outIdx))
+                        {
+                            var idx = outIdx - 1;
+                            if (idx >= 0 && idx < textOutput.Items.Count)
+                                content = textOutput.Items[idx].Content;
+                        }
+                        else
+                        {
+                            content = string.Join("\n", textOutput.Items.Select(i => i.Content));
+                        }
+                    }
+                    if (!string.IsNullOrWhiteSpace(content))
+                        mediaList.Add(new Dictionary<string, string> { ["content"] = content, ["type"] = "text" });
+                }
+            }
+            else if (moduleType == "Video")
+            {
+                if (stepOutputs.TryGetValue(stepOrder, out var vidOutput))
+                {
+                    foreach (var file in vidOutput.Files)
+                    {
+                        if (file.FileId == Guid.Empty) continue;
+                        var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                        mediaList.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "video" });
+                    }
+                }
+            }
+            else if (moduleType == "Audio")
+            {
+                if (stepOutputs.TryGetValue(stepOrder, out var audioOutput))
+                {
+                    foreach (var file in audioOutput.Files)
+                    {
+                        if (file.FileId == Guid.Empty) continue;
+                        var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                        mediaList.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "audio" });
+                    }
+                }
             }
         }
 

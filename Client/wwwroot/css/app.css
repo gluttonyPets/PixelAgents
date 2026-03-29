@@ -2144,6 +2144,28 @@ a.link:hover { text-decoration: underline; }
     text-overflow: ellipsis;
 }
 
+/* ── Node port summary (on card) ── */
+.df-node-ports-summary {
+    display: flex;
+    gap: 0.3rem;
+    margin-top: 3px;
+}
+.df-port-count {
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    opacity: 0.7;
+}
+.df-port-in {
+    background: rgba(108, 99, 255, 0.15);
+    color: var(--accent);
+}
+.df-port-out {
+    background: rgba(76, 175, 80, 0.15);
+    color: var(--success);
+}
+
 /* ── Node warning badge ── */
 .df-node-warning {
     font-size: 0.65rem;
@@ -2521,6 +2543,129 @@ a.link:hover { text-decoration: underline; }
     display: flex;
     gap: 6px;
     z-index: 50;
+}
+
+/* ── Inspector port display (improved) ── */
+.inspector-port-section {
+    margin-bottom: 0.3rem;
+}
+.inspector-port-section-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    letter-spacing: 0.03em;
+}
+.inspector-port-section-label i {
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+.inspector-port-item {
+    margin-bottom: 0.25rem;
+    padding: 0.3rem 0.4rem;
+    background: var(--bg-input);
+    border-radius: 6px;
+    border: 1px solid transparent;
+    transition: border-color 0.15s;
+}
+.inspector-port-item:hover {
+    border-color: var(--border);
+}
+.inspector-port-header {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.75rem;
+}
+.inspector-port-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.inspector-port-name {
+    font-weight: 500;
+    flex-shrink: 0;
+}
+.inspector-port-type-badge {
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 0.05rem 0.3rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+.inspector-port-multi-badge {
+    font-size: 0.55rem;
+    font-weight: 700;
+    background: var(--accent);
+    color: #fff;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.inspector-port-count-badge {
+    font-size: 0.55rem;
+    font-weight: 700;
+    background: rgba(108, 99, 255, 0.15);
+    color: var(--accent);
+    padding: 0 0.25rem;
+    border-radius: 8px;
+    min-width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.inspector-port-connection {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.7rem;
+    padding: 0.15rem 0 0.15rem 1rem;
+    color: var(--text-muted);
+}
+.inspector-port-conn-arrow {
+    font-size: 0.65rem;
+    opacity: 0.5;
+}
+.inspector-port-conn-source {
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+}
+.inspector-port-remove-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.6rem;
+    padding: 0 0.2rem;
+    line-height: 1;
+    opacity: 0.4;
+    transition: opacity 0.15s, color 0.15s;
+    margin-left: auto;
+}
+.inspector-port-remove-btn:hover {
+    opacity: 1;
+    color: var(--danger);
+}
+.inspector-port-empty {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    font-style: italic;
+    padding-left: 1rem;
+    opacity: 0.6;
 }
 
 /* Utility */

@@ -132,8 +132,8 @@ window.pipelineEditor = {
             var conns = nodeData.inputs[inputClass].connections;
             if (!conns || conns.length === 0) return;
 
-            // Get the source output info before removing
-            var existingConn = conns[0];
+            // Get the LAST connection to re-drag (most recently added)
+            var existingConn = conns[conns.length - 1];
             var outputNodeId = parseInt(existingConn.node);
             var outputClass = existingConn.output; // e.g. 'output_1'
 
@@ -164,7 +164,7 @@ window.pipelineEditor = {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
-        var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName, warning);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName, warning, inputPorts.length, outputPorts.length);
         var nodeId = this._editor.addNode(
             moduleId, inputPorts.length, outputPorts.length,
             x, y, 'df-type-' + moduleType.toLowerCase(),
@@ -341,7 +341,7 @@ window.pipelineEditor = {
         });
     },
 
-    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning) {
+    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount) {
         var orderBadge = stepLabel
             ? '<span class="df-order-badge">' + stepLabel + '</span>'
             : '<span class="df-order-badge" style="display:none"></span>';
@@ -351,11 +351,21 @@ window.pipelineEditor = {
         var warningLine = warning
             ? '<div class="df-node-warning">' + warning + '</div>'
             : '';
-        return '<div class="df-node-content">'
+        var portSummary = '';
+        if ((inputCount || 0) > 0 || (outputCount || 0) > 0) {
+            portSummary = '<div class="df-node-ports-summary">';
+            if ((inputCount || 0) > 0)
+                portSummary += '<span class="df-port-count df-port-in" title="Entradas">' + inputCount + ' in</span>';
+            if ((outputCount || 0) > 0)
+                portSummary += '<span class="df-port-count df-port-out" title="Salidas">' + outputCount + ' out</span>';
+            portSummary += '</div>';
+        }
+        return '<div class="df-node-content" style="border-left: 3px solid ' + color + ';">'
             + '<div class="df-node-overlay-spinner"></div>'
             + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + name + '</div>'
             + '<div class="df-node-type">' + type + '</div>'
             + modelLine
+            + portSummary
             + warningLine
             + '</div>';
     },

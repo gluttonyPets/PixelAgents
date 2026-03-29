@@ -151,66 +151,99 @@
                         }
                         @if (inputPorts.Any())
                         {
-                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem;">Entradas:</p>
-                            @foreach (var port in inputPorts)
-                            {
-                                var conn = _connections.FirstOrDefault(c => c.ToModuleId == sel.Id && c.ToPort == port.Id);
-                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
-                                    <span style="color: @PortDataType.GetColor(port.DataType);">&#x25CF;</span>
-                                    <span>@port.Label</span>
-                                    <span class="port-type-badge" style="background: @PortDataType.GetColor(port.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(port.DataType)</span>
-                                    @if (conn is not null)
-                                    {
-                                        var capturedInputConn = conn;
-                                        var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
-                                        var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping, fromModule.OrchestratorOutputs) : new();
-                                        var fromPort = fromPorts.FirstOrDefault(p => p.Id == conn.FromPort);
-                                        <span class="text-muted">&#x2190; @(fromModule?.StepName ?? fromModule?.AiModuleName ?? "?")</span>
-                                        @if (fromPort is not null)
-                                        {
-                                            <span class="port-type-badge" style="background: @PortDataType.GetColor(fromPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(fromPort.DataType)</span>
-                                        }
-                                        <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1;opacity:0.6;" @onclick="() => RemoveConnection(capturedInputConn)" title="Quitar conexion">&#x2715;</button>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted" style="font-style:italic;">sin conectar</span>
-                                    }
+                            <div class="inspector-port-section">
+                                <div class="inspector-port-section-label">
+                                    <i class="bi bi-arrow-right-circle"></i> Entradas
                                 </div>
-                            }
+                                @foreach (var port in inputPorts)
+                                {
+                                    var portConns = _connections.Where(c => c.ToModuleId == sel.Id && c.ToPort == port.Id).ToList();
+                                    <div class="inspector-port-item">
+                                        <div class="inspector-port-header">
+                                            <span class="inspector-port-dot" style="background: @PortDataType.GetColor(port.DataType);"></span>
+                                            <span class="inspector-port-name">@port.Label</span>
+                                            <span class="inspector-port-type-badge" style="background: @(PortDataType.GetColor(port.DataType))22; color: @PortDataType.GetColor(port.DataType); border: 1px solid @(PortDataType.GetColor(port.DataType))44;">@PortDataType.GetLabel(port.DataType)</span>
+                                            @if (port.AllowMultiple)
+                                            {
+                                                <span class="inspector-port-multi-badge" title="Acepta multiples conexiones">N</span>
+                                            }
+                                            @if (port.IsRequired)
+                                            {
+                                                <span style="color: var(--danger); font-size: 0.6rem; font-weight: 700;">*</span>
+                                            }
+                                        </div>
+                                        @if (portConns.Count > 0)
+                                        {
+                                            @foreach (var conn in portConns)
+                                            {
+                                                var capturedInputConn = conn;
+                                                var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+                                                var fromPortsList = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping, fromModule.OrchestratorOutputs) : new();
+                                                var fromPort = fromPortsList.FirstOrDefault(p => p.Id == conn.FromPort);
+                                                <div class="inspector-port-connection">
+                                                    <span class="inspector-port-conn-arrow">&#x2190;</span>
+                                                    <span class="inspector-port-conn-source">@(fromModule?.StepName ?? fromModule?.AiModuleName ?? "?")</span>
+                                                    @if (fromPort is not null)
+                                                    {
+                                                        <span class="inspector-port-type-badge" style="background: @(PortDataType.GetColor(fromPort.DataType))22; color: @PortDataType.GetColor(fromPort.DataType); border: 1px solid @(PortDataType.GetColor(fromPort.DataType))44;">@fromPort.Label</span>
+                                                    }
+                                                    <button class="inspector-port-remove-btn" @onclick="() => RemoveConnection(capturedInputConn)" title="Quitar conexion">&#x2715;</button>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="inspector-port-empty">sin conectar</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
                         }
                         @if (outputPorts.Any())
                         {
-                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem; margin-bottom: 0.2rem;">Salidas:</p>
-                            @foreach (var port in outputPorts)
-                            {
-                                var conns = _connections.Where(c => c.FromModuleId == sel.Id && c.FromPort == port.Id).ToList();
-                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
-                                    <span style="color: @PortDataType.GetColor(port.DataType);">&#x25CF;</span>
-                                    <span>@port.Label</span>
-                                    <span class="port-type-badge" style="background: @PortDataType.GetColor(port.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(port.DataType)</span>
-                                    @if (conns.Any())
-                                    {
-                                        @foreach (var c in conns)
-                                        {
-                                            var capturedOutputConn = c;
-                                            var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
-                                            var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping, toModule.OrchestratorOutputs) : new();
-                                            var toPort = toPorts.FirstOrDefault(p => p.Id == c.ToPort);
-                                            <span class="text-muted">&#x2192; @(toModule?.StepName ?? toModule?.AiModuleName ?? "?")</span>
-                                            @if (toPort is not null)
-                                            {
-                                                <span class="port-type-badge" style="background: @PortDataType.GetColor(toPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(toPort.DataType)</span>
-                                            }
-                                            <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1;opacity:0.6;" @onclick="() => RemoveConnection(capturedOutputConn)" title="Quitar conexion">&#x2715;</button>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted" style="font-style:italic;">sin conectar</span>
-                                    }
+                            <div class="inspector-port-section" style="margin-top: 0.4rem;">
+                                <div class="inspector-port-section-label">
+                                    <i class="bi bi-arrow-left-circle"></i> Salidas
                                 </div>
-                            }
+                                @foreach (var port in outputPorts)
+                                {
+                                    var outConns = _connections.Where(c => c.FromModuleId == sel.Id && c.FromPort == port.Id).ToList();
+                                    <div class="inspector-port-item">
+                                        <div class="inspector-port-header">
+                                            <span class="inspector-port-dot" style="background: @PortDataType.GetColor(port.DataType);"></span>
+                                            <span class="inspector-port-name">@port.Label</span>
+                                            <span class="inspector-port-type-badge" style="background: @(PortDataType.GetColor(port.DataType))22; color: @PortDataType.GetColor(port.DataType); border: 1px solid @(PortDataType.GetColor(port.DataType))44;">@PortDataType.GetLabel(port.DataType)</span>
+                                            @if (outConns.Count > 0)
+                                            {
+                                                <span class="inspector-port-count-badge">@outConns.Count</span>
+                                            }
+                                        </div>
+                                        @if (outConns.Count > 0)
+                                        {
+                                            @foreach (var c in outConns)
+                                            {
+                                                var capturedOutputConn = c;
+                                                var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
+                                                var toPortsList = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping, toModule.OrchestratorOutputs) : new();
+                                                var toPort = toPortsList.FirstOrDefault(p => p.Id == c.ToPort);
+                                                <div class="inspector-port-connection">
+                                                    <span class="inspector-port-conn-arrow">&#x2192;</span>
+                                                    <span class="inspector-port-conn-source">@(toModule?.StepName ?? toModule?.AiModuleName ?? "?")</span>
+                                                    @if (toPort is not null)
+                                                    {
+                                                        <span class="inspector-port-type-badge" style="background: @(PortDataType.GetColor(toPort.DataType))22; color: @PortDataType.GetColor(toPort.DataType); border: 1px solid @(PortDataType.GetColor(toPort.DataType))44;">@toPort.Label</span>
+                                                    }
+                                                    <button class="inspector-port-remove-btn" @onclick="() => RemoveConnection(capturedOutputConn)" title="Quitar conexion">&#x2715;</button>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="inspector-port-empty">sin conectar</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
                         }
                     </div>
 
@@ -1426,8 +1459,18 @@
             return;
         }
 
-        // Remove existing connection to same input port
-        _connections.RemoveAll(c => c.ToModuleId == toId && c.ToPort == toPort);
+        // Remove existing connection to same input port ONLY if port doesn't allow multiple
+        if (!toPortDef.AllowMultiple)
+        {
+            var existingConns = _connections.Where(c => c.ToModuleId == toId && c.ToPort == toPort).ToList();
+            foreach (var ec in existingConns)
+            {
+                await JS.InvokeVoidAsync("pipelineEditor.removeConnection",
+                    ec.FromModuleId.ToString(), ec.FromPort,
+                    ec.ToModuleId.ToString(), ec.ToPort);
+            }
+            _connections.RemoveAll(c => c.ToModuleId == toId && c.ToPort == toPort);
+        }
 
         if (!_connections.Any(c => c.FromModuleId == fromId && c.FromPort == fromPort && c.ToModuleId == toId && c.ToPort == toPort))
         {

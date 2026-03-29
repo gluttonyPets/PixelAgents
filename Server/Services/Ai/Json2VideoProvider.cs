@@ -404,9 +404,18 @@ namespace Server.Services.Ai
         /// <summary>
         /// Build movie payload from plain text input (voiceover script).
         /// Media URLs (video/image) come from configuration.
+        /// Supports per-scene media from connected scene ports (perSceneMedia).
         /// </summary>
         private static object BuildFromTextInput(string textInput, Dictionary<string, object> config, VideoSettings s)
         {
+            // Check for per-scene media from explicit port connections
+            var perSceneMediaMap = ParsePerSceneMedia(config);
+
+            if (perSceneMediaMap is not null && perSceneMediaMap.Count > 0)
+            {
+                return BuildFromPerSceneMedia(textInput, perSceneMediaMap, config, s);
+            }
+
             // Try rich media entries first (with type info), fallback to legacy videoUrls
             var mediaList = new List<(string Url, string Type)>();
 
@@ -471,6 +480,101 @@ namespace Server.Services.Ai
             else
             {
                 scenes.Add(BuildScene(null, "video", textInput, s, isLast: true));
+            }
+
+            var movie = BuildMoviePayload(s, scenes);
+
+            // Inject resources at movie level if provided
+            if (config.TryGetValue("resources", out var resVal))
+            {
+                var resStr = resVal is JsonElement resEl ? resEl.GetString() ?? "" : resVal?.ToString() ?? "";
+                InjectResources(movie, resStr);
+            }
+
+            return movie;
+        }
+
+        /// <summary>
+        /// Parse per-scene media configuration from connected scene ports.
+        /// Returns a map of scene number → list of media entries.
+        /// </summary>
+        private static Dictionary<int, List<Dictionary<string, string>>>? ParsePerSceneMedia(Dictionary<string, object> config)
+        {
+            if (!config.TryGetValue("perSceneMedia", out var psmVal))
+                return null;
+
+            var psmStr = psmVal is JsonElement psmEl ? psmEl.GetRawText() : psmVal?.ToString() ?? "";
+            if (string.IsNullOrEmpty(psmStr))
+                return null;
+
+            try
+            {
+                var raw = JsonSerializer.Deserialize<Dictionary<string, List<Dictionary<string, string>>>>(psmStr);
+                if (raw is null || raw.Count == 0)
+                    return null;
+
+                // Convert port names like "input_scene_1_media" → scene number 1
+                var result = new Dictionary<int, List<Dictionary<string, string>>>();
+                foreach (var (portId, entries) in raw)
+                {
+                    // Extract scene number from port ID: input_scene_X_media
+                    var parts = portId.Split('_');
+                    if (parts.Length >= 3 && int.TryParse(parts[2], out var sceneNum))
+                        result[sceneNum] = entries;
+                }
+                return result.Count > 0 ? result : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Build movie from per-scene media with support for mixed types (images, text, video, audio).
+        /// Each scene port can have multiple inputs: media files + text content.
+        /// </summary>
+        private static object BuildFromPerSceneMedia(
+            string textInput,
+            Dictionary<int, List<Dictionary<string, string>>> perSceneMedia,
+            Dictionary<string, object> config,
+            VideoSettings s)
+        {
+            var sceneCount = perSceneMedia.Keys.Max();
+            var scriptParts = SplitScript(textInput, sceneCount);
+            var scenes = new List<object>();
+
+            for (int i = 1; i <= sceneCount; i++)
+            {
+                string? mediaUrl = null;
+                string? mediaType = null;
+                string? sceneText = null;
+
+                if (perSceneMedia.TryGetValue(i, out var entries))
+                {
+                    foreach (var entry in entries)
+                    {
+                        var entryType = entry.GetValueOrDefault("type", "");
+                        if (entryType == "text")
+                        {
+                            // Text input for this scene (e.g. narration text from a Text module)
+                            sceneText = entry.GetValueOrDefault("content", "");
+                        }
+                        else if (!string.IsNullOrEmpty(entry.GetValueOrDefault("url", "")))
+                        {
+                            // Media file (image, video, audio)
+                            mediaUrl ??= entry["url"];
+                            mediaType ??= entryType;
+                        }
+                    }
+                }
+
+                // Use per-scene text if available, otherwise fall back to script split
+                var voiceScript = !string.IsNullOrWhiteSpace(sceneText)
+                    ? sceneText
+                    : (i - 1 < scriptParts.Count ? scriptParts[i - 1] : null);
+
+                scenes.Add(BuildScene(mediaUrl, mediaType ?? "image", voiceScript, s, isLast: i == sceneCount));
             }
 
             var movie = BuildMoviePayload(s, scenes);
