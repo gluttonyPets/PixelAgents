@@ -295,7 +295,7 @@ namespace Server.Services.Ai
                         // when a checkpoint branch pauses and shows data to the user.
                         var orchForks = branchModules
                             .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
-                            .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
+                            .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule) || s.AiModule.ModuleType == "VideoEdit") ? 1 : 0)
                             .ToList();
                         var orchHasPausedCheckpoint = false;
                         foreach (var (branchId, branchSteps) in orchForks)
@@ -1257,7 +1257,7 @@ namespace Server.Services.Ai
                 // when a checkpoint branch pauses and shows data to the user.
                 var forksFromHere = branchModules
                     .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
-                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
+                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule) || s.AiModule.ModuleType == "VideoEdit") ? 1 : 0)
                     .ToList();
 
                 foreach (var (branchId, branchSteps) in forksFromHere)
@@ -3169,7 +3169,7 @@ Datos de la ejecucion:
                 // when a checkpoint branch pauses and shows data to the user.
                 var forksFromHere = branchModules
                     .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
-                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
+                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule) || s.AiModule.ModuleType == "VideoEdit") ? 1 : 0)
                     .ToList();
 
                 foreach (var (branchId, branchSteps) in forksFromHere)
@@ -3960,7 +3960,7 @@ Datos de la ejecucion:
                                 // when a checkpoint branch pauses and shows data to the user.
                                 var postForks = branchModulesForResume
                                     .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == rpm.StepOrder)
-                                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
+                                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule) || s.AiModule.ModuleType == "VideoEdit") ? 1 : 0)
                                     .ToList();
                                 foreach (var (fBranchId, fBranchSteps) in postForks)
                                 {
@@ -5882,7 +5882,7 @@ Datos de la ejecucion:
                 // when a checkpoint branch pauses and shows data to the user.
                 var retryForksFromHere = retryBranchModules
                     .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep == pm.StepOrder)
-                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule)) ? 1 : 0)
+                    .OrderBy(kv => kv.Value.Any(s => IsCheckpointStep(s.AiModule) || s.AiModule.ModuleType == "VideoEdit") ? 1 : 0)
                     .ToList();
 
                 foreach (var (branchId, branchSteps) in retryForksFromHere)
