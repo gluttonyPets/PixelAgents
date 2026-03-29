@@ -1007,7 +1007,7 @@
             var sceneCount = GetSceneCount(pm.Id);
             var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount, pm.InputMapping, pm.OrchestratorOutputs);
             var inputs = ports.Where(p => p.IsInput).Select(p => new {
-                id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = p.IsRequired
+                id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = p.IsRequired, allowMultiple = p.AllowMultiple
             }).ToList();
             var outputs = ports.Where(p => !p.IsInput).Select(p => new {
                 id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = false
@@ -1477,6 +1477,23 @@
             _connections.Add(new ConnectionEntry(fromId, fromPort, toId, toPort));
         }
 
+        // For AllowMultiple ports: Drawflow may have removed existing connections during
+        // its internal "replace" flow. Re-add them visually so all connections show.
+        if (toPortDef.AllowMultiple)
+        {
+            var allConnsToPort = _connections.Where(c => c.ToModuleId == toId && c.ToPort == toPort).ToList();
+            foreach (var existingConn in allConnsToPort)
+            {
+                // Skip the connection that was just created by Drawflow (it already exists visually)
+                if (existingConn.FromModuleId == fromId && existingConn.FromPort == fromPort)
+                    continue;
+                // Re-add the visual connection that Drawflow removed
+                await JS.InvokeVoidAsync("pipelineEditor.addConnection",
+                    existingConn.FromModuleId.ToString(), existingConn.FromPort,
+                    existingConn.ToModuleId.ToString(), existingConn.ToPort);
+            }
+        }
+
         await NotifyGraphChanged();
         await InvokeAsync(StateHasChanged);
     }
@@ -1486,6 +1503,21 @@
     {
         if (!Guid.TryParse(fromModuleId, out var fromId) || !Guid.TryParse(toModuleId, out var toId))
             return;
+
+        // If the target port allows multiple connections, Drawflow may be removing it
+        // during its internal "replace connection" flow. Don't remove from _connections —
+        // OnConnectionMade will re-add the visual connection after the new one is created.
+        var toModule = Modules.FirstOrDefault(m => m.Id == toId);
+        if (toModule is not null)
+        {
+            var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId), toModule.InputMapping, toModule.OrchestratorOutputs);
+            var toPortDef = toPorts.FirstOrDefault(p => p.Id == toPort && p.IsInput);
+            if (toPortDef?.AllowMultiple == true)
+            {
+                // Keep in _connections — it will be re-synced visually
+                return;
+            }
+        }
 
         _connections.RemoveAll(c =>
             c.FromModuleId == fromId && c.FromPort == fromPort &&

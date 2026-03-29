@@ -132,6 +132,13 @@ window.pipelineEditor = {
             var conns = nodeData.inputs[inputClass].connections;
             if (!conns || conns.length === 0) return;
 
+            // If this input port allows multiple connections, don't re-drag — let the user add more
+            var portInfo = self._portMap[inputNodeId];
+            if (portInfo && portInfo.allowMultiple) {
+                var inputIdx = parseInt(inputClass.replace('input_', '')) - 1;
+                if (portInfo.allowMultiple[inputIdx]) return;
+            }
+
             // Get the LAST connection to re-drag (most recently added)
             var existingConn = conns[conns.length - 1];
             var outputNodeId = parseInt(existingConn.node);
@@ -170,7 +177,11 @@ window.pipelineEditor = {
             x, y, 'df-type-' + moduleType.toLowerCase(),
             { moduleId: moduleId }, html
         );
-        this._portMap[nodeId] = { inputs: inputPorts.map(p => p.id), outputs: outputPorts.map(p => p.id) };
+        this._portMap[nodeId] = {
+            inputs: inputPorts.map(p => p.id),
+            outputs: outputPorts.map(p => p.id),
+            allowMultiple: inputPorts.map(p => !!p.allowMultiple)
+        };
         this._moduleMap[nodeId] = moduleId;
         this._reverseMap[moduleId] = nodeId;
 
