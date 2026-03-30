@@ -8,3 +8,4 @@ namespace Server.Models
         public string Plan { get; set; } = "Basic";
     }
 }
+//
