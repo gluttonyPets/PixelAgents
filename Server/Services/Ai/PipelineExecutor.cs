@@ -1987,8 +1987,13 @@ Datos de la ejecucion:
             var previousText = "";
             string? previousTitle = null;
             var pubBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+            // For branch steps: limit main candidates to steps at or before the fork point
+            // to avoid picking text/media from concurrently-running sibling branches
+            var maxMainStepForCaption = (pm.BranchId != "main" && pm.BranchFromStep.HasValue)
+                ? pm.BranchFromStep.Value
+                : pm.StepOrder;
             var candidateOrders = pubBranches
-                .Where(kv => (kv.Value == pm.BranchId || kv.Value == "main") && kv.Key < pm.StepOrder)
+                .Where(kv => (kv.Value == pm.BranchId || (kv.Value == "main" && kv.Key <= maxMainStepForCaption)) && kv.Key < pm.StepOrder)
                 .Select(kv => kv.Key)
                 .OrderByDescending(k => k)
                 .ToList();
@@ -2050,13 +2055,19 @@ Datos de la ejecucion:
 
             // Collect and classify media from the nearest non-Interaction previous step
             // Prioritize media from the SAME branch before falling back to main
+            // For branch steps: limit main candidates to steps at or before the fork point
+            // to avoid picking up concurrently-running sibling branch steps classified as "main"
             var classifiedMedia = new List<ClassifiedMedia>();
+
+            var maxMainStep = (pm.BranchId != "main" && pm.BranchFromStep.HasValue)
+                ? pm.BranchFromStep.Value
+                : pm.StepOrder;
 
             var ownBranchCandidates = candidateOrders
                 .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == pm.BranchId)
                 .ToList();
             var mainCandidates = candidateOrders
-                .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == "main")
+                .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == "main" && co <= maxMainStep)
                 .ToList();
 
             // Search own branch first, then main
