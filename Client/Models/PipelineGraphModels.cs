@@ -59,11 +59,12 @@ public class PortDefinition
     public string DataType { get; set; } = PortDataType.Any;
     public bool IsInput { get; set; }
     public bool IsRequired { get; set; }
-    /// <summary>When true, this input port accepts multiple connections (data is aggregated).</summary>
-    public bool AllowMultiple { get; set; }
+    /// <summary>When true, this input port accepts multiple connections (data is aggregated).
+    /// Defaults to true for all input ports — every module can receive multiple inputs.</summary>
+    public bool AllowMultiple { get; set; } = true;
 
     public PortDefinition() { }
-    public PortDefinition(string id, string label, string dataType, bool isInput, bool isRequired = false, bool allowMultiple = false)
+    public PortDefinition(string id, string label, string dataType, bool isInput, bool isRequired = false, bool allowMultiple = true)
     {
         Id = id; Label = label; DataType = dataType; IsInput = isInput; IsRequired = isRequired; AllowMultiple = allowMultiple;
     }
