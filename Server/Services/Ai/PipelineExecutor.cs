@@ -543,10 +543,26 @@ namespace Server.Services.Ai
                                     pm.StepOrder, pm.BranchId, pm.BranchFromStep,
                                     stepOutputs, stepResults, stepBranches);
 
+                                // Check if a specific output port is connected (e.g. output_image_1)
+                                string? outputKey = null;
+                                if (mappingJson.TryGetProperty("outputKey", out var okVal))
+                                    outputKey = okVal.GetString();
+
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
                                     previousStepFiles = new List<byte[]>();
-                                    foreach (var prevFile in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+
+                                    // Filter files by specific output port if connected
+                                    var imageFiles = prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")).ToList();
+                                    if (!string.IsNullOrEmpty(outputKey) && outputKey.StartsWith("output_image_")
+                                        && int.TryParse(outputKey.AsSpan("output_image_".Length), out var imgIdx))
+                                    {
+                                        var fileIdx = imgIdx - 1;
+                                        if (fileIdx >= 0 && fileIdx < imageFiles.Count)
+                                            imageFiles = new List<OutputFile> { imageFiles[fileIdx] };
+                                    }
+
+                                    foreach (var prevFile in imageFiles)
                                     {
                                         var prevFilePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevFile.FileName);
                                         if (File.Exists(prevFilePath))
@@ -3182,10 +3198,24 @@ Datos de la ejecucion:
                                 var prevOrder = FindPreviousStepInBranch(
                                     pm.StepOrder, pm.BranchId, pm.BranchFromStep,
                                     stepOutputs, stepResults, stepBranches);
+
+                                // Check if a specific output port is connected
+                                string? resumeOutputKey = null;
+                                if (mappingJson.TryGetProperty("outputKey", out var rokVal))
+                                    resumeOutputKey = rokVal.GetString();
+
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
                                     resumePrevFiles = new List<byte[]>();
-                                    foreach (var pf in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+                                    var imageFiles = prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")).ToList();
+                                    if (!string.IsNullOrEmpty(resumeOutputKey) && resumeOutputKey.StartsWith("output_image_")
+                                        && int.TryParse(resumeOutputKey.AsSpan("output_image_".Length), out var rImgIdx))
+                                    {
+                                        var rFileIdx = rImgIdx - 1;
+                                        if (rFileIdx >= 0 && rFileIdx < imageFiles.Count)
+                                            imageFiles = new List<OutputFile> { imageFiles[rFileIdx] };
+                                    }
+                                    foreach (var pf in imageFiles)
                                     {
                                         var pfPath = Path.Combine(workspacePath, $"step_{prevOrder}", pf.FileName);
                                         if (File.Exists(pfPath))
@@ -4726,10 +4756,27 @@ Datos de la ejecucion:
                                 var bPrevOrd = FindPreviousStepInBranch(
                                     bpm.StepOrder, bpm.BranchId, bpm.BranchFromStep,
                                     stepOutputs, stepResults, bBranches);
+
+                                // Check if a specific output port is connected (e.g. output_image_1)
+                                string? outputKey = null;
+                                if (bMap.TryGetProperty("outputKey", out var okVal))
+                                    outputKey = okVal.GetString();
+
                                 if (stepOutputs.TryGetValue(bPrevOrd, out var bPrev) && bPrev.Files.Count > 0)
                                 {
                                     bPrevFiles = new List<byte[]>();
-                                    foreach (var pf in bPrev.Files.Where(f => f.ContentType.StartsWith("image/")))
+
+                                    // Filter files by specific output port if connected
+                                    var imageFiles = bPrev.Files.Where(f => f.ContentType.StartsWith("image/")).ToList();
+                                    if (!string.IsNullOrEmpty(outputKey) && outputKey.StartsWith("output_image_")
+                                        && int.TryParse(outputKey.AsSpan("output_image_".Length), out var imgIdx))
+                                    {
+                                        var fileIdx = imgIdx - 1;
+                                        if (fileIdx >= 0 && fileIdx < imageFiles.Count)
+                                            imageFiles = new List<OutputFile> { imageFiles[fileIdx] };
+                                    }
+
+                                    foreach (var pf in imageFiles)
                                     {
                                         var pfPath = Path.Combine(workspacePath, $"branch_{branchId}_step_{bPrevOrd}", pf.FileName);
                                         if (!File.Exists(pfPath))
@@ -5811,10 +5858,23 @@ Datos de la ejecucion:
                                     pm.StepOrder, pm.BranchId, pm.BranchFromStep,
                                     stepOutputs, stepResults,
                                     BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                                string? retryOutputKey = null;
+                                if (mappingJson.TryGetProperty("outputKey", out var rtokVal))
+                                    retryOutputKey = rtokVal.GetString();
+
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
                                     retryPrevFiles = new List<byte[]>();
-                                    foreach (var pf in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+                                    var imageFiles = prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")).ToList();
+                                    if (!string.IsNullOrEmpty(retryOutputKey) && retryOutputKey.StartsWith("output_image_")
+                                        && int.TryParse(retryOutputKey.AsSpan("output_image_".Length), out var rtImgIdx))
+                                    {
+                                        var rtFileIdx = rtImgIdx - 1;
+                                        if (rtFileIdx >= 0 && rtFileIdx < imageFiles.Count)
+                                            imageFiles = new List<OutputFile> { imageFiles[rtFileIdx] };
+                                    }
+                                    foreach (var pf in imageFiles)
                                     {
                                         var pfPath = Path.Combine(workspacePath, $"step_{prevOrder}", pf.FileName);
                                         if (File.Exists(pfPath))

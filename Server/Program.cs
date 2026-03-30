@@ -914,9 +914,9 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
                     field = "file";
             }
 
-            // Include outputKey when connected from a specific orchestrator output port
-            if (primaryConn is not null && upModule?.AiModule?.ModuleType == "Orchestrator"
-                && !string.IsNullOrEmpty(primaryConn.FromPort) && primaryConn.FromPort.StartsWith("output_"))
+            // Include outputKey when connected from a specific output port
+            // (e.g. output_image_1 from Image module, output_X from Orchestrator, etc.)
+            if (primaryConn is not null && !string.IsNullOrEmpty(primaryConn.FromPort) && primaryConn.FromPort.StartsWith("output_"))
             {
                 pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\",\"outputKey\":\"{primaryConn.FromPort}\"}}";
             }
