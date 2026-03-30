@@ -282,9 +282,9 @@ public class ApiClient
 
     // ── Executions ──
 
-    public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput)
+    public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput, bool useHistory = true)
     {
-        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute", new ExecuteProjectRequest(userInput));
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute", new ExecuteProjectRequest(userInput, useHistory));
         if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
             return (false, await ReadErrorAsync(resp));

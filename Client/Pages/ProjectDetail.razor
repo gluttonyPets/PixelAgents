@@ -132,6 +132,10 @@ else
                                 <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
                             }
                             <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
+                            <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas">
+                                <input type="checkbox" @bind="_useHistory" />
+                                <span>No repetir tematicas anteriores</span>
+                            </label>
                             <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
                                 <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
                                     @if (_executing)
@@ -1743,6 +1747,7 @@ else
 
     // Execute
     private string _userInput = "";
+    private bool _useHistory = true;
     private string? _execError;
 
     // Retry from step
@@ -2893,7 +2898,7 @@ else
 
         try
         {
-            var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput);
+            var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput, _useHistory);
             if (!ok) { _execError = error; _executing = false; }
             else StartPolling(); // Safety net in case SignalR misses completion
         }

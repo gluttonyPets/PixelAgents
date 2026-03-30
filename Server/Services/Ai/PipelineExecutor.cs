@@ -73,7 +73,7 @@ namespace Server.Services.Ai
             module.ModuleType == "Coordinator";
 
         public async Task<ProjectExecution> ExecuteAsync(
-            Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
+            Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default, bool useHistory = true)
         {
             _logger = _baseLogger.WithDb(db);
 
@@ -203,8 +203,10 @@ namespace Server.Services.Ai
             var stepOutputs = new Dictionary<int, StepOutput>();
             var stepModuleTypes = new Dictionary<int, string>();
 
-            // ── Load previous execution summaries for context ──
-            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, projectId, executionId);
+            // ── Load previous execution summaries for context (unless disabled by user) ──
+            var previousSummaryContext = useHistory
+                ? await BuildPreviousSummaryContextAsync(db, projectId, executionId)
+                : null;
 
             var allModules = project.ProjectModules.ToList();
             var stepBranches = BuildStepBranches(allModules);

@@ -1573,7 +1573,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
             await using var bgDb = bgFactory.Create(tenantDbName);
             var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
-            var execution = await executor.ExecuteAsync(projectId, req.UserInput, bgDb, tenantDbName, ct);
+            var execution = await executor.ExecuteAsync(projectId, req.UserInput, bgDb, tenantDbName, ct, req.UseHistory);
 
             // Load full result for client
             var exec = await bgDb.ProjectExecutions
