@@ -2073,12 +2073,6 @@ Datos de la ejecucion:
                     .Replace("{previous_output}", previousText)
                     .Replace("{step_number}", pm.StepOrder.ToString());
 
-            await _logger.LogAsync(projectId, executionId, "info",
-                $"Publicando via Buffer ({platformLabel})... Caption: {caption[..Math.Min(caption.Length, 100)]}{(caption.Length > 100 ? "..." : "")} | " +
-                $"Media: {classifiedMedia.Count} ({classifiedMedia.Count(m => m.Kind == MediaKind.Image)} img, {classifiedMedia.Count(m => m.Kind == MediaKind.Video)} vid) | " +
-                $"PublishType: {publishType}",
-                pm.StepOrder, stepName);
-
             // Collect and classify media from the nearest non-Interaction previous step
             // Prioritize media from the SAME branch before falling back to main
             // For branch steps: limit main candidates to steps at or before the fork point
@@ -2253,6 +2247,13 @@ Datos de la ejecucion:
                     tikTokOptions.BrandPartnership = bp == "true";
                 }
             }
+
+            // Log pre-publish info
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Publicando via Buffer ({platformLabel})... Caption: {caption[..Math.Min(caption.Length, 100)]}{(caption.Length > 100 ? "..." : "")} | " +
+                $"Media: {classifiedMedia.Count} ({classifiedMedia.Count(m => m.Kind == MediaKind.Image)} img, {classifiedMedia.Count(m => m.Kind == MediaKind.Video)} vid) | " +
+                $"PublishType: {publishType}",
+                pm.StepOrder, stepName);
 
             // Publish via Buffer
             BufferPublishResult bufferResult;
