@@ -2074,7 +2074,10 @@ Datos de la ejecucion:
                     .Replace("{step_number}", pm.StepOrder.ToString());
 
             await _logger.LogAsync(projectId, executionId, "info",
-                $"Publicando via Buffer...", pm.StepOrder, stepName);
+                $"Publicando via Buffer ({platformLabel})... Caption: {caption[..Math.Min(caption.Length, 100)]}{(caption.Length > 100 ? "..." : "")} | " +
+                $"Media: {classifiedMedia.Count} ({classifiedMedia.Count(m => m.Kind == MediaKind.Image)} img, {classifiedMedia.Count(m => m.Kind == MediaKind.Video)} vid) | " +
+                $"PublishType: {publishType}",
+                pm.StepOrder, stepName);
 
             // Collect and classify media from the nearest non-Interaction previous step
             // Prioritize media from the SAME branch before falling back to main
@@ -2273,6 +2276,15 @@ Datos de la ejecucion:
                 }
                 throw;
             }
+
+            // Log Buffer API request/response
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"[Buffer API] Request:\n{bufferResult.RequestBody}",
+                pm.StepOrder, stepName);
+            await _logger.LogAsync(projectId, executionId,
+                bufferResult.IsSuccess ? "info" : "error",
+                $"[Buffer API] Status: {bufferResult.StatusCode} | Response:\n{bufferResult.ResponseBody}",
+                pm.StepOrder, stepName);
 
             // Build plain-text output with status and schedule
             string outputText;
