@@ -87,11 +87,8 @@ namespace Server.Models
     // ── Telegram ──
     public record TelegramConfigDto(string BotToken, string ChatId);
 
-    // ── Instagram (Buffer) ──
+    // ── Instagram (Buffer) / TikTok (Buffer) ──
     public record BufferConfigDto(string ApiKey, string ChannelId);
-
-    // ── TikTok (Direct API) ──
-    public record TikTokAppCredentialsDto(string ClientKey, string ClientSecret);
 
     // ── Module Files ──
     public record ModuleFileResponse(

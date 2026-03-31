@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using System.Text.Json;
 using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using Client.Models;
 
@@ -493,33 +492,18 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
-    // ── TikTok (Direct API) Config ──
+    // ── TikTok (Buffer) Config ──
 
-    public async Task<TikTokConfigResponse?> GetTikTokConfigAsync(Guid projectId)
+    public async Task<BufferConfigDto?> GetTikTokConfigAsync(Guid projectId)
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/tiktok-config");
         if (!resp.IsSuccessStatusCode) return null;
-        return await resp.Content.ReadFromJsonAsync<TikTokConfigResponse>();
+        return await resp.Content.ReadFromJsonAsync<BufferConfigDto>();
     }
 
-    public async Task<(bool Ok, string? Error)> SaveTikTokConfigAsync(Guid projectId, TikTokAppCredentialsDto dto)
+    public async Task<(bool Ok, string? Error)> SaveTikTokConfigAsync(Guid projectId, BufferConfigDto dto)
     {
         var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/tiktok-config", dto);
-        if (resp.IsSuccessStatusCode) return (true, null);
-        return (false, await ReadErrorAsync(resp));
-    }
-
-    public async Task<string?> GetTikTokAuthUrlAsync(Guid projectId)
-    {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/tiktok-auth-url");
-        if (!resp.IsSuccessStatusCode) return null;
-        var json = await resp.Content.ReadFromJsonAsync<JsonElement>();
-        return json.TryGetProperty("authUrl", out var url) ? url.GetString() : null;
-    }
-
-    public async Task<(bool Ok, string? Error)> DisconnectTikTokAsync(Guid projectId)
-    {
-        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/tiktok-config");
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }

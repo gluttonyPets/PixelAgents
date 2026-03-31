@@ -1326,11 +1326,11 @@ else
 
                         <div class="settings-block" style="margin-top: 1rem;">
                             <div class="settings-block-header">
-                                <strong>TikTok</strong>
-                                <span class="text-sm text-muted">Videos y carruseles de fotos via API directa</span>
-                                @if (_tkConnected)
+                                <strong>TikTok (via Buffer)</strong>
+                                <span class="text-sm text-muted">Videos e imagenes en TikTok</span>
+                                @if (!string.IsNullOrWhiteSpace(_tkApiKey))
                                 {
-                                    <span class="badge badge-success">Conectado</span>
+                                    <span class="badge badge-success">Configurado</span>
                                 }
                             </div>
                             @if (_tkError is not null)
@@ -1343,39 +1343,21 @@ else
                             }
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label>Client Key</label>
-                                    <input type="text" @bind="_tkClientKey" placeholder="App Client Key de TikTok for Developers" />
+                                    <label>API Key</label>
+                                    <input type="password" @bind="_tkApiKey" placeholder="Token de Buffer API" />
                                 </div>
                                 <div class="form-group">
-                                    <label>Client Secret</label>
-                                    <input type="password" @bind="_tkClientSecret" placeholder="App Client Secret" />
+                                    <label>Channel ID (TikTok)</label>
+                                    <input type="text" @bind="_tkChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
                                 </div>
                             </div>
                             <p class="text-sm text-muted">
-                                1. Crea una app en <strong>developers.tiktok.com</strong> con los scopes <code>video.publish</code> y <code>video.upload</code>.<br/>
-                                2. Configura la <strong>Redirect URI</strong>: <code>@(Nav.BaseUri.TrimEnd('/'))/api/tiktok/callback</code><br/>
-                                3. Guarda las credenciales y luego conecta tu cuenta TikTok.
+                                Usa la misma API Key de Buffer. El <strong>Channel ID</strong> debe ser el de tu canal TikTok conectado en Buffer.<br/>
+                                Soporta videos e imagenes (hasta 4 por post). Formatos: PNG, JPG, GIF, WebP (max 8MB).
                             </p>
-                            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
-                                <button class="btn btn-primary btn-sm" @onclick="SaveTikTokConfig" disabled="@_tkSaving">
-                                    @(_tkSaving ? "Guardando..." : "Guardar credenciales")
-                                </button>
-                                @if (!string.IsNullOrWhiteSpace(_tkClientKey))
-                                {
-                                    @if (_tkConnected)
-                                    {
-                                        <button class="btn btn-sm" style="background: #dc3545; color: white;" @onclick="DisconnectTikTok">
-                                            Desconectar cuenta
-                                        </button>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn btn-sm" style="background: #010101; color: white;" @onclick="ConnectTikTok" disabled="@_tkSaving">
-                                            Conectar con TikTok
-                                        </button>
-                                    }
-                                }
-                            </div>
+                            <button class="btn btn-primary btn-sm" @onclick="SaveTikTokConfig" disabled="@_tkSaving">
+                                @(_tkSaving ? "Guardando..." : "Guardar")
+                            </button>
                         </div>
                     }
 
@@ -1836,11 +1818,9 @@ else
     private bool _igSuccess;
     private bool _igSaving;
 
-    // TikTok config (Direct API)
-    private string _tkClientKey = "";
-    private string _tkClientSecret = "";
-    private bool _tkConnected;
-    private string _tkUsername = "";
+    // TikTok config (Buffer)
+    private string _tkApiKey = "";
+    private string _tkChannelId = "";
     private string? _tkError;
     private bool _tkSuccess;
     private bool _tkSaving;
@@ -1891,13 +1871,6 @@ else
     {
         var cfgUrl = Config["ApiBaseUrl"];
         _apiBase = !string.IsNullOrWhiteSpace(cfgUrl) ? cfgUrl.TrimEnd('/') : Nav.BaseUri.TrimEnd('/');
-
-        // Check for TikTok OAuth callback result
-        if (Nav.Uri.Contains("tiktok=connected"))
-        {
-            _tkSuccess = true;
-            _tkConnected = true;
-        }
 
         await LoadAll();
         await InitializeSignalR();
@@ -2135,13 +2108,12 @@ else
                 _igChannelId = igConfig.ChannelId;
             }
 
-            // Load TikTok config
+            // Load TikTok config (Buffer)
             var tkConfig = await Api.GetTikTokConfigAsync(ProjectId);
             if (tkConfig is not null)
             {
-                _tkClientKey = tkConfig.ClientKey;
-                _tkConnected = tkConfig.Connected;
-                _tkUsername = tkConfig.Username;
+                _tkApiKey = tkConfig.ApiKey;
+                _tkChannelId = tkConfig.ChannelId;
             }
 
             // Load Schedule
@@ -2331,7 +2303,7 @@ else
         _tkSaving = true;
         try
         {
-            var dto = new TikTokAppCredentialsDto(_tkClientKey, _tkClientSecret);
+            var dto = new BufferConfigDto(_tkApiKey, _tkChannelId);
             var (ok, error) = await Api.SaveTikTokConfigAsync(ProjectId, dto);
             if (ok)
             {
@@ -2343,41 +2315,6 @@ else
         }
         catch (Exception ex) { _tkError = ex.Message; }
         _tkSaving = false;
-    }
-
-    private async Task ConnectTikTok()
-    {
-        _tkError = null;
-        try
-        {
-            // Save credentials first if secret is provided
-            if (!string.IsNullOrWhiteSpace(_tkClientSecret))
-                await SaveTikTokConfig();
-
-            var authUrl = await Api.GetTikTokAuthUrlAsync(ProjectId);
-            if (authUrl is not null)
-                Nav.NavigateTo(authUrl, forceLoad: true);
-            else
-                _tkError = "No se pudo generar la URL de autorizacion. Verifica las credenciales.";
-        }
-        catch (Exception ex) { _tkError = ex.Message; }
-    }
-
-    private async Task DisconnectTikTok()
-    {
-        _tkError = null;
-        try
-        {
-            var (ok, error) = await Api.DisconnectTikTokAsync(ProjectId);
-            if (ok)
-            {
-                _tkConnected = false;
-                _tkUsername = "";
-            }
-            else
-                _tkError = error;
-        }
-        catch (Exception ex) { _tkError = ex.Message; }
     }
 
     private string BuildCronFromPreset()

@@ -104,12 +104,8 @@ public record WhatsAppConfigDto(string PhoneNumberId, string AccessToken,
 // ── Telegram ──
 public record TelegramConfigDto(string BotToken, string ChatId);
 
-// ── Instagram (Buffer) ──
+// ── Instagram (Buffer) / TikTok (Buffer) ──
 public record BufferConfigDto(string ApiKey, string ChannelId);
-
-// ── TikTok (Direct API) ──
-public record TikTokAppCredentialsDto(string ClientKey, string ClientSecret);
-public record TikTokConfigResponse(string ClientKey, bool Connected, string Username);
 
 // ── Module Files ──
 public record ModuleFileResponse(

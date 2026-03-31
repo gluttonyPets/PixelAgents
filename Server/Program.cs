@@ -65,7 +65,6 @@ builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
-builder.Services.AddSingleton<Server.Services.TikTok.TikTokService>();
 builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>();
 builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
@@ -2507,7 +2506,7 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
     return Results.Ok(new { message = "Configuracion Buffer guardada" });
 }).RequireAuthorization();
 
-// ==================== TikTok (Direct API) Config Endpoints ====================
+// ==================== TikTok (Buffer) Config Endpoints ====================
 
 app.MapGet("/api/projects/{projectId:guid}/tiktok-config", async (
     Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
@@ -2519,20 +2518,14 @@ app.MapGet("/api/projects/{projectId:guid}/tiktok-config", async (
     if (project is null) return Results.NotFound();
 
     if (string.IsNullOrWhiteSpace(project.TikTokConfig))
-        return Results.Ok(new { clientKey = "", connected = false, username = "" });
+        return Results.Ok(new BufferConfigDto("", ""));
 
-    var config = System.Text.Json.JsonSerializer.Deserialize<Server.Services.TikTok.TikTokDirectConfig>(project.TikTokConfig);
-    return Results.Ok(new
-    {
-        clientKey = config?.ClientKey ?? "",
-        connected = !string.IsNullOrEmpty(config?.AccessToken),
-        username = config?.OpenId ?? "",
-    });
+    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.TikTokConfig);
+    return Results.Ok(config);
 }).RequireAuthorization();
 
-// Save TikTok app credentials (Client Key + Secret)
 app.MapPut("/api/projects/{projectId:guid}/tiktok-config", async (
-    Guid projectId, TikTokAppCredentialsDto dto, HttpContext ctx,
+    Guid projectId, BufferConfigDto dto, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
@@ -2541,16 +2534,7 @@ app.MapPut("/api/projects/{projectId:guid}/tiktok-config", async (
     var project = await db.Projects.FindAsync(projectId);
     if (project is null) return Results.NotFound();
 
-    // Preserve tokens if already connected, just update credentials
-    var existing = !string.IsNullOrWhiteSpace(project.TikTokConfig)
-        ? System.Text.Json.JsonSerializer.Deserialize<Server.Services.TikTok.TikTokDirectConfig>(project.TikTokConfig)
-        : null;
-
-    var config = existing ?? new Server.Services.TikTok.TikTokDirectConfig();
-    config.ClientKey = dto.ClientKey;
-    config.ClientSecret = dto.ClientSecret;
-
-    project.TikTokConfig = System.Text.Json.JsonSerializer.Serialize(config);
+    project.TikTokConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
 
     // Ensure the TikTok Publish sentinel module exists
@@ -2561,7 +2545,7 @@ app.MapPut("/api/projects/{projectId:guid}/tiktok-config", async (
         {
             Id = Guid.NewGuid(),
             Name = "TikTok Publish",
-            Description = "Publica contenido en TikTok (videos y carruseles de fotos) via API directa.",
+            Description = "Publica contenido en TikTok (videos e imagenes) via Buffer.",
             ProviderType = "System",
             ModuleType = "Publish",
             ModelName = "tiktok",
@@ -2572,126 +2556,7 @@ app.MapPut("/api/projects/{projectId:guid}/tiktok-config", async (
     }
 
     await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Credenciales TikTok guardadas" });
-}).RequireAuthorization();
-
-// Generate TikTok OAuth authorization URL
-app.MapGet("/api/projects/{projectId:guid}/tiktok-auth-url", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um,
-    ITenantDbContextFactory factory, Server.Services.TikTok.TikTokService tikTok) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(project.TikTokConfig))
-        return Results.BadRequest(new { error = "Primero guarda las credenciales de la app TikTok" });
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<Server.Services.TikTok.TikTokDirectConfig>(project.TikTokConfig);
-    if (config is null || string.IsNullOrWhiteSpace(config.ClientKey))
-        return Results.BadRequest(new { error = "Client Key no configurado" });
-
-    var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
-    var redirectUri = $"{baseUrl}/api/tiktok/callback";
-    var state = $"{projectId}";
-    var authUrl = tikTok.BuildAuthorizationUrl(config.ClientKey, redirectUri, state);
-
-    return Results.Ok(new { authUrl });
-}).RequireAuthorization();
-
-// TikTok OAuth callback (redirected from TikTok)
-app.MapGet("/api/tiktok/callback", async (
-    HttpContext ctx, UserManager<ApplicationUser> um,
-    ITenantDbContextFactory factory, Server.Services.TikTok.TikTokService tikTok) =>
-{
-    var code = ctx.Request.Query["code"].ToString();
-    var state = ctx.Request.Query["state"].ToString();
-
-    if (string.IsNullOrEmpty(code) || string.IsNullOrEmpty(state) || !Guid.TryParse(state, out var projectId))
-        return Results.BadRequest("Callback invalido");
-
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Redirect("/projects?error=auth");
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.Redirect("/projects?error=notfound");
-
-    var existing = System.Text.Json.JsonSerializer.Deserialize<Server.Services.TikTok.TikTokDirectConfig>(project.TikTokConfig ?? "{}");
-    if (existing is null || string.IsNullOrWhiteSpace(existing.ClientKey))
-        return Results.Redirect($"/projects/{projectId}?error=nocreds");
-
-    var baseUrl = $"{ctx.Request.Scheme}://{ctx.Request.Host}";
-    var redirectUri = $"{baseUrl}/api/tiktok/callback";
-
-    var newConfig = await tikTok.ExchangeCodeForTokenAsync(existing.ClientKey, existing.ClientSecret, code, redirectUri);
-    if (newConfig is null)
-        return Results.Redirect($"/projects/{projectId}?error=token_exchange");
-
-    project.TikTokConfig = System.Text.Json.JsonSerializer.Serialize(newConfig);
-    project.UpdatedAt = DateTime.UtcNow;
-    await db.SaveChangesAsync();
-
-    return Results.Redirect($"/projects/{projectId}?tiktok=connected");
-});
-
-// Disconnect TikTok account
-app.MapDelete("/api/projects/{projectId:guid}/tiktok-config", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (!string.IsNullOrWhiteSpace(project.TikTokConfig))
-    {
-        var config = System.Text.Json.JsonSerializer.Deserialize<Server.Services.TikTok.TikTokDirectConfig>(project.TikTokConfig);
-        if (config is not null)
-        {
-            // Keep app credentials, clear tokens
-            config.AccessToken = "";
-            config.RefreshToken = "";
-            config.OpenId = "";
-            project.TikTokConfig = System.Text.Json.JsonSerializer.Serialize(config);
-            project.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync();
-        }
-    }
-
-    return Results.Ok(new { message = "Cuenta TikTok desconectada" });
-}).RequireAuthorization();
-
-// Get creator info (privacy levels, available interactions)
-app.MapGet("/api/projects/{projectId:guid}/tiktok-creator-info", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um,
-    ITenantDbContextFactory factory, Server.Services.TikTok.TikTokService tikTok) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(project.TikTokConfig))
-        return Results.BadRequest(new { error = "TikTok no configurado" });
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<Server.Services.TikTok.TikTokDirectConfig>(project.TikTokConfig);
-    if (config is null || string.IsNullOrWhiteSpace(config.AccessToken))
-        return Results.BadRequest(new { error = "Cuenta TikTok no conectada" });
-
-    config = await tikTok.EnsureFreshTokenAsync(config);
-    // Save refreshed token if changed
-    project.TikTokConfig = System.Text.Json.JsonSerializer.Serialize(config);
-    await db.SaveChangesAsync();
-
-    var info = await tikTok.QueryCreatorInfoAsync(config.AccessToken);
-    if (info is null)
-        return Results.BadRequest(new { error = "No se pudo obtener informacion del creador" });
-
-    return Results.Ok(info);
+    return Results.Ok(new { message = "Configuracion TikTok guardada" });
 }).RequireAuthorization();
 
 // ==================== Telegram Webhook Endpoint ====================
