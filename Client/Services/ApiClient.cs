@@ -492,6 +492,22 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── TikTok (Buffer) Config ──
+
+    public async Task<BufferConfigDto?> GetTikTokConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/tiktok-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<BufferConfigDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SaveTikTokConfigAsync(Guid projectId, BufferConfigDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/tiktok-config", dto);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Schedule ──
 
     public async Task<ScheduleResponse?> GetScheduleAsync(Guid projectId)

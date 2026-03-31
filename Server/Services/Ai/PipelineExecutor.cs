@@ -57,7 +57,7 @@ namespace Server.Services.Ai
 
         private static bool IsPublishStep(AiModule module) =>
             module.ModuleType == "Publish" ||
-            (module.ProviderType == "System" && module.ModelName == "instagram");
+            (module.ProviderType == "System" && (module.ModelName == "instagram" || module.ModelName == "tiktok"));
 
         private static bool IsDesignStep(AiModule module) =>
             module.ModuleType == "Design" ||
@@ -1979,11 +1979,16 @@ Datos de la ejecucion:
             var projectId = project.Id;
             var executionId = execution.Id;
 
-            if (string.IsNullOrWhiteSpace(project.InstagramConfig))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Buffer");
+            // Determine platform from module's modelName
+            var publishPlatform = pm.AiModule.ModelName == "tiktok" ? "tiktok" : "instagram";
+            var configJson = publishPlatform == "tiktok" ? project.TikTokConfig : project.InstagramConfig;
+            var platformLabel = publishPlatform == "tiktok" ? "TikTok" : "Instagram";
 
-            var bufferConfig = JsonSerializer.Deserialize<BufferConfig>(project.InstagramConfig)
-                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Buffer invalida");
+            if (string.IsNullOrWhiteSpace(configJson))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Buffer para {platformLabel}");
+
+            var bufferConfig = JsonSerializer.Deserialize<BufferConfig>(configJson)
+                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Buffer ({platformLabel}) invalida");
 
             if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
                 throw new InvalidOperationException($"Paso {pm.StepOrder}: API Key de Buffer no configurada");
@@ -2209,12 +2214,49 @@ Datos de la ejecucion:
                     pm.StepOrder, stepName);
             }
 
+            // Parse TikTok-specific options from step config
+            TikTokPublishOptions? tikTokOptions = null;
+            if (publishPlatform == "tiktok")
+            {
+                tikTokOptions = new TikTokPublishOptions();
+                if (stepConfig.TryGetValue("privacyLevel", out var plVal))
+                {
+                    var pl = plVal is JsonElement plEl ? plEl.GetString() : plVal?.ToString();
+                    if (!string.IsNullOrWhiteSpace(pl)) tikTokOptions.PrivacyLevel = pl;
+                }
+                if (stepConfig.TryGetValue("allowComments", out var acVal))
+                {
+                    var ac = acVal is JsonElement acEl ? acEl.GetString() : acVal?.ToString();
+                    tikTokOptions.AllowComments = ac != "false";
+                }
+                if (stepConfig.TryGetValue("allowDuet", out var adVal))
+                {
+                    var ad = adVal is JsonElement adEl ? adEl.GetString() : adVal?.ToString();
+                    tikTokOptions.AllowDuet = ad != "false";
+                }
+                if (stepConfig.TryGetValue("allowStitch", out var asVal))
+                {
+                    var ast = asVal is JsonElement asEl ? asEl.GetString() : asVal?.ToString();
+                    tikTokOptions.AllowStitch = ast != "false";
+                }
+                if (stepConfig.TryGetValue("brandedContent", out var bcVal))
+                {
+                    var bc = bcVal is JsonElement bcEl ? bcEl.GetString() : bcVal?.ToString();
+                    tikTokOptions.BrandedContent = bc == "true";
+                }
+                if (stepConfig.TryGetValue("brandPartnership", out var bpVal))
+                {
+                    var bp = bpVal is JsonElement bpEl ? bpEl.GetString() : bpVal?.ToString();
+                    tikTokOptions.BrandPartnership = bp == "true";
+                }
+            }
+
             // Publish via Buffer
             BufferPublishResult bufferResult;
             try
             {
                 bufferResult = await _buffer.PublishAsync(
-                    bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType);
+                    bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType, publishPlatform, tikTokOptions);
             }
             catch (Exception ex)
             {

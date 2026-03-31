@@ -692,21 +692,76 @@
                     {
                         <div class="inspector-section">
                             <div class="inspector-section-title">Configuracion de publicacion</div>
-                            <div class="inspector-field">
-                                <label>Tipo de publicacion</label>
-                                <select value="@GetModuleConfig(sel.Id, "publishType", "post")"
-                                        @onchange="@(e => SetModuleConfig(sel.Id, "publishType", e.Value?.ToString() ?? "post"))">
-                                    <option value="post">Post</option>
-                                    <option value="reel">Reel</option>
-                                    <option value="story">Story</option>
-                                </select>
-                            </div>
+
+                            @if (sel.ModelName != "tiktok")
+                            {
+                                <div class="inspector-field">
+                                    <label>Tipo de publicacion</label>
+                                    <select value="@GetModuleConfig(sel.Id, "publishType", "post")"
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "publishType", e.Value?.ToString() ?? "post"))">
+                                        <option value="post">Post</option>
+                                        <option value="reel">Reel</option>
+                                        <option value="story">Story</option>
+                                    </select>
+                                </div>
+                            }
+
                             <div class="inspector-field">
                                 <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
                                 <textarea rows="3" placeholder="{previous_output}"
                                           value="@GetModuleConfig(sel.Id, "caption", "")"
                                           @onchange="@(e => SetModuleConfig(sel.Id, "caption", e.Value?.ToString() ?? ""))"></textarea>
                             </div>
+
+                            @if (sel.ModelName == "tiktok")
+                            {
+                                <div class="inspector-field">
+                                    <label>Privacidad</label>
+                                    <select value="@GetModuleConfig(sel.Id, "privacyLevel", "PUBLIC_TO_EVERYONE")"
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "privacyLevel", e.Value?.ToString() ?? "PUBLIC_TO_EVERYONE"))">
+                                        <option value="PUBLIC_TO_EVERYONE">Publico</option>
+                                        <option value="FOLLOWER_OF_CREATOR">Solo seguidores</option>
+                                        <option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option>
+                                        <option value="SELF_ONLY">Solo yo</option>
+                                    </select>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowComments", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowComments", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir comentarios</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowDuet", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowDuet", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir Duet</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowStitch", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowStitch", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir Stitch</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "brandedContent", false)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "brandedContent", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
+                                        <span>Contenido de marca</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "brandPartnership", false)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "brandPartnership", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
+                                        <span>Asociacion de marca</span>
+                                    </label>
+                                </div>
+                            }
+
                             <p class="text-sm text-muted" style="margin-top: 0.15rem;">
                                 Las imagenes/videos del paso anterior se adjuntan automaticamente.
                                 Buffer publica en el canal configurado. Programacion automatica.

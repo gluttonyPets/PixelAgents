@@ -1323,6 +1323,41 @@ else
                                 @(_igSaving ? "Guardando..." : "Guardar")
                             </button>
                         </div>
+
+                        <div class="settings-block" style="margin-top: 1rem;">
+                            <div class="settings-block-header">
+                                <strong>TikTok (via Buffer)</strong>
+                                <span class="text-sm text-muted">Publica videos en TikTok</span>
+                                @if (!string.IsNullOrWhiteSpace(_tkApiKey))
+                                {
+                                    <span class="badge badge-success">Configurado</span>
+                                }
+                            </div>
+                            @if (_tkError is not null)
+                            {
+                                <div class="alert alert-error">@_tkError</div>
+                            }
+                            @if (_tkSuccess)
+                            {
+                                <div class="alert alert-success">Guardado correctamente</div>
+                            }
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" @bind="_tkApiKey" placeholder="Token de Buffer API" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Channel ID (TikTok)</label>
+                                    <input type="text" @bind="_tkChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
+                                </div>
+                            </div>
+                            <p class="text-sm text-muted">
+                                Usa la misma API Key de Buffer. El <strong>Channel ID</strong> debe ser el de tu canal TikTok conectado en Buffer.
+                            </p>
+                            <button class="btn btn-primary btn-sm" @onclick="SaveTikTokConfig" disabled="@_tkSaving">
+                                @(_tkSaving ? "Guardando..." : "Guardar")
+                            </button>
+                        </div>
                     }
 
                     <!-- SCHEDULE TAB -->
@@ -1775,12 +1810,19 @@ else
     private bool _tgSuccess;
     private bool _tgSaving;
 
-    // Buffer config
+    // Buffer config (Instagram)
     private string _igApiKey = "";
     private string _igChannelId = "";
     private string? _igError;
     private bool _igSuccess;
     private bool _igSaving;
+
+    // Buffer config (TikTok)
+    private string _tkApiKey = "";
+    private string _tkChannelId = "";
+    private string? _tkError;
+    private bool _tkSuccess;
+    private bool _tkSaving;
 
     // Buffer API debug modal
     private bool _showBufferDebug;
@@ -2056,12 +2098,20 @@ else
                 _tgChatId = tgConfig.ChatId;
             }
 
-            // Load Buffer config
+            // Load Buffer config (Instagram)
             var igConfig = await Api.GetInstagramConfigAsync(ProjectId);
             if (igConfig is not null)
             {
                 _igApiKey = igConfig.ApiKey;
                 _igChannelId = igConfig.ChannelId;
+            }
+
+            // Load Buffer config (TikTok)
+            var tkConfig = await Api.GetTikTokConfigAsync(ProjectId);
+            if (tkConfig is not null)
+            {
+                _tkApiKey = tkConfig.ApiKey;
+                _tkChannelId = tkConfig.ChannelId;
             }
 
             // Load Schedule
@@ -2242,6 +2292,27 @@ else
         }
         catch (Exception ex) { _igError = ex.Message; }
         _igSaving = false;
+    }
+
+    private async Task SaveTikTokConfig()
+    {
+        _tkError = null;
+        _tkSuccess = false;
+        _tkSaving = true;
+        try
+        {
+            var dto = new BufferConfigDto(_tkApiKey, _tkChannelId);
+            var (ok, error) = await Api.SaveTikTokConfigAsync(ProjectId, dto);
+            if (ok)
+            {
+                _tkSuccess = true;
+                _modules = await Api.GetModulesAsync();
+            }
+            else
+                _tkError = error;
+        }
+        catch (Exception ex) { _tkError = ex.Message; }
+        _tkSaving = false;
     }
 
     private string BuildCronFromPreset()
