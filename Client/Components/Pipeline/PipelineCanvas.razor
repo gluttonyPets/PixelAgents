@@ -269,11 +269,48 @@
                         <div class="inspector-section">
                             <div class="inspector-section-title">Generacion</div>
                             <div class="inspector-field">
+                                <label>Prompt <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+                                <textarea rows="3" placeholder="Describe la imagen que quieres generar..."
+                                          value="@GetModuleConfig(sel.Id, "imagePrompt", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "imagePrompt", e.Value?.ToString() ?? ""))"></textarea>
+                            </div>
+                            <div class="inspector-field">
                                 <label>Numero de imagenes</label>
                                 <input type="number" min="1" max="20"
                                        value="@GetSceneCount(sel.Id)"
                                        @onchange="@(e => OnImageCountChange(sel.Id, e))" />
                                 <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cada imagen tendra su propia salida.</p>
+                            </div>
+                        </div>
+                    }
+
+                    @if (sel.ModuleType == "Video")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Generacion de video</div>
+                            <div class="inspector-field">
+                                <label>Prompt del video <span style="color: var(--danger);">*</span></label>
+                                <textarea rows="3" placeholder="Describe lo que quieres que muestre el video..."
+                                          value="@GetModuleConfig(sel.Id, "videoPrompt", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "videoPrompt", e.Value?.ToString() ?? ""))"></textarea>
+                            </div>
+                            <div class="inspector-field">
+                                <label>Fuente de video</label>
+                                <select value="@GetModuleConfig(sel.Id, "videoSource", "prompt")"
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "videoSource", e.Value?.ToString() ?? "prompt"))">
+                                    <option value="prompt">Solo texto</option>
+                                    <option value="both">Imagen + prompt</option>
+                                </select>
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                                    @if (GetModuleConfig(sel.Id, "videoSource", "prompt") == "both")
+                                    {
+                                        <text>Se usara la imagen del paso anterior como primer fotograma.</text>
+                                    }
+                                    else
+                                    {
+                                        <text>El video se generara unicamente a partir del prompt de texto.</text>
+                                    }
+                                </p>
                             </div>
                         </div>
                     }
