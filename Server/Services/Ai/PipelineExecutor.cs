@@ -2090,65 +2090,89 @@ Datos de la ejecucion:
                 .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == "main" && co <= maxMainStep)
                 .ToList();
 
-            // Search own branch first, then main
-            var mediaStepOrder = ownBranchCandidates.FirstOrDefault(co =>
-                !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
-            if (mediaStepOrder == 0)
-                mediaStepOrder = mainCandidates.FirstOrDefault(co =>
-                    !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
-            if (mediaStepOrder == 0 && candidateOrders.Count > 0)
-                mediaStepOrder = candidateOrders[0]; // last resort fallback
+            // Build ordered list of candidate steps: own branch first, then main
+            var orderedCandidates = ownBranchCandidates
+                .Where(co => !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction")
+                .Select(co => (StepOrder: co, Source: "OwnBranch"))
+                .Concat(mainCandidates
+                    .Where(co => !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction")
+                    .Select(co => (StepOrder: co, Source: "Main")))
+                .ToList();
+
+            if (orderedCandidates.Count == 0 && candidateOrders.Count > 0)
+                orderedCandidates.Add((StepOrder: candidateOrders[0], Source: "LastResort"));
 
             await _logger.LogAsync(projectId, executionId, "info",
                 $"[Publish Debug] BranchId={pm.BranchId}, StepOrder={pm.StepOrder}, " +
-                $"OwnBranch=[{string.Join(",", ownBranchCandidates)}], Main=[{string.Join(",", mainCandidates)}], MediaStepOrder={mediaStepOrder}",
+                $"OwnBranch=[{string.Join(",", ownBranchCandidates)}], Main=[{string.Join(",", mainCandidates)}], " +
+                $"OrderedCandidates=[{string.Join(",", orderedCandidates.Select(c => $"{c.StepOrder}({c.Source})"))}]",
                 pm.StepOrder, stepName);
 
-            // Collect media files — try two approaches:
-            // 1. Query StepExecution.Files from DB
-            // 2. Fallback: use stepOutputs FileIds (from in-memory / pause state)
+            // Try each candidate in order until we find one with actual media files
             var mediaFiles = new List<ExecutionFile>();
+            var mediaStepOrder = 0;
 
-            var prevStepExec = await db.StepExecutions
-                .Include(s => s.Files)
-                .Where(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder)
-                .OrderByDescending(s => s.CompletedAt)
-                .FirstOrDefaultAsync();
-
-            if (prevStepExec?.Files is not null)
+            foreach (var candidate in orderedCandidates)
             {
-                mediaFiles = prevStepExec.Files
-                    .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
-                    .OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
+                var candidateFiles = new List<ExecutionFile>();
 
-            // Fallback: if DB query found no media files, try using FileIds from stepOutputs
-            if (mediaFiles.Count == 0 && stepOutputs.TryGetValue(mediaStepOrder, out var mediaOutput) && mediaOutput.Files.Count > 0)
-            {
-                var fileIds = mediaOutput.Files.Select(f => f.FileId).Where(id => id != Guid.Empty).ToList();
-                if (fileIds.Count > 0)
+                // 1. Query StepExecution.Files from DB
+                var candidateStepExec = await db.StepExecutions
+                    .Include(s => s.Files)
+                    .Where(s => s.ExecutionId == executionId && s.StepOrder == candidate.StepOrder)
+                    .OrderByDescending(s => s.CompletedAt)
+                    .FirstOrDefaultAsync();
+
+                if (candidateStepExec?.Files is not null)
                 {
-                    var unorderedFiles = await db.ExecutionFiles
-                        .Where(f => fileIds.Contains(f.Id))
+                    candidateFiles = candidateStepExec.Files
                         .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
-                        .ToListAsync();
-
-                    // Preserve the original order from StepOutput.Files
-                    var fileById = unorderedFiles.ToDictionary(f => f.Id);
-                    mediaFiles = fileIds
-                        .Where(id => fileById.ContainsKey(id))
-                        .Select(id => fileById[id])
+                        .OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
-
-                    await _logger.LogAsync(projectId, executionId, "info",
-                        $"[Publish Debug] Fallback via stepOutputs FileIds: found {mediaFiles.Count} file(s) from {fileIds.Count} IDs",
-                        pm.StepOrder, stepName);
                 }
+
+                // 2. Fallback: try stepOutputs FileIds (from in-memory / pause state)
+                if (candidateFiles.Count == 0 && stepOutputs.TryGetValue(candidate.StepOrder, out var mediaOutput) && mediaOutput.Files.Count > 0)
+                {
+                    var fileIds = mediaOutput.Files.Select(f => f.FileId).Where(id => id != Guid.Empty).ToList();
+                    if (fileIds.Count > 0)
+                    {
+                        var unorderedFiles = await db.ExecutionFiles
+                            .Where(f => fileIds.Contains(f.Id))
+                            .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
+                            .ToListAsync();
+
+                        var fileById = unorderedFiles.ToDictionary(f => f.Id);
+                        candidateFiles = fileIds
+                            .Where(id => fileById.ContainsKey(id))
+                            .Select(id => fileById[id])
+                            .ToList();
+
+                        if (candidateFiles.Count > 0)
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"[Publish Debug] Fallback via stepOutputs FileIds for step {candidate.StepOrder}: found {candidateFiles.Count} file(s)",
+                                pm.StepOrder, stepName);
+                    }
+                }
+
+                if (candidateFiles.Count > 0)
+                {
+                    mediaFiles = candidateFiles;
+                    mediaStepOrder = candidate.StepOrder;
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"[Publish Debug] Selected media from step {candidate.StepOrder} ({candidate.Source}): " +
+                        $"{mediaFiles.Count} file(s), Types=[{string.Join(",", mediaFiles.Select(f => f.ContentType))}]",
+                        pm.StepOrder, stepName);
+                    break;
+                }
+
+                await _logger.LogAsync(projectId, executionId, "info",
+                    $"[Publish Debug] Step {candidate.StepOrder} ({candidate.Source}) has no media files, trying next candidate",
+                    pm.StepOrder, stepName);
             }
 
             await _logger.LogAsync(projectId, executionId, "info",
-                $"[Publish Debug] PrevStepExec found={prevStepExec is not null}, " +
+                $"[Publish Debug] Final MediaStepOrder={mediaStepOrder}, " +
                 $"MediaFiles={mediaFiles.Count}, " +
                 $"FileTypes=[{string.Join(",", mediaFiles.Select(f => f.ContentType))}]",
                 pm.StepOrder, stepName);
