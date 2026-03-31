@@ -760,11 +760,24 @@
                                         <span>Asociacion de marca</span>
                                     </label>
                                 </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "isAigc", false)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "isAigc", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
+                                        <span>Contenido generado por IA</span>
+                                    </label>
+                                </div>
                             }
 
                             <p class="text-sm text-muted" style="margin-top: 0.15rem;">
-                                Las imagenes/videos del paso anterior se adjuntan automaticamente.
-                                Buffer publica en el canal configurado. Programacion automatica.
+                                @if (sel.ModelName == "tiktok")
+                                {
+                                    <text>Publica directamente en TikTok via API. Soporta videos y carruseles de fotos (hasta 35 imagenes).</text>
+                                }
+                                else
+                                {
+                                    <text>Las imagenes/videos del paso anterior se adjuntan automaticamente. Buffer publica en el canal configurado.</text>
+                                }
                             </p>
                         </div>
                     }

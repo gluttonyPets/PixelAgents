@@ -90,6 +90,9 @@ namespace Server.Models
     // ── Instagram (Buffer) ──
     public record BufferConfigDto(string ApiKey, string ChannelId);
 
+    // ── TikTok (Direct API) ──
+    public record TikTokAppCredentialsDto(string ClientKey, string ClientSecret);
+
     // ── Module Files ──
     public record ModuleFileResponse(
         Guid Id, Guid AiModuleId, string ModuleName,

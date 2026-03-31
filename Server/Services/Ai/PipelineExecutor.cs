@@ -21,6 +21,7 @@ namespace Server.Services.Ai
         private readonly TelegramService _telegram;
         private readonly BufferService _buffer;
         private readonly CanvaService _canva;
+        private readonly TikTok.TikTokService _tikTok;
         private readonly CoreDbContext _coreDb;
         private readonly ITenantDbContextFactory _tenantFactory;
         private readonly IConfiguration _configuration;
@@ -28,7 +29,7 @@ namespace Server.Services.Ai
 
         public PipelineExecutor(IAiProviderRegistry registry, IExecutionLogger logger,
             WhatsAppService whatsApp, TelegramService telegram, BufferService buffer,
-            CanvaService canva,
+            CanvaService canva, TikTok.TikTokService tikTok,
             CoreDbContext coreDb, ITenantDbContextFactory tenantFactory,
             IConfiguration configuration, IWebHostEnvironment env)
         {
@@ -40,6 +41,7 @@ namespace Server.Services.Ai
             _telegram = telegram;
             _buffer = buffer;
             _canva = canva;
+            _tikTok = tikTok;
             _coreDb = coreDb;
             _tenantFactory = tenantFactory;
             _configuration = configuration;
@@ -1985,13 +1987,26 @@ Datos de la ejecucion:
             var platformLabel = publishPlatform == "tiktok" ? "TikTok" : "Instagram";
 
             if (string.IsNullOrWhiteSpace(configJson))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Buffer para {platformLabel}");
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de {platformLabel}");
 
-            var bufferConfig = JsonSerializer.Deserialize<BufferConfig>(configJson)
-                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Buffer ({platformLabel}) invalida");
+            // TikTok uses direct API; Instagram uses Buffer
+            BufferConfig? bufferConfig = null;
+            TikTok.TikTokDirectConfig? tikTokConfig = null;
 
-            if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: API Key de Buffer no configurada");
+            if (publishPlatform == "tiktok")
+            {
+                tikTokConfig = JsonSerializer.Deserialize<TikTok.TikTokDirectConfig>(configJson)
+                    ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de TikTok invalida");
+                if (string.IsNullOrWhiteSpace(tikTokConfig.AccessToken))
+                    throw new InvalidOperationException($"Paso {pm.StepOrder}: Cuenta TikTok no conectada. Conecta via OAuth en los ajustes del proyecto.");
+            }
+            else
+            {
+                bufferConfig = JsonSerializer.Deserialize<BufferConfig>(configJson)
+                    ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Buffer ({platformLabel}) invalida");
+                if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
+                    throw new InvalidOperationException($"Paso {pm.StepOrder}: API Key de Buffer no configurada");
+            }
 
             // Read publish config from step configuration
             var stepConfig = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
@@ -2215,120 +2230,221 @@ Datos de la ejecucion:
             }
 
             // Parse TikTok-specific options from step config
-            TikTokPublishOptions? tikTokOptions = null;
+            var tikTokPostOptions = new TikTok.TikTokPostOptions();
             if (publishPlatform == "tiktok")
             {
-                tikTokOptions = new TikTokPublishOptions();
                 if (stepConfig.TryGetValue("privacyLevel", out var plVal))
                 {
                     var pl = plVal is JsonElement plEl ? plEl.GetString() : plVal?.ToString();
-                    if (!string.IsNullOrWhiteSpace(pl)) tikTokOptions.PrivacyLevel = pl;
+                    if (!string.IsNullOrWhiteSpace(pl)) tikTokPostOptions.PrivacyLevel = pl;
                 }
                 if (stepConfig.TryGetValue("allowComments", out var acVal))
                 {
                     var ac = acVal is JsonElement acEl ? acEl.GetString() : acVal?.ToString();
-                    tikTokOptions.AllowComments = ac != "false";
+                    tikTokPostOptions.DisableComment = ac == "false";
                 }
                 if (stepConfig.TryGetValue("allowDuet", out var adVal))
                 {
                     var ad = adVal is JsonElement adEl ? adEl.GetString() : adVal?.ToString();
-                    tikTokOptions.AllowDuet = ad != "false";
+                    tikTokPostOptions.DisableDuet = ad == "false";
                 }
                 if (stepConfig.TryGetValue("allowStitch", out var asVal))
                 {
                     var ast = asVal is JsonElement asEl ? asEl.GetString() : asVal?.ToString();
-                    tikTokOptions.AllowStitch = ast != "false";
+                    tikTokPostOptions.DisableStitch = ast == "false";
                 }
                 if (stepConfig.TryGetValue("brandedContent", out var bcVal))
                 {
                     var bc = bcVal is JsonElement bcEl ? bcEl.GetString() : bcVal?.ToString();
-                    tikTokOptions.BrandedContent = bc == "true";
+                    tikTokPostOptions.BrandContentToggle = bc == "true";
                 }
                 if (stepConfig.TryGetValue("brandPartnership", out var bpVal))
                 {
                     var bp = bpVal is JsonElement bpEl ? bpEl.GetString() : bpVal?.ToString();
-                    tikTokOptions.BrandPartnership = bp == "true";
+                    tikTokPostOptions.BrandOrganicToggle = bp == "true";
                 }
-            }
-
-            // Publish via Buffer
-            BufferPublishResult bufferResult;
-            try
-            {
-                bufferResult = await _buffer.PublishAsync(
-                    bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType, publishPlatform, tikTokOptions);
-            }
-            catch (Exception ex)
-            {
-                await _logger.LogAsync(projectId, executionId, "error",
-                    $"Error publicando via Buffer: {ex.Message}", pm.StepOrder, stepName);
-                // Only fail the entire execution for main pipeline steps
-                if (pm.BranchId == "main")
-                    await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
-                else
+                if (stepConfig.TryGetValue("isAigc", out var aigcVal))
                 {
-                    stepExecution.Status = "Failed";
-                    stepExecution.ErrorMessage = $"Error Buffer: {ex.Message}";
-                    stepExecution.CompletedAt = DateTime.UtcNow;
-                    await db.SaveChangesAsync();
+                    var aigc = aigcVal is JsonElement aigcEl ? aigcEl.GetString() : aigcVal?.ToString();
+                    tikTokPostOptions.IsAigc = aigc == "true";
                 }
-                throw;
             }
 
-            // Build plain-text output with status and schedule
+            // ── Route to platform-specific publisher ──
             string outputText;
-            string scheduleLine = "";
-            if (bufferResult.IsSuccess)
+            string publishPostId = "";
+            string publishSummary;
+            bool publishSuccess;
+            var publishMetadata = new Dictionary<string, object>
             {
-                if (!string.IsNullOrEmpty(bufferResult.DueAt) &&
-                    DateTime.TryParse(bufferResult.DueAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dueDate))
+                ["publishType"] = publishType,
+                ["caption"] = caption,
+                ["platform"] = publishPlatform,
+            };
+
+            if (publishPlatform == "tiktok" && tikTokConfig is not null)
+            {
+                // ── TikTok Direct API ──
+                await _logger.LogAsync(projectId, executionId, "info",
+                    $"Publicando via TikTok API directa...", pm.StepOrder, stepName);
+
+                try
                 {
-                    scheduleLine = $"Programado para: {dueDate:dd/MM/yyyy HH:mm} UTC";
+                    // Refresh token if needed
+                    tikTokConfig = await _tikTok.EnsureFreshTokenAsync(tikTokConfig);
+                    // Persist refreshed token
+                    project.TikTokConfig = JsonSerializer.Serialize(tikTokConfig);
+                    await db.SaveChangesAsync();
+
+                    TikTok.TikTokPublishResult tikTokResult;
+
+                    if (hasVideos)
+                    {
+                        // Publish first video
+                        var videoUrl = classifiedMedia.First(m => m.Kind == MediaKind.Video).Url;
+                        tikTokResult = await _tikTok.PublishVideoAsync(
+                            tikTokConfig.AccessToken, videoUrl, caption, tikTokPostOptions);
+                    }
+                    else if (hasImages)
+                    {
+                        // Publish photo carousel
+                        var imageUrls = classifiedMedia
+                            .Where(m => m.Kind == MediaKind.Image)
+                            .Select(m => m.Url)
+                            .ToList();
+                        tikTokResult = await _tikTok.PublishPhotosAsync(
+                            tikTokConfig.AccessToken, imageUrls, caption, tikTokPostOptions);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("TikTok requiere al menos un video o imagen para publicar");
+                    }
+
+                    if (!tikTokResult.IsSuccess)
+                    {
+                        throw new InvalidOperationException($"TikTok API error: {tikTokResult.Error}");
+                    }
+
+                    // Poll for completion
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Contenido enviado a TikTok (publish_id: {tikTokResult.PublishId}). Esperando procesamiento...",
+                        pm.StepOrder, stepName);
+
+                    var statusResult = await _tikTok.PollPublishStatusAsync(
+                        tikTokConfig.AccessToken, tikTokResult.PublishId!);
+
+                    publishSuccess = statusResult.IsSuccess;
+                    publishPostId = statusResult.PostId ?? tikTokResult.PublishId ?? "";
+                    publishMetadata["tikTokPublishId"] = tikTokResult.PublishId ?? "";
+                    publishMetadata["tikTokPostId"] = statusResult.PostId ?? "";
+
+                    if (statusResult.IsSuccess)
+                    {
+                        var mediaType = hasVideos ? "video" : $"carrusel ({classifiedMedia.Count(m => m.Kind == MediaKind.Image)} fotos)";
+                        outputText = $"Publicado en TikTok exitosamente\nPost ID: {publishPostId}\nTipo: {mediaType}";
+                        publishSummary = $"Publicado en TikTok - {mediaType}";
+                    }
+                    else
+                    {
+                        outputText = $"Error en publicacion TikTok: {statusResult.Error}";
+                        publishSummary = $"Error TikTok: {statusResult.Error}";
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    scheduleLine = "Programado (horario pendiente de confirmacion)";
+                    await _logger.LogAsync(projectId, executionId, "error",
+                        $"Error publicando via TikTok: {ex.Message}", pm.StepOrder, stepName);
+                    if (pm.BranchId == "main")
+                        await FailStep(stepExecution, execution, $"Error TikTok: {ex.Message}", db);
+                    else
+                    {
+                        stepExecution.Status = "Failed";
+                        stepExecution.ErrorMessage = $"Error TikTok: {ex.Message}";
+                        stepExecution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                    }
+                    throw;
                 }
-                outputText = $"Publicacion exitosa\nPost ID: {bufferResult.PostId}\n{scheduleLine}";
             }
             else
             {
-                outputText = $"Error en publicacion: {bufferResult.Error}";
+                // ── Instagram via Buffer ──
+                await _logger.LogAsync(projectId, executionId, "info",
+                    $"Publicando via Buffer...", pm.StepOrder, stepName);
+
+                BufferPublishResult bufferResult;
+                try
+                {
+                    bufferResult = await _buffer.PublishAsync(
+                        bufferConfig!, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType);
+                }
+                catch (Exception ex)
+                {
+                    await _logger.LogAsync(projectId, executionId, "error",
+                        $"Error publicando via Buffer: {ex.Message}", pm.StepOrder, stepName);
+                    if (pm.BranchId == "main")
+                        await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
+                    else
+                    {
+                        stepExecution.Status = "Failed";
+                        stepExecution.ErrorMessage = $"Error Buffer: {ex.Message}";
+                        stepExecution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                    }
+                    throw;
+                }
+
+                publishSuccess = bufferResult.IsSuccess;
+                publishPostId = bufferResult.PostId;
+                publishMetadata["bufferPostId"] = bufferResult.PostId;
+                publishMetadata["bufferDueAt"] = bufferResult.DueAt ?? "";
+                publishMetadata["bufferRequest"] = bufferResult.RequestBody;
+                publishMetadata["bufferResponse"] = bufferResult.ResponseBody;
+                publishMetadata["bufferStatusCode"] = bufferResult.StatusCode;
+
+                if (bufferResult.IsSuccess)
+                {
+                    string scheduleLine;
+                    if (!string.IsNullOrEmpty(bufferResult.DueAt) &&
+                        DateTime.TryParse(bufferResult.DueAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dueDate))
+                        scheduleLine = $"Programado para: {dueDate:dd/MM/yyyy HH:mm} UTC";
+                    else
+                        scheduleLine = "Programado (horario pendiente de confirmacion)";
+
+                    outputText = $"Publicacion exitosa\nPost ID: {bufferResult.PostId}\n{scheduleLine}";
+                    publishSummary = $"Publicado via Buffer - {scheduleLine}";
+                }
+                else
+                {
+                    outputText = $"Error en publicacion: {bufferResult.Error}";
+                    publishSummary = $"Error Buffer: {bufferResult.Error}";
+                }
             }
 
+            // ── Build output and finalize step ──
             var publishOutput = new StepOutput
             {
                 Type = "text",
                 Content = outputText,
-                Summary = bufferResult.IsSuccess
-                    ? $"Publicado via Buffer - {scheduleLine}"
-                    : $"Error Buffer: {bufferResult.Error}",
-                Items = [new OutputItem { Content = outputText, Label = "buffer publish" }],
-                Metadata = new Dictionary<string, object>
-                {
-                    ["publishType"] = publishType,
-                    ["caption"] = caption,
-                    ["bufferPostId"] = bufferResult.PostId,
-                    ["bufferDueAt"] = bufferResult.DueAt ?? "",
-                    ["bufferRequest"] = bufferResult.RequestBody,
-                    ["bufferResponse"] = bufferResult.ResponseBody,
-                    ["bufferStatusCode"] = bufferResult.StatusCode
-                }
+                Summary = publishSummary,
+                Items = [new OutputItem { Content = outputText, Label = $"{publishPlatform} publish" }],
+                Metadata = publishMetadata
             };
 
             stepExecution.OutputData = JsonSerializer.Serialize(publishOutput);
             stepExecution.InputData = JsonSerializer.Serialize(new
             {
                 caption,
+                platform = publishPlatform,
                 mediaCount = classifiedMedia.Count,
                 imageCount = classifiedMedia.Count(m => m.Kind == MediaKind.Image),
                 videoCount = classifiedMedia.Count(m => m.Kind == MediaKind.Video),
                 originalPublishType,
                 effectivePublishType = publishType,
-                bufferPostId = bufferResult.PostId
+                postId = publishPostId
             });
 
-            if (bufferResult.IsSuccess)
+            if (publishSuccess)
             {
                 stepExecution.Status = "Completed";
                 stepExecution.CompletedAt = DateTime.UtcNow;
@@ -2339,30 +2455,28 @@ Datos de la ejecucion:
                 stepModuleTypes[pm.StepOrder] = "Publish";
                 stepResults[pm.StepOrder] = AiResult.Ok(outputText, new Dictionary<string, object>
                 {
-                    ["bufferPostId"] = bufferResult.PostId,
-                    ["bufferDueAt"] = bufferResult.DueAt ?? "",
+                    ["postId"] = publishPostId,
+                    ["platform"] = publishPlatform,
                     ["mediaCount"] = classifiedMedia.Count
                 });
 
                 await _logger.LogAsync(projectId, executionId, "success",
-                    $"Publicado via Buffer (post {bufferResult.PostId}) - {scheduleLine}",
-                    pm.StepOrder, stepName);
+                    publishSummary, pm.StepOrder, stepName);
             }
             else
             {
                 await _logger.LogAsync(projectId, executionId, "error",
-                    $"Error publicando via Buffer: {bufferResult.Error}", pm.StepOrder, stepName);
-                // Only fail the entire execution for main pipeline steps
+                    $"Error publicando: {outputText}", pm.StepOrder, stepName);
                 if (pm.BranchId == "main")
-                    await FailStep(stepExecution, execution, $"Error Buffer: {bufferResult.Error}", db);
+                    await FailStep(stepExecution, execution, outputText, db);
                 else
                 {
                     stepExecution.Status = "Failed";
-                    stepExecution.ErrorMessage = $"Error Buffer: {bufferResult.Error}";
+                    stepExecution.ErrorMessage = outputText;
                     stepExecution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                 }
-                throw new InvalidOperationException(bufferResult.Error);
+                throw new InvalidOperationException(outputText);
             }
         }
 

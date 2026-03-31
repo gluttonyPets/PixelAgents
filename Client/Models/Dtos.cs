@@ -107,6 +107,10 @@ public record TelegramConfigDto(string BotToken, string ChatId);
 // ── Instagram (Buffer) ──
 public record BufferConfigDto(string ApiKey, string ChannelId);
 
+// ── TikTok (Direct API) ──
+public record TikTokAppCredentialsDto(string ClientKey, string ClientSecret);
+public record TikTokConfigResponse(string ClientKey, bool Connected, string Username);
+
 // ── Module Files ──
 public record ModuleFileResponse(
     Guid Id, Guid AiModuleId, string ModuleName,
