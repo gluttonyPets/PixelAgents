@@ -89,27 +89,9 @@ namespace Server.Services.Instagram
             string metadataBlock;
             if (platform == "tiktok")
             {
-                var opts = tikTokOptions ?? new TikTokPublishOptions();
-                var validPrivacy = new HashSet<string> { "PUBLIC_TO_EVERYONE", "FOLLOWER_OF_CREATOR", "MUTUAL_FOLLOW_FRIENDS", "SELF_ONLY" };
-                var privacy = validPrivacy.Contains(opts.PrivacyLevel) ? opts.PrivacyLevel : "PUBLIC_TO_EVERYONE";
-                var allowComments = opts.AllowComments ? "true" : "false";
-                var allowDuet = opts.AllowDuet ? "true" : "false";
-                var allowStitch = opts.AllowStitch ? "true" : "false";
-
-                var tiktokParts = new List<string>
-                {
-                    $"privacyLevel: \"{privacy}\"",
-                    $"allowComments: {allowComments}",
-                    $"allowDuet: {allowDuet}",
-                    $"allowStitch: {allowStitch}"
-                };
-
-                if (opts.BrandedContent)
-                    tiktokParts.Add("brandedContent: true");
-                if (opts.BrandPartnership)
-                    tiktokParts.Add("brandPartnership: true");
-
-                metadataBlock = $"metadata: {{ tiktok: {{ {string.Join(", ", tiktokParts)} }} }}";
+                // Buffer's TikTokPostMetadataInput schema does not expose privacy/interaction fields.
+                // TikTok posts are published with default settings (public, comments enabled, etc.)
+                metadataBlock = "metadata: { tiktok: {} }";
             }
             else
             {
