@@ -593,25 +593,60 @@ namespace Server.Services.Ai
             }
 
             var scenes = new List<object>();
+            Dictionary<string, object>? movieLevelVoice = null;
 
             if (mediaList.Count > 0)
             {
-                // Split script into sentences first to know how many voiced scenes we can make
-                var scriptParts = SplitScript(textInput, mediaList.Count);
+                // Check if all media are images — if so, use movie-level voice for
+                // a single continuous voiceover with images cycling underneath.
+                bool allImages = mediaList.All(m => m.Type == "image");
 
-                // Only create scenes that have both media AND voice text.
-                // Scenes without voice cause silent gaps and potential API timeouts.
-                var voicedCount = scriptParts.Count(p => !string.IsNullOrWhiteSpace(p));
-                var sceneCount = voicedCount > 0 ? Math.Min(mediaList.Count, voicedCount) : mediaList.Count;
-
-                // Re-split the script to match the actual scene count (better distribution)
-                if (sceneCount < mediaList.Count && sceneCount > 0)
-                    scriptParts = SplitScript(textInput, sceneCount);
-
-                for (var i = 0; i < sceneCount; i++)
+                if (allImages && s.EnableVoice && !string.IsNullOrWhiteSpace(textInput))
                 {
-                    var script = i < scriptParts.Count ? scriptParts[i] : null;
-                    scenes.Add(BuildScene(mediaList[i].Url, mediaList[i].Type, script, s, isLast: i == sceneCount - 1));
+                    // Estimate voice duration and divide evenly across image scenes
+                    var wordCount = textInput.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
+                    var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, mediaList.Count * 3.0);
+                    var perSceneDuration = Math.Max(estimatedVoiceSeconds / mediaList.Count, 3.0);
+
+                    for (var i = 0; i < mediaList.Count; i++)
+                    {
+                        // Image-only scene with fixed duration — no voice per scene
+                        scenes.Add(BuildScene(mediaList[i].Url, "image", null, s,
+                            isLast: i == mediaList.Count - 1, overrideSceneDuration: perSceneDuration));
+                    }
+
+                    // Voice goes at movie level for continuous narration
+                    movieLevelVoice = new Dictionary<string, object>
+                    {
+                        ["type"] = "voice",
+                        ["text"] = textInput,
+                        ["voice"] = s.VoiceName,
+                        ["model"] = s.VoiceModel
+                    };
+                    if (s.VoiceModel.StartsWith("elevenlabs") && Math.Abs(s.VoiceSpeed - 1.0) > 0.01)
+                    {
+                        movieLevelVoice["model-settings"] = new Dictionary<string, object>
+                        {
+                            ["voice_settings"] = new Dictionary<string, object> { ["speed"] = s.VoiceSpeed }
+                        };
+                    }
+                }
+                else
+                {
+                    // Mixed media or no voice: split script across scenes as before
+                    var scriptParts = SplitScript(textInput, mediaList.Count);
+
+                    var voicedCount = scriptParts.Count(p => !string.IsNullOrWhiteSpace(p));
+                    var sceneCount = voicedCount > 0 ? Math.Min(mediaList.Count, voicedCount) : mediaList.Count;
+
+                    if (sceneCount < mediaList.Count && sceneCount > 0)
+                        scriptParts = SplitScript(textInput, sceneCount);
+
+                    for (var i = 0; i < sceneCount; i++)
+                    {
+                        var script = i < scriptParts.Count ? scriptParts[i] : null;
+                        scenes.Add(BuildScene(mediaList[i].Url, mediaList[i].Type, script, s, isLast: i == sceneCount - 1));
+                    }
                 }
             }
             else
@@ -620,6 +655,16 @@ namespace Server.Services.Ai
             }
 
             var movie = BuildMoviePayload(s, scenes);
+
+            // Add movie-level voice for image slideshows
+            if (movieLevelVoice is not null)
+            {
+                var movieElements = movie.ContainsKey("elements")
+                    ? (List<object>)movie["elements"]
+                    : new List<object>();
+                movieElements.Add(movieLevelVoice);
+                movie["elements"] = movieElements;
+            }
 
             // Inject resources at movie level if provided
             if (config.TryGetValue("resources", out var resVal))
@@ -783,8 +828,9 @@ namespace Server.Services.Ai
         /// <summary>
         /// Build a single scene with optional video/image and voice.
         /// isLast=true skips transition to avoid cutting audio at the end.
+        /// overrideSceneDuration>0 sets a fixed scene duration (used when voice is at movie level).
         /// </summary>
-        private static object BuildScene(string? mediaUrl, string mediaType, string? script, VideoSettings s, bool isLast = false)
+        private static object BuildScene(string? mediaUrl, string mediaType, string? script, VideoSettings s, bool isLast = false, double overrideSceneDuration = -1.0)
         {
             var elements = new List<Dictionary<string, object>>();
             var hasVoice = s.EnableVoice && !string.IsNullOrEmpty(script);
@@ -877,7 +923,7 @@ namespace Server.Services.Ai
 
             var scene = new Dictionary<string, object>
             {
-                ["duration"] = -1,
+                ["duration"] = overrideSceneDuration > 0 ? overrideSceneDuration : -1,
                 ["elements"] = elements
             };
 
