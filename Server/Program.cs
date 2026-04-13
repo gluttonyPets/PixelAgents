@@ -894,10 +894,10 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
         }
         else
         {
-            // Find the primary connection (first non-scene, non-resource connection, or first overall)
+            // Find the primary connection (first non-scene connection, or first overall)
             var primaryConn = req.Connections
                 .Where(c => c.ToModuleId == pm.Id)
-                .Where(c => !c.ToPort.StartsWith("input_scene_") && c.ToPort != "input_resources")
+                .Where(c => !c.ToPort.StartsWith("input_scene_"))
                 .FirstOrDefault()
                 ?? req.Connections.FirstOrDefault(c => c.ToModuleId == pm.Id);
 
@@ -935,15 +935,6 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             {
                 try { cfgDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(pm.Configuration) ?? new(); }
                 catch { cfgDict = new(); }
-            }
-
-            // Resource port connection
-            var resourceConn = req.Connections.FirstOrDefault(c => c.ToModuleId == pm.Id && c.ToPort == "input_resources");
-            if (resourceConn is not null)
-            {
-                var resourceModule = modules.FirstOrDefault(m => m.Id == resourceConn.FromModuleId);
-                if (resourceModule is not null)
-                    cfgDict["resourceSourceStep"] = resourceModule.StepOrder;
             }
 
             // Scene-level connections: store all connections per scene port (supports multiple per port)
