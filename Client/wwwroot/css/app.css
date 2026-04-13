@@ -2266,6 +2266,42 @@ a.link:hover { text-decoration: underline; }
     50% { box-shadow: 0 0 18px rgba(255, 152, 0, 0.6); }
 }
 
+/* ── Skipped state (yellow) ── */
+.drawflow .drawflow-node.df-state-skipped {
+    border-color: #f0ad4e !important;
+    opacity: 0.6;
+}
+
+.drawflow .drawflow-node.df-state-skipped .df-node-content {
+    border-left-color: #f0ad4e !important;
+}
+
+.drawflow .drawflow-node.df-state-skipped .df-order-badge {
+    background: #f0ad4e;
+}
+
+.drawflow .drawflow-node.df-state-skipped .df-node-title::after {
+    content: ' (saltado)';
+    font-size: 0.65rem;
+    color: #f0ad4e;
+    font-weight: 400;
+}
+
+/* ── Linear view: skipped step card ── */
+.step-card-v2.step-skipped {
+    border-color: #f0ad4e;
+    opacity: 0.6;
+}
+
+.step-card-v2.step-skipped .step-card-header {
+    background: rgba(240, 173, 78, 0.1);
+}
+
+.step-card-v2.step-skipped .step-number {
+    background: #f0ad4e;
+    color: #fff;
+}
+
 /* ── Active connection (green animated) ── */
 .drawflow .connection.df-conn-active .main-path {
     stroke: var(--success) !important;

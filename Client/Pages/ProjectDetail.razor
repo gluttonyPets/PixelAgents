@@ -212,11 +212,15 @@ else
 
                         <!-- Step card -->
                         <div class="pipeline-step">
-                            <div class="step-card-v2">
+                            <div class="step-card-v2 @(IsStepSkipped(pm) ? "step-skipped" : "")">
                                 <div class="step-card-header">
                                     <span class="step-number">@GetStepLabel(pm)</span>
                                     <span class="step-title">@(pm.StepName ?? pm.AiModuleName)</span>
                                     <span class="badge badge-@(pm.ModuleType.ToLower())">@pm.ModuleType</span>
+                                    @if (IsStepSkipped(pm))
+                                    {
+                                        <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
+                                    }
                                 </div>
                                 <div class="step-card-meta">
                                     <span>@pm.AiModuleName</span>
@@ -234,6 +238,7 @@ else
                                 <div class="step-card-actions">
                                     <button class="btn btn-xs" @onclick="() => MoveStep(pm, -1)" disabled="@(pm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
                                     <button class="btn btn-xs" @onclick="() => MoveStep(pm, 1)" disabled="@(pm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
+                                    <button class="btn btn-xs" style="@(IsStepSkipped(pm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(pm)" title="@(IsStepSkipped(pm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(pm) ? "Activar" : "Saltar")</button>
                                     <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
                                     <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
                                 </div>
@@ -267,11 +272,15 @@ else
                                                 {
                                                     <div class="branch-connector"></div>
                                                 }
-                                                <div class="step-card-v2 branch-step">
+                                                <div class="step-card-v2 branch-step @(IsStepSkipped(rpm) ? "step-skipped" : "")">
                                                     <div class="step-card-header">
                                                         <span class="step-number">@GetStepLabel(rpm)</span>
                                                         <span class="step-title">@(rpm.StepName ?? rpm.AiModuleName)</span>
                                                         <span class="badge badge-@(rpm.ModuleType.ToLower())">@rpm.ModuleType</span>
+                                                        @if (IsStepSkipped(rpm))
+                                                        {
+                                                            <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
+                                                        }
                                                     </div>
                                                     <div class="step-card-meta">
                                                         <span>@rpm.AiModuleName</span>
@@ -289,6 +298,7 @@ else
                                                     <div class="step-card-actions">
                                                         <button class="btn btn-xs" @onclick="() => MoveStep(rpm, -1)" disabled="@(rpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
                                                         <button class="btn btn-xs" @onclick="() => MoveStep(rpm, 1)" disabled="@(rpm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
+                                                        <button class="btn btn-xs" style="@(IsStepSkipped(rpm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(rpm)" title="@(IsStepSkipped(rpm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(rpm) ? "Activar" : "Saltar")</button>
                                                         <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(rpm)">Editar</button>
                                                         <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(rpm.Id)">Quitar</button>
                                                     </div>
@@ -315,11 +325,15 @@ else
                                                 {
                                                     <div class="branch-connector"></div>
                                                 }
-                                                <div class="step-card-v2 branch-step">
+                                                <div class="step-card-v2 branch-step @(IsStepSkipped(bpm) ? "step-skipped" : "")">
                                                     <div class="step-card-header">
                                                         <span class="step-number">@GetStepLabel(bpm)</span>
                                                         <span class="step-title">@(bpm.StepName ?? bpm.AiModuleName)</span>
                                                         <span class="badge badge-@(bpm.ModuleType.ToLower())">@bpm.ModuleType</span>
+                                                        @if (IsStepSkipped(bpm))
+                                                        {
+                                                            <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
+                                                        }
                                                     </div>
                                                     <div class="step-card-meta">
                                                         <span>@bpm.AiModuleName</span>
@@ -332,6 +346,7 @@ else
                                                         @{var bSorted = branchSteps;}
                                                         <button class="btn btn-xs" @onclick="() => MoveStep(bpm, -1)" disabled="@(bpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
                                                         <button class="btn btn-xs" @onclick="() => MoveStep(bpm, 1)" disabled="@(bpm.StepOrder >= bSorted.Count)" title="Bajar">&#x25BC;</button>
+                                                        <button class="btn btn-xs" style="@(IsStepSkipped(bpm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(bpm)" title="@(IsStepSkipped(bpm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(bpm) ? "Activar" : "Saltar")</button>
                                                         <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(bpm)">Editar</button>
                                                         <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(bpm.Id)">Quitar</button>
                                                     </div>
@@ -2507,6 +2522,45 @@ else
     /// Compute a branch-prefixed step label. Pre-fork trunk steps show plain numbers (1, 2, 3).
     /// Post-fork: main continuation = A + seq, other branches = B, C, D... + seq.
     /// </summary>
+    private bool IsStepSkipped(ProjectModuleResponse pm)
+    {
+        if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
+        try
+        {
+            var cfg = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+            if (cfg is not null && cfg.TryGetValue("skipped", out var el))
+                return el.ValueKind == JsonValueKind.True;
+        }
+        catch { }
+        return false;
+    }
+
+    private async Task ToggleStepSkipped(ProjectModuleResponse pm)
+    {
+        var currentlySkipped = IsStepSkipped(pm);
+        var newSkipped = !currentlySkipped;
+
+        // Parse existing config, update skipped flag, save
+        var cfg = new Dictionary<string, object>();
+        if (!string.IsNullOrWhiteSpace(pm.Configuration))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+                if (parsed is not null)
+                    foreach (var kv in parsed)
+                        cfg[kv.Key] = kv.Value;
+            }
+            catch { }
+        }
+        cfg["skipped"] = newSkipped;
+        var stepConfig = JsonSerializer.Serialize(cfg);
+
+        var req = new UpdateProjectModuleRequest(pm.StepOrder, pm.StepName, pm.InputMapping, stepConfig, pm.IsActive);
+        var (ok, _) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
+        if (ok) await LoadAll();
+    }
+
     private string GetStepLabel(ProjectModuleResponse pm)
     {
         if (_project is null) return pm.StepOrder.ToString();
@@ -2825,6 +2879,21 @@ else
             else
             {
                 stepConfig = pm.Configuration; // preserve existing for unknown types
+            }
+
+            // Preserve the "skipped" flag from existing config
+            if (IsStepSkipped(pm))
+            {
+                if (stepConfig is null)
+                {
+                    stepConfig = JsonSerializer.Serialize(new { skipped = true });
+                }
+                else
+                {
+                    var merged = JsonSerializer.Deserialize<Dictionary<string, object>>(stepConfig) ?? new();
+                    merged["skipped"] = true;
+                    stepConfig = JsonSerializer.Serialize(merged);
+                }
             }
 
             var req = new UpdateProjectModuleRequest(

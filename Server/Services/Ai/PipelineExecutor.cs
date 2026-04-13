@@ -72,6 +72,19 @@ namespace Server.Services.Ai
         private static bool IsCoordinatorStep(AiModule module) =>
             module.ModuleType == "Coordinator";
 
+        private static bool IsStepSkipped(ProjectModule pm)
+        {
+            if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
+            try
+            {
+                var cfg = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+                if (cfg is not null && cfg.TryGetValue("skipped", out var el))
+                    return el.ValueKind == JsonValueKind.True;
+            }
+            catch { }
+            return false;
+        }
+
         public async Task<ProjectExecution> ExecuteAsync(
             Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default, bool useHistory = true)
         {
@@ -230,6 +243,31 @@ namespace Server.Services.Ai
                     execution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                     return execution;
+                }
+
+                // ── Skip check: if step is marked as skipped, bypass execution ──
+                if (IsStepSkipped(pm))
+                {
+                    var skipName = pm.StepName ?? pm.AiModule.Name;
+                    var skipLabel = GetStepLabel(pm, project.ProjectModules);
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Paso {skipLabel}: {skipName} — saltado por configuracion",
+                        pm.StepOrder, skipName);
+
+                    var skipStepExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = executionId,
+                        ProjectModuleId = pm.Id,
+                        StepOrder = pm.StepOrder,
+                        Status = "Skipped",
+                        CreatedAt = DateTime.UtcNow,
+                        CompletedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(skipStepExec);
+                    await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Skipped");
+                    continue;
                 }
 
                 var stepExecution = new StepExecution
@@ -4626,6 +4664,31 @@ Datos de la ejecucion:
                 var nextBranchModule = bi + 1 < branchSteps.Count ? branchSteps[bi + 1] : null;
 
                 if (ct.IsCancellationRequested) return BranchResult.Cancelled;
+
+                // ── Skip check for branch step ──
+                if (IsStepSkipped(bpm))
+                {
+                    var bSkipName = bpm.StepName ?? bpm.AiModule.Name;
+                    var bSkipLabel = GetStepLabel(bpm, project.ProjectModules);
+                    await _logger.LogAsync(project.Id, execution.Id, "info",
+                        $"[{branchId}] Paso {bSkipLabel}: {bSkipName} — saltado por configuracion",
+                        bpm.StepOrder, bSkipName);
+
+                    var bSkipExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = execution.Id,
+                        ProjectModuleId = bpm.Id,
+                        StepOrder = bpm.StepOrder,
+                        Status = "Skipped",
+                        CreatedAt = DateTime.UtcNow,
+                        CompletedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(bSkipExec);
+                    await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(project.Id, bpm.Id, "Skipped");
+                    continue;
+                }
 
                 var branchStepExec = new StepExecution
                 {

@@ -143,6 +143,17 @@
                     </div>
 
                     <div class="inspector-section">
+                        <div class="inspector-field">
+                            <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                                <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "skipped", false)"
+                                       @onchange="@(e => ToggleSkipped(sel.Id, (bool)(e.Value ?? false)))" />
+                                Saltar este paso
+                            </label>
+                            <p class="text-sm text-muted" style="margin-top: 0.15rem;">Si se activa, este paso se omitira durante la ejecucion del pipeline.</p>
+                        </div>
+                    </div>
+
+                    <div class="inspector-section">
                         <div class="inspector-section-title">Conexiones</div>
                         @{
                             var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id), sel.InputMapping, sel.OrchestratorOutputs);
@@ -1132,6 +1143,10 @@
                 stepLabel,
                 pm.ModelName,
                 warning);
+
+            if (GetModuleConfigBool(pm.Id, "skipped", false))
+                await JS.InvokeVoidAsync("pipelineEditor.setNodeSkipped", pm.Id.ToString(), true);
+
             idx++;
         }
 
@@ -1216,6 +1231,7 @@
                 "Running" => "running",
                 "Completed" => "completed",
                 "Failed" => "failed",
+                "Skipped" => "skipped",
                 "WaitingForCheckpoint" => "waiting",
                 "WaitingForReview" => "waiting",
                 _ => "idle"
@@ -1319,6 +1335,12 @@
             _moduleConfigs[moduleId] = new();
         _moduleConfigs[moduleId][key] = value;
         await AutoSaveGraph();
+    }
+
+    private async Task ToggleSkipped(Guid moduleId, bool skipped)
+    {
+        await SetModuleConfig(moduleId, "skipped", skipped.ToString().ToLower());
+        await JS.InvokeVoidAsync("pipelineEditor.setNodeSkipped", moduleId.ToString(), skipped);
     }
 
     // ── Actions ──

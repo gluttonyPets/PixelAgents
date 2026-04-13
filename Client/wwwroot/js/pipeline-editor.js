@@ -318,6 +318,20 @@ window.pipelineEditor = {
         }
     },
 
+    // ── Toggle skipped visual state on a node ──
+    setNodeSkipped: function (moduleId, skipped) {
+        var nodeId = this._reverseMap[moduleId];
+        if (nodeId === undefined) return;
+        var el = document.querySelector('#node-' + nodeId);
+        if (el) {
+            if (skipped) {
+                el.classList.add('df-state-skipped');
+            } else {
+                el.classList.remove('df-state-skipped');
+            }
+        }
+    },
+
     // ── Set execution state on a node: 'idle', 'running', 'completed', 'failed' ──
     setNodeState: function (moduleId, state) {
         var nodeId = this._reverseMap[moduleId];
