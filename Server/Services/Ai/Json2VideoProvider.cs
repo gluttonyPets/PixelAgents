@@ -139,6 +139,9 @@ namespace Server.Services.Ai
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
             });
 
+            // DEBUG: log the final payload for troubleshooting
+            Console.WriteLine($"[Json2Video] Final payload ({jsonPayload.Length} chars): {jsonPayload[..Math.Min(jsonPayload.Length, 2000)]}");
+
             var requestContent = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
             var submitResp = await http.PostAsync($"{BaseUrl}/movies", requestContent);
             var submitBody = await submitResp.Content.ReadAsStringAsync();
@@ -297,10 +300,13 @@ namespace Server.Services.Ai
                     if (!scHasVoice && scHasImage) imageOnlySceneCount++;
                 }
 
+                Console.WriteLine($"[Json2Video] Pre-scan: {totalSceneCount} scenes, {voiceSceneCount} with voice, {imageOnlySceneCount} image-only, voiceText={voiceText?.Length ?? 0} chars");
+
                 // Move voice to movie level if exactly 1 scene has voice and others are image-only
                 if (voiceSceneCount == 1 && imageOnlySceneCount > 0 && !string.IsNullOrWhiteSpace(voiceText))
                 {
                     moveVoiceToMovieLevel = true;
+                    Console.WriteLine($"[Json2Video] Moving voice to movie level, perSceneDuration will be calculated");
 
                     // Build movie-level voice element
                     movieVoice = new Dictionary<string, object>
