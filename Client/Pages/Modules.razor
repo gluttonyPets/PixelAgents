@@ -19,6 +19,7 @@
             <option value="OpenAI">OpenAI</option>
             <option value="Anthropic">Anthropic</option>
             <option value="Google">Google (Gemini)</option>
+            <option value="xAI">xAI (Grok)</option>
             <option value="LeonardoAI">Leonardo AI</option>
             <option value="Canva">Canva</option>
             <option value="Pexels">Pexels (Video gratuito)</option>
@@ -198,6 +199,15 @@
                     <div class="form-group">
                         <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
                         <input type="number" min="1" max="4" @bind="_geminiImageCount" />
+                    </div>
+                </div>
+            }
+            else if (_moduleType == "Image" && _provider == "xAI")
+            {
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+                        <input type="number" min="1" max="4" @bind="_grokImageCount" />
                     </div>
                 </div>
             }
@@ -640,6 +650,15 @@
                                         </div>
                                     </div>
                                 }
+                                else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
+                                {
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+                                            <input type="number" min="1" max="4" @bind="_editGrokImageCount" />
+                                        </div>
+                                    </div>
+                                }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
                                 {
                                     <div class="form-row">
@@ -1073,6 +1092,10 @@ else if (!_loading)
     private string _editGeminiAspectRatio = "1:1";
     private int _editGeminiImageCount = 1;
 
+    // ── Form: xAI Grok Image ──
+    private int _grokImageCount = 1;
+    private int _editGrokImageCount = 1;
+
     // ── Form: video (Google Veo) ──
     private string _videoAspectRatio = "16:9";
     private string _videoDuration = "8";
@@ -1226,6 +1249,20 @@ else if (!_loading)
         // ─── Anthropic: Chat / Text (Claude 3.5) ───
         new("claude-3-5-haiku-20241022",   "Claude 3.5 Haiku",    "Anthropic", ["Text"], ["text","vision","streaming"], "Ultra rapido y economico.", "200K"),
 
+        // ─── xAI: Chat / Text (Grok 3) ───
+        new("grok-3",               "Grok 3",               "xAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Modelo flagship de xAI. Razonamiento avanzado.", "131K"),
+        new("grok-3-fast",          "Grok 3 Fast",          "xAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Grok 3 con menor latencia. Ideal para produccion.", "131K"),
+        new("grok-3-mini",          "Grok 3 Mini",          "xAI", ["Text","Orchestrator","Coordinator"], ["text","reasoning","streaming"], "Razonamiento compacto y economico.", "131K"),
+        new("grok-3-mini-fast",     "Grok 3 Mini Fast",     "xAI", ["Text","Orchestrator","Coordinator"], ["text","reasoning","streaming"], "Grok 3 Mini ultra rapido. El mas economico.", "131K"),
+
+        // ─── xAI: Chat / Text (Grok 2) ───
+        new("grok-2",               "Grok 2",               "xAI", ["Text"], ["text","vision","streaming"], "Generacion anterior. Texto y vision.", "131K"),
+        new("grok-2-vision",        "Grok 2 Vision",        "xAI", ["Text"], ["text","vision","streaming"], "Grok 2 optimizado para comprension visual.", "131K"),
+
+        // ─── xAI: Image Generation (Aurora) ───
+        new("grok-2-image",         "Grok 2 Image (Aurora)", "xAI", ["Image"], ["image-generation"], "Generacion de imagenes Aurora. Alta calidad y creatividad."),
+        new("grok-2-image-1212",    "Grok 2 Image 1212",    "xAI", ["Image"], ["image-generation"], "Version estable de Aurora. Consistente y confiable."),
+
         // ─── Google: Chat / Text (Gemini 2.x) ───
         new("gemini-2.5-flash",     "Gemini 2.5 Flash",     "Google", ["Text","Orchestrator","Coordinator"], ["text","vision","streaming"], "Modelo rapido con razonamiento. Ultimo Gemini.", "1M"),
         new("gemini-2.5-pro",       "Gemini 2.5 Pro",       "Google", ["Text"], ["text","vision","streaming"], "Modelo avanzado con razonamiento profundo.", "1M"),
@@ -1367,6 +1404,7 @@ else if (!_loading)
         _leoPresetStyle = "DYNAMIC";
         _geminiAspectRatio = "1:1";
         _geminiImageCount = 1;
+        _grokImageCount = 1;
         _videoAspectRatio = "16:9";
         _videoDuration = "8";
         _videoResolution = "720p";
@@ -1420,6 +1458,11 @@ else if (!_loading)
                 parts.Add($"\"aspectRatio\":\"{_geminiAspectRatio}\"");
             if (_geminiImageCount != 1)
                 parts.Add($"\"numberOfImages\":{_geminiImageCount}");
+        }
+        else if (_moduleType == "Image" && _provider == "xAI")
+        {
+            if (_grokImageCount != 1)
+                parts.Add($"\"n\":{_grokImageCount}");
         }
         else if (_moduleType == "Image" && _provider == "LeonardoAI")
         {
@@ -1642,6 +1685,7 @@ else if (!_loading)
         _editCanvaExportFormat = "png";
         _editCanvaBrandTemplate = "";
         _editCanvaDesignType = "doc";
+        _editGrokImageCount = 1;
 
         if (!string.IsNullOrWhiteSpace(module.Configuration))
         {
@@ -1666,6 +1710,7 @@ else if (!_loading)
                     _editVideoAspectRatio = ar.GetString() ?? "16:9";
                 }
                 if (root.TryGetProperty("numberOfImages", out var ni)) _editGeminiImageCount = ni.GetInt32();
+                if (root.TryGetProperty("n", out var grokN)) _editGrokImageCount = grokN.GetInt32();
                 if (root.TryGetProperty("duration", out var vdur))
                 {
                     _editVideoDuration = vdur.GetString() ?? "8";
@@ -1795,6 +1840,11 @@ else if (!_loading)
                 parts.Add($"\"aspectRatio\":\"{_editGeminiAspectRatio}\"");
             if (_editGeminiImageCount != 1)
                 parts.Add($"\"numberOfImages\":{_editGeminiImageCount}");
+        }
+        else if (moduleType == "Image" && providerType == "xAI")
+        {
+            if (_editGrokImageCount != 1)
+                parts.Add($"\"n\":{_editGrokImageCount}");
         }
         else if (moduleType == "Image" && providerType == "LeonardoAI")
         {
