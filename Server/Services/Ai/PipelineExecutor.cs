@@ -2263,10 +2263,27 @@ Datos de la ejecucion:
                         pm.StepOrder, stepName);
                 }
 
+                // Check if the source step has an external video URL (e.g. json2video CDN)
+                // so we can use it directly instead of the local server URL
+                string? externalVideoUrl = null;
+                if (mediaStepOrder > 0 && stepOutputs.TryGetValue(mediaStepOrder, out var mediaStepOutput))
+                {
+                    if (mediaStepOutput.Metadata.TryGetValue("videoUrl", out var vuObj))
+                        externalVideoUrl = vuObj?.ToString();
+                }
+
                 foreach (var file in mediaFiles)
                 {
-                    var publicUrl = $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}/{file.FileName}";
                     var kind = file.ContentType.StartsWith("video/") ? MediaKind.Video : MediaKind.Image;
+
+                    // For videos, prefer the external CDN URL (publicly accessible)
+                    // over the local server URL which may not be reachable by Buffer
+                    string publicUrl;
+                    if (kind == MediaKind.Video && !string.IsNullOrEmpty(externalVideoUrl))
+                        publicUrl = externalVideoUrl;
+                    else
+                        publicUrl = $"{serverBaseUrl}/api/public/files/{tenantDbName}/{executionId}/{file.Id}/{file.FileName}";
+
                     classifiedMedia.Add(new ClassifiedMedia { Url = publicUrl, Kind = kind });
                 }
             }
