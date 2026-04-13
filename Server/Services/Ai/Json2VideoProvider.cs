@@ -273,6 +273,11 @@ namespace Server.Services.Ai
             if (scenes.Count == 0)
                 throw new InvalidOperationException("Json2Video: no se encontraron escenas en el input JSON");
 
+            // If voice is concentrated in a single scene while others are image-only,
+            // redistribute it across all scenes so each image gets narration and
+            // scene durations auto-size from voice (images adapt to narration length).
+            RedistributeVoiceAcrossScenes(scenes, s);
+
             var movie = BuildMoviePayload(s, scenes);
 
             // Movie-level audio (background music)
@@ -353,10 +358,36 @@ namespace Server.Services.Ai
             // so it doesn't conflict with the movie-level subtitles.
             elements.RemoveAll(el => el is Dictionary<string, object?> d && d.TryGetValue("type", out var t) && t?.ToString() == "subtitles");
 
+            // Images don't have intrinsic duration — duration:-1 resolves to ~0 seconds.
+            // When no voice element defines the scene timing, use a fixed duration from settings.
+            // When voice IS present, use -2 (match parent scene duration from voice).
+            var safeDuration = s.ImageDuration > 0 ? s.ImageDuration : 5.0;
+            foreach (var el in elements)
+            {
+                if (el is Dictionary<string, object?> imgDict &&
+                    imgDict.TryGetValue("type", out var elType) && elType?.ToString() == "image" &&
+                    imgDict.TryGetValue("duration", out var dur))
+                {
+                    var durValue = dur switch
+                    {
+                        int iv => (double)iv,
+                        long lv => (double)lv,
+                        double dv => dv,
+                        _ => -1.0
+                    };
+                    if (durValue < 0.25)
+                        imgDict["duration"] = hasVoice ? -2 : safeDuration;
+                }
+            }
+
             // Build scene dict
             var duration = sceneElement.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.Number
                 ? durEl.GetDouble()
                 : -1.0;
+
+            // Scenes without voice need a positive duration — can't auto-calculate from images alone.
+            if (!hasVoice && duration < 0.25)
+                duration = safeDuration;
 
             var scene = new Dictionary<string, object>
             {
@@ -657,13 +688,18 @@ namespace Server.Services.Ai
             {
                 if (mediaType == "image")
                 {
+                    // When voice is present, use -2 so the image matches the scene duration
+                    // (which auto-sizes from the voice narration). Without voice, use
+                    // configured imageDuration as a fixed display time (min 0.25s).
+                    var imgDuration = hasVoice
+                        ? -2.0
+                        : (s.ImageDuration >= 0.25 ? s.ImageDuration : 5.0);
+
                     var imgElement = new Dictionary<string, object>
                     {
                         ["type"] = "image",
                         ["src"] = mediaUrl,
-                        // Use configured imageDuration directly.
-                        // -1 = auto (scene sizes from voice), positive = fixed seconds.
-                        ["duration"] = s.ImageDuration
+                        ["duration"] = imgDuration
                     };
 
                     // Apply Ken Burns animation
@@ -750,6 +786,109 @@ namespace Server.Services.Ai
             }
 
             return scene;
+        }
+
+        /// <summary>
+        /// When voice is concentrated in a single scene while other scenes are image-only,
+        /// redistribute the voice text across all scenes so each image has narration.
+        /// Sets image duration to -2 (match parent scene, which auto-sizes from voice).
+        /// </summary>
+        private static void RedistributeVoiceAcrossScenes(List<object> scenes, VideoSettings s)
+        {
+            if (scenes.Count < 2) return;
+
+            // Analyze scenes: find which have voice and which are image-only
+            int voiceSceneIdx = -1;
+            Dictionary<string, object?>? originalVoice = null;
+            int totalVoiceScenes = 0;
+            int imageOnlyScenes = 0;
+
+            for (int i = 0; i < scenes.Count; i++)
+            {
+                if (scenes[i] is not Dictionary<string, object> scene) continue;
+                if (!scene.TryGetValue("elements", out var elemObj) || elemObj is not List<object> elements) continue;
+
+                bool sceneHasVoice = false;
+                bool sceneHasImage = false;
+
+                foreach (var el in elements)
+                {
+                    if (el is not Dictionary<string, object?> dict) continue;
+                    if (!dict.TryGetValue("type", out var t)) continue;
+                    var typeStr = t?.ToString();
+                    if (typeStr == "voice")
+                    {
+                        sceneHasVoice = true;
+                        totalVoiceScenes++;
+                        if (voiceSceneIdx == -1)
+                        {
+                            voiceSceneIdx = i;
+                            originalVoice = dict;
+                        }
+                    }
+                    if (typeStr == "image") sceneHasImage = true;
+                }
+
+                if (!sceneHasVoice && sceneHasImage) imageOnlyScenes++;
+            }
+
+            // Only redistribute if exactly one scene has voice and others are image-only
+            if (totalVoiceScenes != 1 || voiceSceneIdx < 0 || originalVoice is null || imageOnlyScenes == 0)
+                return;
+
+            var voiceText = originalVoice.TryGetValue("text", out var txtVal) ? txtVal?.ToString() : null;
+            if (string.IsNullOrWhiteSpace(voiceText)) return;
+
+            // Preserve voice settings from the original element
+            var voiceId = originalVoice.TryGetValue("voice", out var vid) ? vid?.ToString() ?? s.VoiceName : s.VoiceName;
+            var voiceModel = originalVoice.TryGetValue("model", out var vm) ? vm?.ToString() ?? s.VoiceModel : s.VoiceModel;
+            originalVoice.TryGetValue("model-settings", out var modelSettings);
+
+            // Split voice text across all scenes
+            var scriptParts = SplitScript(voiceText, scenes.Count);
+
+            for (int i = 0; i < scenes.Count; i++)
+            {
+                if (scenes[i] is not Dictionary<string, object> scene) continue;
+                if (!scene.TryGetValue("elements", out var elemObj) || elemObj is not List<object> elements) continue;
+
+                // Remove existing voice element from this scene
+                elements.RemoveAll(el => el is Dictionary<string, object?> d &&
+                    d.TryGetValue("type", out var t) && t?.ToString() == "voice");
+
+                var part = i < scriptParts.Count ? scriptParts[i] : null;
+                bool isLast = i == scenes.Count - 1;
+
+                if (!string.IsNullOrWhiteSpace(part))
+                {
+                    var newVoice = new Dictionary<string, object>
+                    {
+                        ["type"] = "voice",
+                        ["text"] = part,
+                        ["voice"] = voiceId,
+                        ["model"] = voiceModel,
+                        ["start"] = 0.4,
+                        ["extra-time"] = isLast ? 1.0 : 0.3
+                    };
+                    if (modelSettings is not null)
+                        newVoice["model-settings"] = modelSettings;
+
+                    elements.Add(newVoice);
+
+                    // With voice, scene auto-sizes from narration duration
+                    scene["duration"] = -1.0;
+
+                    // Images use -2 (match parent scene duration from voice)
+                    foreach (var el in elements)
+                    {
+                        if (el is Dictionary<string, object?> imgD &&
+                            imgD.TryGetValue("type", out var imgT) && imgT?.ToString() == "image")
+                        {
+                            imgD["duration"] = -2;
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>
