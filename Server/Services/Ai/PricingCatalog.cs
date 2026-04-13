@@ -35,6 +35,14 @@ namespace Server.Services.Ai
                 ["gemini-2.0-flash"]   = (0.10m,  0.40m),
                 ["gemini-2.5-flash"]   = (0.30m,  2.50m),  // output includes thinking tokens
                 ["gemini-2.5-pro"]     = (1.25m, 10.00m),
+
+                // xAI Grok
+                ["grok-3"]             = (3.00m, 15.00m),
+                ["grok-3-fast"]        = (5.00m, 25.00m),
+                ["grok-3-mini"]        = (0.30m,  0.50m),
+                ["grok-3-mini-fast"]   = (0.60m,  4.00m),
+                ["grok-2"]             = (2.00m, 10.00m),
+                ["grok-2-vision"]      = (2.00m, 10.00m),
             };
 
         // ── Image models: fixed price per image ──
@@ -54,6 +62,10 @@ namespace Server.Services.Ai
                 ["gemini-2.0-flash"]          = 0.039m,
                 ["gemini-2.0-flash-preview-image-generation"] = 0.039m,
                 ["imagen-3.0-generate-002"]   = 0.040m,
+
+                // xAI Grok (Aurora image generation)
+                ["grok-2-image"]           = 0.070m,
+                ["grok-2-image-1212"]      = 0.070m,
 
                 // Leonardo AI (approximate: ~7 credits at ~$0.003/credit)
                 ["leonardo-phoenix"]       = 0.021m,
