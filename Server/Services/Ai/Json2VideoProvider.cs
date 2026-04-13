@@ -248,6 +248,81 @@ namespace Server.Services.Ai
                 ? root
                 : root.TryGetProperty("scenes", out var sa) ? sa : root;
 
+            // Pre-scan: detect if voice is concentrated in a single scene while others
+            // are image-only. If so, we'll move voice to movie level for a continuous
+            // voiceover and set scene durations from estimated voice length.
+            Dictionary<string, object>? movieVoice = null;
+            double perSceneDuration = -1.0;
+            bool moveVoiceToMovieLevel = false;
+
+            if (scenesArray.ValueKind == JsonValueKind.Array)
+            {
+                int voiceSceneCount = 0;
+                int imageOnlySceneCount = 0;
+                int totalSceneCount = 0;
+                string? voiceText = null;
+                string? voiceId = null;
+                string? voiceModel = null;
+                JsonElement? voiceModelSettings = null;
+
+                foreach (var sc in scenesArray.EnumerateArray())
+                {
+                    totalSceneCount++;
+                    if (!sc.TryGetProperty("elements", out var els) || els.ValueKind != JsonValueKind.Array)
+                        continue;
+
+                    bool scHasVoice = false;
+                    bool scHasImage = false;
+
+                    foreach (var el in els.EnumerateArray())
+                    {
+                        var elType = el.TryGetProperty("type", out var tp) ? tp.GetString() : null;
+                        if (elType == "voice")
+                        {
+                            scHasVoice = true;
+                            // Extract voice info from the first voice element found
+                            if (voiceText is null)
+                            {
+                                voiceText = el.TryGetProperty("text", out var txt) ? txt.GetString() : null;
+                                voiceId = el.TryGetProperty("voice", out var vid) ? vid.GetString() : null;
+                                voiceModel = el.TryGetProperty("model", out var vm) ? vm.GetString() : null;
+                                if (el.TryGetProperty("model-settings", out var ms))
+                                    voiceModelSettings = ms;
+                            }
+                        }
+                        if (elType == "image") scHasImage = true;
+                    }
+
+                    if (scHasVoice) voiceSceneCount++;
+                    if (!scHasVoice && scHasImage) imageOnlySceneCount++;
+                }
+
+                // Move voice to movie level if exactly 1 scene has voice and others are image-only
+                if (voiceSceneCount == 1 && imageOnlySceneCount > 0 && !string.IsNullOrWhiteSpace(voiceText))
+                {
+                    moveVoiceToMovieLevel = true;
+
+                    // Build movie-level voice element
+                    movieVoice = new Dictionary<string, object>
+                    {
+                        ["type"] = "voice",
+                        ["text"] = voiceText,
+                        ["voice"] = voiceId ?? s.VoiceName,
+                        ["model"] = voiceModel ?? s.VoiceModel,
+                        ["start"] = 0.0,
+                        ["extra-time"] = 1.0
+                    };
+                    if (voiceModelSettings.HasValue)
+                        movieVoice["model-settings"] = ConvertJsonElement(voiceModelSettings.Value)!;
+
+                    // Estimate voice duration (~2.5 words/sec) and divide across scenes
+                    var wordCount = voiceText.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
+                    var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, totalSceneCount * 3.0);
+                    perSceneDuration = Math.Max(estimatedVoiceSeconds / totalSceneCount, 3.0);
+                }
+            }
+
+            // Build scenes — skip voice elements if voice is moving to movie level
             if (scenesArray.ValueKind == JsonValueKind.Array)
             {
                 foreach (var scene in scenesArray.EnumerateArray())
@@ -255,7 +330,9 @@ namespace Server.Services.Ai
                     if (scene.TryGetProperty("elements", out var elementsEl) && elementsEl.ValueKind == JsonValueKind.Array)
                     {
                         // Rich mode: pass-through elements with smart defaults
-                        scenes.Add(BuildSceneFromElements(scene, s));
+                        scenes.Add(BuildSceneFromElements(scene, s,
+                            skipVoice: moveVoiceToMovieLevel,
+                            overrideDuration: moveVoiceToMovieLevel ? perSceneDuration : -1.0));
                     }
                     else
                     {
@@ -272,11 +349,6 @@ namespace Server.Services.Ai
 
             if (scenes.Count == 0)
                 throw new InvalidOperationException("Json2Video: no se encontraron escenas en el input JSON");
-
-            // If voice is concentrated in a single scene while others are image-only,
-            // move it to movie level so the API generates a single continuous voiceover.
-            // Scene durations are estimated from voice length so images cycle in sync.
-            var movieVoice = MoveVoiceToMovieLevel(scenes, s);
 
             var movie = BuildMoviePayload(s, scenes);
 
@@ -320,8 +392,12 @@ namespace Server.Services.Ai
         /// <summary>
         /// Build a scene from an explicit "elements" array in the input JSON.
         /// Auto-injects voice and subtitles from module config if not present.
+        /// When skipVoice=true, voice elements are excluded (they'll be at movie level).
+        /// When overrideDuration>0, it overrides the scene duration.
         /// </summary>
-        private static Dictionary<string, object> BuildSceneFromElements(JsonElement sceneElement, VideoSettings s)
+        private static Dictionary<string, object> BuildSceneFromElements(
+            JsonElement sceneElement, VideoSettings s,
+            bool skipVoice = false, double overrideDuration = -1.0)
         {
             var elementsJson = sceneElement.GetProperty("elements");
             var elements = new List<object>();
@@ -329,6 +405,10 @@ namespace Server.Services.Ai
 
             foreach (var el in elementsJson.EnumerateArray())
             {
+                // When voice is being moved to movie level, skip voice elements
+                if (skipVoice && el.TryGetProperty("type", out var skipTypeEl) && skipTypeEl.GetString() == "voice")
+                    continue;
+
                 var converted = ConvertJsonElement(el);
                 if (converted is null) continue;
 
@@ -344,7 +424,7 @@ namespace Server.Services.Ai
 
             // Auto-inject voice from module config if script is present but no voice element
             var script = sceneElement.TryGetProperty("script", out var scriptEl) ? scriptEl.GetString() : null;
-            if (s.EnableVoice && !hasVoice && !string.IsNullOrEmpty(script))
+            if (s.EnableVoice && !skipVoice && !hasVoice && !string.IsNullOrEmpty(script))
             {
                 var voice = new Dictionary<string, object>
                 {
@@ -369,9 +449,10 @@ namespace Server.Services.Ai
             elements.RemoveAll(el => el is Dictionary<string, object?> d && d.TryGetValue("type", out var t) && t?.ToString() == "subtitles");
 
             // Images don't have intrinsic duration — duration:-1 resolves to ~0 seconds.
-            // When no voice element defines the scene timing, use a fixed duration from settings.
-            // When voice IS present, use -2 (match parent scene duration from voice).
+            // When voice is at movie level (skipVoice) or in this scene, use -2 (match parent scene).
+            // When no voice at all, use a fixed duration from settings.
             var safeDuration = s.ImageDuration > 0 ? s.ImageDuration : 5.0;
+            var voiceControlsDuration = hasVoice || skipVoice;
             foreach (var el in elements)
             {
                 if (el is Dictionary<string, object?> imgDict &&
@@ -386,18 +467,27 @@ namespace Server.Services.Ai
                         _ => -1.0
                     };
                     if (durValue < 0.25)
-                        imgDict["duration"] = hasVoice ? -2 : safeDuration;
+                        imgDict["duration"] = voiceControlsDuration ? -2 : safeDuration;
                 }
             }
 
             // Build scene dict
-            var duration = sceneElement.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.Number
-                ? durEl.GetDouble()
-                : -1.0;
+            double duration;
+            if (overrideDuration > 0)
+            {
+                // Explicit override (e.g. estimated from voice at movie level)
+                duration = overrideDuration;
+            }
+            else
+            {
+                duration = sceneElement.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.Number
+                    ? durEl.GetDouble()
+                    : -1.0;
 
-            // Scenes without voice need a positive duration — can't auto-calculate from images alone.
-            if (!hasVoice && duration < 0.25)
-                duration = safeDuration;
+                // Scenes without voice need a positive duration — can't auto-calculate from images alone.
+                if (!voiceControlsDuration && duration < 0.25)
+                    duration = safeDuration;
+            }
 
             var scene = new Dictionary<string, object>
             {
@@ -796,108 +886,6 @@ namespace Server.Services.Ai
             }
 
             return scene;
-        }
-
-        /// <summary>
-        /// When voice is concentrated in a single scene while other scenes are image-only,
-        /// extract the voice for movie-level placement so the API generates one continuous
-        /// voiceover. Scene durations are estimated from word count so images cycle in sync.
-        /// Returns the voice element to add at movie level, or null if not applicable.
-        /// </summary>
-        private static Dictionary<string, object>? MoveVoiceToMovieLevel(List<object> scenes, VideoSettings s)
-        {
-            if (scenes.Count < 2) return null;
-
-            // Analyze scenes: find which have voice and which are image-only
-            int voiceSceneIdx = -1;
-            Dictionary<string, object?>? originalVoice = null;
-            int totalVoiceScenes = 0;
-            int imageOnlyScenes = 0;
-
-            for (int i = 0; i < scenes.Count; i++)
-            {
-                if (scenes[i] is not Dictionary<string, object> scene) continue;
-                if (!scene.TryGetValue("elements", out var elemObj) || elemObj is not List<object> elements) continue;
-
-                bool sceneHasVoice = false;
-                bool sceneHasImage = false;
-
-                foreach (var el in elements)
-                {
-                    if (el is not Dictionary<string, object?> dict) continue;
-                    if (!dict.TryGetValue("type", out var t)) continue;
-                    var typeStr = t?.ToString();
-                    if (typeStr == "voice")
-                    {
-                        sceneHasVoice = true;
-                        totalVoiceScenes++;
-                        if (voiceSceneIdx == -1)
-                        {
-                            voiceSceneIdx = i;
-                            originalVoice = dict;
-                        }
-                    }
-                    if (typeStr == "image") sceneHasImage = true;
-                }
-
-                if (!sceneHasVoice && sceneHasImage) imageOnlyScenes++;
-            }
-
-            // Only move if exactly one scene has voice and others are image-only
-            if (totalVoiceScenes != 1 || voiceSceneIdx < 0 || originalVoice is null || imageOnlyScenes == 0)
-                return null;
-
-            var voiceText = originalVoice.TryGetValue("text", out var txtVal) ? txtVal?.ToString() : null;
-            if (string.IsNullOrWhiteSpace(voiceText)) return null;
-
-            // Build movie-level voice element preserving original settings
-            var voiceId = originalVoice.TryGetValue("voice", out var vid) ? vid?.ToString() ?? s.VoiceName : s.VoiceName;
-            var voiceModel = originalVoice.TryGetValue("model", out var vm) ? vm?.ToString() ?? s.VoiceModel : s.VoiceModel;
-            originalVoice.TryGetValue("model-settings", out var modelSettings);
-
-            var movieVoice = new Dictionary<string, object>
-            {
-                ["type"] = "voice",
-                ["text"] = voiceText,
-                ["voice"] = voiceId,
-                ["model"] = voiceModel,
-                ["start"] = 0.0,
-                ["extra-time"] = 1.0
-            };
-            if (modelSettings is not null)
-                movieVoice["model-settings"] = modelSettings;
-
-            // Estimate voice duration (~2.5 words/sec for typical TTS)
-            // and distribute evenly across scenes so images cycle in sync with narration.
-            var wordCount = voiceText.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
-            var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, scenes.Count * 3.0);
-            var perSceneDuration = Math.Max(estimatedVoiceSeconds / scenes.Count, 3.0);
-
-            // Update all scenes: remove voice from scenes, set durations, images use -2
-            for (int i = 0; i < scenes.Count; i++)
-            {
-                if (scenes[i] is not Dictionary<string, object> scene) continue;
-                if (!scene.TryGetValue("elements", out var elemObj) || elemObj is not List<object> elements) continue;
-
-                // Remove voice element — it now lives at movie level
-                elements.RemoveAll(el => el is Dictionary<string, object?> d &&
-                    d.TryGetValue("type", out var t) && t?.ToString() == "voice");
-
-                // Set scene duration based on estimated voice time
-                scene["duration"] = perSceneDuration;
-
-                // Images use -2 (match parent scene duration)
-                foreach (var el in elements)
-                {
-                    if (el is Dictionary<string, object?> imgD &&
-                        imgD.TryGetValue("type", out var imgT) && imgT?.ToString() == "image")
-                    {
-                        imgD["duration"] = -2;
-                    }
-                }
-            }
-
-            return movieVoice;
         }
 
         /// <summary>
