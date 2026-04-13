@@ -1114,20 +1114,6 @@ namespace Server.Services.Ai
                         if (videoOnlyUrls.Count > 0 && !config.ContainsKey("videoUrls"))
                             config["videoUrls"] = JsonSerializer.Serialize(videoOnlyUrls);
 
-                        // Resolve overlays from connected overlay source step
-                        if (config.TryGetValue("resourceSourceStep", out var mainOlsSrc))
-                        {
-                            var olsStep = mainOlsSrc is JsonElement olsEl ? olsEl.GetInt32() : Convert.ToInt32(mainOlsSrc);
-                            if (stepOutputs.TryGetValue(olsStep, out var olsOutput))
-                            {
-                                var overlayText = olsOutput.Content;
-                                if (string.IsNullOrWhiteSpace(overlayText) && olsOutput.Items.Count > 0)
-                                    overlayText = string.Join("\n", olsOutput.Items.Select(i => i.Content));
-                                if (!string.IsNullOrWhiteSpace(overlayText))
-                                    config["resources"] = overlayText;
-                            }
-                        }
-
                         var imgCount = mediaEntries.Count(m => m["type"] == "image");
                         var vidCount = mediaEntries.Count(m => m["type"] == "video");
 
@@ -5193,24 +5179,6 @@ Datos de la ejecucion:
                         var bVideoOnlyUrls = bMediaEntries.Where(m => m["type"] == "video").Select(m => m["url"]).ToList();
                         if (bVideoOnlyUrls.Count > 0 && !bConfig.ContainsKey("videoUrls"))
                             bConfig["videoUrls"] = JsonSerializer.Serialize(bVideoOnlyUrls);
-
-                        // Resolve overlays from connected overlay source step
-                        if (bConfig.TryGetValue("resourceSourceStep", out var olsSrc))
-                        {
-                            var olsStep = olsSrc is JsonElement olsEl ? olsEl.GetInt32() : Convert.ToInt32(olsSrc);
-                            if (stepOutputs.TryGetValue(olsStep, out var olsOutput))
-                            {
-                                var overlayText = olsOutput.Content;
-                                if (string.IsNullOrWhiteSpace(overlayText) && olsOutput.Items.Count > 0)
-                                    overlayText = string.Join("\n", olsOutput.Items.Select(i => i.Content));
-                                if (!string.IsNullOrWhiteSpace(overlayText))
-                                {
-                                    bConfig["resources"] = overlayText;
-                                    await _logger.LogAsync(project.Id, execution.Id, "info",
-                                        $"[{branchId}] Recursos recibidos del paso {olsStep}", bpm.StepOrder, bStepName);
-                                }
-                            }
-                        }
 
                         var bImgCount = bMediaEntries.Count(m => m["type"] == "image");
                         var bVidCount = bMediaEntries.Count(m => m["type"] == "video");
