@@ -1131,6 +1131,8 @@
                 ? "Sin salidas configuradas"
                 : null;
 
+            var isSkipped = GetModuleConfigBool(pm.Id, "skipped", false);
+
             await JS.InvokeVoidAsync("pipelineEditor.addNode",
                 pm.Id.ToString(),
                 pm.StepName ?? pm.AiModuleName,
@@ -1142,10 +1144,8 @@
                 pos.X, pos.Y,
                 stepLabel,
                 pm.ModelName,
-                warning);
-
-            if (GetModuleConfigBool(pm.Id, "skipped", false))
-                await JS.InvokeVoidAsync("pipelineEditor.setNodeSkipped", pm.Id.ToString(), true);
+                warning,
+                isSkipped);
 
             idx++;
         }
@@ -1340,7 +1340,10 @@
     private async Task ToggleSkipped(Guid moduleId, bool skipped)
     {
         await SetModuleConfig(moduleId, "skipped", skipped.ToString().ToLower());
-        await JS.InvokeVoidAsync("pipelineEditor.setNodeSkipped", moduleId.ToString(), skipped);
+        // setNodeSkipped is applied automatically during RebuildDrawflow (triggered by AutoSaveGraph)
+        // but also apply immediately in case rebuild hasn't happened yet
+        try { await JS.InvokeVoidAsync("pipelineEditor.setNodeSkipped", moduleId.ToString(), skipped); }
+        catch { /* JS function may not be loaded yet — rebuild will apply it */ }
     }
 
     // ── Actions ──

@@ -169,14 +169,16 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, stepOrder, modelName, warning) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, stepOrder, modelName, warning, skipped) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
         var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName, warning, inputPorts.length, outputPorts.length);
+        var cssClass = 'df-type-' + moduleType.toLowerCase();
+        if (skipped) cssClass += ' df-state-skipped';
         var nodeId = this._editor.addNode(
             moduleId, inputPorts.length, outputPorts.length,
-            x, y, 'df-type-' + moduleType.toLowerCase(),
+            x, y, cssClass,
             { moduleId: moduleId }, html
         );
         this._portMap[nodeId] = {
