@@ -337,7 +337,7 @@ namespace Server.Services.Ai
                     if (voiceModelSettings.HasValue)
                         movieVoice["model-settings"] = ConvertJsonElement(voiceModelSettings.Value)!;
 
-                    perSceneDuration = GetImageSceneDuration(s.ImageDuration);
+                    perSceneDuration = GetImageSceneDuration(s.ImageDuration, voiceText, totalSceneCount);
                 }
             }
 
@@ -618,7 +618,7 @@ namespace Server.Services.Ai
                 {
                     // imageDuration > 0 → fixed duration per scene
                     // imageDuration <= 0 (-1 = auto) → estimate from voice text
-                    var perSceneDuration = GetImageSceneDuration(s.ImageDuration);
+                    var perSceneDuration = GetImageSceneDuration(s.ImageDuration, textInput, mediaList.Count);
 
                     for (var i = 0; i < mediaList.Count; i++)
                     {
@@ -749,7 +749,7 @@ namespace Server.Services.Ai
 
             if (useMovieLevelVoice)
             {
-                perSceneDuration = GetImageSceneDuration(s.ImageDuration);
+                perSceneDuration = GetImageSceneDuration(s.ImageDuration, textInput, sceneCount);
             }
 
             var scriptParts = useMovieLevelVoice ? new List<string>() : SplitScript(textInput, sceneCount);
@@ -996,11 +996,29 @@ namespace Server.Services.Ai
         /// </summary>
         /// <summary>
         /// Get per-scene duration for image slideshows.
-        /// Passes through the configured value directly (including -1 for auto).
+        /// When imageDuration > 0, use that fixed value.
+        /// When imageDuration &lt;= 0 (-1 = auto), estimate from voice text:
+        ///   TTS speaks ~150 words/min (~2.5 words/sec), so we divide the estimated
+        ///   total voice duration evenly across the scenes (min 3s per scene).
         /// </summary>
-        private static double GetImageSceneDuration(double imageDuration)
+        private static double GetImageSceneDuration(double imageDuration, string? voiceText = null, int sceneCount = 1)
         {
-            return imageDuration;
+            if (imageDuration > 0)
+                return imageDuration;
+
+            // Auto mode: estimate from voice text length
+            if (!string.IsNullOrWhiteSpace(voiceText) && sceneCount > 0)
+            {
+                var wordCount = voiceText.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+                var estimatedTotalSeconds = wordCount / 2.5;
+                // Add buffer for start delay + extra-time padding
+                estimatedTotalSeconds += sceneCount * 0.7;
+                var perScene = estimatedTotalSeconds / sceneCount;
+                return Math.Max(perScene, 3.0);
+            }
+
+            // Fallback: no voice text available, use sensible default
+            return 5.0;
         }
 
         private static List<string> SplitScript(string script, int maxParts)
