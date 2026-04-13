@@ -1012,11 +1012,27 @@ namespace Server.Services.Ai
                         if (config.TryGetValue("videoPrompt", out var vp2))
                             editInput = vp2 is JsonElement vp2El ? vp2El.GetString() ?? "" : vp2?.ToString() ?? "";
 
-                        // Search upstream steps for the full narrative Content (not items)
+                        // Search upstream steps for the full narrative Content (not items).
+                        // Respect branch boundaries: only look at steps in the same branch
+                        // or main steps at or before the fork point.
                         if (string.IsNullOrWhiteSpace(editInput))
                         {
+                            var scriptBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+                            var maxMainStep = (pm.BranchId != "main" && pm.BranchFromStep.HasValue)
+                                ? pm.BranchFromStep.Value
+                                : pm.StepOrder;
+
                             foreach (var prevOrder in stepOutputs.Keys.Where(k => k < pm.StepOrder).OrderByDescending(k => k))
                             {
+                                // Skip steps outside this step's visible scope
+                                if (scriptBranches.TryGetValue(prevOrder, out var prevBranch))
+                                {
+                                    if (prevBranch == "main" && prevOrder > maxMainStep)
+                                        continue;
+                                    if (prevBranch != "main" && prevBranch != pm.BranchId)
+                                        continue;
+                                }
+
                                 if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video" || pt == "Image"))
                                     continue;
                                 if (stepOutputs.TryGetValue(prevOrder, out var po) && !string.IsNullOrWhiteSpace(po.Content))
@@ -5093,11 +5109,28 @@ Datos de la ejecucion:
                         if (bConfig.TryGetValue("videoPrompt", out var bVp))
                             bEditInput = bVp is JsonElement bVpEl ? bVpEl.GetString() ?? "" : bVp?.ToString() ?? "";
 
-                        // Search upstream steps for the full narrative Content (not items)
+                        // Search upstream steps for the full narrative Content (not items).
+                        // For branch steps: only consider steps in the same branch or main
+                        // steps at or before the fork point, so we don't pick up outputs
+                        // from sibling branches or main steps that run after the fork.
                         if (string.IsNullOrWhiteSpace(bEditInput))
                         {
+                            var bScriptBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+                            var bMaxMainStep = (bpm.BranchId != "main" && bpm.BranchFromStep.HasValue)
+                                ? bpm.BranchFromStep.Value
+                                : bpm.StepOrder;
+
                             foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderByDescending(k => k))
                             {
+                                // Skip steps outside this branch's visible scope
+                                if (bScriptBranches.TryGetValue(prevOrder, out var prevBranch))
+                                {
+                                    if (prevBranch == "main" && prevOrder > bMaxMainStep)
+                                        continue;
+                                    if (prevBranch != "main" && prevBranch != bpm.BranchId)
+                                        continue;
+                                }
+
                                 if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video" || pt == "Image"))
                                     continue;
                                 if (stepOutputs.TryGetValue(prevOrder, out var po) && !string.IsNullOrWhiteSpace(po.Content))
