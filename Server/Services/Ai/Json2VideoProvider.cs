@@ -274,11 +274,21 @@ namespace Server.Services.Ai
                 throw new InvalidOperationException("Json2Video: no se encontraron escenas en el input JSON");
 
             // If voice is concentrated in a single scene while others are image-only,
-            // redistribute it across all scenes so each image gets narration and
-            // scene durations auto-size from voice (images adapt to narration length).
-            RedistributeVoiceAcrossScenes(scenes, s);
+            // move it to movie level so the API generates a single continuous voiceover.
+            // Scene durations are estimated from voice length so images cycle in sync.
+            var movieVoice = MoveVoiceToMovieLevel(scenes, s);
 
             var movie = BuildMoviePayload(s, scenes);
+
+            // Add movie-level voice element (continuous voiceover across all scenes)
+            if (movieVoice is not null)
+            {
+                var movieElements = movie.ContainsKey("elements")
+                    ? (List<object>)movie["elements"]
+                    : new List<object>();
+                movieElements.Add(movieVoice);
+                movie["elements"] = movieElements;
+            }
 
             // Movie-level audio (background music)
             if (root.TryGetProperty("audio", out var audioEl) && audioEl.ValueKind == JsonValueKind.Object)
@@ -790,12 +800,13 @@ namespace Server.Services.Ai
 
         /// <summary>
         /// When voice is concentrated in a single scene while other scenes are image-only,
-        /// redistribute the voice text across all scenes so each image has narration.
-        /// Sets image duration to -2 (match parent scene, which auto-sizes from voice).
+        /// extract the voice for movie-level placement so the API generates one continuous
+        /// voiceover. Scene durations are estimated from word count so images cycle in sync.
+        /// Returns the voice element to add at movie level, or null if not applicable.
         /// </summary>
-        private static void RedistributeVoiceAcrossScenes(List<object> scenes, VideoSettings s)
+        private static Dictionary<string, object>? MoveVoiceToMovieLevel(List<object> scenes, VideoSettings s)
         {
-            if (scenes.Count < 2) return;
+            if (scenes.Count < 2) return null;
 
             // Analyze scenes: find which have voice and which are image-only
             int voiceSceneIdx = -1;
@@ -832,63 +843,61 @@ namespace Server.Services.Ai
                 if (!sceneHasVoice && sceneHasImage) imageOnlyScenes++;
             }
 
-            // Only redistribute if exactly one scene has voice and others are image-only
+            // Only move if exactly one scene has voice and others are image-only
             if (totalVoiceScenes != 1 || voiceSceneIdx < 0 || originalVoice is null || imageOnlyScenes == 0)
-                return;
+                return null;
 
             var voiceText = originalVoice.TryGetValue("text", out var txtVal) ? txtVal?.ToString() : null;
-            if (string.IsNullOrWhiteSpace(voiceText)) return;
+            if (string.IsNullOrWhiteSpace(voiceText)) return null;
 
-            // Preserve voice settings from the original element
+            // Build movie-level voice element preserving original settings
             var voiceId = originalVoice.TryGetValue("voice", out var vid) ? vid?.ToString() ?? s.VoiceName : s.VoiceName;
             var voiceModel = originalVoice.TryGetValue("model", out var vm) ? vm?.ToString() ?? s.VoiceModel : s.VoiceModel;
             originalVoice.TryGetValue("model-settings", out var modelSettings);
 
-            // Split voice text across all scenes
-            var scriptParts = SplitScript(voiceText, scenes.Count);
+            var movieVoice = new Dictionary<string, object>
+            {
+                ["type"] = "voice",
+                ["text"] = voiceText,
+                ["voice"] = voiceId,
+                ["model"] = voiceModel,
+                ["start"] = 0.0,
+                ["extra-time"] = 1.0
+            };
+            if (modelSettings is not null)
+                movieVoice["model-settings"] = modelSettings;
 
+            // Estimate voice duration (~2.5 words/sec for typical TTS)
+            // and distribute evenly across scenes so images cycle in sync with narration.
+            var wordCount = voiceText.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
+            var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, scenes.Count * 3.0);
+            var perSceneDuration = Math.Max(estimatedVoiceSeconds / scenes.Count, 3.0);
+
+            // Update all scenes: remove voice from scenes, set durations, images use -2
             for (int i = 0; i < scenes.Count; i++)
             {
                 if (scenes[i] is not Dictionary<string, object> scene) continue;
                 if (!scene.TryGetValue("elements", out var elemObj) || elemObj is not List<object> elements) continue;
 
-                // Remove existing voice element from this scene
+                // Remove voice element — it now lives at movie level
                 elements.RemoveAll(el => el is Dictionary<string, object?> d &&
                     d.TryGetValue("type", out var t) && t?.ToString() == "voice");
 
-                var part = i < scriptParts.Count ? scriptParts[i] : null;
-                bool isLast = i == scenes.Count - 1;
+                // Set scene duration based on estimated voice time
+                scene["duration"] = perSceneDuration;
 
-                if (!string.IsNullOrWhiteSpace(part))
+                // Images use -2 (match parent scene duration)
+                foreach (var el in elements)
                 {
-                    var newVoice = new Dictionary<string, object>
+                    if (el is Dictionary<string, object?> imgD &&
+                        imgD.TryGetValue("type", out var imgT) && imgT?.ToString() == "image")
                     {
-                        ["type"] = "voice",
-                        ["text"] = part,
-                        ["voice"] = voiceId,
-                        ["model"] = voiceModel,
-                        ["start"] = 0.4,
-                        ["extra-time"] = isLast ? 1.0 : 0.3
-                    };
-                    if (modelSettings is not null)
-                        newVoice["model-settings"] = modelSettings;
-
-                    elements.Add(newVoice);
-
-                    // With voice, scene auto-sizes from narration duration
-                    scene["duration"] = -1.0;
-
-                    // Images use -2 (match parent scene duration from voice)
-                    foreach (var el in elements)
-                    {
-                        if (el is Dictionary<string, object?> imgD &&
-                            imgD.TryGetValue("type", out var imgT) && imgT?.ToString() == "image")
-                        {
-                            imgD["duration"] = -2;
-                        }
+                        imgD["duration"] = -2;
                     }
                 }
             }
+
+            return movieVoice;
         }
 
         /// <summary>
