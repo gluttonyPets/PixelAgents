@@ -78,7 +78,7 @@ namespace Server.Services.Instagram
                 if (videos.Count > 0)
                 {
                     var escapedUrl = videos[0].Url.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                    parts.Add($"video: {{ url: \"{escapedUrl}\" }}");
+                    parts.Add($"videos: [{{ url: \"{escapedUrl}\" }}]");
                 }
 
                 if (parts.Count > 0)
