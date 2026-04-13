@@ -99,6 +99,24 @@ namespace Server.Services.Telegram
             await EnsureSuccessAsync(response);
         }
 
+        public async Task SendVideoAsync(TelegramConfig config, byte[] videoBytes, string fileName, string? caption = null)
+        {
+            var url = $"{ApiBase}/bot{config.BotToken}/sendVideo";
+
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(config.ChatId), "chat_id");
+
+            var fileContent = new ByteArrayContent(videoBytes);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("video/mp4");
+            form.Add(fileContent, "video", fileName);
+
+            if (!string.IsNullOrWhiteSpace(caption))
+                form.Add(new StringContent(caption), "caption");
+
+            var response = await _http.PostAsync(url, form);
+            await EnsureSuccessAsync(response);
+        }
+
         /// <summary>
         /// Registers a webhook URL with Telegram Bot API.
         /// Call this once when saving Telegram config.

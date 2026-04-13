@@ -1781,7 +1781,7 @@ namespace Server.Services.Ai
         private async Task SendInteractionMessageAsync(
             Guid projectId, Guid executionId, int stepOrder, string stepName, string channelName,
             bool useTelegram, TelegramConfig? tgConfig, WhatsAppConfig? waConfig,
-            bool sendText, string message, string? continueLabel, List<string> imageFilePaths)
+            bool sendText, string message, string? continueLabel, List<string> mediaFilePaths)
         {
             if (sendText)
             {
@@ -1804,27 +1804,38 @@ namespace Server.Services.Ai
                     await _whatsApp.SendTextMessageAsync(waConfig, message);
             }
 
-            foreach (var filePath in imageFilePaths)
+            foreach (var filePath in mediaFilePaths)
             {
                 if (!System.IO.File.Exists(filePath)) continue;
                 var fileBytes = await System.IO.File.ReadAllBytesAsync(filePath);
                 var fileName = Path.GetFileName(filePath);
+                var ext = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
+                var isVideo = ext is "mp4" or "mov" or "avi" or "webm";
 
                 if (useTelegram)
-                    await _telegram.SendPhotoAsync(tgConfig!, fileBytes, fileName);
+                {
+                    if (isVideo)
+                        await _telegram.SendVideoAsync(tgConfig!, fileBytes, fileName);
+                    else
+                        await _telegram.SendPhotoAsync(tgConfig!, fileBytes, fileName);
+                }
                 else if (waConfig is not null)
                 {
-                    var ext = Path.GetExtension(filePath).TrimStart('.');
-                    var contentType = $"image/{(ext == "jpg" ? "jpeg" : ext)}";
+                    var contentType = isVideo
+                        ? $"video/{ext}"
+                        : $"image/{(ext == "jpg" ? "jpeg" : ext)}";
                     var mediaId = await _whatsApp.UploadMediaAsync(waConfig, fileBytes, contentType, fileName);
-                    await _whatsApp.SendImageMessageAsync(waConfig, mediaId);
+                    if (isVideo)
+                        await _whatsApp.SendVideoMessageAsync(waConfig, mediaId);
+                    else
+                        await _whatsApp.SendImageMessageAsync(waConfig, mediaId);
                 }
             }
 
-            if (imageFilePaths.Count > 0)
+            if (mediaFilePaths.Count > 0)
             {
                 await _logger.LogAsync(projectId, executionId, "info",
-                    $"Imagenes del paso anterior enviadas a {channelName}", stepOrder, stepName);
+                    $"Media del paso anterior enviada a {channelName}", stepOrder, stepName);
             }
         }
 
@@ -1850,9 +1861,11 @@ namespace Server.Services.Ai
                 var message = data.GetProperty("message").GetString() ?? "";
                 var continueLabel = data.TryGetProperty("continueLabel", out var cl) && cl.ValueKind != JsonValueKind.Null
                     ? cl.GetString() : null;
-                var imageFilePaths = data.TryGetProperty("imageFilePaths", out var ifp)
-                    ? ifp.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList()
-                    : new List<string>();
+                var mediaFilePaths = data.TryGetProperty("mediaFilePaths", out var mfp)
+                    ? mfp.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList()
+                    : data.TryGetProperty("imageFilePaths", out var ifp)
+                        ? ifp.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList()
+                        : new List<string>();
                 var sendText = data.TryGetProperty("sendText", out var st) && st.GetBoolean();
                 var stepName = data.TryGetProperty("stepName", out var sn) ? sn.GetString() ?? "" : "";
                 var channelName = data.TryGetProperty("channelName", out var cn) ? cn.GetString() ?? "" : "Telegram";
@@ -1864,7 +1877,7 @@ namespace Server.Services.Ai
                 await SendInteractionMessageAsync(
                     Guid.Empty, Guid.Empty, nextQueued.StepOrder, stepName, channelName,
                     true, tgConfig, null,
-                    sendText, message, continueLabel, imageFilePaths);
+                    sendText, message, continueLabel, mediaFilePaths);
 
                 // Mark as sent (no longer queued)
                 nextQueued.State = "waiting";
@@ -2871,8 +2884,8 @@ Datos de la ejecucion:
                     : $"▶️ Continuar con: {nextStepName}";
             }
 
-            // Collect image file paths for later sending
-            var imageFilePaths = new List<string>();
+            // Collect media file paths (images + videos) for later sending
+            var mediaFilePaths = new List<string>();
             if (sendImages)
             {
                 var prevStepExec = await db.StepExecutions
@@ -2882,12 +2895,12 @@ Datos de la ejecucion:
                 if (prevStepExec?.Files is not null)
                 {
                     foreach (var file in prevStepExec.Files
-                        .Where(f => f.ContentType.StartsWith("image/"))
+                        .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
                         .OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase))
                     {
                         var filePath = Path.Combine(ResolveWorkspacePath(execution.WorkspacePath), file.FilePath);
                         if (System.IO.File.Exists(filePath))
-                            imageFilePaths.Add(filePath);
+                            mediaFilePaths.Add(filePath);
                     }
                 }
             }
@@ -2910,7 +2923,7 @@ Datos de la ejecucion:
                 await SendInteractionMessageAsync(
                     project.Id, execution.Id, pm.StepOrder, stepName, channelName,
                     useTelegram, tgConfig, waConfig,
-                    sendText, message, continueLabel, imageFilePaths);
+                    sendText, message, continueLabel, mediaFilePaths);
             }
 
             // 5. If not waiting for response, complete step immediately and continue pipeline
@@ -2987,7 +3000,7 @@ Datos de la ejecucion:
                 {
                     message,
                     continueLabel,
-                    imageFilePaths,
+                    mediaFilePaths,
                     sendText,
                     stepName,
                     channelName
