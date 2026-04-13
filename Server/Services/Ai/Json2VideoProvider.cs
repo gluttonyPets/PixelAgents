@@ -180,13 +180,18 @@ namespace Server.Services.Ai
                 var pollDoc = JsonDocument.Parse(pollBody);
                 var root = pollDoc.RootElement;
 
-                var status = root.TryGetProperty("status", out var statusEl)
+                // json2video API v2 wraps status inside a "movie" object
+                var movieNode = root.TryGetProperty("movie", out var movieEl) ? movieEl : root;
+
+                var status = movieNode.TryGetProperty("status", out var statusEl)
                     ? statusEl.GetString() ?? ""
                     : "";
 
+                Console.WriteLine($"[Json2Video] Poll attempt {attempt + 1}/{maxAttempts}: status={status}");
+
                 if (status == "error")
                 {
-                    var errorMsg = root.TryGetProperty("message", out var msgEl)
+                    var errorMsg = movieNode.TryGetProperty("message", out var msgEl)
                         ? msgEl.GetString() ?? "Error desconocido"
                         : "Error desconocido";
                     return AiResult.Fail($"Json2Video render error: {errorMsg}");
@@ -196,7 +201,7 @@ namespace Server.Services.Ai
                     continue;
 
                 // Download rendered video
-                var videoUrl = root.TryGetProperty("url", out var urlEl)
+                var videoUrl = movieNode.TryGetProperty("url", out var urlEl)
                     ? urlEl.GetString()
                     : null;
 
@@ -206,8 +211,19 @@ namespace Server.Services.Ai
                 using var dlClient = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
                 var videoBytes = await dlClient.GetByteArrayAsync(videoUrl);
 
-                var duration = root.TryGetProperty("duration", out var durEl) ? durEl.GetInt32() : 0;
-                var renderTime = root.TryGetProperty("rendering_time", out var rtEl) ? rtEl.GetInt32() : 0;
+                // duration can be a decimal (e.g. 20.32), read as double
+                var duration = movieNode.TryGetProperty("duration", out var durEl)
+                    ? (durEl.ValueKind == JsonValueKind.Number ? (int)durEl.GetDouble() : 0)
+                    : 0;
+                // Compute render time from timestamps if available
+                var renderTime = 0;
+                if (movieNode.TryGetProperty("ended_at", out var endedEl) &&
+                    movieNode.TryGetProperty("created_at", out var createdEl))
+                {
+                    if (DateTime.TryParse(endedEl.GetString(), out var ended) &&
+                        DateTime.TryParse(createdEl.GetString(), out var created))
+                        renderTime = (int)(ended - created).TotalSeconds;
+                }
 
                 var result = AiResult.OkFile(videoBytes, "video/mp4", new Dictionary<string, object>
                 {
