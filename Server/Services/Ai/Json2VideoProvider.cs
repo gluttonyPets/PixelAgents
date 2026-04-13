@@ -321,7 +321,7 @@ namespace Server.Services.Ai
                     if (voiceModelSettings.HasValue)
                         movieVoice["model-settings"] = ConvertJsonElement(voiceModelSettings.Value)!;
 
-                    perSceneDuration = CalculatePerSceneDuration(s.ImageDuration, voiceText!, totalSceneCount);
+                    perSceneDuration = GetImageSceneDuration(s.ImageDuration);
                 }
             }
 
@@ -602,7 +602,7 @@ namespace Server.Services.Ai
                 {
                     // imageDuration > 0 → fixed duration per scene
                     // imageDuration <= 0 (-1 = auto) → estimate from voice text
-                    var perSceneDuration = CalculatePerSceneDuration(s.ImageDuration, textInput, mediaList.Count);
+                    var perSceneDuration = GetImageSceneDuration(s.ImageDuration);
 
                     for (var i = 0; i < mediaList.Count; i++)
                     {
@@ -733,7 +733,7 @@ namespace Server.Services.Ai
 
             if (useMovieLevelVoice)
             {
-                perSceneDuration = CalculatePerSceneDuration(s.ImageDuration, textInput, sceneCount);
+                perSceneDuration = GetImageSceneDuration(s.ImageDuration);
             }
 
             var scriptParts = useMovieLevelVoice ? new List<string>() : SplitScript(textInput, sceneCount);
@@ -876,12 +876,9 @@ namespace Server.Services.Ai
             {
                 if (mediaType == "image")
                 {
-                    // When voice is present, use -2 so the image matches the scene duration
-                    // (which auto-sizes from the voice narration). Without voice, use
-                    // configured imageDuration as a fixed display time (min 0.25s).
-                    var imgDuration = hasVoice
-                        ? -2.0
-                        : (s.ImageDuration >= 0.25 ? s.ImageDuration : 5.0);
+                    // When voice is present, use -2 so the image matches the scene duration.
+                    // Without voice, pass through configured imageDuration directly.
+                    var imgDuration = hasVoice ? -2.0 : s.ImageDuration;
 
                     var imgElement = new Dictionary<string, object>
                     {
@@ -982,19 +979,12 @@ namespace Server.Services.Ai
         /// The number of parts is capped so each scene has substantial content.
         /// </summary>
         /// <summary>
-        /// Calculate per-scene duration for image slideshows.
-        /// If imageDuration is positive (user configured), use it directly.
-        /// If imageDuration is ≤0 (-1 = auto), estimate from voice text word count.
+        /// Get per-scene duration for image slideshows.
+        /// Passes through the configured value directly (including -1 for auto).
         /// </summary>
-        private static double CalculatePerSceneDuration(double imageDuration, string voiceText, int sceneCount)
+        private static double GetImageSceneDuration(double imageDuration)
         {
-            if (imageDuration >= 0.25)
-                return imageDuration;
-
-            // Auto: estimate from voice (~2.5 words/sec for typical TTS)
-            var wordCount = voiceText.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
-            var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, sceneCount * 3.0);
-            return Math.Max(estimatedVoiceSeconds / sceneCount, 3.0);
+            return imageDuration;
         }
 
         private static List<string> SplitScript(string script, int maxParts)
