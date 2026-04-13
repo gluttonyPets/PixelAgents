@@ -1131,18 +1131,39 @@ namespace Server.Services.Ai
                         var imgCount = mediaEntries.Count(m => m["type"] == "image");
                         var vidCount = mediaEntries.Count(m => m["type"] == "video");
 
-                        // Guard: don't render without media if there are Image/VideoSearch modules
+                        // Guard: don't render without media if connected Image/VideoSearch modules exist
                         if (imgCount + vidCount == 0)
                         {
-                            var hasMediaModules = project.ProjectModules
-                                .Any(m => m.AiModule.ModuleType is "Image" or "VideoSearch");
-                            if (hasMediaModules)
+                            // Only check for media modules actually connected to this VideoEdit
+                            var hasConnectedMedia = false;
+                            if (config.TryGetValue("sceneInputs", out var guardSceneInputs))
+                            {
+                                Dictionary<string, JsonElement>? guardMap = null;
+                                if (guardSceneInputs is JsonElement gEl && gEl.ValueKind == JsonValueKind.Object)
+                                    guardMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(gEl.GetRawText());
+                                else if (guardSceneInputs is string gStr)
+                                    guardMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(gStr);
+
+                                if (guardMap is not null)
+                                    hasConnectedMedia = guardMap.Values.Any(v =>
+                                        v.ValueKind == JsonValueKind.Array && v.EnumerateArray().Any(s =>
+                                            s.TryGetProperty("moduleType", out var mt)
+                                            && mt.GetString() is "Image" or "VideoSearch"));
+                            }
+                            else
+                            {
+                                // No sceneInputs — fallback mode, check all modules
+                                hasConnectedMedia = project.ProjectModules
+                                    .Any(m => m.AiModule.ModuleType is "Image" or "VideoSearch");
+                            }
+
+                            if (hasConnectedMedia)
                             {
                                 await _logger.LogAsync(projectId, executionId, "error",
-                                    "VideoEdit: hay modulos de imagen/video en el pipeline pero no se encontraron archivos.",
+                                    "VideoEdit: hay modulos de imagen/video conectados pero no se encontraron archivos.",
                                     pm.StepOrder, stepName);
                                 await FailStep(stepExecution, execution,
-                                    "VideoEdit: no se encontraron imagenes/videos. Asegurate de que se ejecuten antes del VideoEdit.", db);
+                                    "VideoEdit: no se encontraron imagenes/videos conectados. Asegurate de que se ejecuten antes del VideoEdit.", db);
                                 return execution;
                             }
                         }
@@ -5125,43 +5146,63 @@ Datos de la ejecucion:
                         if (string.IsNullOrWhiteSpace(bEditInput))
                             throw new InvalidOperationException($"[{branchId}] VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'");
 
-                        // Collect media URLs from ALL completed VideoSearch and Image steps.
+                        // Collect media URLs from connected steps via sceneInputs, or fallback to ALL steps
                         var bMediaEntries = new List<Dictionary<string, string>>();
+                        var bPerSceneMedia = new Dictionary<string, List<Dictionary<string, string>>>();
                         var bServerBase = (_configuration["BaseUrl"]
                             ?? _configuration["AllowedOrigin"]
                             ?? "").TrimEnd('/');
 
-                        foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
+                        // Use sceneInputs (per-scene connections) if available
+                        if (bConfig.TryGetValue("sceneInputs", out var bSceneInputsVal))
                         {
-                            if (!stepModuleTypes.TryGetValue(prevOrder, out var bPrevType))
-                                continue;
+                            Dictionary<string, JsonElement>? bSceneInputsMap = null;
+                            if (bSceneInputsVal is JsonElement bSiEl && bSiEl.ValueKind == JsonValueKind.Object)
+                                bSceneInputsMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(bSiEl.GetRawText());
+                            else if (bSceneInputsVal is string bSiStr)
+                                bSceneInputsMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(bSiStr);
 
-                            if (bPrevType == "VideoSearch")
+                            if (bSceneInputsMap is not null)
                             {
-                                string? bDlUrl = null;
-                                if (stepResults.TryGetValue(prevOrder, out var bPrevResult)
-                                    && bPrevResult.Metadata.TryGetValue("downloadUrl", out var dl) && dl is string dlStr)
-                                    bDlUrl = dlStr;
-                                else if (stepOutputs.TryGetValue(prevOrder, out var bPrevOutput)
-                                    && bPrevOutput.Metadata.TryGetValue("downloadUrl", out var bDlMeta))
-                                    bDlUrl = bDlMeta is JsonElement je ? je.GetString() : bDlMeta?.ToString();
-
-                                if (!string.IsNullOrEmpty(bDlUrl))
-                                    bMediaEntries.Add(new Dictionary<string, string> { ["url"] = bDlUrl, ["type"] = "video" });
-                            }
-                            else if (bPrevType == "Image")
-                            {
-                                if (stepOutputs.TryGetValue(prevOrder, out var bImgOutput))
+                                foreach (var (portId, sourcesEl) in bSceneInputsMap)
                                 {
-                                    foreach (var file in bImgOutput.Files)
+                                    var sceneMedia = new List<Dictionary<string, string>>();
+                                    if (sourcesEl.ValueKind == JsonValueKind.Array)
                                     {
-                                        if (file.FileId == Guid.Empty) continue;
-                                        var publicUrl = $"{bServerBase}/api/public/files/{tenantDbName}/{execution.Id}/{file.FileId}/{file.FileName}";
-                                        bMediaEntries.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                                        foreach (var src in sourcesEl.EnumerateArray())
+                                        {
+                                            var srcStep = src.TryGetProperty("stepOrder", out var soEl) ? soEl.GetInt32() : 0;
+                                            var srcType = src.TryGetProperty("moduleType", out var mtEl) ? mtEl.GetString() ?? "" : "";
+                                            var srcPort = src.TryGetProperty("fromPort", out var fpEl) ? fpEl.GetString() ?? "" : "";
+
+                                            CollectMediaFromStep(srcStep, srcType, srcPort, stepResults, stepOutputs,
+                                                stepModuleTypes, bServerBase, tenantDbName, execution.Id, sceneMedia);
+                                        }
+                                    }
+                                    if (sceneMedia.Count > 0)
+                                    {
+                                        bPerSceneMedia[portId] = sceneMedia;
+                                        bMediaEntries.AddRange(sceneMedia);
                                     }
                                 }
                             }
                         }
+
+                        // Fallback: if no scene connections configured, collect from ALL completed steps
+                        if (bMediaEntries.Count == 0 && !bConfig.ContainsKey("sceneInputs"))
+                        {
+                            foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
+                            {
+                                if (!stepModuleTypes.TryGetValue(prevOrder, out var bPrevType))
+                                    continue;
+                                CollectMediaFromStep(prevOrder, bPrevType, "", stepResults, stepOutputs,
+                                    stepModuleTypes, bServerBase, tenantDbName, execution.Id, bMediaEntries);
+                            }
+                        }
+
+                        // Inject per-scene media if available
+                        if (bPerSceneMedia.Count > 0)
+                            bConfig["perSceneMedia"] = JsonSerializer.Serialize(bPerSceneMedia);
 
                         if (bMediaEntries.Count > 0 && !bConfig.ContainsKey("mediaEntries"))
                             bConfig["mediaEntries"] = JsonSerializer.Serialize(bMediaEntries);
@@ -5190,16 +5231,38 @@ Datos de la ejecucion:
                         var bImgCount = bMediaEntries.Count(m => m["type"] == "image");
                         var bVidCount = bMediaEntries.Count(m => m["type"] == "video");
 
-                        // Guard: if there are Image/VideoSearch modules in the pipeline but 0 media collected,
-                        // something went wrong — don't waste API credits rendering without media.
+                        // Guard: if scene ports are connected to Image/VideoSearch modules but 0 media collected,
+                        // those connected steps haven't produced output yet — fail early.
                         if (bImgCount + bVidCount == 0)
                         {
-                            var hasMediaModules = project.ProjectModules
-                                .Any(m => m.AiModule.ModuleType is "Image" or "VideoSearch");
-                            if (hasMediaModules)
+                            // Only check for media modules that are actually CONNECTED to this VideoEdit
+                            var hasConnectedMediaModules = false;
+                            if (bConfig.TryGetValue("sceneInputs", out var bGuardSceneInputs))
+                            {
+                                Dictionary<string, JsonElement>? guardMap = null;
+                                if (bGuardSceneInputs is JsonElement gEl && gEl.ValueKind == JsonValueKind.Object)
+                                    guardMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(gEl.GetRawText());
+                                else if (bGuardSceneInputs is string gStr)
+                                    guardMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(gStr);
+
+                                if (guardMap is not null)
+                                    hasConnectedMediaModules = guardMap.Values.Any(v =>
+                                        v.ValueKind == JsonValueKind.Array && v.EnumerateArray().Any(s =>
+                                            s.TryGetProperty("moduleType", out var mt)
+                                            && mt.GetString() is "Image" or "VideoSearch"));
+                            }
+                            else
+                            {
+                                // No sceneInputs configured — fallback mode collects from all steps,
+                                // so check if there are any media modules in the pipeline
+                                hasConnectedMediaModules = project.ProjectModules
+                                    .Any(m => m.AiModule.ModuleType is "Image" or "VideoSearch");
+                            }
+
+                            if (hasConnectedMediaModules)
                             {
                                 throw new InvalidOperationException(
-                                    $"[{branchId}] VideoEdit: hay modulos de imagen/video en el pipeline pero no se encontraron archivos. " +
+                                    $"[{branchId}] VideoEdit: hay modulos de imagen/video conectados pero no se encontraron archivos. " +
                                     "Asegurate de que se ejecuten antes del VideoEdit.");
                             }
                         }
