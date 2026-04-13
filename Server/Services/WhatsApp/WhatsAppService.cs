@@ -108,6 +108,32 @@ namespace Server.Services.WhatsApp
             await EnsureSuccessAsync(response);
         }
 
+        public async Task SendVideoMessageAsync(WhatsAppConfig config, string mediaId, string? caption = null)
+        {
+            var url = $"{GraphApiBase}/{config.PhoneNumberId}/messages";
+
+            var videoObj = new Dictionary<string, object> { ["id"] = mediaId };
+            if (!string.IsNullOrWhiteSpace(caption))
+                videoObj["caption"] = caption;
+
+            var payload = new
+            {
+                messaging_product = "whatsapp",
+                to = NormalizePhone(config.RecipientNumber),
+                type = "video",
+                video = videoObj
+            };
+
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken);
+
+            var response = await _http.SendAsync(request);
+            await EnsureSuccessAsync(response);
+        }
+
         public static (bool Valid, string? Challenge) VerifyWebhook(
             string expectedVerifyToken, string? hubMode, string? hubVerifyToken, string? hubChallenge)
         {
