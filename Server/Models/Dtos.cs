@@ -53,7 +53,7 @@ namespace Server.Models
     public record ModuleConfigEntry(Guid ModuleId, string Key, string Value);
 
     // ── Execution ──
-    public record ExecuteProjectRequest(string? UserInput);
+    public record ExecuteProjectRequest(string? UserInput, bool UseHistory = true);
     public record RetryFromStepRequest(int StepOrder, string? Comment);
     public record OrchestratorReviewRequest(bool Approved, string? Comment);
     public record CheckpointReviewRequest(bool Approved);
@@ -87,7 +87,7 @@ namespace Server.Models
     // ── Telegram ──
     public record TelegramConfigDto(string BotToken, string ChatId);
 
-    // ── Instagram (Buffer) ──
+    // ── Instagram (Buffer) / TikTok (Buffer) ──
     public record BufferConfigDto(string ApiKey, string ChannelId);
 
     // ── Module Files ──

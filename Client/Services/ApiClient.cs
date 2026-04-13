@@ -282,9 +282,9 @@ public class ApiClient
 
     // ── Executions ──
 
-    public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput)
+    public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput, bool useHistory = true)
     {
-        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute", new ExecuteProjectRequest(userInput));
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute", new ExecuteProjectRequest(userInput, useHistory));
         if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
             return (false, await ReadErrorAsync(resp));
@@ -488,6 +488,22 @@ public class ApiClient
     public async Task<(bool Ok, string? Error)> SaveInstagramConfigAsync(Guid projectId, BufferConfigDto dto)
     {
         var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/instagram-config", dto);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    // ── TikTok (Buffer) Config ──
+
+    public async Task<BufferConfigDto?> GetTikTokConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/tiktok-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<BufferConfigDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SaveTikTokConfigAsync(Guid projectId, BufferConfigDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/tiktok-config", dto);
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }

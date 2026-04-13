@@ -132,6 +132,10 @@ else
                                 <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
                             }
                             <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
+                            <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas">
+                                <input type="checkbox" @bind="_useHistory" />
+                                <span>No repetir tematicas anteriores</span>
+                            </label>
                             <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
                                 <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
                                     @if (_executing)
@@ -208,11 +212,15 @@ else
 
                         <!-- Step card -->
                         <div class="pipeline-step">
-                            <div class="step-card-v2">
+                            <div class="step-card-v2 @(IsStepSkipped(pm) ? "step-skipped" : "")">
                                 <div class="step-card-header">
                                     <span class="step-number">@GetStepLabel(pm)</span>
                                     <span class="step-title">@(pm.StepName ?? pm.AiModuleName)</span>
                                     <span class="badge badge-@(pm.ModuleType.ToLower())">@pm.ModuleType</span>
+                                    @if (IsStepSkipped(pm))
+                                    {
+                                        <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
+                                    }
                                 </div>
                                 <div class="step-card-meta">
                                     <span>@pm.AiModuleName</span>
@@ -230,6 +238,7 @@ else
                                 <div class="step-card-actions">
                                     <button class="btn btn-xs" @onclick="() => MoveStep(pm, -1)" disabled="@(pm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
                                     <button class="btn btn-xs" @onclick="() => MoveStep(pm, 1)" disabled="@(pm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
+                                    <button class="btn btn-xs" style="@(IsStepSkipped(pm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(pm)" title="@(IsStepSkipped(pm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(pm) ? "Activar" : "Saltar")</button>
                                     <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
                                     <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
                                 </div>
@@ -263,11 +272,15 @@ else
                                                 {
                                                     <div class="branch-connector"></div>
                                                 }
-                                                <div class="step-card-v2 branch-step">
+                                                <div class="step-card-v2 branch-step @(IsStepSkipped(rpm) ? "step-skipped" : "")">
                                                     <div class="step-card-header">
                                                         <span class="step-number">@GetStepLabel(rpm)</span>
                                                         <span class="step-title">@(rpm.StepName ?? rpm.AiModuleName)</span>
                                                         <span class="badge badge-@(rpm.ModuleType.ToLower())">@rpm.ModuleType</span>
+                                                        @if (IsStepSkipped(rpm))
+                                                        {
+                                                            <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
+                                                        }
                                                     </div>
                                                     <div class="step-card-meta">
                                                         <span>@rpm.AiModuleName</span>
@@ -285,6 +298,7 @@ else
                                                     <div class="step-card-actions">
                                                         <button class="btn btn-xs" @onclick="() => MoveStep(rpm, -1)" disabled="@(rpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
                                                         <button class="btn btn-xs" @onclick="() => MoveStep(rpm, 1)" disabled="@(rpm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
+                                                        <button class="btn btn-xs" style="@(IsStepSkipped(rpm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(rpm)" title="@(IsStepSkipped(rpm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(rpm) ? "Activar" : "Saltar")</button>
                                                         <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(rpm)">Editar</button>
                                                         <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(rpm.Id)">Quitar</button>
                                                     </div>
@@ -311,11 +325,15 @@ else
                                                 {
                                                     <div class="branch-connector"></div>
                                                 }
-                                                <div class="step-card-v2 branch-step">
+                                                <div class="step-card-v2 branch-step @(IsStepSkipped(bpm) ? "step-skipped" : "")">
                                                     <div class="step-card-header">
                                                         <span class="step-number">@GetStepLabel(bpm)</span>
                                                         <span class="step-title">@(bpm.StepName ?? bpm.AiModuleName)</span>
                                                         <span class="badge badge-@(bpm.ModuleType.ToLower())">@bpm.ModuleType</span>
+                                                        @if (IsStepSkipped(bpm))
+                                                        {
+                                                            <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
+                                                        }
                                                     </div>
                                                     <div class="step-card-meta">
                                                         <span>@bpm.AiModuleName</span>
@@ -328,6 +346,7 @@ else
                                                         @{var bSorted = branchSteps;}
                                                         <button class="btn btn-xs" @onclick="() => MoveStep(bpm, -1)" disabled="@(bpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
                                                         <button class="btn btn-xs" @onclick="() => MoveStep(bpm, 1)" disabled="@(bpm.StepOrder >= bSorted.Count)" title="Bajar">&#x25BC;</button>
+                                                        <button class="btn btn-xs" style="@(IsStepSkipped(bpm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(bpm)" title="@(IsStepSkipped(bpm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(bpm) ? "Activar" : "Saltar")</button>
                                                         <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(bpm)">Editar</button>
                                                         <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(bpm.Id)">Quitar</button>
                                                     </div>
@@ -1319,6 +1338,42 @@ else
                                 @(_igSaving ? "Guardando..." : "Guardar")
                             </button>
                         </div>
+
+                        <div class="settings-block" style="margin-top: 1rem;">
+                            <div class="settings-block-header">
+                                <strong>TikTok (via Buffer)</strong>
+                                <span class="text-sm text-muted">Videos e imagenes en TikTok</span>
+                                @if (!string.IsNullOrWhiteSpace(_tkApiKey))
+                                {
+                                    <span class="badge badge-success">Configurado</span>
+                                }
+                            </div>
+                            @if (_tkError is not null)
+                            {
+                                <div class="alert alert-error">@_tkError</div>
+                            }
+                            @if (_tkSuccess)
+                            {
+                                <div class="alert alert-success">Guardado correctamente</div>
+                            }
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" @bind="_tkApiKey" placeholder="Token de Buffer API" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Channel ID (TikTok)</label>
+                                    <input type="text" @bind="_tkChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
+                                </div>
+                            </div>
+                            <p class="text-sm text-muted">
+                                Usa la misma API Key de Buffer. El <strong>Channel ID</strong> debe ser el de tu canal TikTok conectado en Buffer.<br/>
+                                Soporta videos e imagenes (hasta 4 por post). Formatos: PNG, JPG, GIF, WebP (max 8MB).
+                            </p>
+                            <button class="btn btn-primary btn-sm" @onclick="SaveTikTokConfig" disabled="@_tkSaving">
+                                @(_tkSaving ? "Guardando..." : "Guardar")
+                            </button>
+                        </div>
                     }
 
                     <!-- SCHEDULE TAB -->
@@ -1743,6 +1798,7 @@ else
 
     // Execute
     private string _userInput = "";
+    private bool _useHistory = true;
     private string? _execError;
 
     // Retry from step
@@ -1770,12 +1826,19 @@ else
     private bool _tgSuccess;
     private bool _tgSaving;
 
-    // Buffer config
+    // Buffer config (Instagram)
     private string _igApiKey = "";
     private string _igChannelId = "";
     private string? _igError;
     private bool _igSuccess;
     private bool _igSaving;
+
+    // TikTok config (Buffer)
+    private string _tkApiKey = "";
+    private string _tkChannelId = "";
+    private string? _tkError;
+    private bool _tkSuccess;
+    private bool _tkSaving;
 
     // Buffer API debug modal
     private bool _showBufferDebug;
@@ -1823,6 +1886,7 @@ else
     {
         var cfgUrl = Config["ApiBaseUrl"];
         _apiBase = !string.IsNullOrWhiteSpace(cfgUrl) ? cfgUrl.TrimEnd('/') : Nav.BaseUri.TrimEnd('/');
+
         await LoadAll();
         await InitializeSignalR();
     }
@@ -2051,12 +2115,20 @@ else
                 _tgChatId = tgConfig.ChatId;
             }
 
-            // Load Buffer config
+            // Load Buffer config (Instagram)
             var igConfig = await Api.GetInstagramConfigAsync(ProjectId);
             if (igConfig is not null)
             {
                 _igApiKey = igConfig.ApiKey;
                 _igChannelId = igConfig.ChannelId;
+            }
+
+            // Load TikTok config (Buffer)
+            var tkConfig = await Api.GetTikTokConfigAsync(ProjectId);
+            if (tkConfig is not null)
+            {
+                _tkApiKey = tkConfig.ApiKey;
+                _tkChannelId = tkConfig.ChannelId;
             }
 
             // Load Schedule
@@ -2125,13 +2197,20 @@ else
     /// </summary>
     private async Task SaveGraph(SaveGraphRequest req)
     {
-        await Api.SaveGraphAsync(ProjectId, req);
+        Console.WriteLine($"[ProjectDetail] SaveGraph: saving {req.Connections.Count} connections");
+        var (ok, error) = await Api.SaveGraphAsync(ProjectId, req);
+        if (!ok)
+        {
+            Console.WriteLine($"[ProjectDetail] SaveGraph FAILED: {error}");
+            return; // Don't re-fetch on failure — preserve local state
+        }
         // Reload to get updated StepOrder from server-side topological sort
         if (_project is not null)
         {
             var updated = await Api.GetProjectDetailAsync(ProjectId);
             if (updated is not null)
             {
+                Console.WriteLine($"[ProjectDetail] SaveGraph: re-fetched {updated.Connections?.Count ?? 0} connections from server");
                 _project = updated;
                 _projectConnections = updated.Connections ?? new();
             }
@@ -2230,6 +2309,27 @@ else
         }
         catch (Exception ex) { _igError = ex.Message; }
         _igSaving = false;
+    }
+
+    private async Task SaveTikTokConfig()
+    {
+        _tkError = null;
+        _tkSuccess = false;
+        _tkSaving = true;
+        try
+        {
+            var dto = new BufferConfigDto(_tkApiKey, _tkChannelId);
+            var (ok, error) = await Api.SaveTikTokConfigAsync(ProjectId, dto);
+            if (ok)
+            {
+                _tkSuccess = true;
+                _modules = await Api.GetModulesAsync();
+            }
+            else
+                _tkError = error;
+        }
+        catch (Exception ex) { _tkError = ex.Message; }
+        _tkSaving = false;
     }
 
     private string BuildCronFromPreset()
@@ -2422,6 +2522,45 @@ else
     /// Compute a branch-prefixed step label. Pre-fork trunk steps show plain numbers (1, 2, 3).
     /// Post-fork: main continuation = A + seq, other branches = B, C, D... + seq.
     /// </summary>
+    private bool IsStepSkipped(ProjectModuleResponse pm)
+    {
+        if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
+        try
+        {
+            var cfg = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+            if (cfg is not null && cfg.TryGetValue("skipped", out var el))
+                return el.ValueKind == JsonValueKind.True;
+        }
+        catch { }
+        return false;
+    }
+
+    private async Task ToggleStepSkipped(ProjectModuleResponse pm)
+    {
+        var currentlySkipped = IsStepSkipped(pm);
+        var newSkipped = !currentlySkipped;
+
+        // Parse existing config, update skipped flag, save
+        var cfg = new Dictionary<string, object>();
+        if (!string.IsNullOrWhiteSpace(pm.Configuration))
+        {
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+                if (parsed is not null)
+                    foreach (var kv in parsed)
+                        cfg[kv.Key] = kv.Value;
+            }
+            catch { }
+        }
+        cfg["skipped"] = newSkipped;
+        var stepConfig = JsonSerializer.Serialize(cfg);
+
+        var req = new UpdateProjectModuleRequest(pm.StepOrder, pm.StepName, pm.InputMapping, stepConfig, pm.IsActive);
+        var (ok, _) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
+        if (ok) await LoadAll();
+    }
+
     private string GetStepLabel(ProjectModuleResponse pm)
     {
         if (_project is null) return pm.StepOrder.ToString();
@@ -2742,6 +2881,21 @@ else
                 stepConfig = pm.Configuration; // preserve existing for unknown types
             }
 
+            // Preserve the "skipped" flag from existing config
+            if (IsStepSkipped(pm))
+            {
+                if (stepConfig is null)
+                {
+                    stepConfig = JsonSerializer.Serialize(new { skipped = true });
+                }
+                else
+                {
+                    var merged = JsonSerializer.Deserialize<Dictionary<string, object>>(stepConfig) ?? new();
+                    merged["skipped"] = true;
+                    stepConfig = JsonSerializer.Serialize(merged);
+                }
+            }
+
             var req = new UpdateProjectModuleRequest(
                 pm.StepOrder,
                 string.IsNullOrWhiteSpace(_editStepName) ? null : _editStepName,
@@ -2886,7 +3040,7 @@ else
 
         try
         {
-            var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput);
+            var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput, _useHistory);
             if (!ok) { _execError = error; _executing = false; }
             else StartPolling(); // Safety net in case SignalR misses completion
         }

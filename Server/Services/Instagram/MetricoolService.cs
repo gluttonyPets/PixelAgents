@@ -44,7 +44,9 @@ namespace Server.Services.Instagram
             BufferConfig config,
             string text,
             List<ClassifiedMedia>? media = null,
-            string publishType = "post")
+            string publishType = "post",
+            string platform = "instagram",
+            TikTokPublishOptions? tikTokOptions = null)
         {
             // Escape text for GraphQL string literal
             var escapedText = text
@@ -83,16 +85,28 @@ namespace Server.Services.Instagram
                     assetsBlock = $", assets: {{ {string.Join(", ", parts)} }}";
             }
 
-            // Validate publishType to prevent injection
-            var validTypes = new HashSet<string> { "post", "reel", "story" };
-            var igType = validTypes.Contains(publishType) ? publishType : "post";
+            // Build platform-specific metadata block
+            string metadataBlock;
+            if (platform == "tiktok")
+            {
+                // Buffer's TikTokPostMetadataInput schema does not expose privacy/interaction fields.
+                // TikTok posts are published with default settings (public, comments enabled, etc.)
+                metadataBlock = "metadata: { tiktok: {} }";
+            }
+            else
+            {
+                // Instagram metadata
+                var validTypes = new HashSet<string> { "post", "reel", "story" };
+                var igType = validTypes.Contains(publishType) ? publishType : "post";
+                metadataBlock = $"metadata: {{ instagram: {{ type: {igType}, shouldShareToFeed: true }} }}";
+            }
 
             var mutation = $@"
                 mutation {{
                     createPost(input: {{
                         text: ""{escapedText}"",
                         channelId: ""{config.ChannelId}"",
-                        metadata: {{ instagram: {{ type: {igType}, shouldShareToFeed: true }} }},
+                        {metadataBlock},
                         schedulingType: automatic,
                         mode: customScheduled,
                         dueAt: ""{dueAt}""
@@ -235,6 +249,16 @@ namespace Server.Services.Instagram
     {
         public string Url { get; set; } = "";
         public MediaKind Kind { get; set; }
+    }
+
+    public class TikTokPublishOptions
+    {
+        public string PrivacyLevel { get; set; } = "PUBLIC_TO_EVERYONE";
+        public bool AllowComments { get; set; } = true;
+        public bool AllowDuet { get; set; } = true;
+        public bool AllowStitch { get; set; } = true;
+        public bool BrandedContent { get; set; }
+        public bool BrandPartnership { get; set; }
     }
 
     public class BufferPublishResult

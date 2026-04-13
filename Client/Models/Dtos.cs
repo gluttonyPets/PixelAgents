@@ -60,7 +60,7 @@ public record StepExecutionStatus(Guid ProjectModuleId, string Status);
 public record ExecutionLogEntry(string Level, string Message, int? StepOrder, string? StepName, DateTime Timestamp);
 
 // ── Execution ──
-public record ExecuteProjectRequest(string? UserInput);
+public record ExecuteProjectRequest(string? UserInput, bool UseHistory = true);
 public record RetryFromStepRequest(int StepOrder, string? Comment);
 public record OrchestratorReviewRequest(bool Approved, string? Comment);
 public record CheckpointReviewRequest(bool Approved);
@@ -104,7 +104,7 @@ public record WhatsAppConfigDto(string PhoneNumberId, string AccessToken,
 // ── Telegram ──
 public record TelegramConfigDto(string BotToken, string ChatId);
 
-// ── Instagram (Buffer) ──
+// ── Instagram (Buffer) / TikTok (Buffer) ──
 public record BufferConfigDto(string ApiKey, string ChannelId);
 
 // ── Module Files ──

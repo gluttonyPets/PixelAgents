@@ -57,7 +57,7 @@ namespace Server.Services.Ai
 
         private static bool IsPublishStep(AiModule module) =>
             module.ModuleType == "Publish" ||
-            (module.ProviderType == "System" && module.ModelName == "instagram");
+            (module.ProviderType == "System" && (module.ModelName == "instagram" || module.ModelName == "tiktok"));
 
         private static bool IsDesignStep(AiModule module) =>
             module.ModuleType == "Design" ||
@@ -72,8 +72,21 @@ namespace Server.Services.Ai
         private static bool IsCoordinatorStep(AiModule module) =>
             module.ModuleType == "Coordinator";
 
+        private static bool IsStepSkipped(ProjectModule pm)
+        {
+            if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
+            try
+            {
+                var cfg = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
+                if (cfg is not null && cfg.TryGetValue("skipped", out var el))
+                    return el.ValueKind == JsonValueKind.True;
+            }
+            catch { }
+            return false;
+        }
+
         public async Task<ProjectExecution> ExecuteAsync(
-            Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default)
+            Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default, bool useHistory = true)
         {
             _logger = _baseLogger.WithDb(db);
 
@@ -203,8 +216,10 @@ namespace Server.Services.Ai
             var stepOutputs = new Dictionary<int, StepOutput>();
             var stepModuleTypes = new Dictionary<int, string>();
 
-            // ── Load previous execution summaries for context ──
-            var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, projectId, executionId);
+            // ── Load previous execution summaries for context (unless disabled by user) ──
+            var previousSummaryContext = useHistory
+                ? await BuildPreviousSummaryContextAsync(db, projectId, executionId)
+                : null;
 
             var allModules = project.ProjectModules.ToList();
             var stepBranches = BuildStepBranches(allModules);
@@ -228,6 +243,31 @@ namespace Server.Services.Ai
                     execution.CompletedAt = DateTime.UtcNow;
                     await db.SaveChangesAsync();
                     return execution;
+                }
+
+                // ── Skip check: if step is marked as skipped, bypass execution ──
+                if (IsStepSkipped(pm))
+                {
+                    var skipName = pm.StepName ?? pm.AiModule.Name;
+                    var skipLabel = GetStepLabel(pm, project.ProjectModules);
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Paso {skipLabel}: {skipName} — saltado por configuracion",
+                        pm.StepOrder, skipName);
+
+                    var skipStepExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = executionId,
+                        ProjectModuleId = pm.Id,
+                        StepOrder = pm.StepOrder,
+                        Status = "Skipped",
+                        CreatedAt = DateTime.UtcNow,
+                        CompletedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(skipStepExec);
+                    await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(projectId, pm.Id, "Skipped");
+                    continue;
                 }
 
                 var stepExecution = new StepExecution
@@ -543,10 +583,26 @@ namespace Server.Services.Ai
                                     pm.StepOrder, pm.BranchId, pm.BranchFromStep,
                                     stepOutputs, stepResults, stepBranches);
 
+                                // Check if a specific output port is connected (e.g. output_image_1)
+                                string? outputKey = null;
+                                if (mappingJson.TryGetProperty("outputKey", out var okVal))
+                                    outputKey = okVal.GetString();
+
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
                                     previousStepFiles = new List<byte[]>();
-                                    foreach (var prevFile in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+
+                                    // Filter files by specific output port if connected
+                                    var imageFiles = prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")).ToList();
+                                    if (!string.IsNullOrEmpty(outputKey) && outputKey.StartsWith("output_image_")
+                                        && int.TryParse(outputKey.AsSpan("output_image_".Length), out var imgIdx))
+                                    {
+                                        var fileIdx = imgIdx - 1;
+                                        if (fileIdx >= 0 && fileIdx < imageFiles.Count)
+                                            imageFiles = new List<OutputFile> { imageFiles[fileIdx] };
+                                    }
+
+                                    foreach (var prevFile in imageFiles)
                                     {
                                         var prevFilePath = Path.Combine(workspacePath, $"step_{prevOrder}", prevFile.FileName);
                                         if (File.Exists(prevFilePath))
@@ -990,46 +1046,64 @@ namespace Server.Services.Ai
                             config["subtitleLanguage"] = slStr;
                         }
 
-                        // Collect media URLs from ALL completed VideoSearch and Image steps.
-                        // Each entry is a JSON object: {"url":"...","type":"video"|"image"}
+                        // Collect media URLs from scene-level connections or ALL completed steps.
                         var mediaEntries = new List<Dictionary<string, string>>();
                         var serverBase = (_configuration["BaseUrl"]
                             ?? _configuration["AllowedOrigin"]
                             ?? "").TrimEnd('/');
 
-                        foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
+                        // Per-scene media: if sceneInputs config exists, collect media per scene port
+                        var perSceneMedia = new Dictionary<string, List<Dictionary<string, string>>>();
+                        if (config.TryGetValue("sceneInputs", out var sceneInputsVal))
                         {
-                            if (!stepModuleTypes.TryGetValue(prevOrder, out var prevType))
-                                continue;
+                            Dictionary<string, JsonElement>? sceneInputsMap = null;
+                            if (sceneInputsVal is JsonElement siEl && siEl.ValueKind == JsonValueKind.Object)
+                                sceneInputsMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(siEl.GetRawText());
+                            else if (sceneInputsVal is string siStr)
+                                sceneInputsMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(siStr);
 
-                            if (prevType == "VideoSearch")
+                            if (sceneInputsMap is not null)
                             {
-                                // VideoSearch: downloadUrl from result metadata
-                                string? dlUrl = null;
-                                if (stepResults.TryGetValue(prevOrder, out var prevResult)
-                                    && prevResult.Metadata.TryGetValue("downloadUrl", out var dl) && dl is string dlStr)
-                                    dlUrl = dlStr;
-                                else if (stepOutputs.TryGetValue(prevOrder, out var prevOutput)
-                                    && prevOutput.Metadata.TryGetValue("downloadUrl", out var dlMeta))
-                                    dlUrl = dlMeta is JsonElement je ? je.GetString() : dlMeta?.ToString();
-
-                                if (!string.IsNullOrEmpty(dlUrl))
-                                    mediaEntries.Add(new Dictionary<string, string> { ["url"] = dlUrl, ["type"] = "video" });
-                            }
-                            else if (prevType == "Image")
-                            {
-                                // Image: build public URL for each generated file
-                                if (stepOutputs.TryGetValue(prevOrder, out var imgOutput))
+                                foreach (var (portId, sourcesEl) in sceneInputsMap)
                                 {
-                                    foreach (var file in imgOutput.Files)
+                                    var sceneMedia = new List<Dictionary<string, string>>();
+                                    if (sourcesEl.ValueKind == JsonValueKind.Array)
                                     {
-                                        if (file.FileId == Guid.Empty) continue;
-                                        var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
-                                        mediaEntries.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                                        foreach (var src in sourcesEl.EnumerateArray())
+                                        {
+                                            var srcStep = src.TryGetProperty("stepOrder", out var soEl) ? soEl.GetInt32() : 0;
+                                            var srcType = src.TryGetProperty("moduleType", out var mtEl) ? mtEl.GetString() ?? "" : "";
+                                            var srcPort = src.TryGetProperty("fromPort", out var fpEl) ? fpEl.GetString() ?? "" : "";
+
+                                            // Collect files/urls from the source step
+                                            CollectMediaFromStep(srcStep, srcType, srcPort, stepResults, stepOutputs,
+                                                stepModuleTypes, serverBase, tenantDbName, executionId, sceneMedia);
+                                        }
+                                    }
+                                    if (sceneMedia.Count > 0)
+                                    {
+                                        perSceneMedia[portId] = sceneMedia;
+                                        mediaEntries.AddRange(sceneMedia);
                                     }
                                 }
                             }
                         }
+
+                        // Fallback: if no scene connections, collect from ALL steps (legacy behavior)
+                        if (mediaEntries.Count == 0)
+                        {
+                            foreach (var prevOrder in stepModuleTypes.Keys.OrderBy(k => k))
+                            {
+                                if (!stepModuleTypes.TryGetValue(prevOrder, out var prevType))
+                                    continue;
+                                CollectMediaFromStep(prevOrder, prevType, "", stepResults, stepOutputs,
+                                    stepModuleTypes, serverBase, tenantDbName, executionId, mediaEntries);
+                            }
+                        }
+
+                        // Inject per-scene media if available
+                        if (perSceneMedia.Count > 0)
+                            config["perSceneMedia"] = JsonSerializer.Serialize(perSceneMedia);
 
                         // Inject collected media into config
                         if (mediaEntries.Count > 0 && !config.ContainsKey("mediaEntries"))
@@ -1488,6 +1562,116 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
+        /// Collect media URLs from a specific step, optionally filtered by output port.
+        /// Adds entries to the provided list in {"url":"...","type":"image"|"video"|"text"} format.
+        /// </summary>
+        private static void CollectMediaFromStep(
+            int stepOrder, string moduleType, string fromPort,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            string serverBase, string tenantDbName, Guid executionId,
+            List<Dictionary<string, string>> mediaList)
+        {
+            if (moduleType == "VideoSearch")
+            {
+                string? dlUrl = null;
+                if (stepResults.TryGetValue(stepOrder, out var prevResult)
+                    && prevResult.Metadata.TryGetValue("downloadUrl", out var dl) && dl is string dlStr)
+                    dlUrl = dlStr;
+                else if (stepOutputs.TryGetValue(stepOrder, out var prevOutput)
+                    && prevOutput.Metadata.TryGetValue("downloadUrl", out var dlMeta))
+                    dlUrl = dlMeta is JsonElement je ? je.GetString() : dlMeta?.ToString();
+
+                if (!string.IsNullOrEmpty(dlUrl))
+                    mediaList.Add(new Dictionary<string, string> { ["url"] = dlUrl, ["type"] = "video" });
+            }
+            else if (moduleType == "Image")
+            {
+                if (stepOutputs.TryGetValue(stepOrder, out var imgOutput))
+                {
+                    // If a specific output port is specified (e.g. output_image_2), only get that file
+                    if (!string.IsNullOrEmpty(fromPort) && fromPort.StartsWith("output_image_"))
+                    {
+                        // output_image_1 → index 0, output_image_2 → index 1, etc.
+                        if (int.TryParse(fromPort.AsSpan("output_image_".Length), out var imgIdx))
+                        {
+                            var fileIdx = imgIdx - 1;
+                            if (fileIdx >= 0 && fileIdx < imgOutput.Files.Count)
+                            {
+                                var file = imgOutput.Files[fileIdx];
+                                if (file.FileId != Guid.Empty)
+                                {
+                                    var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                                    mediaList.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // No specific port: get all files
+                        foreach (var file in imgOutput.Files)
+                        {
+                            if (file.FileId == Guid.Empty) continue;
+                            var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                            mediaList.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "image" });
+                        }
+                    }
+                }
+            }
+            else if (moduleType == "Text" || moduleType == "Orchestrator")
+            {
+                // Text/Orchestrator output: include as text content for the scene
+                if (stepOutputs.TryGetValue(stepOrder, out var textOutput))
+                {
+                    var content = textOutput.Content;
+                    if (string.IsNullOrWhiteSpace(content) && textOutput.Items.Count > 0)
+                    {
+                        // If specific port, try to get that item
+                        if (!string.IsNullOrEmpty(fromPort) && fromPort.StartsWith("output_")
+                            && int.TryParse(fromPort.AsSpan("output_".Length), out var outIdx))
+                        {
+                            var idx = outIdx - 1;
+                            if (idx >= 0 && idx < textOutput.Items.Count)
+                                content = textOutput.Items[idx].Content;
+                        }
+                        else
+                        {
+                            content = string.Join("\n", textOutput.Items.Select(i => i.Content));
+                        }
+                    }
+                    if (!string.IsNullOrWhiteSpace(content))
+                        mediaList.Add(new Dictionary<string, string> { ["content"] = content, ["type"] = "text" });
+                }
+            }
+            else if (moduleType == "Video")
+            {
+                if (stepOutputs.TryGetValue(stepOrder, out var vidOutput))
+                {
+                    foreach (var file in vidOutput.Files)
+                    {
+                        if (file.FileId == Guid.Empty) continue;
+                        var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                        mediaList.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "video" });
+                    }
+                }
+            }
+            else if (moduleType == "Audio")
+            {
+                if (stepOutputs.TryGetValue(stepOrder, out var audioOutput))
+                {
+                    foreach (var file in audioOutput.Files)
+                    {
+                        if (file.FileId == Guid.Empty) continue;
+                        var publicUrl = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                        mediaList.Add(new Dictionary<string, string> { ["url"] = publicUrl, ["type"] = "audio" });
+                    }
+                }
+            }
+        }
+
+        /// <summary>
         /// Find the nearest previous step that belongs to the same branch (or trunk).
         /// </summary>
         private static int FindPreviousStepInBranch(
@@ -1833,11 +2017,16 @@ Datos de la ejecucion:
             var projectId = project.Id;
             var executionId = execution.Id;
 
-            if (string.IsNullOrWhiteSpace(project.InstagramConfig))
-                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Buffer");
+            // Determine platform from module's modelName
+            var publishPlatform = pm.AiModule.ModelName == "tiktok" ? "tiktok" : "instagram";
+            var configJson = publishPlatform == "tiktok" ? project.TikTokConfig : project.InstagramConfig;
+            var platformLabel = publishPlatform == "tiktok" ? "TikTok" : "Instagram";
 
-            var bufferConfig = JsonSerializer.Deserialize<BufferConfig>(project.InstagramConfig)
-                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Buffer invalida");
+            if (string.IsNullOrWhiteSpace(configJson))
+                throw new InvalidOperationException($"Paso {pm.StepOrder}: El proyecto no tiene configuracion de Buffer para {platformLabel}");
+
+            var bufferConfig = JsonSerializer.Deserialize<BufferConfig>(configJson)
+                ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: Configuracion de Buffer ({platformLabel}) invalida");
 
             if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
                 throw new InvalidOperationException($"Paso {pm.StepOrder}: API Key de Buffer no configurada");
@@ -1859,8 +2048,13 @@ Datos de la ejecucion:
             var previousText = "";
             string? previousTitle = null;
             var pubBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+            // For branch steps: limit main candidates to steps at or before the fork point
+            // to avoid picking text/media from concurrently-running sibling branches
+            var maxMainStepForCaption = (pm.BranchId != "main" && pm.BranchFromStep.HasValue)
+                ? pm.BranchFromStep.Value
+                : pm.StepOrder;
             var candidateOrders = pubBranches
-                .Where(kv => (kv.Value == pm.BranchId || kv.Value == "main") && kv.Key < pm.StepOrder)
+                .Where(kv => (kv.Value == pm.BranchId || (kv.Value == "main" && kv.Key <= maxMainStepForCaption)) && kv.Key < pm.StepOrder)
                 .Select(kv => kv.Key)
                 .OrderByDescending(k => k)
                 .ToList();
@@ -1917,79 +2111,106 @@ Datos de la ejecucion:
                     .Replace("{previous_output}", previousText)
                     .Replace("{step_number}", pm.StepOrder.ToString());
 
-            await _logger.LogAsync(projectId, executionId, "info",
-                $"Publicando via Buffer...", pm.StepOrder, stepName);
-
             // Collect and classify media from the nearest non-Interaction previous step
             // Prioritize media from the SAME branch before falling back to main
+            // For branch steps: limit main candidates to steps at or before the fork point
+            // to avoid picking up concurrently-running sibling branch steps classified as "main"
             var classifiedMedia = new List<ClassifiedMedia>();
+
+            var maxMainStep = (pm.BranchId != "main" && pm.BranchFromStep.HasValue)
+                ? pm.BranchFromStep.Value
+                : pm.StepOrder;
 
             var ownBranchCandidates = candidateOrders
                 .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == pm.BranchId)
                 .ToList();
             var mainCandidates = candidateOrders
-                .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == "main")
+                .Where(co => pubBranches.TryGetValue(co, out var bid) && bid == "main" && co <= maxMainStep)
                 .ToList();
 
-            // Search own branch first, then main
-            var mediaStepOrder = ownBranchCandidates.FirstOrDefault(co =>
-                !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
-            if (mediaStepOrder == 0)
-                mediaStepOrder = mainCandidates.FirstOrDefault(co =>
-                    !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction");
-            if (mediaStepOrder == 0 && candidateOrders.Count > 0)
-                mediaStepOrder = candidateOrders[0]; // last resort fallback
+            // Build ordered list of candidate steps: own branch first, then main
+            var orderedCandidates = ownBranchCandidates
+                .Where(co => !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction")
+                .Select(co => (StepOrder: co, Source: "OwnBranch"))
+                .Concat(mainCandidates
+                    .Where(co => !stepModuleTypes.TryGetValue(co, out var mt) || mt != "Interaction")
+                    .Select(co => (StepOrder: co, Source: "Main")))
+                .ToList();
+
+            if (orderedCandidates.Count == 0 && candidateOrders.Count > 0)
+                orderedCandidates.Add((StepOrder: candidateOrders[0], Source: "LastResort"));
 
             await _logger.LogAsync(projectId, executionId, "info",
                 $"[Publish Debug] BranchId={pm.BranchId}, StepOrder={pm.StepOrder}, " +
-                $"OwnBranch=[{string.Join(",", ownBranchCandidates)}], Main=[{string.Join(",", mainCandidates)}], MediaStepOrder={mediaStepOrder}",
+                $"OwnBranch=[{string.Join(",", ownBranchCandidates)}], Main=[{string.Join(",", mainCandidates)}], " +
+                $"OrderedCandidates=[{string.Join(",", orderedCandidates.Select(c => $"{c.StepOrder}({c.Source})"))}]",
                 pm.StepOrder, stepName);
 
-            // Collect media files — try two approaches:
-            // 1. Query StepExecution.Files from DB
-            // 2. Fallback: use stepOutputs FileIds (from in-memory / pause state)
+            // Try each candidate in order until we find one with actual media files
             var mediaFiles = new List<ExecutionFile>();
+            var mediaStepOrder = 0;
 
-            var prevStepExec = await db.StepExecutions
-                .Include(s => s.Files)
-                .Where(s => s.ExecutionId == executionId && s.StepOrder == mediaStepOrder)
-                .OrderByDescending(s => s.CompletedAt)
-                .FirstOrDefaultAsync();
-
-            if (prevStepExec?.Files is not null)
+            foreach (var candidate in orderedCandidates)
             {
-                mediaFiles = prevStepExec.Files
-                    .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
-                    .OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
+                var candidateFiles = new List<ExecutionFile>();
 
-            // Fallback: if DB query found no media files, try using FileIds from stepOutputs
-            if (mediaFiles.Count == 0 && stepOutputs.TryGetValue(mediaStepOrder, out var mediaOutput) && mediaOutput.Files.Count > 0)
-            {
-                var fileIds = mediaOutput.Files.Select(f => f.FileId).Where(id => id != Guid.Empty).ToList();
-                if (fileIds.Count > 0)
+                // 1. Query StepExecution.Files from DB
+                var candidateStepExec = await db.StepExecutions
+                    .Include(s => s.Files)
+                    .Where(s => s.ExecutionId == executionId && s.StepOrder == candidate.StepOrder)
+                    .OrderByDescending(s => s.CompletedAt)
+                    .FirstOrDefaultAsync();
+
+                if (candidateStepExec?.Files is not null)
                 {
-                    var unorderedFiles = await db.ExecutionFiles
-                        .Where(f => fileIds.Contains(f.Id))
+                    candidateFiles = candidateStepExec.Files
                         .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
-                        .ToListAsync();
-
-                    // Preserve the original order from StepOutput.Files
-                    var fileById = unorderedFiles.ToDictionary(f => f.Id);
-                    mediaFiles = fileIds
-                        .Where(id => fileById.ContainsKey(id))
-                        .Select(id => fileById[id])
+                        .OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
-
-                    await _logger.LogAsync(projectId, executionId, "info",
-                        $"[Publish Debug] Fallback via stepOutputs FileIds: found {mediaFiles.Count} file(s) from {fileIds.Count} IDs",
-                        pm.StepOrder, stepName);
                 }
+
+                // 2. Fallback: try stepOutputs FileIds (from in-memory / pause state)
+                if (candidateFiles.Count == 0 && stepOutputs.TryGetValue(candidate.StepOrder, out var mediaOutput) && mediaOutput.Files.Count > 0)
+                {
+                    var fileIds = mediaOutput.Files.Select(f => f.FileId).Where(id => id != Guid.Empty).ToList();
+                    if (fileIds.Count > 0)
+                    {
+                        var unorderedFiles = await db.ExecutionFiles
+                            .Where(f => fileIds.Contains(f.Id))
+                            .Where(f => f.ContentType.StartsWith("image/") || f.ContentType.StartsWith("video/"))
+                            .ToListAsync();
+
+                        var fileById = unorderedFiles.ToDictionary(f => f.Id);
+                        candidateFiles = fileIds
+                            .Where(id => fileById.ContainsKey(id))
+                            .Select(id => fileById[id])
+                            .ToList();
+
+                        if (candidateFiles.Count > 0)
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"[Publish Debug] Fallback via stepOutputs FileIds for step {candidate.StepOrder}: found {candidateFiles.Count} file(s)",
+                                pm.StepOrder, stepName);
+                    }
+                }
+
+                if (candidateFiles.Count > 0)
+                {
+                    mediaFiles = candidateFiles;
+                    mediaStepOrder = candidate.StepOrder;
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"[Publish Debug] Selected media from step {candidate.StepOrder} ({candidate.Source}): " +
+                        $"{mediaFiles.Count} file(s), Types=[{string.Join(",", mediaFiles.Select(f => f.ContentType))}]",
+                        pm.StepOrder, stepName);
+                    break;
+                }
+
+                await _logger.LogAsync(projectId, executionId, "info",
+                    $"[Publish Debug] Step {candidate.StepOrder} ({candidate.Source}) has no media files, trying next candidate",
+                    pm.StepOrder, stepName);
             }
 
             await _logger.LogAsync(projectId, executionId, "info",
-                $"[Publish Debug] PrevStepExec found={prevStepExec is not null}, " +
+                $"[Publish Debug] Final MediaStepOrder={mediaStepOrder}, " +
                 $"MediaFiles={mediaFiles.Count}, " +
                 $"FileTypes=[{string.Join(",", mediaFiles.Select(f => f.ContentType))}]",
                 pm.StepOrder, stepName);
@@ -2052,18 +2273,61 @@ Datos de la ejecucion:
                     pm.StepOrder, stepName);
             }
 
+            // Parse TikTok-specific options from step config
+            TikTokPublishOptions? tikTokOptions = null;
+            if (publishPlatform == "tiktok")
+            {
+                tikTokOptions = new TikTokPublishOptions();
+                if (stepConfig.TryGetValue("privacyLevel", out var plVal))
+                {
+                    var pl = plVal is JsonElement plEl ? plEl.GetString() : plVal?.ToString();
+                    if (!string.IsNullOrWhiteSpace(pl)) tikTokOptions.PrivacyLevel = pl;
+                }
+                if (stepConfig.TryGetValue("allowComments", out var acVal))
+                {
+                    var ac = acVal is JsonElement acEl ? acEl.GetString() : acVal?.ToString();
+                    tikTokOptions.AllowComments = ac != "false";
+                }
+                if (stepConfig.TryGetValue("allowDuet", out var adVal))
+                {
+                    var ad = adVal is JsonElement adEl ? adEl.GetString() : adVal?.ToString();
+                    tikTokOptions.AllowDuet = ad != "false";
+                }
+                if (stepConfig.TryGetValue("allowStitch", out var asVal))
+                {
+                    var ast = asVal is JsonElement asEl ? asEl.GetString() : asVal?.ToString();
+                    tikTokOptions.AllowStitch = ast != "false";
+                }
+                if (stepConfig.TryGetValue("brandedContent", out var bcVal))
+                {
+                    var bc = bcVal is JsonElement bcEl ? bcEl.GetString() : bcVal?.ToString();
+                    tikTokOptions.BrandedContent = bc == "true";
+                }
+                if (stepConfig.TryGetValue("brandPartnership", out var bpVal))
+                {
+                    var bp = bpVal is JsonElement bpEl ? bpEl.GetString() : bpVal?.ToString();
+                    tikTokOptions.BrandPartnership = bp == "true";
+                }
+            }
+
+            // Log pre-publish info
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Publicando via Buffer ({platformLabel})... Caption: {caption[..Math.Min(caption.Length, 100)]}{(caption.Length > 100 ? "..." : "")} | " +
+                $"Media: {classifiedMedia.Count} ({classifiedMedia.Count(m => m.Kind == MediaKind.Image)} img, {classifiedMedia.Count(m => m.Kind == MediaKind.Video)} vid) | " +
+                $"PublishType: {publishType}",
+                pm.StepOrder, stepName);
+
             // Publish via Buffer
             BufferPublishResult bufferResult;
             try
             {
                 bufferResult = await _buffer.PublishAsync(
-                    bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType);
+                    bufferConfig, caption, classifiedMedia.Count > 0 ? classifiedMedia : null, publishType, publishPlatform, tikTokOptions);
             }
             catch (Exception ex)
             {
                 await _logger.LogAsync(projectId, executionId, "error",
                     $"Error publicando via Buffer: {ex.Message}", pm.StepOrder, stepName);
-                // Only fail the entire execution for main pipeline steps
                 if (pm.BranchId == "main")
                     await FailStep(stepExecution, execution, $"Error Buffer: {ex.Message}", db);
                 else
@@ -2075,6 +2339,15 @@ Datos de la ejecucion:
                 }
                 throw;
             }
+
+            // Log Buffer API request/response
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"[Buffer API] Request:\n{bufferResult.RequestBody}",
+                pm.StepOrder, stepName);
+            await _logger.LogAsync(projectId, executionId,
+                bufferResult.IsSuccess ? "info" : "error",
+                $"[Buffer API] Status: {bufferResult.StatusCode} | Response:\n{bufferResult.ResponseBody}",
+                pm.StepOrder, stepName);
 
             // Build plain-text output with status and schedule
             string outputText;
@@ -2102,12 +2375,13 @@ Datos de la ejecucion:
                 Type = "text",
                 Content = outputText,
                 Summary = bufferResult.IsSuccess
-                    ? $"Publicado via Buffer - {scheduleLine}"
+                    ? $"Publicado via Buffer ({platformLabel}) - {scheduleLine}"
                     : $"Error Buffer: {bufferResult.Error}",
-                Items = [new OutputItem { Content = outputText, Label = "buffer publish" }],
+                Items = [new OutputItem { Content = outputText, Label = $"buffer {publishPlatform} publish" }],
                 Metadata = new Dictionary<string, object>
                 {
                     ["publishType"] = publishType,
+                    ["platform"] = publishPlatform,
                     ["caption"] = caption,
                     ["bufferPostId"] = bufferResult.PostId,
                     ["bufferDueAt"] = bufferResult.DueAt ?? "",
@@ -2121,6 +2395,7 @@ Datos de la ejecucion:
             stepExecution.InputData = JsonSerializer.Serialize(new
             {
                 caption,
+                platform = publishPlatform,
                 mediaCount = classifiedMedia.Count,
                 imageCount = classifiedMedia.Count(m => m.Kind == MediaKind.Image),
                 videoCount = classifiedMedia.Count(m => m.Kind == MediaKind.Video),
@@ -2142,18 +2417,18 @@ Datos de la ejecucion:
                 {
                     ["bufferPostId"] = bufferResult.PostId,
                     ["bufferDueAt"] = bufferResult.DueAt ?? "",
+                    ["platform"] = publishPlatform,
                     ["mediaCount"] = classifiedMedia.Count
                 });
 
                 await _logger.LogAsync(projectId, executionId, "success",
-                    $"Publicado via Buffer (post {bufferResult.PostId}) - {scheduleLine}",
+                    $"Publicado via Buffer ({platformLabel}, post {bufferResult.PostId}) - {scheduleLine}",
                     pm.StepOrder, stepName);
             }
             else
             {
                 await _logger.LogAsync(projectId, executionId, "error",
                     $"Error publicando via Buffer: {bufferResult.Error}", pm.StepOrder, stepName);
-                // Only fail the entire execution for main pipeline steps
                 if (pm.BranchId == "main")
                     await FailStep(stepExecution, execution, $"Error Buffer: {bufferResult.Error}", db);
                 else
@@ -3043,10 +3318,24 @@ Datos de la ejecucion:
                                 var prevOrder = FindPreviousStepInBranch(
                                     pm.StepOrder, pm.BranchId, pm.BranchFromStep,
                                     stepOutputs, stepResults, stepBranches);
+
+                                // Check if a specific output port is connected
+                                string? resumeOutputKey = null;
+                                if (mappingJson.TryGetProperty("outputKey", out var rokVal))
+                                    resumeOutputKey = rokVal.GetString();
+
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
                                     resumePrevFiles = new List<byte[]>();
-                                    foreach (var pf in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+                                    var imageFiles = prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")).ToList();
+                                    if (!string.IsNullOrEmpty(resumeOutputKey) && resumeOutputKey.StartsWith("output_image_")
+                                        && int.TryParse(resumeOutputKey.AsSpan("output_image_".Length), out var rImgIdx))
+                                    {
+                                        var rFileIdx = rImgIdx - 1;
+                                        if (rFileIdx >= 0 && rFileIdx < imageFiles.Count)
+                                            imageFiles = new List<OutputFile> { imageFiles[rFileIdx] };
+                                    }
+                                    foreach (var pf in imageFiles)
                                     {
                                         var pfPath = Path.Combine(workspacePath, $"step_{prevOrder}", pf.FileName);
                                         if (File.Exists(pfPath))
@@ -4376,6 +4665,31 @@ Datos de la ejecucion:
 
                 if (ct.IsCancellationRequested) return BranchResult.Cancelled;
 
+                // ── Skip check for branch step ──
+                if (IsStepSkipped(bpm))
+                {
+                    var bSkipName = bpm.StepName ?? bpm.AiModule.Name;
+                    var bSkipLabel = GetStepLabel(bpm, project.ProjectModules);
+                    await _logger.LogAsync(project.Id, execution.Id, "info",
+                        $"[{branchId}] Paso {bSkipLabel}: {bSkipName} — saltado por configuracion",
+                        bpm.StepOrder, bSkipName);
+
+                    var bSkipExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = execution.Id,
+                        ProjectModuleId = bpm.Id,
+                        StepOrder = bpm.StepOrder,
+                        Status = "Skipped",
+                        CreatedAt = DateTime.UtcNow,
+                        CompletedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(bSkipExec);
+                    await db.SaveChangesAsync();
+                    await _logger.LogStepProgressAsync(project.Id, bpm.Id, "Skipped");
+                    continue;
+                }
+
                 var branchStepExec = new StepExecution
                 {
                     Id = Guid.NewGuid(),
@@ -4587,10 +4901,27 @@ Datos de la ejecucion:
                                 var bPrevOrd = FindPreviousStepInBranch(
                                     bpm.StepOrder, bpm.BranchId, bpm.BranchFromStep,
                                     stepOutputs, stepResults, bBranches);
+
+                                // Check if a specific output port is connected (e.g. output_image_1)
+                                string? outputKey = null;
+                                if (bMap.TryGetProperty("outputKey", out var okVal))
+                                    outputKey = okVal.GetString();
+
                                 if (stepOutputs.TryGetValue(bPrevOrd, out var bPrev) && bPrev.Files.Count > 0)
                                 {
                                     bPrevFiles = new List<byte[]>();
-                                    foreach (var pf in bPrev.Files.Where(f => f.ContentType.StartsWith("image/")))
+
+                                    // Filter files by specific output port if connected
+                                    var imageFiles = bPrev.Files.Where(f => f.ContentType.StartsWith("image/")).ToList();
+                                    if (!string.IsNullOrEmpty(outputKey) && outputKey.StartsWith("output_image_")
+                                        && int.TryParse(outputKey.AsSpan("output_image_".Length), out var imgIdx))
+                                    {
+                                        var fileIdx = imgIdx - 1;
+                                        if (fileIdx >= 0 && fileIdx < imageFiles.Count)
+                                            imageFiles = new List<OutputFile> { imageFiles[fileIdx] };
+                                    }
+
+                                    foreach (var pf in imageFiles)
                                     {
                                         var pfPath = Path.Combine(workspacePath, $"branch_{branchId}_step_{bPrevOrd}", pf.FileName);
                                         if (!File.Exists(pfPath))
@@ -5672,10 +6003,23 @@ Datos de la ejecucion:
                                     pm.StepOrder, pm.BranchId, pm.BranchFromStep,
                                     stepOutputs, stepResults,
                                     BuildStepBranches(project.ProjectModules, stepModuleTypes));
+
+                                string? retryOutputKey = null;
+                                if (mappingJson.TryGetProperty("outputKey", out var rtokVal))
+                                    retryOutputKey = rtokVal.GetString();
+
                                 if (stepOutputs.TryGetValue(prevOrder, out var prevOutput) && prevOutput.Files.Count > 0)
                                 {
                                     retryPrevFiles = new List<byte[]>();
-                                    foreach (var pf in prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")))
+                                    var imageFiles = prevOutput.Files.Where(f => f.ContentType.StartsWith("image/")).ToList();
+                                    if (!string.IsNullOrEmpty(retryOutputKey) && retryOutputKey.StartsWith("output_image_")
+                                        && int.TryParse(retryOutputKey.AsSpan("output_image_".Length), out var rtImgIdx))
+                                    {
+                                        var rtFileIdx = rtImgIdx - 1;
+                                        if (rtFileIdx >= 0 && rtFileIdx < imageFiles.Count)
+                                            imageFiles = new List<OutputFile> { imageFiles[rtFileIdx] };
+                                    }
+                                    foreach (var pf in imageFiles)
                                     {
                                         var pfPath = Path.Combine(workspacePath, $"step_{prevOrder}", pf.FileName);
                                         if (File.Exists(pfPath))

@@ -143,6 +143,17 @@
                     </div>
 
                     <div class="inspector-section">
+                        <div class="inspector-field">
+                            <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                                <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "skipped", false)"
+                                       @onchange="@(e => ToggleSkipped(sel.Id, (bool)(e.Value ?? false)))" />
+                                Saltar este paso
+                            </label>
+                            <p class="text-sm text-muted" style="margin-top: 0.15rem;">Si se activa, este paso se omitira durante la ejecucion del pipeline.</p>
+                        </div>
+                    </div>
+
+                    <div class="inspector-section">
                         <div class="inspector-section-title">Conexiones</div>
                         @{
                             var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id), sel.InputMapping, sel.OrchestratorOutputs);
@@ -151,66 +162,99 @@
                         }
                         @if (inputPorts.Any())
                         {
-                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.2rem;">Entradas:</p>
-                            @foreach (var port in inputPorts)
-                            {
-                                var conn = _connections.FirstOrDefault(c => c.ToModuleId == sel.Id && c.ToPort == port.Id);
-                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
-                                    <span style="color: @PortDataType.GetColor(port.DataType);">&#x25CF;</span>
-                                    <span>@port.Label</span>
-                                    <span class="port-type-badge" style="background: @PortDataType.GetColor(port.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(port.DataType)</span>
-                                    @if (conn is not null)
-                                    {
-                                        var capturedInputConn = conn;
-                                        var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
-                                        var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping, fromModule.OrchestratorOutputs) : new();
-                                        var fromPort = fromPorts.FirstOrDefault(p => p.Id == conn.FromPort);
-                                        <span class="text-muted">&#x2190; @(fromModule?.StepName ?? fromModule?.AiModuleName ?? "?")</span>
-                                        @if (fromPort is not null)
-                                        {
-                                            <span class="port-type-badge" style="background: @PortDataType.GetColor(fromPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(fromPort.DataType)</span>
-                                        }
-                                        <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1;opacity:0.6;" @onclick="() => RemoveConnection(capturedInputConn)" title="Quitar conexion">&#x2715;</button>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted" style="font-style:italic;">sin conectar</span>
-                                    }
+                            <div class="inspector-port-section">
+                                <div class="inspector-port-section-label">
+                                    <i class="bi bi-arrow-right-circle"></i> Entradas
                                 </div>
-                            }
+                                @foreach (var port in inputPorts)
+                                {
+                                    var portConns = _connections.Where(c => c.ToModuleId == sel.Id && c.ToPort == port.Id).ToList();
+                                    <div class="inspector-port-item">
+                                        <div class="inspector-port-header">
+                                            <span class="inspector-port-dot" style="background: @PortDataType.GetColor(port.DataType);"></span>
+                                            <span class="inspector-port-name">@port.Label</span>
+                                            <span class="inspector-port-type-badge" style="background: @(PortDataType.GetColor(port.DataType))22; color: @PortDataType.GetColor(port.DataType); border: 1px solid @(PortDataType.GetColor(port.DataType))44;">@PortDataType.GetLabel(port.DataType)</span>
+                                            @if (port.AllowMultiple)
+                                            {
+                                                <span class="inspector-port-multi-badge" title="Acepta multiples conexiones">N</span>
+                                            }
+                                            @if (port.IsRequired)
+                                            {
+                                                <span style="color: var(--danger); font-size: 0.6rem; font-weight: 700;">*</span>
+                                            }
+                                        </div>
+                                        @if (portConns.Count > 0)
+                                        {
+                                            @foreach (var conn in portConns)
+                                            {
+                                                var capturedInputConn = conn;
+                                                var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+                                                var fromPortsList = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping, fromModule.OrchestratorOutputs) : new();
+                                                var fromPort = fromPortsList.FirstOrDefault(p => p.Id == conn.FromPort);
+                                                <div class="inspector-port-connection">
+                                                    <span class="inspector-port-conn-arrow">&#x2190;</span>
+                                                    <span class="inspector-port-conn-source">@(fromModule?.StepName ?? fromModule?.AiModuleName ?? "?")</span>
+                                                    @if (fromPort is not null)
+                                                    {
+                                                        <span class="inspector-port-type-badge" style="background: @(PortDataType.GetColor(fromPort.DataType))22; color: @PortDataType.GetColor(fromPort.DataType); border: 1px solid @(PortDataType.GetColor(fromPort.DataType))44;">@fromPort.Label</span>
+                                                    }
+                                                    <button class="inspector-port-remove-btn" @onclick="() => RemoveConnection(capturedInputConn)" title="Quitar conexion">&#x2715;</button>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="inspector-port-empty">sin conectar</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
                         }
                         @if (outputPorts.Any())
                         {
-                            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.3rem; margin-bottom: 0.2rem;">Salidas:</p>
-                            @foreach (var port in outputPorts)
-                            {
-                                var conns = _connections.Where(c => c.FromModuleId == sel.Id && c.FromPort == port.Id).ToList();
-                                <div style="font-size: 0.75rem; padding: 0.15rem 0; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
-                                    <span style="color: @PortDataType.GetColor(port.DataType);">&#x25CF;</span>
-                                    <span>@port.Label</span>
-                                    <span class="port-type-badge" style="background: @PortDataType.GetColor(port.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(port.DataType)</span>
-                                    @if (conns.Any())
-                                    {
-                                        @foreach (var c in conns)
-                                        {
-                                            var capturedOutputConn = c;
-                                            var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
-                                            var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping, toModule.OrchestratorOutputs) : new();
-                                            var toPort = toPorts.FirstOrDefault(p => p.Id == c.ToPort);
-                                            <span class="text-muted">&#x2192; @(toModule?.StepName ?? toModule?.AiModuleName ?? "?")</span>
-                                            @if (toPort is not null)
-                                            {
-                                                <span class="port-type-badge" style="background: @PortDataType.GetColor(toPort.DataType); color: #fff; padding: 0 0.3rem; border-radius: 3px; font-size: 0.65rem;">@PortDataType.GetLabel(toPort.DataType)</span>
-                                            }
-                                            <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.7rem;padding:0 0.2rem;line-height:1;opacity:0.6;" @onclick="() => RemoveConnection(capturedOutputConn)" title="Quitar conexion">&#x2715;</button>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted" style="font-style:italic;">sin conectar</span>
-                                    }
+                            <div class="inspector-port-section" style="margin-top: 0.4rem;">
+                                <div class="inspector-port-section-label">
+                                    <i class="bi bi-arrow-left-circle"></i> Salidas
                                 </div>
-                            }
+                                @foreach (var port in outputPorts)
+                                {
+                                    var outConns = _connections.Where(c => c.FromModuleId == sel.Id && c.FromPort == port.Id).ToList();
+                                    <div class="inspector-port-item">
+                                        <div class="inspector-port-header">
+                                            <span class="inspector-port-dot" style="background: @PortDataType.GetColor(port.DataType);"></span>
+                                            <span class="inspector-port-name">@port.Label</span>
+                                            <span class="inspector-port-type-badge" style="background: @(PortDataType.GetColor(port.DataType))22; color: @PortDataType.GetColor(port.DataType); border: 1px solid @(PortDataType.GetColor(port.DataType))44;">@PortDataType.GetLabel(port.DataType)</span>
+                                            @if (outConns.Count > 0)
+                                            {
+                                                <span class="inspector-port-count-badge">@outConns.Count</span>
+                                            }
+                                        </div>
+                                        @if (outConns.Count > 0)
+                                        {
+                                            @foreach (var c in outConns)
+                                            {
+                                                var capturedOutputConn = c;
+                                                var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
+                                                var toPortsList = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping, toModule.OrchestratorOutputs) : new();
+                                                var toPort = toPortsList.FirstOrDefault(p => p.Id == c.ToPort);
+                                                <div class="inspector-port-connection">
+                                                    <span class="inspector-port-conn-arrow">&#x2192;</span>
+                                                    <span class="inspector-port-conn-source">@(toModule?.StepName ?? toModule?.AiModuleName ?? "?")</span>
+                                                    @if (toPort is not null)
+                                                    {
+                                                        <span class="inspector-port-type-badge" style="background: @(PortDataType.GetColor(toPort.DataType))22; color: @PortDataType.GetColor(toPort.DataType); border: 1px solid @(PortDataType.GetColor(toPort.DataType))44;">@toPort.Label</span>
+                                                    }
+                                                    <button class="inspector-port-remove-btn" @onclick="() => RemoveConnection(capturedOutputConn)" title="Quitar conexion">&#x2715;</button>
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div class="inspector-port-empty">sin conectar</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
                         }
                     </div>
 
@@ -236,11 +280,48 @@
                         <div class="inspector-section">
                             <div class="inspector-section-title">Generacion</div>
                             <div class="inspector-field">
+                                <label>Prompt <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+                                <textarea rows="3" placeholder="Describe la imagen que quieres generar..."
+                                          value="@GetModuleConfig(sel.Id, "imagePrompt", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "imagePrompt", e.Value?.ToString() ?? ""))"></textarea>
+                            </div>
+                            <div class="inspector-field">
                                 <label>Numero de imagenes</label>
                                 <input type="number" min="1" max="20"
                                        value="@GetSceneCount(sel.Id)"
                                        @onchange="@(e => OnImageCountChange(sel.Id, e))" />
                                 <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cada imagen tendra su propia salida.</p>
+                            </div>
+                        </div>
+                    }
+
+                    @if (sel.ModuleType == "Video")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Generacion de video</div>
+                            <div class="inspector-field">
+                                <label>Prompt del video <span style="color: var(--danger);">*</span></label>
+                                <textarea rows="3" placeholder="Describe lo que quieres que muestre el video..."
+                                          value="@GetModuleConfig(sel.Id, "videoPrompt", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "videoPrompt", e.Value?.ToString() ?? ""))"></textarea>
+                            </div>
+                            <div class="inspector-field">
+                                <label>Fuente de video</label>
+                                <select value="@GetModuleConfig(sel.Id, "videoSource", "prompt")"
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "videoSource", e.Value?.ToString() ?? "prompt"))">
+                                    <option value="prompt">Solo texto</option>
+                                    <option value="both">Imagen + prompt</option>
+                                </select>
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                                    @if (GetModuleConfig(sel.Id, "videoSource", "prompt") == "both")
+                                    {
+                                        <text>Se usara la imagen del paso anterior como primer fotograma.</text>
+                                    }
+                                    else
+                                    {
+                                        <text>El video se generara unicamente a partir del prompt de texto.</text>
+                                    }
+                                </p>
                             </div>
                         </div>
                     }
@@ -659,24 +740,83 @@
                     {
                         <div class="inspector-section">
                             <div class="inspector-section-title">Configuracion de publicacion</div>
-                            <div class="inspector-field">
-                                <label>Tipo de publicacion</label>
-                                <select value="@GetModuleConfig(sel.Id, "publishType", "post")"
-                                        @onchange="@(e => SetModuleConfig(sel.Id, "publishType", e.Value?.ToString() ?? "post"))">
-                                    <option value="post">Post</option>
-                                    <option value="reel">Reel</option>
-                                    <option value="story">Story</option>
-                                </select>
-                            </div>
+
+                            @if (sel.ModelName != "tiktok")
+                            {
+                                <div class="inspector-field">
+                                    <label>Tipo de publicacion</label>
+                                    <select value="@GetModuleConfig(sel.Id, "publishType", "post")"
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "publishType", e.Value?.ToString() ?? "post"))">
+                                        <option value="post">Post</option>
+                                        <option value="reel">Reel</option>
+                                        <option value="story">Story</option>
+                                    </select>
+                                </div>
+                            }
+
                             <div class="inspector-field">
                                 <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
                                 <textarea rows="3" placeholder="{previous_output}"
                                           value="@GetModuleConfig(sel.Id, "caption", "")"
                                           @onchange="@(e => SetModuleConfig(sel.Id, "caption", e.Value?.ToString() ?? ""))"></textarea>
                             </div>
+
+                            @if (sel.ModelName == "tiktok")
+                            {
+                                <div class="inspector-field">
+                                    <label>Privacidad</label>
+                                    <select value="@GetModuleConfig(sel.Id, "privacyLevel", "PUBLIC_TO_EVERYONE")"
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "privacyLevel", e.Value?.ToString() ?? "PUBLIC_TO_EVERYONE"))">
+                                        <option value="PUBLIC_TO_EVERYONE">Publico</option>
+                                        <option value="FOLLOWER_OF_CREATOR">Solo seguidores</option>
+                                        <option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option>
+                                        <option value="SELF_ONLY">Solo yo</option>
+                                    </select>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowComments", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowComments", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir comentarios</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowDuet", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowDuet", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir Duet</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowStitch", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowStitch", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir Stitch</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "brandedContent", false)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "brandedContent", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
+                                        <span>Contenido de marca</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "brandPartnership", false)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "brandPartnership", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
+                                        <span>Asociacion de marca</span>
+                                    </label>
+                                </div>
+                            }
+
                             <p class="text-sm text-muted" style="margin-top: 0.15rem;">
                                 Las imagenes/videos del paso anterior se adjuntan automaticamente.
                                 Buffer publica en el canal configurado. Programacion automatica.
+                                @if (sel.ModelName == "tiktok")
+                                {
+                                    <br/><text>TikTok: soporta videos e imagenes (hasta 4 por post).</text>
+                                }
                             </p>
                         </div>
                     }
@@ -905,12 +1045,14 @@
             await RebuildDrawflow();
             _lastModuleCount = Modules.Count;
             _lastConnectionCount = Connections.Count;
+            _lastInputMappingsHash = string.Join("|", Modules.Select(m => $"{m.Id}:{m.InputMapping}"));
         }
         else if (_jsInitialized)
         {
             var mappingsHash = string.Join("|", Modules.Select(m => $"{m.Id}:{m.InputMapping}"));
             if (Modules.Count != _lastModuleCount || Connections.Count != _lastConnectionCount || mappingsHash != _lastInputMappingsHash)
             {
+                Console.WriteLine($"[PipelineCanvas] Rebuild triggered: modules {_lastModuleCount}→{Modules.Count}, conns {_lastConnectionCount}→{Connections.Count}, hashChanged={mappingsHash != _lastInputMappingsHash}");
                 // Auto-select newly added module so inspector shows immediately
                 // (needed for Orchestrator to configure outputs, VideoEdit to set scene count, etc.)
                 if (_pendingAutoSelectModuleType is not null && Modules.Count > _lastModuleCount)
@@ -974,7 +1116,7 @@
             var sceneCount = GetSceneCount(pm.Id);
             var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount, pm.InputMapping, pm.OrchestratorOutputs);
             var inputs = ports.Where(p => p.IsInput).Select(p => new {
-                id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = p.IsRequired
+                id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = p.IsRequired, allowMultiple = p.AllowMultiple
             }).ToList();
             var outputs = ports.Where(p => !p.IsInput).Select(p => new {
                 id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = false
@@ -1001,12 +1143,18 @@
                 stepLabel,
                 pm.ModelName,
                 warning);
+
+            if (GetModuleConfigBool(pm.Id, "skipped", false))
+                await JS.InvokeVoidAsync("pipelineEditor.setNodeSkipped", pm.Id.ToString(), true);
+
             idx++;
         }
 
         // Add all connections from DB
+        Console.WriteLine($"[PipelineCanvas] RebuildDrawflow: adding {_connections.Count} connections");
         foreach (var conn in _connections)
         {
+            Console.WriteLine($"[PipelineCanvas]   conn: {conn.FromPort} → {conn.ToPort}");
             await JS.InvokeVoidAsync("pipelineEditor.addConnection",
                 conn.FromModuleId.ToString(), conn.FromPort,
                 conn.ToModuleId.ToString(), conn.ToPort);
@@ -1083,6 +1231,7 @@
                 "Running" => "running",
                 "Completed" => "completed",
                 "Failed" => "failed",
+                "Skipped" => "skipped",
                 "WaitingForCheckpoint" => "waiting",
                 "WaitingForReview" => "waiting",
                 _ => "idle"
@@ -1186,6 +1335,12 @@
             _moduleConfigs[moduleId] = new();
         _moduleConfigs[moduleId][key] = value;
         await AutoSaveGraph();
+    }
+
+    private async Task ToggleSkipped(Guid moduleId, bool skipped)
+    {
+        await SetModuleConfig(moduleId, "skipped", skipped.ToString().ToLower());
+        await JS.InvokeVoidAsync("pipelineEditor.setNodeSkipped", moduleId.ToString(), skipped);
     }
 
     // ── Actions ──
@@ -1374,6 +1529,7 @@
 
     private async Task AutoSaveGraph()
     {
+        Console.WriteLine($"[PipelineCanvas] AutoSaveGraph: saving {_connections.Count} connections");
         _error = null;
         var positions = _positions.Select(p => new NodePositionEntry(p.Key, p.Value.X, p.Value.Y)).ToList();
         var sceneCounts = _sceneCountOverrides
@@ -1402,6 +1558,7 @@
     [JSInvokable]
     public async Task OnConnectionMade(string fromModuleId, string fromPort, string toModuleId, string toPort)
     {
+        Console.WriteLine($"[PipelineCanvas] OnConnectionMade: {fromPort} → {toPort}");
         if (!Guid.TryParse(fromModuleId, out var fromId) || !Guid.TryParse(toModuleId, out var toId))
             return;
 
@@ -1426,13 +1583,26 @@
             return;
         }
 
-        // Remove existing connection to same input port
-        _connections.RemoveAll(c => c.ToModuleId == toId && c.ToPort == toPort);
+        // Remove existing connection to same input port ONLY if port doesn't allow multiple
+        if (!toPortDef.AllowMultiple)
+        {
+            var existingConns = _connections.Where(c => c.ToModuleId == toId && c.ToPort == toPort).ToList();
+            foreach (var ec in existingConns)
+            {
+                await JS.InvokeVoidAsync("pipelineEditor.removeConnection",
+                    ec.FromModuleId.ToString(), ec.FromPort,
+                    ec.ToModuleId.ToString(), ec.ToPort);
+            }
+            _connections.RemoveAll(c => c.ToModuleId == toId && c.ToPort == toPort);
+        }
 
         if (!_connections.Any(c => c.FromModuleId == fromId && c.FromPort == fromPort && c.ToModuleId == toId && c.ToPort == toPort))
         {
             _connections.Add(new ConnectionEntry(fromId, fromPort, toId, toPort));
         }
+
+        var connsToSamePort = _connections.Count(c => c.ToModuleId == toId && c.ToPort == toPort);
+        Console.WriteLine($"[PipelineCanvas] After add: {_connections.Count} total connections, {connsToSamePort} to port {toPort}");
 
         await NotifyGraphChanged();
         await InvokeAsync(StateHasChanged);
@@ -1444,9 +1614,13 @@
         if (!Guid.TryParse(fromModuleId, out var fromId) || !Guid.TryParse(toModuleId, out var toId))
             return;
 
+        Console.WriteLine($"[PipelineCanvas] OnConnectionRemoved: {fromPort} → {toPort}");
+
         _connections.RemoveAll(c =>
             c.FromModuleId == fromId && c.FromPort == fromPort &&
             c.ToModuleId == toId && c.ToPort == toPort);
+
+        Console.WriteLine($"[PipelineCanvas] After remove: {_connections.Count} total connections");
 
         await NotifyGraphChanged();
         await InvokeAsync(StateHasChanged);

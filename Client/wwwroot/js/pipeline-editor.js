@@ -67,6 +67,7 @@ window.pipelineEditor = {
         });
 
         this._editor.on('connectionCreated', conn => {
+            console.log('[pipelineEditor] connectionCreated event:', conn.output_id, conn.output_class, '→', conn.input_id, conn.input_class, 'suppressed:', this._suppressEvents);
             if (this._suppressEvents) return;
             var fromPorts = this._portMap[conn.output_id];
             var toPorts = this._portMap[conn.input_id];
@@ -82,6 +83,7 @@ window.pipelineEditor = {
         });
 
         this._editor.on('connectionRemoved', conn => {
+            console.log('[pipelineEditor] connectionRemoved event:', conn.output_id, conn.output_class, '→', conn.input_id, conn.input_class, 'suppressed:', this._suppressEvents);
             if (this._suppressEvents) return;
             var fromPorts = this._portMap[conn.output_id];
             var toPorts = this._portMap[conn.input_id];
@@ -132,8 +134,15 @@ window.pipelineEditor = {
             var conns = nodeData.inputs[inputClass].connections;
             if (!conns || conns.length === 0) return;
 
-            // Get the source output info before removing
-            var existingConn = conns[0];
+            // If this input port allows multiple connections, don't re-drag — let the user add more
+            var portInfo = self._portMap[inputNodeId];
+            if (portInfo && portInfo.allowMultiple) {
+                var inputIdx = parseInt(inputClass.replace('input_', '')) - 1;
+                if (portInfo.allowMultiple[inputIdx]) return;
+            }
+
+            // Get the LAST connection to re-drag (most recently added)
+            var existingConn = conns[conns.length - 1];
             var outputNodeId = parseInt(existingConn.node);
             var outputClass = existingConn.output; // e.g. 'output_1'
 
@@ -164,13 +173,17 @@ window.pipelineEditor = {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
-        var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName, warning);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName, warning, inputPorts.length, outputPorts.length);
         var nodeId = this._editor.addNode(
             moduleId, inputPorts.length, outputPorts.length,
             x, y, 'df-type-' + moduleType.toLowerCase(),
             { moduleId: moduleId }, html
         );
-        this._portMap[nodeId] = { inputs: inputPorts.map(p => p.id), outputs: outputPorts.map(p => p.id) };
+        this._portMap[nodeId] = {
+            inputs: inputPorts.map(p => p.id),
+            outputs: outputPorts.map(p => p.id),
+            allowMultiple: inputPorts.map(p => !!p.allowMultiple)
+        };
         this._moduleMap[nodeId] = moduleId;
         this._reverseMap[moduleId] = nodeId;
 
@@ -188,10 +201,16 @@ window.pipelineEditor = {
         if (!this._editor) return;
         var fromNodeId = this._reverseMap[fromModuleId];
         var toNodeId = this._reverseMap[toModuleId];
-        if (fromNodeId === undefined || toNodeId === undefined) return;
+        if (fromNodeId === undefined || toNodeId === undefined) {
+            console.warn('[pipelineEditor] addConnection: node not found', fromModuleId, toModuleId);
+            return;
+        }
         var fromPorts = this._portMap[fromNodeId];
         var toPorts = this._portMap[toNodeId];
-        if (!fromPorts || !toPorts) return;
+        if (!fromPorts || !toPorts) {
+            console.warn('[pipelineEditor] addConnection: portMap not found', fromNodeId, toNodeId);
+            return;
+        }
         var fromIdx = fromPorts.outputs.indexOf(fromPortId) + 1;
         var toIdx = toPorts.inputs.indexOf(toPortId) + 1;
         if (fromIdx > 0 && toIdx > 0) {
@@ -202,9 +221,14 @@ window.pipelineEditor = {
             var wasSuppressed = this._suppressEvents;
             this._suppressEvents = true;
             try {
+                console.log('[pipelineEditor] addConnection:', fromNodeId, 'output_' + fromIdx, '→', toNodeId, 'input_' + toIdx);
                 this._editor.addConnection(fromNodeId, toNodeId, 'output_' + fromIdx, 'input_' + toIdx);
-            } catch (e) { }
+            } catch (e) {
+                console.error('[pipelineEditor] addConnection error:', e);
+            }
             this._suppressEvents = wasSuppressed;
+        } else {
+            console.warn('[pipelineEditor] addConnection: port index not found', fromPortId, '→', toPortId, 'fromIdx:', fromIdx, 'toIdx:', toIdx);
         }
     },
 
@@ -294,6 +318,20 @@ window.pipelineEditor = {
         }
     },
 
+    // ── Toggle skipped visual state on a node ──
+    setNodeSkipped: function (moduleId, skipped) {
+        var nodeId = this._reverseMap[moduleId];
+        if (nodeId === undefined) return;
+        var el = document.querySelector('#node-' + nodeId);
+        if (el) {
+            if (skipped) {
+                el.classList.add('df-state-skipped');
+            } else {
+                el.classList.remove('df-state-skipped');
+            }
+        }
+    },
+
     // ── Set execution state on a node: 'idle', 'running', 'completed', 'failed' ──
     setNodeState: function (moduleId, state) {
         var nodeId = this._reverseMap[moduleId];
@@ -341,7 +379,7 @@ window.pipelineEditor = {
         });
     },
 
-    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning) {
+    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount) {
         var orderBadge = stepLabel
             ? '<span class="df-order-badge">' + stepLabel + '</span>'
             : '<span class="df-order-badge" style="display:none"></span>';
@@ -351,11 +389,21 @@ window.pipelineEditor = {
         var warningLine = warning
             ? '<div class="df-node-warning">' + warning + '</div>'
             : '';
-        return '<div class="df-node-content">'
+        var portSummary = '';
+        if ((inputCount || 0) > 0 || (outputCount || 0) > 0) {
+            portSummary = '<div class="df-node-ports-summary">';
+            if ((inputCount || 0) > 0)
+                portSummary += '<span class="df-port-count df-port-in" title="Entradas">' + inputCount + ' in</span>';
+            if ((outputCount || 0) > 0)
+                portSummary += '<span class="df-port-count df-port-out" title="Salidas">' + outputCount + ' out</span>';
+            portSummary += '</div>';
+        }
+        return '<div class="df-node-content" style="border-left: 3px solid ' + color + ';">'
             + '<div class="df-node-overlay-spinner"></div>'
             + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + name + '</div>'
             + '<div class="df-node-type">' + type + '</div>'
             + modelLine
+            + portSummary
             + warningLine
             + '</div>';
     },

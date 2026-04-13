@@ -811,13 +811,18 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
     var oldConnections = await db.ModuleConnections
         .Where(c => c.ProjectId == projectId)
         .ToListAsync();
+    Console.WriteLine($"[SaveGraph] Removing {oldConnections.Count} old connections, inserting {req.Connections.Count} new");
     db.ModuleConnections.RemoveRange(oldConnections);
 
     var moduleIds = modules.Select(m => m.Id).ToHashSet();
+    var insertedCount = 0;
     foreach (var conn in req.Connections)
     {
         if (!moduleIds.Contains(conn.FromModuleId) || !moduleIds.Contains(conn.ToModuleId))
+        {
+            Console.WriteLine($"[SaveGraph] Skipping connection {conn.FromPort}→{conn.ToPort}: module not found");
             continue;
+        }
         db.ModuleConnections.Add(new ModuleConnection
         {
             Id = Guid.NewGuid(),
@@ -828,7 +833,9 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             ToPort = conn.ToPort,
             CreatedAt = now
         });
+        insertedCount++;
     }
+    Console.WriteLine($"[SaveGraph] Inserted {insertedCount} connections");
 
     // 3. Topological sort: derive StepOrder from connections
     var incomingEdges = moduleIds.ToDictionary(id => id, _ => new List<Guid>());
@@ -886,24 +893,32 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
         }
         else
         {
-            // Check if upstream provides file or text
-            var upModule = modules.FirstOrDefault(m => m.Id == upstream[0]);
-            var conn = req.Connections.FirstOrDefault(c => c.FromModuleId == upstream[0] && c.ToModuleId == pm.Id);
+            // Find the primary connection (first non-scene, non-resource connection, or first overall)
+            var primaryConn = req.Connections
+                .Where(c => c.ToModuleId == pm.Id)
+                .Where(c => !c.ToPort.StartsWith("input_scene_") && c.ToPort != "input_resources")
+                .FirstOrDefault()
+                ?? req.Connections.FirstOrDefault(c => c.ToModuleId == pm.Id);
+
+            var upModule = primaryConn is not null
+                ? modules.FirstOrDefault(m => m.Id == primaryConn.FromModuleId)
+                : modules.FirstOrDefault(m => m.Id == upstream[0]);
+
             var field = "text";
-            if (conn is not null && upModule is not null)
+            if (primaryConn is not null && upModule is not null)
             {
                 // Detect by port name convention
-                if (conn.FromPort.Contains("image") || conn.FromPort.Contains("video") ||
-                    conn.FromPort.Contains("audio") || conn.FromPort.Contains("file") ||
-                    conn.FromPort.Contains("design"))
+                if (primaryConn.FromPort.Contains("image") || primaryConn.FromPort.Contains("video") ||
+                    primaryConn.FromPort.Contains("audio") || primaryConn.FromPort.Contains("file") ||
+                    primaryConn.FromPort.Contains("design"))
                     field = "file";
             }
 
-            // Include outputKey when connected from a specific orchestrator output port
-            if (conn is not null && upModule?.AiModule?.ModuleType == "Orchestrator"
-                && !string.IsNullOrEmpty(conn.FromPort) && conn.FromPort.StartsWith("output_"))
+            // Include outputKey when connected from a specific output port
+            // (e.g. output_image_1 from Image module, output_X from Orchestrator, etc.)
+            if (primaryConn is not null && !string.IsNullOrEmpty(primaryConn.FromPort) && primaryConn.FromPort.StartsWith("output_"))
             {
-                pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\",\"outputKey\":\"{conn.FromPort}\"}}";
+                pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\",\"outputKey\":\"{primaryConn.FromPort}\"}}";
             }
             else
             {
@@ -911,25 +926,52 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             }
         }
 
-        // For VideoEdit: detect connections to the input_overlays port and store the source step
+        // For VideoEdit: store all scene-level and resource connections
         if (pm.AiModule?.ModuleType == "VideoEdit")
         {
+            var cfgDict = new Dictionary<string, object>();
+            if (!string.IsNullOrEmpty(pm.Configuration))
+            {
+                try { cfgDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(pm.Configuration) ?? new(); }
+                catch { cfgDict = new(); }
+            }
+
+            // Resource port connection
             var resourceConn = req.Connections.FirstOrDefault(c => c.ToModuleId == pm.Id && c.ToPort == "input_resources");
             if (resourceConn is not null)
             {
                 var resourceModule = modules.FirstOrDefault(m => m.Id == resourceConn.FromModuleId);
                 if (resourceModule is not null)
-                {
-                    var cfgDict = new Dictionary<string, object>();
-                    if (!string.IsNullOrEmpty(pm.Configuration))
-                    {
-                        try { cfgDict = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(pm.Configuration) ?? new(); }
-                        catch { cfgDict = new(); }
-                    }
                     cfgDict["resourceSourceStep"] = resourceModule.StepOrder;
-                    pm.Configuration = System.Text.Json.JsonSerializer.Serialize(cfgDict);
-                }
             }
+
+            // Scene-level connections: store all connections per scene port (supports multiple per port)
+            var sceneConns = req.Connections.Where(c => c.ToModuleId == pm.Id && c.ToPort.StartsWith("input_scene_")).ToList();
+            if (sceneConns.Count > 0)
+            {
+                var sceneInputs = new Dictionary<string, object>();
+                foreach (var group in sceneConns.GroupBy(c => c.ToPort))
+                {
+                    var sources = new List<Dictionary<string, object>>();
+                    foreach (var conn in group)
+                    {
+                        var srcModule = modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+                        if (srcModule is not null)
+                        {
+                            sources.Add(new Dictionary<string, object>
+                            {
+                                ["stepOrder"] = srcModule.StepOrder,
+                                ["moduleType"] = srcModule.AiModule?.ModuleType ?? "Unknown",
+                                ["fromPort"] = conn.FromPort
+                            });
+                        }
+                    }
+                    sceneInputs[group.Key] = sources;
+                }
+                cfgDict["sceneInputs"] = sceneInputs;
+            }
+
+            pm.Configuration = System.Text.Json.JsonSerializer.Serialize(cfgDict);
         }
 
         // For Coordinator: store all input connections as inputSources map
@@ -1531,7 +1573,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
             await using var bgDb = bgFactory.Create(tenantDbName);
             var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
-            var execution = await executor.ExecuteAsync(projectId, req.UserInput, bgDb, tenantDbName, ct);
+            var execution = await executor.ExecuteAsync(projectId, req.UserInput, bgDb, tenantDbName, ct, req.UseHistory);
 
             // Load full result for client
             var exec = await bgDb.ProjectExecutions
@@ -2462,6 +2504,59 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
 
     await db.SaveChangesAsync();
     return Results.Ok(new { message = "Configuracion Buffer guardada" });
+}).RequireAuthorization();
+
+// ==================== TikTok (Buffer) Config Endpoints ====================
+
+app.MapGet("/api/projects/{projectId:guid}/tiktok-config", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(project.TikTokConfig))
+        return Results.Ok(new BufferConfigDto("", ""));
+
+    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.TikTokConfig);
+    return Results.Ok(config);
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/tiktok-config", async (
+    Guid projectId, BufferConfigDto dto, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    project.TikTokConfig = System.Text.Json.JsonSerializer.Serialize(dto);
+    project.UpdatedAt = DateTime.UtcNow;
+
+    // Ensure the TikTok Publish sentinel module exists
+    var hasTikTokPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "tiktok");
+    if (!hasTikTokPublish)
+    {
+        db.AiModules.Add(new AiModule
+        {
+            Id = Guid.NewGuid(),
+            Name = "TikTok Publish",
+            Description = "Publica contenido en TikTok (videos e imagenes) via Buffer.",
+            ProviderType = "System",
+            ModuleType = "Publish",
+            ModelName = "tiktok",
+            IsEnabled = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { message = "Configuracion TikTok guardada" });
 }).RequireAuthorization();
 
 // ==================== Telegram Webhook Endpoint ====================
