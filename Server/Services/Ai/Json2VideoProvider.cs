@@ -716,8 +716,33 @@ namespace Server.Services.Ai
             VideoSettings s)
         {
             var sceneCount = perSceneMedia.Keys.Max();
-            var scriptParts = SplitScript(textInput, sceneCount);
             var scenes = new List<object>();
+
+            // Check if all media are images
+            bool allImages = true;
+            for (int i = 1; i <= sceneCount; i++)
+            {
+                if (!perSceneMedia.TryGetValue(i, out var entries)) continue;
+                foreach (var entry in entries)
+                {
+                    var entryType = entry.GetValueOrDefault("type", "");
+                    if (entryType != "text" && entryType != "image" && !string.IsNullOrEmpty(entry.GetValueOrDefault("url", "")))
+                        allImages = false;
+                }
+            }
+
+            // For image slideshows: voice at movie level, fixed scene durations
+            bool useMovieLevelVoice = allImages && s.EnableVoice && !string.IsNullOrWhiteSpace(textInput);
+            double perSceneDuration = -1.0;
+
+            if (useMovieLevelVoice)
+            {
+                var wordCount = textInput.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
+                var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, sceneCount * 3.0);
+                perSceneDuration = Math.Max(estimatedVoiceSeconds / sceneCount, 3.0);
+            }
+
+            var scriptParts = useMovieLevelVoice ? new List<string>() : SplitScript(textInput, sceneCount);
 
             for (int i = 1; i <= sceneCount; i++)
             {
@@ -732,27 +757,58 @@ namespace Server.Services.Ai
                         var entryType = entry.GetValueOrDefault("type", "");
                         if (entryType == "text")
                         {
-                            // Text input for this scene (e.g. narration text from a Text module)
                             sceneText = entry.GetValueOrDefault("content", "");
                         }
                         else if (!string.IsNullOrEmpty(entry.GetValueOrDefault("url", "")))
                         {
-                            // Media file (image, video, audio)
                             mediaUrl ??= entry["url"];
                             mediaType ??= entryType;
                         }
                     }
                 }
 
-                // Use per-scene text if available, otherwise fall back to script split
-                var voiceScript = !string.IsNullOrWhiteSpace(sceneText)
-                    ? sceneText
-                    : (i - 1 < scriptParts.Count ? scriptParts[i - 1] : null);
-
-                scenes.Add(BuildScene(mediaUrl, mediaType ?? "image", voiceScript, s, isLast: i == sceneCount));
+                if (useMovieLevelVoice)
+                {
+                    // No voice per scene — voice will be at movie level
+                    scenes.Add(BuildScene(mediaUrl, mediaType ?? "image", null, s,
+                        isLast: i == sceneCount, overrideSceneDuration: perSceneDuration));
+                }
+                else
+                {
+                    var voiceScript = !string.IsNullOrWhiteSpace(sceneText)
+                        ? sceneText
+                        : (i - 1 < scriptParts.Count ? scriptParts[i - 1] : null);
+                    scenes.Add(BuildScene(mediaUrl, mediaType ?? "image", voiceScript, s, isLast: i == sceneCount));
+                }
             }
 
             var movie = BuildMoviePayload(s, scenes);
+
+            // Add movie-level voice for image slideshows
+            if (useMovieLevelVoice)
+            {
+                var movieElements = movie.ContainsKey("elements")
+                    ? (List<object>)movie["elements"]
+                    : new List<object>();
+
+                var movieVoice = new Dictionary<string, object>
+                {
+                    ["type"] = "voice",
+                    ["text"] = textInput,
+                    ["voice"] = s.VoiceName,
+                    ["model"] = s.VoiceModel
+                };
+                if (s.VoiceModel.StartsWith("elevenlabs") && Math.Abs(s.VoiceSpeed - 1.0) > 0.01)
+                {
+                    movieVoice["model-settings"] = new Dictionary<string, object>
+                    {
+                        ["voice_settings"] = new Dictionary<string, object> { ["speed"] = s.VoiceSpeed }
+                    };
+                }
+
+                movieElements.Add(movieVoice);
+                movie["elements"] = movieElements;
+            }
 
             return movie;
         }
