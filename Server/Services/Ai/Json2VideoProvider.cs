@@ -321,10 +321,8 @@ namespace Server.Services.Ai
                     if (voiceModelSettings.HasValue)
                         movieVoice["model-settings"] = ConvertJsonElement(voiceModelSettings.Value)!;
 
-                    // Estimate voice duration (~2.5 words/sec) and divide across scenes
-                    var wordCount = voiceText.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
-                    var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, totalSceneCount * 3.0);
-                    perSceneDuration = Math.Max(estimatedVoiceSeconds / totalSceneCount, 3.0);
+                    // Use configured image duration for each scene
+                    perSceneDuration = s.ImageDuration >= 0.25 ? s.ImageDuration : 5.0;
                 }
             }
 
@@ -603,10 +601,8 @@ namespace Server.Services.Ai
 
                 if (allImages && s.EnableVoice && !string.IsNullOrWhiteSpace(textInput))
                 {
-                    // Estimate voice duration and divide evenly across image scenes
-                    var wordCount = textInput.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
-                    var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, mediaList.Count * 3.0);
-                    var perSceneDuration = Math.Max(estimatedVoiceSeconds / mediaList.Count, 3.0);
+                    // Use configured image duration for each scene
+                    var perSceneDuration = s.ImageDuration >= 0.25 ? s.ImageDuration : 5.0;
 
                     for (var i = 0; i < mediaList.Count; i++)
                     {
@@ -737,9 +733,8 @@ namespace Server.Services.Ai
 
             if (useMovieLevelVoice)
             {
-                var wordCount = textInput.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length;
-                var estimatedVoiceSeconds = Math.Max(wordCount / 2.5, sceneCount * 3.0);
-                perSceneDuration = Math.Max(estimatedVoiceSeconds / sceneCount, 3.0);
+                // Use configured image duration for each scene
+                perSceneDuration = s.ImageDuration >= 0.25 ? s.ImageDuration : 5.0;
             }
 
             var scriptParts = useMovieLevelVoice ? new List<string>() : SplitScript(textInput, sceneCount);
