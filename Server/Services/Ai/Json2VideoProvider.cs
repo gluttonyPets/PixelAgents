@@ -666,13 +666,6 @@ namespace Server.Services.Ai
                 movie["elements"] = movieElements;
             }
 
-            // Inject resources at movie level if provided
-            if (config.TryGetValue("resources", out var resVal))
-            {
-                var resStr = resVal is JsonElement resEl ? resEl.GetString() ?? "" : resVal?.ToString() ?? "";
-                InjectResources(movie, resStr);
-            }
-
             return movie;
         }
 
@@ -760,13 +753,6 @@ namespace Server.Services.Ai
             }
 
             var movie = BuildMoviePayload(s, scenes);
-
-            // Inject resources at movie level if provided
-            if (config.TryGetValue("resources", out var resVal))
-            {
-                var resStr = resVal is JsonElement resEl ? resEl.GetString() ?? "" : resVal?.ToString() ?? "";
-                InjectResources(movie, resStr);
-            }
 
             return movie;
         }

@@ -1168,22 +1168,6 @@ namespace Server.Services.Ai
                             }
                         }
 
-                        // Guard: if Resources port is connected but source step hasn't completed, fail
-                        if (config.TryGetValue("resourceSourceStep", out var mainResSrcCheck))
-                        {
-                            var resStep = mainResSrcCheck is JsonElement resEl2 ? resEl2.GetInt32() : Convert.ToInt32(mainResSrcCheck);
-                            if (!stepOutputs.ContainsKey(resStep))
-                            {
-                                var resModule = project.ProjectModules.FirstOrDefault(m => m.StepOrder == resStep);
-                                await _logger.LogAsync(projectId, executionId, "error",
-                                    $"VideoEdit: el puerto Recursos esta conectado a '{resModule?.StepName ?? "paso " + resStep}' pero aun no ha completado.",
-                                    pm.StepOrder, stepName);
-                                await FailStep(stepExecution, execution,
-                                    $"VideoEdit: esperando resultados del paso de Recursos ({resModule?.StepName ?? "paso " + resStep})", db);
-                                return execution;
-                            }
-                        }
-
                         await _logger.LogAsync(projectId, executionId, "info",
                             $"Editando video con Json2Video: input={editInput[..Math.Min(editInput.Length, 100)]}..., videos={vidCount}, imagenes={imgCount}",
                             pm.StepOrder, stepName);
@@ -5264,18 +5248,6 @@ Datos de la ejecucion:
                                 throw new InvalidOperationException(
                                     $"[{branchId}] VideoEdit: hay modulos de imagen/video conectados pero no se encontraron archivos. " +
                                     "Asegurate de que se ejecuten antes del VideoEdit.");
-                            }
-                        }
-
-                        // Guard: if Resources port is connected but the source step hasn't completed, fail
-                        if (bConfig.TryGetValue("resourceSourceStep", out var resSrcCheck))
-                        {
-                            var resStep = resSrcCheck is JsonElement resEl2 ? resEl2.GetInt32() : Convert.ToInt32(resSrcCheck);
-                            if (!stepOutputs.ContainsKey(resStep))
-                            {
-                                var resModule = project.ProjectModules.FirstOrDefault(m => m.StepOrder == resStep);
-                                throw new InvalidOperationException(
-                                    $"[{branchId}] VideoEdit: el puerto Recursos esta conectado a '{resModule?.StepName ?? "paso " + resStep}' pero aun no ha completado.");
                             }
                         }
 
