@@ -72,6 +72,9 @@ namespace Server.Services.Ai
         private static bool IsCoordinatorStep(AiModule module) =>
             module.ModuleType == "Coordinator";
 
+        private static bool IsFileUploadStep(AiModule module) =>
+            module.ModuleType == "FileUpload";
+
         private static bool IsStepSkipped(ProjectModule pm)
         {
             if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
@@ -132,7 +135,7 @@ namespace Server.Services.Ai
 
                 // Interaction and Publish steps don't need API key validation
                 // Also skip modules without ApiKeyId (e.g. system modules) — they have their own validation
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -434,6 +437,15 @@ namespace Server.Services.Ai
                     {
                         await HandleCoordinatorStepAsync(
                             project, execution, stepExecution, pm, userInput,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // ── FileUpload step: load attached files and produce output ──
+                    if (IsFileUploadStep(pm.AiModule))
+                    {
+                        await HandleFileUploadStepAsync(
+                            project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
@@ -3266,6 +3278,15 @@ Datos de la ejecucion:
                         continue;
                     }
 
+                    // Handle FileUpload step during resume
+                    if (IsFileUploadStep(pm.AiModule))
+                    {
+                        await HandleFileUploadStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
 
@@ -4190,6 +4211,15 @@ Datos de la ejecucion:
                                     continue;
                                 }
 
+                                // FileUpload in resume
+                                if (IsFileUploadStep(rpm.AiModule))
+                                {
+                                    await HandleFileUploadStepAsync(
+                                        project, execution, rStepExec, rpm,
+                                        stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                                    continue;
+                                }
+
                                 var rApiKey = rpm.AiModule.ApiKey?.EncryptedKey
                                     ?? throw new InvalidOperationException($"Paso {rpm.StepOrder}: ApiKey no configurada");
                                 var rProvider = _registry.GetProvider(rpm.AiModule.ProviderType)
@@ -4416,6 +4446,15 @@ Datos de la ejecucion:
                         continue;
                     }
 
+                    // FileUpload in remaining pipeline after checkpoint
+                    if (IsFileUploadStep(pm.AiModule))
+                    {
+                        await HandleFileUploadStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
                     var provider = _registry.GetProvider(pm.AiModule.ProviderType)
@@ -4531,6 +4570,141 @@ Datos de la ejecucion:
         /// Coordinator: collects outputs from all connected inputs, builds a context prompt,
         /// sends it to the AI, and stores the result as a single text output.
         /// </summary>
+        /// <summary>
+        /// Handles a FileUpload step: loads the files attached to the module and produces
+        /// a StepOutput so downstream modules can consume them (images, audio, video, etc.).
+        /// </summary>
+        private async Task HandleFileUploadStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            UserDbContext db, string tenantDbName)
+        {
+            var projectId = project.Id;
+            var executionId = execution.Id;
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+            var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Cargando archivos adjuntos del modulo '{stepName}'...",
+                pm.StepOrder, stepName);
+
+            var fileRecords = await db.ModuleFiles
+                .Where(f => f.AiModuleId == pm.AiModuleId)
+                .OrderBy(f => f.CreatedAt)
+                .ToListAsync();
+
+            if (fileRecords.Count == 0)
+            {
+                await _logger.LogAsync(projectId, executionId, "warn",
+                    $"Modulo FileUpload '{stepName}' no tiene archivos adjuntos",
+                    pm.StepOrder, stepName);
+
+                // Still produce an empty output so the pipeline continues
+                stepOutputs[pm.StepOrder] = new StepOutput
+                {
+                    Type = "file",
+                    Content = "(sin archivos)",
+                };
+                stepModuleTypes[pm.StepOrder] = "FileUpload";
+
+                stepExecution.Status = "Completed";
+                stepExecution.CompletedAt = DateTime.UtcNow;
+                stepExecution.OutputData = JsonSerializer.Serialize(stepOutputs[pm.StepOrder]);
+                await db.SaveChangesAsync();
+                await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
+                return;
+            }
+
+            // Copy module files into execution workspace and create ExecutionFile records
+            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+            Directory.CreateDirectory(stepDir);
+
+            var outputFiles = new List<OutputFile>();
+            var execFiles = new List<ExecutionFile>();
+
+            foreach (var f in fileRecords)
+            {
+                var sourcePath = Path.Combine(_mediaRoot, f.FilePath);
+                if (!File.Exists(sourcePath))
+                {
+                    await _logger.LogAsync(projectId, executionId, "warn",
+                        $"Archivo '{f.FileName}' no encontrado en disco, omitiendo",
+                        pm.StepOrder, stepName);
+                    continue;
+                }
+
+                var ext = Path.GetExtension(f.FileName);
+                var destFileName = $"{f.Id}{ext}";
+                var destPath = Path.Combine(stepDir, destFileName);
+                File.Copy(sourcePath, destPath, overwrite: true);
+
+                var execFile = new ExecutionFile
+                {
+                    Id = Guid.NewGuid(),
+                    StepExecutionId = stepExecution.Id,
+                    FileName = f.FileName,
+                    ContentType = f.ContentType,
+                    FilePath = Path.Combine($"step_{pm.StepOrder}", destFileName),
+                    Direction = "output",
+                    FileSize = f.FileSize,
+                    CreatedAt = DateTime.UtcNow,
+                };
+                db.ExecutionFiles.Add(execFile);
+                execFiles.Add(execFile);
+
+                outputFiles.Add(new OutputFile
+                {
+                    FileId = execFile.Id,
+                    FileName = f.FileName,
+                    ContentType = f.ContentType,
+                    FileSize = f.FileSize,
+                });
+            }
+
+            await db.SaveChangesAsync();
+
+            // Determine output type from file content types
+            var primaryType = "file";
+            if (outputFiles.All(f => f.ContentType.StartsWith("image/"))) primaryType = "image";
+            else if (outputFiles.All(f => f.ContentType.StartsWith("video/"))) primaryType = "video";
+            else if (outputFiles.All(f => f.ContentType.StartsWith("audio/"))) primaryType = "audio";
+
+            var output = new StepOutput
+            {
+                Type = primaryType,
+                Content = $"{outputFiles.Count} archivo(s) cargado(s)",
+                Files = outputFiles,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["source"] = "file-upload",
+                    ["count"] = outputFiles.Count,
+                }
+            };
+
+            stepOutputs[pm.StepOrder] = output;
+            stepResults[pm.StepOrder] = new AiResult
+            {
+                Success = true,
+                TextOutput = output.Content,
+                EstimatedCost = 0m,
+            };
+            stepModuleTypes[pm.StepOrder] = "FileUpload";
+
+            stepExecution.Status = "Completed";
+            stepExecution.CompletedAt = DateTime.UtcNow;
+            stepExecution.OutputData = JsonSerializer.Serialize(output);
+            stepExecution.EstimatedCost = 0m;
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"FileUpload completado: {outputFiles.Count} archivo(s) disponibles para el pipeline",
+                pm.StepOrder, stepName);
+            await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
+        }
+
         private async Task HandleCoordinatorStepAsync(
             Project project, ProjectExecution execution, StepExecution stepExecution,
             ProjectModule pm, string? userInput,
@@ -4844,6 +5018,15 @@ Datos de la ejecucion:
                     {
                         await HandleCoordinatorStepAsync(
                             project, execution, branchStepExec, bpm, userInput,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // FileUpload in branches
+                    if (IsFileUploadStep(bpm.AiModule))
+                    {
+                        await HandleFileUploadStepAsync(
+                            project, execution, branchStepExec, bpm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
@@ -5698,7 +5881,7 @@ Datos de la ejecucion:
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -5951,6 +6134,15 @@ Datos de la ejecucion:
                         stepExecution.Status = "Skipped";
                         stepExecution.CompletedAt = DateTime.UtcNow;
                         await db.SaveChangesAsync();
+                        continue;
+                    }
+
+                    // Handle FileUpload step during retry
+                    if (IsFileUploadStep(pm.AiModule))
+                    {
+                        await HandleFileUploadStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
 

@@ -224,6 +224,10 @@ public static class ModulePortRegistry
                 ports.Add(new("output_embedding", "Embedding", PortDataType.File, isInput: false));
                 break;
 
+            case "FileUpload":
+                ports.Add(new("output_file", "Archivo", PortDataType.File, isInput: false));
+                break;
+
             default:
                 ports.Add(new("input_data", "Entrada", PortDataType.Any, isInput: true));
                 ports.Add(new("output_data", "Salida", PortDataType.Any, isInput: false));
@@ -258,6 +262,7 @@ public static class ModulePortRegistry
         "Publish" => "bi-send",
         "Embeddings" => "bi-grid-3x3",
         "Checkpoint" => "bi-check-circle",
+        "FileUpload" => "bi-paperclip",
         _ => "bi-gear"
     };
 
@@ -276,6 +281,7 @@ public static class ModulePortRegistry
         "Publish" => "#ab47bc",
         "Embeddings" => "#78909c",
         "Checkpoint" => "#f44336",
+        "FileUpload" => "#607d8b",
         _ => "#888"
     };
 }

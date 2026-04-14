@@ -24,6 +24,7 @@
             <option value="Canva">Canva</option>
             <option value="Pexels">Pexels (Video gratuito)</option>
             <option value="Json2Video">Json2Video (Edicion de video)</option>
+            <option value="System">Sistema (Utilidades)</option>
         </select>
     </div>
 
@@ -83,21 +84,24 @@
             </div>
         </div>
 
-        <!-- API Key (filtered by provider) -->
-        <div class="form-group">
-            <label>API Key (@_provider)</label>
-            <select @bind="_apiKeyId">
-                <option value="">-- Seleccionar --</option>
-                @foreach (var k in _keys.Where(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)))
+        <!-- API Key (filtered by provider) — hidden for System provider -->
+        @if (_provider != "System")
+        {
+            <div class="form-group">
+                <label>API Key (@_provider)</label>
+                <select @bind="_apiKeyId">
+                    <option value="">-- Seleccionar --</option>
+                    @foreach (var k in _keys.Where(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        <option value="@k.Id">@k.Name</option>
+                    }
+                </select>
+                @if (!_keys.Any(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)))
                 {
-                    <option value="@k.Id">@k.Name</option>
+                    <span class="text-sm text-muted">No tienes API keys de @_provider. <a href="/apikeys">Crear una</a></span>
                 }
-            </select>
-            @if (!_keys.Any(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)))
-            {
-                <span class="text-sm text-muted">No tienes API keys de @_provider. <a href="/apikeys">Crear una</a></span>
-            }
-        </div>
+            </div>
+        }
 
         <!-- Dynamic Configuration (provider + type specific) -->
         <fieldset class="config-fieldset">
@@ -498,10 +502,10 @@
             }
         </fieldset>
 
-        @if (_moduleType is "Text" or "Image" or "Orchestrator")
+        @if (_moduleType is "Text" or "Image" or "Orchestrator" or "FileUpload")
         {
             <div class="form-group">
-                <label>Archivos adjuntos <span class="text-sm text-muted">(@(_moduleType == "Image" ? "imagenes de referencia para edicion" : "imagenes, documentos, etc."))</span></label>
+                <label>Archivos adjuntos <span class="text-sm text-muted">(@(_moduleType == "Image" ? "imagenes de referencia para edicion" : _moduleType == "FileUpload" ? "archivos que se proporcionaran como recurso al pipeline" : "imagenes, documentos, etc."))</span></label>
 
                 @if (_createPendingFiles.Count > 0)
                 {
@@ -519,7 +523,7 @@
                 }
 
                 <InputFile OnChange="OnCreateFilesSelected" multiple
-                           accept="@(_moduleType == "Image" ? "image/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
+                           accept="@(_moduleType == "Image" ? "image/*" : _moduleType == "FileUpload" ? "*/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
             </div>
         }
 
@@ -945,11 +949,11 @@
                                 }
 
                                 @* ── File attachments ── *@
-                                @if (m.ModuleType is "Text" or "Image")
+                                @if (m.ModuleType is "Text" or "Image" or "FileUpload")
                                 {
                                     <hr style="margin: 0.75rem 0; border-color: var(--border);" />
                                     <div class="form-group">
-                                        <label>Archivos adjuntos <span class="text-sm text-muted">(@(m.ModuleType == "Image" ? "imagenes de referencia para edicion" : "imagenes, documentos, etc."))</span></label>
+                                        <label>Archivos adjuntos <span class="text-sm text-muted">(@(m.ModuleType == "Image" ? "imagenes de referencia para edicion" : m.ModuleType == "FileUpload" ? "archivos recurso del modulo" : "imagenes, documentos, etc."))</span></label>
 
                                         @if (_editModuleFiles.Count > 0)
                                         {
@@ -967,7 +971,7 @@
                                         }
 
                                         <InputFile OnChange="OnModuleFilesSelected" multiple
-                                                   accept="@(m.ModuleType == "Image" ? "image/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
+                                                   accept="@(m.ModuleType == "Image" ? "image/*" : m.ModuleType == "FileUpload" ? "*/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
 
                                         @if (_fileUploadError is not null)
                                         {
@@ -1309,6 +1313,9 @@ else if (!_loading)
 
         // ─── Json2Video: Video Editing ───
         new("json2video-v2",   "Json2Video Editor",   "Json2Video", ["VideoEdit"], ["video-editing","subtitles","tts","composition"], "Edicion automatica de video con subtitulos, voz TTS y composicion de escenas."),
+
+        // ─── System: Utilities ───
+        new("file-upload",     "Carga de archivos",   "System", ["FileUpload"], ["file-upload","resource","free"], "Sube archivos externos (imagenes, audio, video, documentos) para usarlos como recurso en el pipeline. Sin coste."),
     ];
 
     // ── Available types per provider ──
@@ -1333,6 +1340,7 @@ else if (!_loading)
                 "VideoEdit"     => "Edicion de video (Json2Video)",
                 "Orchestrator"  => "Orquestador de pipeline",
                 "Coordinator"   => "Coordinador (multi-entrada)",
+                "FileUpload"    => "Carga de archivos",
                 _               => t
             }))
             .ToList();

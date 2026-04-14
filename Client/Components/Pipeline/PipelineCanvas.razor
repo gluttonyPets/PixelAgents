@@ -736,6 +736,50 @@
                         </div>
                     }
 
+                    @if (sel.ModuleType == "FileUpload")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Archivos del modulo</div>
+                            <p class="text-sm text-muted" style="margin-bottom: 0.4rem;">
+                                Sube archivos (imagenes, audio, video, documentos) que se proporcionaran como recurso al pipeline.
+                                Gestiona los archivos desde la pagina de <a href="/modules">Modulos</a>.
+                            </p>
+
+                            @if (_fileUploadFiles.Count > 0)
+                            {
+                                <div style="display: flex; flex-direction: column; gap: 0.25rem; margin-bottom: 0.4rem;">
+                                    @foreach (var f in _fileUploadFiles)
+                                    {
+                                        <div style="display: flex; align-items: center; gap: 0.4rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.25rem 0.4rem; font-size: 0.75rem;">
+                                            <i class="bi @GetFileIcon(f.ContentType)" style="color: var(--text-muted);"></i>
+                                            <span style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@f.FileName">@f.FileName</span>
+                                            <span class="text-muted">@FormatFileSize(f.FileSize)</span>
+                                            <button class="node-btn" style="font-size: 0.7rem; color: #e53935;" title="Eliminar"
+                                                    @onclick="() => DeleteFileUploadFile(f.Id)" @onclick:stopPropagation>&#x2715;</button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="text-align: center; padding: 0.6rem; color: var(--text-muted); font-size: 0.78rem; border: 1px dashed var(--border); border-radius: 4px; margin-bottom: 0.4rem;">
+                                    Sin archivos adjuntos
+                                </div>
+                            }
+
+                            <InputFile OnChange="OnFileUploadFilesSelected" multiple accept="*/*" />
+
+                            @if (_fileUploadUploading)
+                            {
+                                <p class="text-sm text-muted" style="margin-top: 0.2rem;">Subiendo archivos...</p>
+                            }
+                            @if (_fileUploadError is not null)
+                            {
+                                <div class="alert alert-error" style="font-size: 0.75rem; margin-top: 0.2rem;">@_fileUploadError</div>
+                            }
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "Publish")
                     {
                         <div class="inspector-section">
@@ -995,12 +1039,18 @@
     private bool _showModulePanel;
     private HashSet<string> _expandedCategories = new() { "ai" };
 
+    // FileUpload inspector state
+    private List<ModuleFileResponse> _fileUploadFiles = [];
+    private bool _fileUploadUploading;
+    private string? _fileUploadError;
+
     private record ModuleCategory(string Key, string Icon, string Label, string[] Types);
     private static readonly ModuleCategory[] _moduleCategories =
     [
         new("ai", "bi-cpu", "IA y Texto", ["Text", "Interaction", "Orchestrator"]),
         new("media", "bi-brush", "Generacion", ["Image", "Video", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
+        new("resources", "bi-paperclip", "Recursos", ["FileUpload"]),
         new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Checkpoint", "Publish", "Coordinator"]),
     ];
 
@@ -1059,7 +1109,11 @@
                 {
                     var newModule = Modules.OrderByDescending(m => m.StepOrder).FirstOrDefault(m => m.ModuleType == _pendingAutoSelectModuleType);
                     if (newModule is not null)
+                    {
                         _selectedModuleId = newModule.Id;
+                        if (newModule.ModuleType == "FileUpload")
+                            _ = LoadFileUploadFiles(newModule.AiModuleId);
+                    }
                 }
                 _pendingAutoSelectModuleType = null;
 
@@ -1649,7 +1703,19 @@
         if (Guid.TryParse(moduleId, out var id))
         {
             _selectedModuleId = id;
-            InvokeAsync(StateHasChanged);
+            var mod = Modules.FirstOrDefault(m => m.Id == id);
+            if (mod?.ModuleType == "FileUpload")
+            {
+                _ = InvokeAsync(async () =>
+                {
+                    await LoadFileUploadFiles(mod.AiModuleId);
+                    StateHasChanged();
+                });
+            }
+            else
+            {
+                InvokeAsync(StateHasChanged);
+            }
         }
     }
 
@@ -1666,6 +1732,77 @@
         _error = null;
         await InvokeAsync(StateHasChanged);
     }
+
+    // ── FileUpload inspector helpers ──
+
+    private async Task LoadFileUploadFiles(Guid aiModuleId)
+    {
+        try { _fileUploadFiles = await Api.GetModuleFilesAsync(aiModuleId); }
+        catch { _fileUploadFiles = []; }
+    }
+
+    private async Task OnFileUploadFilesSelected(InputFileChangeEventArgs e)
+    {
+        var sel = _selectedModuleId.HasValue ? Modules.FirstOrDefault(m => m.Id == _selectedModuleId) : null;
+        if (sel is null) return;
+
+        _fileUploadError = null;
+        _fileUploadUploading = true;
+        StateHasChanged();
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            foreach (var file in e.GetMultipleFiles(20))
+            {
+                var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
+                content.Add(new StreamContent(stream), "files", file.Name);
+            }
+            await Api.UploadModuleFilesAsync(sel.AiModuleId, content);
+            await LoadFileUploadFiles(sel.AiModuleId);
+        }
+        catch (Exception ex)
+        {
+            _fileUploadError = $"Error al subir: {ex.Message}";
+        }
+        finally
+        {
+            _fileUploadUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteFileUploadFile(Guid fileId)
+    {
+        var sel = _selectedModuleId.HasValue ? Modules.FirstOrDefault(m => m.Id == _selectedModuleId) : null;
+        if (sel is null) return;
+
+        try
+        {
+            await Api.DeleteModuleFileAsync(fileId);
+            await LoadFileUploadFiles(sel.AiModuleId);
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private static string GetFileIcon(string contentType) => contentType switch
+    {
+        var t when t.StartsWith("image/") => "bi-file-image",
+        var t when t.StartsWith("video/") => "bi-file-play",
+        var t when t.StartsWith("audio/") => "bi-file-music",
+        var t when t.Contains("pdf") => "bi-file-pdf",
+        var t when t.Contains("json") || t.Contains("xml") || t.Contains("csv") => "bi-file-code",
+        var t when t.Contains("text") || t.Contains("document") => "bi-file-text",
+        _ => "bi-file-earmark"
+    };
+
+    private static string FormatFileSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:F1} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):F1} MB"
+    };
 
     private async Task NotifyGraphChanged()
     {
