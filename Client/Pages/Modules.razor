@@ -1249,8 +1249,14 @@ else if (!_loading)
         // ─── Anthropic: Chat / Text (Claude 3.5) ───
         new("claude-3-5-haiku-20241022",   "Claude 3.5 Haiku",    "Anthropic", ["Text"], ["text","vision","streaming"], "Ultra rapido y economico.", "200K"),
 
+        // ─── xAI: Chat / Text (Grok 4.x) ───
+        new("grok-4-0709",                "Grok 4",                    "xAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Flagship de xAI. Razonamiento profundo y tool calling.", "256K"),
+        new("grok-4-1-fast-reasoning",    "Grok 4.1 Fast (Reasoning)", "xAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Grok 4.1 rapido con razonamiento. Contexto 2M.", "2M"),
+        new("grok-4-1-fast-non-reasoning","Grok 4.1 Fast",             "xAI", ["Text","Orchestrator","Coordinator"], ["text","vision","streaming"], "Grok 4.1 rapido sin razonamiento. Respuestas instantaneas.", "2M"),
+        new("grok-code-fast-1",           "Grok Code Fast",            "xAI", ["Text"], ["text","reasoning","streaming"], "Optimizado para codigo y agentes. Rapido y economico.", "256K"),
+
         // ─── xAI: Chat / Text (Grok 3) ───
-        new("grok-3",               "Grok 3",               "xAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Modelo flagship de xAI. Razonamiento avanzado.", "131K"),
+        new("grok-3",               "Grok 3",               "xAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Modelo flagship anterior. Razonamiento avanzado.", "131K"),
         new("grok-3-fast",          "Grok 3 Fast",          "xAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Grok 3 con menor latencia. Ideal para produccion.", "131K"),
         new("grok-3-mini",          "Grok 3 Mini",          "xAI", ["Text","Orchestrator","Coordinator"], ["text","reasoning","streaming"], "Razonamiento compacto y economico.", "131K"),
         new("grok-3-mini-fast",     "Grok 3 Mini Fast",     "xAI", ["Text","Orchestrator","Coordinator"], ["text","reasoning","streaming"], "Grok 3 Mini ultra rapido. El mas economico.", "131K"),
@@ -1260,7 +1266,8 @@ else if (!_loading)
         new("grok-2-vision",        "Grok 2 Vision",        "xAI", ["Text"], ["text","vision","streaming"], "Grok 2 optimizado para comprension visual.", "131K"),
 
         // ─── xAI: Image Generation (Imagine) ───
-        new("grok-imagine-image",   "Grok Imagine",          "xAI", ["Image"], ["image-generation"], "Generacion de imagenes Imagine. Alta calidad y creatividad."),
+        new("grok-imagine-image",     "Grok Imagine",      "xAI", ["Image"], ["image-generation"], "Generacion de imagenes Imagine. Alta calidad y creatividad."),
+        new("grok-imagine-image-pro", "Grok Imagine Pro",   "xAI", ["Image"], ["image-generation"], "Imagine Pro: mayor calidad y velocidad. El mejor de xAI."),
 
         // ─── Google: Chat / Text (Gemini 2.x) ───
         new("gemini-2.5-flash",     "Gemini 2.5 Flash",     "Google", ["Text","Orchestrator","Coordinator"], ["text","vision","streaming"], "Modelo rapido con razonamiento. Ultimo Gemini.", "1M"),
