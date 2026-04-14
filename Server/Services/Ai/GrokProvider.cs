@@ -127,8 +127,18 @@ namespace Server.Services.Ai
             };
         }
 
+        private static readonly Dictionary<string, string> DeprecatedImageModels = new()
+        {
+            ["grok-2-image"] = "grok-2-image-1212"
+        };
+
         private async Task<AiResult> GenerateImageAsync(AiExecutionContext context)
         {
+            // Remap deprecated model names to their working replacements
+            var modelName = DeprecatedImageModels.TryGetValue(context.ModelName, out var replacement)
+                ? replacement
+                : context.ModelName;
+
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
 
@@ -142,7 +152,7 @@ namespace Server.Services.Ai
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{baseInput}";
 
-            var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
+            var maxLen = InputAdapter.GetMaxPromptLength(modelName);
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
@@ -153,7 +163,7 @@ namespace Server.Services.Ai
 
             var requestBody = new Dictionary<string, object>
             {
-                ["model"] = context.ModelName,
+                ["model"] = modelName,
                 ["prompt"] = prompt,
                 ["n"] = n,
                 ["response_format"] = "b64_json"
@@ -202,10 +212,10 @@ namespace Server.Services.Ai
 
             var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
             {
-                ["model"] = context.ModelName,
+                ["model"] = modelName,
                 ["revisedPrompt"] = revisedPrompt
             });
-            imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName, context.Configuration);
+            imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(modelName, context.Configuration);
             return imgResult;
         }
     }
