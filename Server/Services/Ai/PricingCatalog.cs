@@ -37,6 +37,10 @@ namespace Server.Services.Ai
                 ["gemini-2.5-pro"]     = (1.25m, 10.00m),
 
                 // xAI Grok
+                ["grok-4-0709"]                 = (3.00m, 15.00m),
+                ["grok-4-1-fast-reasoning"]     = (0.20m,  0.50m),
+                ["grok-4-1-fast-non-reasoning"] = (0.20m,  0.50m),
+                ["grok-code-fast-1"]            = (0.20m,  0.50m),
                 ["grok-3"]             = (3.00m, 15.00m),
                 ["grok-3-fast"]        = (5.00m, 25.00m),
                 ["grok-3-mini"]        = (0.30m,  0.50m),
@@ -63,8 +67,9 @@ namespace Server.Services.Ai
                 ["gemini-2.0-flash-preview-image-generation"] = 0.039m,
                 ["imagen-3.0-generate-002"]   = 0.040m,
 
-                // xAI Grok (Aurora image generation)
-                ["grok-2-image-1212"]      = 0.070m,
+                // xAI Grok (Imagine image generation)
+                ["grok-imagine-image"]     = 0.070m,
+                ["grok-imagine-image-pro"] = 0.070m,
 
                 // Leonardo AI (approximate: ~7 credits at ~$0.003/credit)
                 ["leonardo-phoenix"]       = 0.021m,
