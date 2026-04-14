@@ -64,7 +64,6 @@ namespace Server.Services.Ai
                 ["imagen-3.0-generate-002"]   = 0.040m,
 
                 // xAI Grok (Aurora image generation)
-                ["grok-2-image"]           = 0.070m,
                 ["grok-2-image-1212"]      = 0.070m,
 
                 // Leonardo AI (approximate: ~7 credits at ~$0.003/credit)
