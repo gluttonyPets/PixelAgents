@@ -129,7 +129,8 @@ namespace Server.Services.Ai
 
         private static readonly Dictionary<string, string> DeprecatedImageModels = new()
         {
-            ["grok-2-image"] = "grok-2-image-1212"
+            ["grok-2-image"] = "grok-imagine-image",
+            ["grok-2-image-1212"] = "grok-imagine-image"
         };
 
         private async Task<AiResult> GenerateImageAsync(AiExecutionContext context)
