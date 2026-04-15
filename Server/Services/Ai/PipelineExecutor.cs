@@ -78,6 +78,9 @@ namespace Server.Services.Ai
         private static bool IsSceneStep(AiModule module) =>
             module.ModuleType == "Scene";
 
+        private static bool IsStaticTextStep(AiModule module) =>
+            module.ModuleType == "StaticText";
+
         private static bool IsStepSkipped(ProjectModule pm)
         {
             if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
@@ -138,7 +141,7 @@ namespace Server.Services.Ai
 
                 // Interaction and Publish steps don't need API key validation
                 // Also skip modules without ApiKeyId (e.g. system modules) — they have their own validation
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || IsSceneStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || IsSceneStep(pm.AiModule) || IsStaticTextStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -475,6 +478,14 @@ namespace Server.Services.Ai
                     if (IsSceneStep(pm.AiModule))
                     {
                         await HandleSceneStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    if (IsStaticTextStep(pm.AiModule))
+                    {
+                        await HandleStaticTextStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
@@ -4427,6 +4438,14 @@ Datos de la ejecucion:
                                     continue;
                                 }
 
+                                if (IsStaticTextStep(rpm.AiModule))
+                                {
+                                    await HandleStaticTextStepAsync(
+                                        project, execution, rStepExec, rpm,
+                                        stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                                    continue;
+                                }
+
                                 var rApiKey = rpm.AiModule.ApiKey?.EncryptedKey
                                     ?? throw new InvalidOperationException($"Paso {rpm.StepOrder}: ApiKey no configurada");
                                 var rProvider = _registry.GetProvider(rpm.AiModule.ProviderType)
@@ -5010,6 +5029,56 @@ Datos de la ejecucion:
             await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
         }
 
+        /// <summary>StaticText step: emit the configured text content as output.</summary>
+        private async Task HandleStaticTextStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            UserDbContext db, string tenantDbName)
+        {
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+            var projectId = project.Id;
+            var executionId = execution.Id;
+            var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+
+            var textContent = "";
+            if (config.TryGetValue("content", out var contentVal))
+            {
+                if (contentVal is JsonElement el && el.ValueKind == JsonValueKind.String)
+                    textContent = el.GetString() ?? "";
+                else if (contentVal is string str)
+                    textContent = str;
+            }
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Texto estatico '{stepName}': {textContent.Length} caracteres",
+                pm.StepOrder, stepName);
+
+            var output = new StepOutput
+            {
+                Type = "text",
+                Content = textContent,
+            };
+
+            stepOutputs[pm.StepOrder] = output;
+            stepResults[pm.StepOrder] = new AiResult
+            {
+                Success = true,
+                TextOutput = textContent,
+                EstimatedCost = 0m,
+            };
+            stepModuleTypes[pm.StepOrder] = "StaticText";
+
+            stepExecution.Status = "Completed";
+            stepExecution.CompletedAt = DateTime.UtcNow;
+            stepExecution.OutputData = JsonSerializer.Serialize(output);
+            stepExecution.EstimatedCost = 0m;
+            await db.SaveChangesAsync();
+            await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
+        }
+
         private async Task HandleCoordinatorStepAsync(
             Project project, ProjectExecution execution, StepExecution stepExecution,
             ProjectModule pm, string? userInput,
@@ -5339,6 +5408,14 @@ Datos de la ejecucion:
                     if (IsSceneStep(bpm.AiModule))
                     {
                         await HandleSceneStepAsync(
+                            project, execution, branchStepExec, bpm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    if (IsStaticTextStep(bpm.AiModule))
+                    {
+                        await HandleStaticTextStepAsync(
                             project, execution, branchStepExec, bpm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
@@ -6264,7 +6341,7 @@ Datos de la ejecucion:
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || IsSceneStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || IsSceneStep(pm.AiModule) || IsStaticTextStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))

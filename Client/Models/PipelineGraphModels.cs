@@ -288,6 +288,10 @@ public static class ModulePortRegistry
                 ports.Add(new("output_scene", "Escena", PortDataType.Scene, isInput: false));
                 break;
 
+            case "StaticText":
+                ports.Add(new("output_text", "Texto", PortDataType.Text, isInput: false));
+                break;
+
             default:
                 ports.Add(new("input_data", "Entrada", PortDataType.Any, isInput: true));
                 ports.Add(new("output_data", "Salida", PortDataType.Any, isInput: false));
@@ -324,6 +328,7 @@ public static class ModulePortRegistry
         "Checkpoint" => "bi-check-circle",
         "FileUpload" => "bi-paperclip",
         "Scene" => "bi-layers",
+        "StaticText" => "bi-fonts",
         _ => "bi-gear"
     };
 
@@ -344,6 +349,7 @@ public static class ModulePortRegistry
         "Checkpoint" => "#f44336",
         "FileUpload" => "#607d8b",
         "Scene" => "#ff7043",
+        "StaticText" => "#5c6bc0",
         _ => "#888"
     };
 }

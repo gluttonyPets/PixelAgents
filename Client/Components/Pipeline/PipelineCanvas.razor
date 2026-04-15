@@ -883,6 +883,22 @@
                         </div>
                     }
 
+                    @if (sel.ModuleType == "StaticText")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Contenido</div>
+                            <div class="inspector-field">
+                                <label>Texto</label>
+                                <textarea value="@GetModuleConfig(sel.Id, "content", "")"
+                                          rows="5"
+                                          placeholder="Escribe el texto estatico..."
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "content", e.Value?.ToString() ?? ""))"
+                                          style="width: 100%; font-size: 0.85rem;"></textarea>
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se emite como salida en cada ejecucion.</p>
+                            </div>
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "FileUpload")
                     {
                         <div class="inspector-section">
@@ -1197,7 +1213,7 @@
         new("ai", "bi-cpu", "IA y Texto", ["Text", "Interaction", "Orchestrator"]),
         new("media", "bi-brush", "Generacion", ["Image", "Video", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
-        new("resources", "bi-paperclip", "Recursos", ["FileUpload"]),
+        new("resources", "bi-paperclip", "Recursos", ["FileUpload", "StaticText"]),
         new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Scene", "Checkpoint", "Publish", "Coordinator"]),
     ];
 

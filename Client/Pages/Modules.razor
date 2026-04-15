@@ -552,6 +552,14 @@
                     <input type="number" min="1" max="30" step="0.5" @bind="_j2vImageDuration" />
                 </div>
             }
+            else if (_moduleType == "StaticText")
+            {
+                <div class="form-group">
+                    <label>Contenido de texto</label>
+                    <textarea @bind="_staticTextContent" rows="5" placeholder="Escribe aqui el texto que este modulo emitira como salida..."></textarea>
+                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo en cada ejecucion.</p>
+                </div>
+            }
             else if (_moduleType == "Embeddings")
             {
                 <div class="form-group">
@@ -1139,6 +1147,14 @@
                                         </div>
                                     }
                                 }
+                                else if (m.ModuleType == "StaticText")
+                                {
+                                    <div class="form-group">
+                                        <label>Contenido de texto</label>
+                                        <textarea @bind="_editStaticTextContent" rows="5" placeholder="Texto que este modulo emitira como salida..."></textarea>
+                                        <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo.</p>
+                                    </div>
+                                }
                                 else
                                 {
                                     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
@@ -1218,6 +1234,7 @@ else if (!_loading)
         ("VideoSearch", "Busqueda de video",     "S"),
         ("VideoEdit",   "Edicion de video",      "E"),
         ("Scene",       "Constructor de escena", "N"),
+        ("StaticText",  "Texto estatico",        "T"),
         ("Orchestrator","Orquestador",           "O"),
         ("Coordinator", "Coordinador",           "K"),
     ];
@@ -1281,6 +1298,8 @@ else if (!_loading)
 
     // ── Form: embeddings ──
     private int? _embeddingDimensions;
+    private string _staticTextContent = "";
+    private string _editStaticTextContent = "";
 
     // ── Form: Leonardo AI ──
     private int _leoWidth = 1024;
@@ -1526,6 +1545,7 @@ else if (!_loading)
         // ─── System: Utilities ───
         new("file-upload",     "Carga de archivos",   "System", ["FileUpload"], ["file-upload","resource","free"], "Sube archivos externos (imagenes, audio, video, documentos) para usarlos como recurso en el pipeline. Sin coste."),
         new("scene-builder",   "Constructor de escenas", "System", ["Scene"], ["scene","template","data-structure","free"], "Define una escena con variables para usar en templates de Json2Video. Cada instancia representa un slide/escena."),
+        new("static-text",     "Texto estatico",      "System", ["StaticText"], ["text","resource","static","free"], "Texto plano como recurso del pipeline. Ideal para valores fijos, prompts o datos que no cambian entre ejecuciones."),
     ];
 
     // ── Available types per provider ──
@@ -1552,6 +1572,7 @@ else if (!_loading)
                 "Coordinator"   => "Coordinador (multi-entrada)",
                 "FileUpload"    => "Carga de archivos",
                 "Scene"         => "Constructor de escena",
+                "StaticText"    => "Texto estatico",
                 _               => t
             }))
             .ToList();
@@ -1711,6 +1732,7 @@ else if (!_loading)
         _j2vNewVarType = "text";
         _j2vNewFieldName = "";
         _j2vNewFieldType = "text";
+        _staticTextContent = "";
     }
 
     // ── Build config JSON ──
@@ -1774,6 +1796,11 @@ else if (!_loading)
                 parts.Add($"\"size\":\"{_soraSize}\"");
             if (_soraDuration != "8")
                 parts.Add($"\"duration\":\"{_soraDuration}\"");
+        }
+        else if (_moduleType == "StaticText")
+        {
+            if (!string.IsNullOrWhiteSpace(_staticTextContent))
+                parts.Add($"\"content\":{System.Text.Json.JsonSerializer.Serialize(_staticTextContent)}");
         }
         else if (_moduleType == "Embeddings")
         {
@@ -2028,6 +2055,8 @@ else if (!_loading)
                 if (root.TryGetProperty("subtitleFontSize", out var j2vSf)) _editJ2vSubtitleFontSize = j2vSf.GetInt32();
                 if (root.TryGetProperty("subtitleWordColor", out var j2vSw)) _editJ2vSubtitleWordColor = j2vSw.GetString() ?? "#FFFF00";
                 if (root.TryGetProperty("imageDuration", out var j2vId)) _editJ2vImageDuration = j2vId.GetDouble();
+                // StaticText
+                if (root.TryGetProperty("content", out var stContent)) _editStaticTextContent = stContent.GetString() ?? "";
             }
             catch { }
         }
@@ -2228,6 +2257,12 @@ else if (!_loading)
                 parts.Add($"\"subtitleWordColor\":\"{_editJ2vSubtitleWordColor}\"");
             if (Math.Abs(_editJ2vImageDuration - 5.0) > 0.01)
                 parts.Add($"\"imageDuration\":{_editJ2vImageDuration.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        }
+
+        if (moduleType == "StaticText")
+        {
+            if (!string.IsNullOrWhiteSpace(_editStaticTextContent))
+                parts.Add($"\"content\":{System.Text.Json.JsonSerializer.Serialize(_editStaticTextContent)}");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
