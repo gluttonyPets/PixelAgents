@@ -451,7 +451,7 @@
                             <button type="button" class="btn btn-sm"
                                     style="margin-bottom: 0.25rem; white-space: nowrap;"
                                     disabled="@string.IsNullOrWhiteSpace(_j2vNewVarName)"
-                                    @onclick="() => { if (!string.IsNullOrWhiteSpace(_j2vNewVarName) && !_j2vTemplateVars.Any(v => v.Name == _j2vNewVarName.Trim())) { _j2vTemplateVars.Add(new TemplateVariable { Name = _j2vNewVarName.Trim(), Type = _j2vNewVarType }); _j2vNewVarName = \"\"; } }">
+                                    @onclick="AddJ2vTemplateVar">
                                 <i class="bi bi-plus-lg"></i> Anadir
                             </button>
                         </div>
@@ -977,7 +977,7 @@
                                                 <button type="button" class="btn btn-sm"
                                                         style="margin-bottom: 0.25rem; white-space: nowrap;"
                                                         disabled="@string.IsNullOrWhiteSpace(_editJ2vNewVarName)"
-                                                        @onclick="() => { if (!string.IsNullOrWhiteSpace(_editJ2vNewVarName) && !_editJ2vTemplateVars.Any(v => v.Name == _editJ2vNewVarName.Trim())) { _editJ2vTemplateVars.Add(new TemplateVariable { Name = _editJ2vNewVarName.Trim(), Type = _editJ2vNewVarType }); _editJ2vNewVarName = \"\"; } }">
+                                                        @onclick="AddEditJ2vTemplateVar">
                                                     <i class="bi bi-plus-lg"></i> Anadir
                                                 </button>
                                             </div>
@@ -1552,6 +1552,26 @@ else if (!_loading)
         // Set size default based on model: gpt-image defaults to "auto" (preserves input dimensions)
         var sizes = GetImageSizesForModel(_model);
         _imageSize = sizes[0];
+    }
+
+    private void AddJ2vTemplateVar()
+    {
+        var name = _j2vNewVarName?.Trim();
+        if (!string.IsNullOrWhiteSpace(name) && !_j2vTemplateVars.Any(v => v.Name == name))
+        {
+            _j2vTemplateVars.Add(new TemplateVariable { Name = name, Type = _j2vNewVarType });
+            _j2vNewVarName = "";
+        }
+    }
+
+    private void AddEditJ2vTemplateVar()
+    {
+        var name = _editJ2vNewVarName?.Trim();
+        if (!string.IsNullOrWhiteSpace(name) && !_editJ2vTemplateVars.Any(v => v.Name == name))
+        {
+            _editJ2vTemplateVars.Add(new TemplateVariable { Name = name, Type = _editJ2vNewVarType });
+            _editJ2vNewVarName = "";
+        }
     }
 
     private void ResetConfig()
