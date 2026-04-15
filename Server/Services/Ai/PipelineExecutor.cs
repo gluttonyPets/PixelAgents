@@ -75,6 +75,9 @@ namespace Server.Services.Ai
         private static bool IsFileUploadStep(AiModule module) =>
             module.ModuleType == "FileUpload";
 
+        private static bool IsSceneStep(AiModule module) =>
+            module.ModuleType == "Scene";
+
         private static bool IsStepSkipped(ProjectModule pm)
         {
             if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
@@ -135,7 +138,7 @@ namespace Server.Services.Ai
 
                 // Interaction and Publish steps don't need API key validation
                 // Also skip modules without ApiKeyId (e.g. system modules) — they have their own validation
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || IsSceneStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -463,6 +466,15 @@ namespace Server.Services.Ai
                     if (IsFileUploadStep(pm.AiModule))
                     {
                         await HandleFileUploadStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    // ── Scene step: collect connected inputs and produce a JSON scene object ──
+                    if (IsSceneStep(pm.AiModule))
+                    {
+                        await HandleSceneStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
@@ -3466,6 +3478,14 @@ Datos de la ejecucion:
                         continue;
                     }
 
+                    if (IsSceneStep(pm.AiModule))
+                    {
+                        await HandleSceneStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
                     var apiKey = pm.AiModule.ApiKey?.EncryptedKey
                         ?? throw new InvalidOperationException($"Paso {pm.StepOrder}: ApiKey no configurada");
 
@@ -4399,6 +4419,14 @@ Datos de la ejecucion:
                                     continue;
                                 }
 
+                                if (IsSceneStep(rpm.AiModule))
+                                {
+                                    await HandleSceneStepAsync(
+                                        project, execution, rStepExec, rpm,
+                                        stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                                    continue;
+                                }
+
                                 var rApiKey = rpm.AiModule.ApiKey?.EncryptedKey
                                     ?? throw new InvalidOperationException($"Paso {rpm.StepOrder}: ApiKey no configurada");
                                 var rProvider = _registry.GetProvider(rpm.AiModule.ProviderType)
@@ -4629,6 +4657,14 @@ Datos de la ejecucion:
                     if (IsFileUploadStep(pm.AiModule))
                     {
                         await HandleFileUploadStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    if (IsSceneStep(pm.AiModule))
+                    {
+                        await HandleSceneStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
@@ -4880,6 +4916,96 @@ Datos de la ejecucion:
 
             await _logger.LogAsync(projectId, executionId, "info",
                 $"FileUpload completado: {outputFiles.Count} archivo(s) disponibles para el pipeline",
+                pm.StepOrder, stepName);
+            await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
+        }
+
+        /// <summary>Scene step: collect connected field inputs and produce a JSON scene object.</summary>
+        private async Task HandleSceneStepAsync(
+            Project project, ProjectExecution execution, StepExecution stepExecution,
+            ProjectModule pm,
+            Dictionary<int, AiResult> stepResults,
+            Dictionary<int, StepOutput> stepOutputs,
+            Dictionary<int, string> stepModuleTypes,
+            UserDbContext db, string tenantDbName)
+        {
+            var stepName = pm.StepName ?? pm.AiModule.Name;
+            var projectId = project.Id;
+            var executionId = execution.Id;
+            var config = MergeConfiguration(pm.AiModule.Configuration, pm.Configuration);
+            var serverBase = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Construyendo escena '{stepName}'...", pm.StepOrder, stepName);
+
+            // Build a JSON object from connected field inputs
+            var sceneObj = new Dictionary<string, object>();
+
+            if (config.TryGetValue("fieldInputs", out var fiVal))
+            {
+                Dictionary<string, JsonElement>? fieldInputs = null;
+                if (fiVal is JsonElement fiEl && fiEl.ValueKind == JsonValueKind.Object)
+                    fieldInputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(fiEl.GetRawText());
+                else if (fiVal is string fiStr)
+                    fieldInputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(fiStr);
+
+                if (fieldInputs is not null)
+                {
+                    foreach (var (portId, sourceInfo) in fieldInputs)
+                    {
+                        // Extract field name from port ID (input_field_xxx → xxx)
+                        var fieldName = portId.StartsWith("input_field_") ? portId["input_field_".Length..] : portId;
+                        var stepOrder = sourceInfo.TryGetProperty("stepOrder", out var soProp) ? soProp.GetInt32() : 0;
+
+                        if (stepOutputs.TryGetValue(stepOrder, out var srcOutput))
+                        {
+                            // If the source has files, use the public URL
+                            if (srcOutput.Files.Count > 0)
+                            {
+                                var file = srcOutput.Files[0];
+                                if (file.FileId != Guid.Empty)
+                                    sceneObj[fieldName] = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
+                                else if (!string.IsNullOrWhiteSpace(srcOutput.Content))
+                                    sceneObj[fieldName] = srcOutput.Content;
+                            }
+                            else if (!string.IsNullOrWhiteSpace(srcOutput.Content))
+                            {
+                                sceneObj[fieldName] = srcOutput.Content;
+                            }
+                            else if (srcOutput.Items.Count > 0)
+                            {
+                                sceneObj[fieldName] = string.Join("\n", srcOutput.Items.Select(i => i.Content));
+                            }
+                        }
+                    }
+                }
+            }
+
+            var sceneJson = JsonSerializer.Serialize(sceneObj);
+
+            var output = new StepOutput
+            {
+                Type = "scene",
+                Content = sceneJson,
+            };
+
+            stepOutputs[pm.StepOrder] = output;
+            stepResults[pm.StepOrder] = new AiResult
+            {
+                Success = true,
+                TextOutput = sceneJson,
+                EstimatedCost = 0m,
+            };
+            stepModuleTypes[pm.StepOrder] = "Scene";
+
+            stepExecution.Status = "Completed";
+            stepExecution.CompletedAt = DateTime.UtcNow;
+            stepExecution.OutputData = JsonSerializer.Serialize(output);
+            stepExecution.EstimatedCost = 0m;
+            await db.SaveChangesAsync();
+
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"Escena '{stepName}' construida con {sceneObj.Count} campo(s)",
                 pm.StepOrder, stepName);
             await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
         }
@@ -5205,6 +5331,14 @@ Datos de la ejecucion:
                     if (IsFileUploadStep(bpm.AiModule))
                     {
                         await HandleFileUploadStepAsync(
+                            project, execution, branchStepExec, bpm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    if (IsSceneStep(bpm.AiModule))
+                    {
+                        await HandleSceneStepAsync(
                             project, execution, branchStepExec, bpm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
@@ -6130,7 +6264,7 @@ Datos de la ejecucion:
             {
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
-                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
+                if (IsInteractionStep(pm.AiModule) || IsPublishStep(pm.AiModule) || IsDesignStep(pm.AiModule) || IsOrchestratorStep(pm.AiModule) || IsCheckpointStep(pm.AiModule) || IsFileUploadStep(pm.AiModule) || IsSceneStep(pm.AiModule) || pm.AiModule.ApiKeyId is null)
                     continue;
 
                 if (pm.AiModule.ApiKey is null || string.IsNullOrEmpty(pm.AiModule.ApiKey.EncryptedKey))
@@ -6391,6 +6525,14 @@ Datos de la ejecucion:
                     if (IsFileUploadStep(pm.AiModule))
                     {
                         await HandleFileUploadStepAsync(
+                            project, execution, stepExecution, pm,
+                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        continue;
+                    }
+
+                    if (IsSceneStep(pm.AiModule))
+                    {
+                        await HandleSceneStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;

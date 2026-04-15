@@ -966,6 +966,73 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             pm.Configuration = System.Text.Json.JsonSerializer.Serialize(cfgDict);
         }
 
+        // For VideoEdit with template: store template-level connections (input_tpl_*)
+        if (pm.AiModule?.ModuleType == "VideoEdit")
+        {
+            var tplConns = req.Connections.Where(c => c.ToModuleId == pm.Id && c.ToPort.StartsWith("input_tpl_")).ToList();
+            if (tplConns.Count > 0)
+            {
+                var cfgDict2 = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(pm.Configuration))
+                {
+                    try { cfgDict2 = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(pm.Configuration) ?? new(); }
+                    catch { cfgDict2 = new(); }
+                }
+                var templateInputs = new Dictionary<string, object>();
+                foreach (var group in tplConns.GroupBy(c => c.ToPort))
+                {
+                    var sources = new List<Dictionary<string, object>>();
+                    foreach (var conn in group)
+                    {
+                        var srcModule = modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+                        if (srcModule is not null)
+                        {
+                            sources.Add(new Dictionary<string, object>
+                            {
+                                ["stepOrder"] = srcModule.StepOrder,
+                                ["moduleType"] = srcModule.AiModule?.ModuleType ?? "Unknown",
+                                ["fromPort"] = conn.FromPort
+                            });
+                        }
+                    }
+                    templateInputs[group.Key] = sources;
+                }
+                cfgDict2["templateInputs"] = templateInputs;
+                pm.Configuration = System.Text.Json.JsonSerializer.Serialize(cfgDict2);
+            }
+        }
+
+        // For Scene modules: store field-level connections (input_field_*)
+        if (pm.AiModule?.ModuleType == "Scene")
+        {
+            var fieldConns = req.Connections.Where(c => c.ToModuleId == pm.Id && c.ToPort.StartsWith("input_field_")).ToList();
+            if (fieldConns.Count > 0)
+            {
+                var cfgDict3 = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(pm.Configuration))
+                {
+                    try { cfgDict3 = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(pm.Configuration) ?? new(); }
+                    catch { cfgDict3 = new(); }
+                }
+                var fieldInputs = new Dictionary<string, object>();
+                foreach (var conn in fieldConns)
+                {
+                    var srcModule = modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
+                    if (srcModule is not null)
+                    {
+                        fieldInputs[conn.ToPort] = new Dictionary<string, object>
+                        {
+                            ["stepOrder"] = srcModule.StepOrder,
+                            ["moduleType"] = srcModule.AiModule?.ModuleType ?? "Unknown",
+                            ["fromPort"] = conn.FromPort
+                        };
+                    }
+                }
+                cfgDict3["fieldInputs"] = fieldInputs;
+                pm.Configuration = System.Text.Json.JsonSerializer.Serialize(cfgDict3);
+            }
+        }
+
         // For Coordinator: store all input connections as inputSources map
         if (pm.AiModule?.ModuleType == "Coordinator")
         {
