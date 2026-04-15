@@ -233,6 +233,9 @@ namespace Server.Services.Ai
                 .GroupBy(m => m.BranchId)
                 .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList());
 
+            // Track branches whose VideoEdit depends on later main steps — execute after main loop
+            var deferredBranches = new List<(string BranchId, List<ProjectModule> Steps)>();
+
             // Execute main branch, launching sub-branches after each step
             for (var mi = 0; mi < mainModules.Count; mi++)
             {
@@ -343,6 +346,21 @@ namespace Server.Services.Ai
                         var orchHasPausedCheckpoint = false;
                         foreach (var (branchId, branchSteps) in orchForks)
                         {
+                            // Defer VideoEdit branches that depend on later main steps
+                            var orchVideoEdit = branchSteps.FirstOrDefault(s => s.AiModule.ModuleType == "VideoEdit");
+                            if (orchVideoEdit is not null)
+                            {
+                                var orchVeConfig = MergeConfiguration(orchVideoEdit.AiModule.Configuration, orchVideoEdit.Configuration);
+                                if (orchVeConfig.TryGetValue("sceneInputs", out var orchVeSi)
+                                    && HasPendingMainStepDependencies(orchVeSi, stepOutputs, mainModules, pm.StepOrder))
+                                {
+                                    deferredBranches.Add((branchId, branchSteps));
+                                    await _logger.LogAsync(projectId, executionId, "info",
+                                        $"Rama '{branchId}' diferida — VideoEdit depende de pasos main posteriores");
+                                    continue;
+                                }
+                            }
+
                             await _logger.LogAsync(projectId, executionId, "info",
                                 $"Iniciando rama '{branchId}' (bifurcacion desde orquestador paso {pm.StepOrder}, {branchSteps.Count} pasos)");
 
@@ -1418,6 +1436,26 @@ namespace Server.Services.Ai
 
                 foreach (var (branchId, branchSteps) in forksFromHere)
                 {
+                    // ── Defer branches whose VideoEdit depends on later main steps ──
+                    // If a branch contains a VideoEdit step whose sceneInputs reference main
+                    // steps that haven't executed yet, defer execution until after the main loop.
+                    var videoEditInBranch = branchSteps.FirstOrDefault(s => s.AiModule.ModuleType == "VideoEdit");
+                    if (videoEditInBranch is not null)
+                    {
+                        var veConfig = MergeConfiguration(videoEditInBranch.AiModule.Configuration, videoEditInBranch.Configuration);
+                        if (veConfig.TryGetValue("sceneInputs", out var veSi))
+                        {
+                            var hasPendingMainSteps = HasPendingMainStepDependencies(veSi, stepOutputs, mainModules, pm.StepOrder);
+                            if (hasPendingMainSteps)
+                            {
+                                deferredBranches.Add((branchId, branchSteps));
+                                await _logger.LogAsync(projectId, executionId, "info",
+                                    $"Rama '{branchId}' diferida — VideoEdit depende de pasos main posteriores");
+                                continue;
+                            }
+                        }
+                    }
+
                     await _logger.LogAsync(projectId, executionId, "info",
                         $"Iniciando rama '{branchId}' (bifurcacion desde paso {pm.StepOrder}, {branchSteps.Count} pasos)");
 
@@ -1451,6 +1489,48 @@ namespace Server.Services.Ai
                             ? $"Rama '{branchId}' pausada esperando respuesta del usuario"
                             : $"Rama '{branchId}' completada correctamente";
                     await _logger.LogAsync(projectId, executionId, branchLevel, branchMsg);
+                }
+            }
+
+            // ── Execute deferred branches (their main step dependencies are now met) ──
+            if (deferredBranches.Count > 0)
+            {
+                await _logger.LogAsync(projectId, executionId, "info",
+                    $"Ejecutando {deferredBranches.Count} rama(s) diferida(s) — dependencias main completadas");
+
+                foreach (var (branchId, branchSteps) in deferredBranches)
+                {
+                    await _logger.LogAsync(projectId, executionId, "info",
+                        $"Iniciando rama diferida '{branchId}' ({branchSteps.Count} pasos)");
+
+                    var branchResult = await ExecuteBranchStepsAsync(
+                        project, execution, branchId, branchSteps, userInput,
+                        stepResults, stepOutputs, stepModuleTypes,
+                        workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                    if (branchResult == BranchResult.Cancelled)
+                    {
+                        execution.Status = "Cancelled";
+                        execution.CompletedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync();
+                        return execution;
+                    }
+
+                    if (branchResult == BranchResult.Paused && execution.Status == "WaitingForCheckpoint")
+                    {
+                        await _logger.LogAsync(projectId, executionId, "info",
+                            $"Rama diferida '{branchId}' pausada en checkpoint — continuando");
+                        continue;
+                    }
+
+                    var dLevel = branchResult == BranchResult.Failed ? "warning"
+                        : branchResult == BranchResult.Paused ? "info" : "success";
+                    var dMsg = branchResult == BranchResult.Failed
+                        ? $"Rama diferida '{branchId}' fallo"
+                        : branchResult == BranchResult.Paused
+                            ? $"Rama diferida '{branchId}' pausada esperando respuesta del usuario"
+                            : $"Rama diferida '{branchId}' completada correctamente";
+                    await _logger.LogAsync(projectId, executionId, dLevel, dMsg);
                 }
             }
 
@@ -1751,6 +1831,42 @@ namespace Server.Services.Ai
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Checks if a VideoEdit's sceneInputs reference Image/VideoSearch steps on the main
+        /// pipeline that haven't produced output yet (i.e., they are AFTER the current fork point).
+        /// </summary>
+        private static bool HasPendingMainStepDependencies(
+            object sceneInputsVal, Dictionary<int, StepOutput> stepOutputs,
+            List<ProjectModule> mainModules, int currentMainStep)
+        {
+            Dictionary<string, JsonElement>? map = null;
+            if (sceneInputsVal is JsonElement el && el.ValueKind == JsonValueKind.Object)
+                map = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(el.GetRawText());
+            else if (sceneInputsVal is string str)
+                map = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(str);
+
+            if (map is null) return false;
+
+            foreach (var v in map.Values)
+            {
+                if (v.ValueKind != JsonValueKind.Array) continue;
+                foreach (var src in v.EnumerateArray())
+                {
+                    if (src.TryGetProperty("moduleType", out var mt)
+                        && mt.GetString() is "Image" or "VideoSearch"
+                        && src.TryGetProperty("stepOrder", out var so))
+                    {
+                        var srcStep = so.GetInt32();
+                        // If the source step hasn't produced output AND it's a main step after the fork
+                        if (!stepOutputs.ContainsKey(srcStep)
+                            && mainModules.Any(m => m.StepOrder == srcStep && m.StepOrder > currentMainStep))
+                            return true;
+                    }
+                }
+            }
+            return false;
         }
 
         /// <summary>
