@@ -1074,6 +1074,69 @@ namespace Server.Services.Ai
                             config["subtitleLanguage"] = slStr;
                         }
 
+                        // ── Ensure all connected media source branches have been executed ──
+                        if (config.TryGetValue("sceneInputs", out var mainDepCheckInputs))
+                        {
+                            Dictionary<string, JsonElement>? mainDepCheckMap = null;
+                            if (mainDepCheckInputs is JsonElement mdciEl && mdciEl.ValueKind == JsonValueKind.Object)
+                                mainDepCheckMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(mdciEl.GetRawText());
+                            else if (mainDepCheckInputs is string mdciStr)
+                                mainDepCheckMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(mdciStr);
+
+                            if (mainDepCheckMap is not null)
+                            {
+                                var mainPendingMediaSteps = new HashSet<int>();
+                                foreach (var depVal in mainDepCheckMap.Values)
+                                {
+                                    if (depVal.ValueKind != JsonValueKind.Array) continue;
+                                    foreach (var depSrc in depVal.EnumerateArray())
+                                    {
+                                        if (depSrc.TryGetProperty("moduleType", out var depMt)
+                                            && depMt.GetString() is "Image" or "VideoSearch"
+                                            && depSrc.TryGetProperty("stepOrder", out var depSo))
+                                        {
+                                            var depSrcStep = depSo.GetInt32();
+                                            if (!stepOutputs.ContainsKey(depSrcStep))
+                                                mainPendingMediaSteps.Add(depSrcStep);
+                                        }
+                                    }
+                                }
+
+                                if (mainPendingMediaSteps.Count > 0)
+                                {
+                                    var mainDepBranchIds = project.ProjectModules
+                                        .Where(m => m.BranchId != "main"
+                                            && mainPendingMediaSteps.Contains(m.StepOrder))
+                                        .Select(m => m.BranchId)
+                                        .Distinct()
+                                        .ToList();
+
+                                    foreach (var depBranchId in mainDepBranchIds)
+                                    {
+                                        var depBranchSteps = project.ProjectModules
+                                            .Where(m => m.BranchId == depBranchId && !stepModuleTypes.ContainsKey(m.StepOrder))
+                                            .OrderBy(m => m.StepOrder)
+                                            .ToList();
+
+                                        if (depBranchSteps.Count == 0) continue;
+
+                                        await _logger.LogAsync(projectId, executionId, "info",
+                                            $"Ejecutando rama dependiente '{depBranchId}' ({depBranchSteps.Count} pasos) para obtener media necesaria para VideoEdit",
+                                            pm.StepOrder, stepName);
+
+                                        var depResult = await ExecuteBranchStepsAsync(
+                                            project, execution, depBranchId!, depBranchSteps, userInput,
+                                            stepResults, stepOutputs, stepModuleTypes,
+                                            workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                                        var depLevel = depResult == BranchResult.Failed ? "warning" : "success";
+                                        await _logger.LogAsync(projectId, executionId, depLevel,
+                                            $"Rama dependiente '{depBranchId}' {(depResult == BranchResult.Failed ? "fallo" : "completada")}");
+                                    }
+                                }
+                            }
+                        }
+
                         // Collect media URLs from scene-level connections or ALL completed steps.
                         var mediaEntries = new List<Dictionary<string, string>>();
                         var serverBase = (_configuration["BaseUrl"]
@@ -5362,6 +5425,76 @@ Datos de la ejecucion:
                         if (string.IsNullOrWhiteSpace(bEditInput))
                             throw new InvalidOperationException($"[{branchId}] VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'");
 
+                        // ── Ensure all connected media source branches have been executed ──
+                        // VideoEdit may depend on media from sibling branches (Image, VideoSearch).
+                        // If those branches haven't produced output yet, execute them now before
+                        // attempting to collect media. This handles cases where branch ordering
+                        // doesn't guarantee dependencies run first (e.g. retry, different fork points,
+                        // or branches with checkpoints sharing priority with VideoEdit).
+                        if (bConfig.TryGetValue("sceneInputs", out var depCheckInputs))
+                        {
+                            Dictionary<string, JsonElement>? depCheckMap = null;
+                            if (depCheckInputs is JsonElement dciEl && dciEl.ValueKind == JsonValueKind.Object)
+                                depCheckMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(dciEl.GetRawText());
+                            else if (depCheckInputs is string dciStr)
+                                depCheckMap = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(dciStr);
+
+                            if (depCheckMap is not null)
+                            {
+                                var pendingMediaSteps = new HashSet<int>();
+                                foreach (var depVal in depCheckMap.Values)
+                                {
+                                    if (depVal.ValueKind != JsonValueKind.Array) continue;
+                                    foreach (var depSrc in depVal.EnumerateArray())
+                                    {
+                                        if (depSrc.TryGetProperty("moduleType", out var depMt)
+                                            && depMt.GetString() is "Image" or "VideoSearch"
+                                            && depSrc.TryGetProperty("stepOrder", out var depSo))
+                                        {
+                                            var depSrcStep = depSo.GetInt32();
+                                            if (!stepOutputs.ContainsKey(depSrcStep))
+                                                pendingMediaSteps.Add(depSrcStep);
+                                        }
+                                    }
+                                }
+
+                                if (pendingMediaSteps.Count > 0)
+                                {
+                                    var depBranchIds = project.ProjectModules
+                                        .Where(m => m.BranchId != "main" && m.BranchId != branchId
+                                            && pendingMediaSteps.Contains(m.StepOrder))
+                                        .Select(m => m.BranchId)
+                                        .Distinct()
+                                        .ToList();
+
+                                    foreach (var depBranchId in depBranchIds)
+                                    {
+                                        var depBranchSteps = project.ProjectModules
+                                            .Where(m => m.BranchId == depBranchId && !stepModuleTypes.ContainsKey(m.StepOrder))
+                                            .OrderBy(m => m.StepOrder)
+                                            .ToList();
+
+                                        if (depBranchSteps.Count == 0) continue;
+
+                                        await _logger.LogAsync(project.Id, execution.Id, "info",
+                                            $"[{branchId}] Ejecutando rama dependiente '{depBranchId}' ({depBranchSteps.Count} pasos) para obtener media necesaria",
+                                            bpm.StepOrder, bStepName);
+
+                                        var depResult = await ExecuteBranchStepsAsync(
+                                            project, execution, depBranchId!, depBranchSteps, userInput,
+                                            stepResults, stepOutputs, stepModuleTypes,
+                                            workspacePath, previousSummaryContext, db, tenantDbName, ct);
+
+                                        if (depResult == BranchResult.Cancelled) return BranchResult.Cancelled;
+
+                                        var depLevel = depResult == BranchResult.Failed ? "warning" : "success";
+                                        await _logger.LogAsync(project.Id, execution.Id, depLevel,
+                                            $"Rama dependiente '{depBranchId}' {(depResult == BranchResult.Failed ? "fallo" : "completada")}");
+                                    }
+                                }
+                            }
+                        }
+
                         // Collect media URLs from connected steps via sceneInputs, or fallback to ALL steps
                         var bMediaEntries = new List<Dictionary<string, string>>();
                         var bPerSceneMedia = new Dictionary<string, List<Dictionary<string, string>>>();
@@ -6016,6 +6149,7 @@ Datos de la ejecucion:
             // These branches need to run before/alongside the main retry steps
             var earlyBranches = retryBranchModules
                 .Where(kv => kv.Value.FirstOrDefault()?.BranchFromStep < fromStepOrder)
+                .OrderBy(kv => kv.Value.Any(s => s.AiModule.ModuleType == "VideoEdit") ? 1 : 0)
                 .ToList();
 
             foreach (var (branchId, branchSteps) in earlyBranches)
