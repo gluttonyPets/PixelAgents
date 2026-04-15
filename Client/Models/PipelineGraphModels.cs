@@ -12,6 +12,7 @@ public static class PortDataType
     public const string Audio = "audio";
     public const string File = "file";
     public const string Config = "config";
+    public const string Scene = "scene";
     public const string Any = "any";
 
     public static string GetColor(string type) => type switch
@@ -23,6 +24,7 @@ public static class PortDataType
         Audio => "#e91e63",
         File => "#888",
         Config => "#ffc107",
+        Scene => "#ff7043",
         Any => "#e0e0e0",
         _ => "#e0e0e0"
     };
@@ -36,6 +38,7 @@ public static class PortDataType
         Audio => "Audio",
         File => "Archivo",
         Config => "Config",
+        Scene => "Escena",
         Any => "Cualquiera",
         _ => type
     };
@@ -47,6 +50,7 @@ public static class PortDataType
         if (input == Video && output == VideoList) return true;
         if (input == VideoList && output == Video) return true;
         if (input == File) return true; // file accepts anything
+        if (input == Scene && output == Scene) return true;
         return false;
     }
 }
@@ -72,6 +76,19 @@ public class PortDefinition
 
 // ── Template variable for Json2Video ──
 public class TemplateVariable
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "text"; // "text", "file", or "scene"
+
+    /// <summary>Sub-fields when Type is "scene". Each field defines a variable inside each scene instance.</summary>
+    [JsonPropertyName("fields")]
+    public List<SceneField>? Fields { get; set; }
+}
+
+public class SceneField
 {
     [JsonPropertyName("name")]
     public string Name { get; set; } = "";
@@ -169,8 +186,16 @@ public static class ModulePortRegistry
                     // Template mode: each variable becomes an input port
                     foreach (var tv in templateVars)
                     {
-                        var dataType = tv.Type == "file" ? PortDataType.File : PortDataType.Text;
-                        ports.Add(new($"input_tpl_{tv.Name}", tv.Name, dataType, isInput: true, isRequired: false, allowMultiple: false));
+                        if (tv.Type == "scene")
+                        {
+                            // Scene variables accept multiple Scene modules (one per slide)
+                            ports.Add(new($"input_tpl_{tv.Name}", tv.Name, PortDataType.Scene, isInput: true, isRequired: false, allowMultiple: true));
+                        }
+                        else
+                        {
+                            var dataType = tv.Type == "file" ? PortDataType.File : PortDataType.Text;
+                            ports.Add(new($"input_tpl_{tv.Name}", tv.Name, dataType, isInput: true, isRequired: false, allowMultiple: false));
+                        }
                     }
                 }
                 else
@@ -250,6 +275,19 @@ public static class ModulePortRegistry
                 ports.Add(new("output_file", "Archivo", PortDataType.File, isInput: false));
                 break;
 
+            case "Scene":
+                // Dynamic input ports from configured scene fields
+                if (templateVars is { Count: > 0 })
+                {
+                    foreach (var field in templateVars)
+                    {
+                        var dataType = field.Type == "file" ? PortDataType.File : PortDataType.Text;
+                        ports.Add(new($"input_field_{field.Name}", field.Name, dataType, isInput: true, isRequired: false, allowMultiple: false));
+                    }
+                }
+                ports.Add(new("output_scene", "Escena", PortDataType.Scene, isInput: false));
+                break;
+
             default:
                 ports.Add(new("input_data", "Entrada", PortDataType.Any, isInput: true));
                 ports.Add(new("output_data", "Salida", PortDataType.Any, isInput: false));
@@ -285,6 +323,7 @@ public static class ModulePortRegistry
         "Embeddings" => "bi-grid-3x3",
         "Checkpoint" => "bi-check-circle",
         "FileUpload" => "bi-paperclip",
+        "Scene" => "bi-layers",
         _ => "bi-gear"
     };
 
@@ -304,6 +343,7 @@ public static class ModulePortRegistry
         "Embeddings" => "#78909c",
         "Checkpoint" => "#f44336",
         "FileUpload" => "#607d8b",
+        "Scene" => "#ff7043",
         _ => "#888"
     };
 }

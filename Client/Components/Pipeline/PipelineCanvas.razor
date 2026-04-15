@@ -354,42 +354,48 @@
                                     }
                                     @if (tplVars.Count > 0)
                                     {
-                                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 0.4rem; font-size: 0.8rem;">
-                                            <thead>
-                                                <tr style="border-bottom: 1px solid var(--border);">
-                                                    <th style="text-align: left; padding: 0.2rem 0.4rem;">Nombre</th>
-                                                    <th style="text-align: left; padding: 0.2rem 0.4rem;">Tipo</th>
-                                                    <th style="width: 1.5rem;"></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach (var tv in tplVars)
+                                        @foreach (var tv in tplVars)
+                                        {
+                                            var capturedName = tv.Name;
+                                            <div style="border: 1px solid var(--border); border-radius: 0.3rem; padding: 0.3rem 0.4rem; margin-bottom: 0.3rem;">
+                                                <div style="display: flex; align-items: center; gap: 0.4rem;">
+                                                    <span style="font-family: monospace; font-size: 0.75rem; flex: 1;">@tv.Name</span>
+                                                    <span style="background: @(tv.Type == "scene" ? "#ff7043" : tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
+                                                        @(tv.Type == "scene" ? "Escena" : tv.Type == "file" ? "Archivo" : "Texto")
+                                                    </span>
+                                                    <button type="button" title="Eliminar"
+                                                            @onclick="async () => await RemoveTemplateVar(sel.Id, capturedName)"
+                                                            style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                                @if (tv.Type == "scene" && tv.Fields is not null)
                                                 {
-                                                    var capturedName = tv.Name;
-                                                    <tr style="border-bottom: 1px solid var(--border);">
-                                                        <td style="padding: 0.2rem 0.4rem; font-family: monospace; font-size: 0.75rem;">@tv.Name</td>
-                                                        <td style="padding: 0.2rem 0.4rem;">
-                                                            <span style="background: @(tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
-                                                                @(tv.Type == "file" ? "Archivo" : "Texto")
-                                                            </span>
-                                                        </td>
-                                                        <td style="padding: 0.15rem;">
-                                                            <button type="button" title="Eliminar"
-                                                                    @onclick="async () => await RemoveTemplateVar(sel.Id, capturedName)"
-                                                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
-                                                                <i class="bi bi-trash"></i>
-                                                            </button>
-                                                        </td>
-                                                    </tr>
+                                                    <div style="margin-top: 0.25rem; padding-top: 0.25rem; border-top: 1px dashed var(--border);">
+                                                        <label style="font-size: 0.7rem; font-weight: 600;">Campos:</label>
+                                                        @foreach (var f in tv.Fields)
+                                                        {
+                                                            <div style="display: flex; align-items: center; gap: 0.3rem; margin-top: 0.15rem; padding-left: 0.4rem;">
+                                                                <span style="font-family: monospace; font-size: 0.72rem; flex: 1;">@f.Name</span>
+                                                                <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.02rem 0.25rem; border-radius: 0.15rem; font-size: 0.65rem;">
+                                                                    @(f.Type == "file" ? "Archivo" : "Texto")
+                                                                </span>
+                                                            </div>
+                                                        }
+                                                        @if (tv.Fields.Count == 0)
+                                                        {
+                                                            <p class="text-sm text-muted" style="font-size: 0.7rem; font-style: italic; padding-left: 0.4rem;">Sin campos definidos</p>
+                                                        }
+                                                    </div>
                                                 }
-                                            </tbody>
-                                        </table>
+                                            </div>
+                                        }
                                     }
 
                                     <div style="display: flex; align-items: flex-end; gap: 0.3rem;">
                                         <div style="flex: 2;">
                                             <label style="font-size: 0.72rem;">Nombre</label>
-                                            <input type="text" @bind="_tplNewVarName" placeholder="ej: titulo..."
+                                            <input type="text" @bind="_tplNewVarName" placeholder="ej: titulo, slides..."
                                                    style="font-size: 0.8rem; padding: 0.2rem 0.4rem;" />
                                         </div>
                                         <div style="flex: 1;">
@@ -397,12 +403,13 @@
                                             <select @bind="_tplNewVarType" style="font-size: 0.8rem; padding: 0.2rem 0.3rem;">
                                                 <option value="text">Texto</option>
                                                 <option value="file">Archivo</option>
+                                                <option value="scene">Escena</option>
                                             </select>
                                         </div>
                                         <button type="button" class="btn btn-sm"
                                                 style="font-size: 0.75rem; padding: 0.2rem 0.5rem; white-space: nowrap;"
                                                 disabled="@string.IsNullOrWhiteSpace(_tplNewVarName)"
-                                                @onclick="async () => await AddTemplateVar(sel.Id, _tplNewVarName.Trim(), _tplNewVarType)">
+                                                @onclick="async () => await AddTemplateVarWithFields(sel.Id, _tplNewVarName.Trim(), _tplNewVarType)">
                                             <i class="bi bi-plus-lg"></i> Anadir
                                         </button>
                                     </div>
@@ -795,6 +802,61 @@
                         </div>
                     }
 
+                    @if (sel.ModuleType == "Scene")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Campos de la escena</div>
+                            <p class="text-sm text-muted" style="margin-bottom: 0.4rem;">
+                                Define los campos que componen esta escena. Cada campo se convierte en un puerto de entrada.
+                            </p>
+                            @{
+                                var sceneFields = GetTemplateVars(sel.Id) ?? new List<TemplateVariable>();
+                            }
+                            @if (sceneFields.Count > 0)
+                            {
+                                @foreach (var f in sceneFields)
+                                {
+                                    var capturedFieldName = f.Name;
+                                    <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; padding: 0.2rem 0.4rem; border: 1px solid var(--border); border-radius: 0.3rem;">
+                                        <span style="font-family: monospace; font-size: 0.8rem; flex: 1;">@f.Name</span>
+                                        <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
+                                            @(f.Type == "file" ? "Archivo" : "Texto")
+                                        </span>
+                                        <button type="button" title="Eliminar"
+                                                @onclick="async () => await RemoveTemplateVar(sel.Id, capturedFieldName)"
+                                                style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <p class="text-sm text-muted" style="font-style: italic;">Sin campos. Anade campos para crear puertos de entrada.</p>
+                            }
+                            <div style="display: flex; align-items: flex-end; gap: 0.3rem; margin-top: 0.4rem;">
+                                <div style="flex: 2;">
+                                    <label style="font-size: 0.72rem;">Nombre</label>
+                                    <input type="text" @bind="_sceneNewFieldName" placeholder="ej: question, voiceover..."
+                                           style="font-size: 0.8rem; padding: 0.2rem 0.4rem;" />
+                                </div>
+                                <div style="flex: 1;">
+                                    <label style="font-size: 0.72rem;">Tipo</label>
+                                    <select @bind="_sceneNewFieldType" style="font-size: 0.8rem; padding: 0.2rem 0.3rem;">
+                                        <option value="text">Texto</option>
+                                        <option value="file">Archivo</option>
+                                    </select>
+                                </div>
+                                <button type="button" class="btn btn-sm"
+                                        style="font-size: 0.75rem; padding: 0.2rem 0.5rem; white-space: nowrap;"
+                                        disabled="@string.IsNullOrWhiteSpace(_sceneNewFieldName)"
+                                        @onclick="async () => await AddTemplateVar(sel.Id, _sceneNewFieldName.Trim(), _sceneNewFieldType)">
+                                    <i class="bi bi-plus-lg"></i> Anadir
+                                </button>
+                            </div>
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "Checkpoint")
                     {
                         <div class="inspector-section">
@@ -1136,7 +1198,7 @@
         new("media", "bi-brush", "Generacion", ["Image", "Video", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
         new("resources", "bi-paperclip", "Recursos", ["FileUpload"]),
-        new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Checkpoint", "Publish", "Coordinator"]),
+        new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Scene", "Checkpoint", "Publish", "Coordinator"]),
     ];
 
     private void ToggleModulePanel() => _showModulePanel = !_showModulePanel;
@@ -1159,6 +1221,12 @@
     // Template variable form state (Json2Video)
     private string _tplNewVarName = "";
     private string _tplNewVarType = "text";
+    private string _tplNewFieldName = "";
+    private string _tplNewFieldType = "text";
+
+    // Scene module field form state
+    private string _sceneNewFieldName = "";
+    private string _sceneNewFieldType = "text";
 
     // Orchestrator output editing state
     private Guid? _editingOutputId;
@@ -1514,6 +1582,19 @@
         var vars = GetTemplateVars(moduleId) ?? new List<TemplateVariable>();
         if (vars.Any(v => v.Name == name)) return;
         vars.Add(new TemplateVariable { Name = name, Type = type });
+        await SetModuleConfig(moduleId, "templateVars", System.Text.Json.JsonSerializer.Serialize(vars));
+        _tplNewVarName = "";
+        _sceneNewFieldName = "";
+        await RebuildDrawflow();
+    }
+
+    private async Task AddTemplateVarWithFields(Guid moduleId, string name, string type)
+    {
+        var vars = GetTemplateVars(moduleId) ?? new List<TemplateVariable>();
+        if (vars.Any(v => v.Name == name)) return;
+        var tv = new TemplateVariable { Name = name, Type = type };
+        if (type == "scene") tv.Fields = new List<SceneField>();
+        vars.Add(tv);
         await SetModuleConfig(moduleId, "templateVars", System.Text.Json.JsonSerializer.Serialize(vars));
         _tplNewVarName = "";
         await RebuildDrawflow();

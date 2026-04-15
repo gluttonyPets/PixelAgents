@@ -405,47 +405,74 @@
 
                         @if (_j2vTemplateVars.Count > 0)
                         {
-                            <table style="width: 100%; border-collapse: collapse; margin-bottom: 0.5rem; font-size: 0.85rem;">
-                                <thead>
-                                    <tr style="border-bottom: 1px solid var(--border);">
-                                        <th style="text-align: left; padding: 0.25rem 0.5rem;">Nombre</th>
-                                        <th style="text-align: left; padding: 0.25rem 0.5rem;">Tipo</th>
-                                        <th style="width: 2rem;"></th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var tv in _j2vTemplateVars)
+                            @foreach (var tv in _j2vTemplateVars)
+                            {
+                                var capturedTv = tv;
+                                <div style="border: 1px solid var(--border); border-radius: 0.35rem; padding: 0.4rem 0.5rem; margin-bottom: 0.35rem;">
+                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                        <span style="font-family: monospace; font-size: 0.85rem; flex: 1;">@tv.Name</span>
+                                        <span class="badge" style="background: @(tv.Type == "scene" ? "#ff7043" : tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
+                                            @(tv.Type == "scene" ? "Escena" : tv.Type == "file" ? "Archivo" : "Texto")
+                                        </span>
+                                        <button type="button" class="btn-icon" title="Eliminar"
+                                                @onclick="() => _j2vTemplateVars.Remove(capturedTv)"
+                                                style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </div>
+                                    @if (tv.Type == "scene")
                                     {
-                                        <tr style="border-bottom: 1px solid var(--border);">
-                                            <td style="padding: 0.25rem 0.5rem;">@tv.Name</td>
-                                            <td style="padding: 0.25rem 0.5rem;">
-                                                <span class="badge" style="background: @(tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
-                                                    @(tv.Type == "file" ? "Archivo" : "Texto")
-                                                </span>
-                                            </td>
-                                            <td style="padding: 0.25rem;">
-                                                <button type="button" class="btn-icon" title="Eliminar"
-                                                        @onclick="() => _j2vTemplateVars.Remove(tv)"
-                                                        style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
-                                                    <i class="bi bi-trash"></i>
+                                        <div style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px dashed var(--border);">
+                                            <label style="font-size: 0.78rem; font-weight: 600;">Campos de cada escena:</label>
+                                            @if (tv.Fields is { Count: > 0 })
+                                            {
+                                                @foreach (var f in tv.Fields)
+                                                {
+                                                    var capturedField = f;
+                                                    <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.2rem; padding-left: 0.5rem;">
+                                                        <span style="font-family: monospace; font-size: 0.8rem; flex: 1;">@f.Name</span>
+                                                        <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
+                                                            @(f.Type == "file" ? "Archivo" : "Texto")
+                                                        </span>
+                                                        <button type="button" title="Eliminar campo"
+                                                                @onclick="() => capturedTv.Fields?.Remove(capturedField)"
+                                                                style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
+                                                            <i class="bi bi-x-lg"></i>
+                                                        </button>
+                                                    </div>
+                                                }
+                                            }
+                                            <div style="display: flex; align-items: flex-end; gap: 0.3rem; margin-top: 0.3rem; padding-left: 0.5rem;">
+                                                <input type="text" @bind="_j2vNewFieldName" placeholder="nombre del campo"
+                                                       style="flex: 2; font-size: 0.8rem; padding: 0.15rem 0.3rem;" />
+                                                <select @bind="_j2vNewFieldType" style="flex: 1; font-size: 0.8rem; padding: 0.15rem 0.3rem;">
+                                                    <option value="text">Texto</option>
+                                                    <option value="file">Archivo</option>
+                                                </select>
+                                                <button type="button" class="btn btn-sm"
+                                                        style="font-size: 0.75rem; padding: 0.15rem 0.4rem;"
+                                                        disabled="@string.IsNullOrWhiteSpace(_j2vNewFieldName)"
+                                                        @onclick="() => AddJ2vSceneField(capturedTv)">
+                                                    <i class="bi bi-plus"></i>
                                                 </button>
-                                            </td>
-                                        </tr>
+                                            </div>
+                                        </div>
                                     }
-                                </tbody>
-                            </table>
+                                </div>
+                            }
                         }
 
                         <div class="form-row" style="align-items: flex-end; gap: 0.5rem;">
                             <div class="form-group" style="flex: 2;">
                                 <label>Nombre</label>
-                                <input type="text" @bind="_j2vNewVarName" placeholder="ej: titulo, imagen_fondo..." />
+                                <input type="text" @bind="_j2vNewVarName" placeholder="ej: titulo, slides..." />
                             </div>
                             <div class="form-group" style="flex: 1;">
                                 <label>Tipo</label>
                                 <select @bind="_j2vNewVarType">
                                     <option value="text">Texto</option>
                                     <option value="file">Archivo</option>
+                                    <option value="scene">Escena</option>
                                 </select>
                             </div>
                             <button type="button" class="btn btn-sm"
@@ -931,47 +958,74 @@
 
                                             @if (_editJ2vTemplateVars.Count > 0)
                                             {
-                                                <table style="width: 100%; border-collapse: collapse; margin-bottom: 0.5rem; font-size: 0.85rem;">
-                                                    <thead>
-                                                        <tr style="border-bottom: 1px solid var(--border);">
-                                                            <th style="text-align: left; padding: 0.25rem 0.5rem;">Nombre</th>
-                                                            <th style="text-align: left; padding: 0.25rem 0.5rem;">Tipo</th>
-                                                            <th style="width: 2rem;"></th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        @foreach (var tv in _editJ2vTemplateVars)
+                                                @foreach (var tv in _editJ2vTemplateVars)
+                                                {
+                                                    var capturedTv = tv;
+                                                    <div style="border: 1px solid var(--border); border-radius: 0.35rem; padding: 0.4rem 0.5rem; margin-bottom: 0.35rem;">
+                                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                                            <span style="font-family: monospace; font-size: 0.85rem; flex: 1;">@tv.Name</span>
+                                                            <span class="badge" style="background: @(tv.Type == "scene" ? "#ff7043" : tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
+                                                                @(tv.Type == "scene" ? "Escena" : tv.Type == "file" ? "Archivo" : "Texto")
+                                                            </span>
+                                                            <button type="button" class="btn-icon" title="Eliminar"
+                                                                    @onclick="() => _editJ2vTemplateVars.Remove(capturedTv)"
+                                                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                        @if (tv.Type == "scene")
                                                         {
-                                                            <tr style="border-bottom: 1px solid var(--border);">
-                                                                <td style="padding: 0.25rem 0.5rem;">@tv.Name</td>
-                                                                <td style="padding: 0.25rem 0.5rem;">
-                                                                    <span class="badge" style="background: @(tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
-                                                                        @(tv.Type == "file" ? "Archivo" : "Texto")
-                                                                    </span>
-                                                                </td>
-                                                                <td style="padding: 0.25rem;">
-                                                                    <button type="button" class="btn-icon" title="Eliminar"
-                                                                            @onclick="() => _editJ2vTemplateVars.Remove(tv)"
-                                                                            style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
-                                                                        <i class="bi bi-trash"></i>
+                                                            <div style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px dashed var(--border);">
+                                                                <label style="font-size: 0.78rem; font-weight: 600;">Campos de cada escena:</label>
+                                                                @if (tv.Fields is { Count: > 0 })
+                                                                {
+                                                                    @foreach (var f in tv.Fields)
+                                                                    {
+                                                                        var capturedField = f;
+                                                                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.2rem; padding-left: 0.5rem;">
+                                                                            <span style="font-family: monospace; font-size: 0.8rem; flex: 1;">@f.Name</span>
+                                                                            <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
+                                                                                @(f.Type == "file" ? "Archivo" : "Texto")
+                                                                            </span>
+                                                                            <button type="button" title="Eliminar campo"
+                                                                                    @onclick="() => capturedTv.Fields?.Remove(capturedField)"
+                                                                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
+                                                                                <i class="bi bi-x-lg"></i>
+                                                                            </button>
+                                                                        </div>
+                                                                    }
+                                                                }
+                                                                <div style="display: flex; align-items: flex-end; gap: 0.3rem; margin-top: 0.3rem; padding-left: 0.5rem;">
+                                                                    <input type="text" @bind="_editJ2vNewFieldName" placeholder="nombre del campo"
+                                                                           style="flex: 2; font-size: 0.8rem; padding: 0.15rem 0.3rem;" />
+                                                                    <select @bind="_editJ2vNewFieldType" style="flex: 1; font-size: 0.8rem; padding: 0.15rem 0.3rem;">
+                                                                        <option value="text">Texto</option>
+                                                                        <option value="file">Archivo</option>
+                                                                    </select>
+                                                                    <button type="button" class="btn btn-sm"
+                                                                            style="font-size: 0.75rem; padding: 0.15rem 0.4rem;"
+                                                                            disabled="@string.IsNullOrWhiteSpace(_editJ2vNewFieldName)"
+                                                                            @onclick="() => AddEditJ2vSceneField(capturedTv)">
+                                                                        <i class="bi bi-plus"></i>
                                                                     </button>
-                                                                </td>
-                                                            </tr>
+                                                                </div>
+                                                            </div>
                                                         }
-                                                    </tbody>
-                                                </table>
+                                                    </div>
+                                                }
                                             }
 
                                             <div class="form-row" style="align-items: flex-end; gap: 0.5rem;">
                                                 <div class="form-group" style="flex: 2;">
                                                     <label>Nombre</label>
-                                                    <input type="text" @bind="_editJ2vNewVarName" placeholder="ej: titulo, imagen_fondo..." />
+                                                    <input type="text" @bind="_editJ2vNewVarName" placeholder="ej: titulo, slides..." />
                                                 </div>
                                                 <div class="form-group" style="flex: 1;">
                                                     <label>Tipo</label>
                                                     <select @bind="_editJ2vNewVarType">
                                                         <option value="text">Texto</option>
                                                         <option value="file">Archivo</option>
+                                                        <option value="scene">Escena</option>
                                                     </select>
                                                 </div>
                                                 <button type="button" class="btn btn-sm"
@@ -1163,6 +1217,7 @@ else if (!_loading)
         ("Design",      "Diseno",                "D"),
         ("VideoSearch", "Busqueda de video",     "S"),
         ("VideoEdit",   "Edicion de video",      "E"),
+        ("Scene",       "Constructor de escena", "N"),
         ("Orchestrator","Orquestador",           "O"),
         ("Coordinator", "Coordinador",           "K"),
     ];
@@ -1299,6 +1354,8 @@ else if (!_loading)
     private List<TemplateVariable> _j2vTemplateVars = [];
     private string _j2vNewVarName = "";
     private string _j2vNewVarType = "text";
+    private string _j2vNewFieldName = "";
+    private string _j2vNewFieldType = "text";
 
     // ── Edit: Json2Video VideoEdit config ──
     private string _editJ2vResolution = "full-hd";
@@ -1315,6 +1372,8 @@ else if (!_loading)
     private List<TemplateVariable> _editJ2vTemplateVars = [];
     private string _editJ2vNewVarName = "";
     private string _editJ2vNewVarType = "text";
+    private string _editJ2vNewFieldName = "";
+    private string _editJ2vNewFieldType = "text";
 
     // ── Form: transcription ──
     private string _transcriptionLang = "";
@@ -1466,6 +1525,7 @@ else if (!_loading)
 
         // ─── System: Utilities ───
         new("file-upload",     "Carga de archivos",   "System", ["FileUpload"], ["file-upload","resource","free"], "Sube archivos externos (imagenes, audio, video, documentos) para usarlos como recurso en el pipeline. Sin coste."),
+        new("scene-builder",   "Constructor de escenas", "System", ["Scene"], ["scene","template","data-structure","free"], "Define una escena con variables para usar en templates de Json2Video. Cada instancia representa un slide/escena."),
     ];
 
     // ── Available types per provider ──
@@ -1491,6 +1551,7 @@ else if (!_loading)
                 "Orchestrator"  => "Orquestador de pipeline",
                 "Coordinator"   => "Coordinador (multi-entrada)",
                 "FileUpload"    => "Carga de archivos",
+                "Scene"         => "Constructor de escena",
                 _               => t
             }))
             .ToList();
@@ -1559,7 +1620,9 @@ else if (!_loading)
         var name = _j2vNewVarName?.Trim();
         if (!string.IsNullOrWhiteSpace(name) && !_j2vTemplateVars.Any(v => v.Name == name))
         {
-            _j2vTemplateVars.Add(new TemplateVariable { Name = name, Type = _j2vNewVarType });
+            var tv = new TemplateVariable { Name = name, Type = _j2vNewVarType };
+            if (_j2vNewVarType == "scene") tv.Fields = new List<SceneField>();
+            _j2vTemplateVars.Add(tv);
             _j2vNewVarName = "";
         }
     }
@@ -1569,9 +1632,31 @@ else if (!_loading)
         var name = _editJ2vNewVarName?.Trim();
         if (!string.IsNullOrWhiteSpace(name) && !_editJ2vTemplateVars.Any(v => v.Name == name))
         {
-            _editJ2vTemplateVars.Add(new TemplateVariable { Name = name, Type = _editJ2vNewVarType });
+            var tv = new TemplateVariable { Name = name, Type = _editJ2vNewVarType };
+            if (_editJ2vNewVarType == "scene") tv.Fields = new List<SceneField>();
+            _editJ2vTemplateVars.Add(tv);
             _editJ2vNewVarName = "";
         }
+    }
+
+    private void AddJ2vSceneField(TemplateVariable tv)
+    {
+        var name = _j2vNewFieldName?.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        tv.Fields ??= new List<SceneField>();
+        if (tv.Fields.Any(f => f.Name == name)) return;
+        tv.Fields.Add(new SceneField { Name = name, Type = _j2vNewFieldType });
+        _j2vNewFieldName = "";
+    }
+
+    private void AddEditJ2vSceneField(TemplateVariable tv)
+    {
+        var name = _editJ2vNewFieldName?.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        tv.Fields ??= new List<SceneField>();
+        if (tv.Fields.Any(f => f.Name == name)) return;
+        tv.Fields.Add(new SceneField { Name = name, Type = _editJ2vNewFieldType });
+        _editJ2vNewFieldName = "";
     }
 
     private void ResetConfig()
@@ -1624,6 +1709,8 @@ else if (!_loading)
         _j2vTemplateVars = [];
         _j2vNewVarName = "";
         _j2vNewVarType = "text";
+        _j2vNewFieldName = "";
+        _j2vNewFieldType = "text";
     }
 
     // ── Build config JSON ──
