@@ -70,6 +70,16 @@ public class PortDefinition
     }
 }
 
+// ── Template variable for Json2Video ──
+public class TemplateVariable
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "text"; // "text" or "file"
+}
+
 // ── Graph persistence ──
 public class PipelineGraph
 {
@@ -117,7 +127,7 @@ public class PipelineConnection
 // ── Module port registry ──
 public static class ModulePortRegistry
 {
-    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, string? inputMapping = null, List<OrchestratorOutputResponse>? orchestratorOutputs = null)
+    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, string? inputMapping = null, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null)
     {
         var ports = new List<PortDefinition>();
 
@@ -154,13 +164,25 @@ public static class ModulePortRegistry
                 break;
 
             case "VideoEdit":
-                ports.Add(new("input_script", "Guion", PortDataType.Text, isInput: true));
-                // Dynamic media inputs (one per scene) — accept video, image, or any file
-                // AllowMultiple: each scene port can receive multiple files (e.g. image + text overlay)
-                var scenes = Math.Max(sceneCount, 1);
-                for (int i = 1; i <= scenes; i++)
+                if (templateVars is { Count: > 0 })
                 {
-                    ports.Add(new($"input_scene_{i}_media", $"Escena {i}", PortDataType.Any, isInput: true, isRequired: true, allowMultiple: true));
+                    // Template mode: each variable becomes an input port
+                    foreach (var tv in templateVars)
+                    {
+                        var dataType = tv.Type == "file" ? PortDataType.File : PortDataType.Text;
+                        ports.Add(new($"input_tpl_{tv.Name}", tv.Name, dataType, isInput: true, isRequired: false, allowMultiple: false));
+                    }
+                }
+                else
+                {
+                    ports.Add(new("input_script", "Guion", PortDataType.Text, isInput: true));
+                    // Dynamic media inputs (one per scene) — accept video, image, or any file
+                    // AllowMultiple: each scene port can receive multiple files (e.g. image + text overlay)
+                    var scenes = Math.Max(sceneCount, 1);
+                    for (int i = 1; i <= scenes; i++)
+                    {
+                        ports.Add(new($"input_scene_{i}_media", $"Escena {i}", PortDataType.Any, isInput: true, isRequired: true, allowMultiple: true));
+                    }
                 }
                 ports.Add(new("output_video", "Video final", PortDataType.Video, isInput: false));
                 break;
