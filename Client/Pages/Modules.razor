@@ -387,6 +387,77 @@
             }
             else if (_moduleType == "VideoEdit" && _provider == "Json2Video")
             {
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                        <input type="checkbox" @bind="_j2vUseTemplate" /> Usar plantilla
+                    </label>
+                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">Activa el modo plantilla para enviar variables a un template de Json2Video.</p>
+                </div>
+
+                @if (_j2vUseTemplate)
+                {
+                    <div class="form-group" style="border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; background: var(--bg-secondary, rgba(255,255,255,0.03));">
+                        <label style="font-weight: 600; margin-bottom: 0.25rem;">Variables de plantilla</label>
+                        <p class="text-sm text-muted" style="margin-bottom: 0.5rem;">
+                            <i class="bi bi-exclamation-triangle" style="color: #ffc107;"></i>
+                            El nombre debe coincidir exactamente con la variable del template en Json2Video.
+                        </p>
+
+                        @if (_j2vTemplateVars.Count > 0)
+                        {
+                            <table style="width: 100%; border-collapse: collapse; margin-bottom: 0.5rem; font-size: 0.85rem;">
+                                <thead>
+                                    <tr style="border-bottom: 1px solid var(--border);">
+                                        <th style="text-align: left; padding: 0.25rem 0.5rem;">Nombre</th>
+                                        <th style="text-align: left; padding: 0.25rem 0.5rem;">Tipo</th>
+                                        <th style="width: 2rem;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var tv in _j2vTemplateVars)
+                                    {
+                                        <tr style="border-bottom: 1px solid var(--border);">
+                                            <td style="padding: 0.25rem 0.5rem;">@tv.Name</td>
+                                            <td style="padding: 0.25rem 0.5rem;">
+                                                <span class="badge" style="background: @(tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
+                                                    @(tv.Type == "file" ? "Archivo" : "Texto")
+                                                </span>
+                                            </td>
+                                            <td style="padding: 0.25rem;">
+                                                <button type="button" class="btn-icon" title="Eliminar"
+                                                        @onclick="() => _j2vTemplateVars.Remove(tv)"
+                                                        style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+
+                        <div class="form-row" style="align-items: flex-end; gap: 0.5rem;">
+                            <div class="form-group" style="flex: 2;">
+                                <label>Nombre</label>
+                                <input type="text" @bind="_j2vNewVarName" placeholder="ej: titulo, imagen_fondo..." />
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Tipo</label>
+                                <select @bind="_j2vNewVarType">
+                                    <option value="text">Texto</option>
+                                    <option value="file">Archivo</option>
+                                </select>
+                            </div>
+                            <button type="button" class="btn btn-sm"
+                                    style="margin-bottom: 0.25rem; white-space: nowrap;"
+                                    disabled="@string.IsNullOrWhiteSpace(_j2vNewVarName)"
+                                    @onclick="() => { if (!string.IsNullOrWhiteSpace(_j2vNewVarName) && !_j2vTemplateVars.Any(v => v.Name == _j2vNewVarName.Trim())) { _j2vTemplateVars.Add(new TemplateVariable { Name = _j2vNewVarName.Trim(), Type = _j2vNewVarType }); _j2vNewVarName = \"\"; } }">
+                                <i class="bi bi-plus-lg"></i> Anadir
+                            </button>
+                        </div>
+                    </div>
+                }
+
                 <div class="form-row">
                     <div class="form-group">
                         <label>Resolucion</label>
@@ -842,6 +913,77 @@
                                 }
                                 else if (m.ModuleType == "VideoEdit" && m.ProviderType == "Json2Video")
                                 {
+                                    <div class="form-group">
+                                        <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                                            <input type="checkbox" @bind="_editJ2vUseTemplate" /> Usar plantilla
+                                        </label>
+                                        <p class="text-sm text-muted" style="margin-top: 0.15rem;">Activa el modo plantilla para enviar variables a un template de Json2Video.</p>
+                                    </div>
+
+                                    @if (_editJ2vUseTemplate)
+                                    {
+                                        <div class="form-group" style="border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; background: var(--bg-secondary, rgba(255,255,255,0.03));">
+                                            <label style="font-weight: 600; margin-bottom: 0.25rem;">Variables de plantilla</label>
+                                            <p class="text-sm text-muted" style="margin-bottom: 0.5rem;">
+                                                <i class="bi bi-exclamation-triangle" style="color: #ffc107;"></i>
+                                                El nombre debe coincidir exactamente con la variable del template en Json2Video.
+                                            </p>
+
+                                            @if (_editJ2vTemplateVars.Count > 0)
+                                            {
+                                                <table style="width: 100%; border-collapse: collapse; margin-bottom: 0.5rem; font-size: 0.85rem;">
+                                                    <thead>
+                                                        <tr style="border-bottom: 1px solid var(--border);">
+                                                            <th style="text-align: left; padding: 0.25rem 0.5rem;">Nombre</th>
+                                                            <th style="text-align: left; padding: 0.25rem 0.5rem;">Tipo</th>
+                                                            <th style="width: 2rem;"></th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        @foreach (var tv in _editJ2vTemplateVars)
+                                                        {
+                                                            <tr style="border-bottom: 1px solid var(--border);">
+                                                                <td style="padding: 0.25rem 0.5rem;">@tv.Name</td>
+                                                                <td style="padding: 0.25rem 0.5rem;">
+                                                                    <span class="badge" style="background: @(tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
+                                                                        @(tv.Type == "file" ? "Archivo" : "Texto")
+                                                                    </span>
+                                                                </td>
+                                                                <td style="padding: 0.25rem;">
+                                                                    <button type="button" class="btn-icon" title="Eliminar"
+                                                                            @onclick="() => _editJ2vTemplateVars.Remove(tv)"
+                                                                            style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
+                                                                        <i class="bi bi-trash"></i>
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        }
+                                                    </tbody>
+                                                </table>
+                                            }
+
+                                            <div class="form-row" style="align-items: flex-end; gap: 0.5rem;">
+                                                <div class="form-group" style="flex: 2;">
+                                                    <label>Nombre</label>
+                                                    <input type="text" @bind="_editJ2vNewVarName" placeholder="ej: titulo, imagen_fondo..." />
+                                                </div>
+                                                <div class="form-group" style="flex: 1;">
+                                                    <label>Tipo</label>
+                                                    <select @bind="_editJ2vNewVarType">
+                                                        <option value="text">Texto</option>
+                                                        <option value="file">Archivo</option>
+                                                    </select>
+                                                </div>
+                                                <button type="button" class="btn btn-sm"
+                                                        style="margin-bottom: 0.25rem; white-space: nowrap;"
+                                                        disabled="@string.IsNullOrWhiteSpace(_editJ2vNewVarName)"
+                                                        @onclick="() => { if (!string.IsNullOrWhiteSpace(_editJ2vNewVarName) && !_editJ2vTemplateVars.Any(v => v.Name == _editJ2vNewVarName.Trim())) { _editJ2vTemplateVars.Add(new TemplateVariable { Name = _editJ2vNewVarName.Trim(), Type = _editJ2vNewVarType }); _editJ2vNewVarName = \"\"; } }">
+                                                    <i class="bi bi-plus-lg"></i> Anadir
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+
                                     <div class="form-row">
                                         <div class="form-group">
                                             <label>Resolucion</label>
@@ -1153,6 +1295,10 @@ else if (!_loading)
     private int _j2vSubtitleFontSize = 120;
     private string _j2vSubtitleWordColor = "#FFFF00";
     private double _j2vImageDuration = 5.0;
+    private bool _j2vUseTemplate = false;
+    private List<TemplateVariable> _j2vTemplateVars = [];
+    private string _j2vNewVarName = "";
+    private string _j2vNewVarType = "text";
 
     // ── Edit: Json2Video VideoEdit config ──
     private string _editJ2vResolution = "full-hd";
@@ -1165,6 +1311,10 @@ else if (!_loading)
     private int _editJ2vSubtitleFontSize = 120;
     private string _editJ2vSubtitleWordColor = "#FFFF00";
     private double _editJ2vImageDuration = 5.0;
+    private bool _editJ2vUseTemplate = false;
+    private List<TemplateVariable> _editJ2vTemplateVars = [];
+    private string _editJ2vNewVarName = "";
+    private string _editJ2vNewVarType = "text";
 
     // ── Form: transcription ──
     private string _transcriptionLang = "";
@@ -1450,6 +1600,10 @@ else if (!_loading)
         _j2vSubtitleFontSize = 120;
         _j2vSubtitleWordColor = "#FFFF00";
         _j2vImageDuration = 5.0;
+        _j2vUseTemplate = false;
+        _j2vTemplateVars = [];
+        _j2vNewVarName = "";
+        _j2vNewVarType = "text";
     }
 
     // ── Build config JSON ──
@@ -1562,6 +1716,12 @@ else if (!_loading)
         }
         else if (_moduleType == "VideoEdit" && _provider == "Json2Video")
         {
+            if (_j2vUseTemplate)
+            {
+                parts.Add("\"useTemplate\":true");
+                if (_j2vTemplateVars.Count > 0)
+                    parts.Add($"\"templateVars\":{System.Text.Json.JsonSerializer.Serialize(_j2vTemplateVars)}");
+            }
             if (_j2vResolution != "full-hd")
                 parts.Add($"\"resolution\":\"{_j2vResolution}\"");
             if (!_j2vEnableVoice)
@@ -1746,6 +1906,11 @@ else if (!_loading)
                 if (root.TryGetProperty("maxDuration", out var pmxd)) _editPexelsMaxDuration = pmxd.GetInt32();
                 if (root.TryGetProperty("perPage", out var ppp)) _editPexelsPerPage = ppp.GetInt32();
                 // Json2Video VideoEdit
+                if (root.TryGetProperty("useTemplate", out var j2vUt)) _editJ2vUseTemplate = j2vUt.ValueKind == System.Text.Json.JsonValueKind.True;
+                if (root.TryGetProperty("templateVars", out var j2vTv) && j2vTv.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    _editJ2vTemplateVars = System.Text.Json.JsonSerializer.Deserialize<List<TemplateVariable>>(j2vTv.GetRawText()) ?? [];
+                }
                 if (root.TryGetProperty("resolution", out var j2vRes) && j2vRes.GetString() is "full-hd" or "hd" or "4k") _editJ2vResolution = j2vRes.GetString()!;
                 if (root.TryGetProperty("enableVoice", out var j2vEv)) _editJ2vEnableVoice = j2vEv.ValueKind != System.Text.Json.JsonValueKind.False;
                 if (root.TryGetProperty("enableSubtitles", out var j2vEs)) _editJ2vEnableSubtitles = j2vEs.ValueKind != System.Text.Json.JsonValueKind.False;
@@ -1930,6 +2095,12 @@ else if (!_loading)
         }
         else if (moduleType == "VideoEdit" && providerType == "Json2Video")
         {
+            if (_editJ2vUseTemplate)
+            {
+                parts.Add("\"useTemplate\":true");
+                if (_editJ2vTemplateVars.Count > 0)
+                    parts.Add($"\"templateVars\":{System.Text.Json.JsonSerializer.Serialize(_editJ2vTemplateVars)}");
+            }
             if (_editJ2vResolution != "full-hd")
                 parts.Add($"\"resolution\":\"{_editJ2vResolution}\"");
             if (!_editJ2vEnableVoice)

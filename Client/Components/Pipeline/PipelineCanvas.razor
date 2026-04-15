@@ -156,7 +156,7 @@
                     <div class="inspector-section">
                         <div class="inspector-section-title">Conexiones</div>
                         @{
-                            var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id), sel.InputMapping, sel.OrchestratorOutputs);
+                            var ports = ModulePortRegistry.GetPorts(sel.ModuleType, "", GetSceneCount(sel.Id), sel.InputMapping, sel.OrchestratorOutputs, GetTemplateVars(sel.Id));
                             var inputPorts = ports.Where(p => p.IsInput).ToList();
                             var outputPorts = ports.Where(p => !p.IsInput).ToList();
                         }
@@ -189,7 +189,7 @@
                                             {
                                                 var capturedInputConn = conn;
                                                 var fromModule = Modules.FirstOrDefault(m => m.Id == conn.FromModuleId);
-                                                var fromPortsList = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping, fromModule.OrchestratorOutputs) : new();
+                                                var fromPortsList = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.InputMapping, fromModule.OrchestratorOutputs, GetTemplateVars(fromModule.Id)) : new();
                                                 var fromPort = fromPortsList.FirstOrDefault(p => p.Id == conn.FromPort);
                                                 <div class="inspector-port-connection">
                                                     <span class="inspector-port-conn-arrow">&#x2190;</span>
@@ -235,7 +235,7 @@
                                             {
                                                 var capturedOutputConn = c;
                                                 var toModule = Modules.FirstOrDefault(m => m.Id == c.ToModuleId);
-                                                var toPortsList = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping, toModule.OrchestratorOutputs) : new();
+                                                var toPortsList = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.InputMapping, toModule.OrchestratorOutputs, GetTemplateVars(toModule.Id)) : new();
                                                 var toPort = toPortsList.FirstOrDefault(p => p.Id == c.ToPort);
                                                 <div class="inspector-port-connection">
                                                     <span class="inspector-port-conn-arrow">&#x2192;</span>
@@ -328,15 +328,100 @@
 
                     @if (sel.ModuleType == "VideoEdit")
                     {
+                        @* ── Plantilla ── *@
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Plantilla</div>
+                            <div class="inspector-field">
+                                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                                    <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "useTemplate", false)"
+                                           @onchange="@(async e => await ToggleUseTemplate(sel.Id, (bool)(e.Value ?? false)))" />
+                                    Usar plantilla
+                                </label>
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Usa un template de Json2Video con variables personalizadas.</p>
+                            </div>
+
+                            @if (GetModuleConfigBool(sel.Id, "useTemplate", false))
+                            {
+                                <div class="inspector-field" style="border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.5rem; background: var(--bg-secondary, rgba(255,255,255,0.03));">
+                                    <label style="font-weight: 600; margin-bottom: 0.15rem; font-size: 0.8rem;">Variables de plantilla</label>
+                                    <p class="text-sm text-muted" style="margin-bottom: 0.4rem; font-size: 0.72rem;">
+                                        <i class="bi bi-exclamation-triangle" style="color: #ffc107;"></i>
+                                        El nombre debe coincidir con la variable del template.
+                                    </p>
+
+                                    @{
+                                        var tplVars = GetTemplateVars(sel.Id) ?? new List<TemplateVariable>();
+                                    }
+                                    @if (tplVars.Count > 0)
+                                    {
+                                        <table style="width: 100%; border-collapse: collapse; margin-bottom: 0.4rem; font-size: 0.8rem;">
+                                            <thead>
+                                                <tr style="border-bottom: 1px solid var(--border);">
+                                                    <th style="text-align: left; padding: 0.2rem 0.4rem;">Nombre</th>
+                                                    <th style="text-align: left; padding: 0.2rem 0.4rem;">Tipo</th>
+                                                    <th style="width: 1.5rem;"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var tv in tplVars)
+                                                {
+                                                    var capturedName = tv.Name;
+                                                    <tr style="border-bottom: 1px solid var(--border);">
+                                                        <td style="padding: 0.2rem 0.4rem; font-family: monospace; font-size: 0.75rem;">@tv.Name</td>
+                                                        <td style="padding: 0.2rem 0.4rem;">
+                                                            <span style="background: @(tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
+                                                                @(tv.Type == "file" ? "Archivo" : "Texto")
+                                                            </span>
+                                                        </td>
+                                                        <td style="padding: 0.15rem;">
+                                                            <button type="button" title="Eliminar"
+                                                                    @onclick="async () => await RemoveTemplateVar(sel.Id, capturedName)"
+                                                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
+                                                                <i class="bi bi-trash"></i>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    }
+
+                                    <div style="display: flex; align-items: flex-end; gap: 0.3rem;">
+                                        <div style="flex: 2;">
+                                            <label style="font-size: 0.72rem;">Nombre</label>
+                                            <input type="text" @bind="_tplNewVarName" placeholder="ej: titulo..."
+                                                   style="font-size: 0.8rem; padding: 0.2rem 0.4rem;" />
+                                        </div>
+                                        <div style="flex: 1;">
+                                            <label style="font-size: 0.72rem;">Tipo</label>
+                                            <select @bind="_tplNewVarType" style="font-size: 0.8rem; padding: 0.2rem 0.3rem;">
+                                                <option value="text">Texto</option>
+                                                <option value="file">Archivo</option>
+                                            </select>
+                                        </div>
+                                        <button type="button" class="btn btn-sm"
+                                                style="font-size: 0.75rem; padding: 0.2rem 0.5rem; white-space: nowrap;"
+                                                disabled="@string.IsNullOrWhiteSpace(_tplNewVarName)"
+                                                @onclick="async () => await AddTemplateVar(sel.Id, _tplNewVarName.Trim(), _tplNewVarType)">
+                                            <i class="bi bi-plus-lg"></i> Anadir
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
                         @* ── General ── *@
                         <div class="inspector-section">
                             <div class="inspector-section-title">General</div>
-                            <div class="inspector-field">
-                                <label>Numero de escenas</label>
-                                <input type="number" min="1" max="10" value="@GetSceneCount(sel.Id)"
-                                       @onchange="e => UpdateSceneCount(sel.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1)" />
-                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cada escena acepta video o imagen.</p>
-                            </div>
+                            @if (!GetModuleConfigBool(sel.Id, "useTemplate", false))
+                            {
+                                <div class="inspector-field">
+                                    <label>Numero de escenas</label>
+                                    <input type="number" min="1" max="10" value="@GetSceneCount(sel.Id)"
+                                           @onchange="e => UpdateSceneCount(sel.Id, int.TryParse(e.Value?.ToString(), out var v) ? v : 1)" />
+                                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cada escena acepta video o imagen.</p>
+                                </div>
+                            }
                             <div class="inspector-field">
                                 <label>Duracion de escenas con imagen (seg)</label>
                                 <input type="number" min="1" max="30" step="0.5"
@@ -1071,6 +1156,10 @@
     private string _newOutputPrompt = "";
     private string _newOutputDataType = "text";
 
+    // Template variable form state (Json2Video)
+    private string _tplNewVarName = "";
+    private string _tplNewVarType = "text";
+
     // Orchestrator output editing state
     private Guid? _editingOutputId;
     private string _editLabel = "";
@@ -1168,7 +1257,7 @@
         foreach (var pm in Modules)
         {
             var sceneCount = GetSceneCount(pm.Id);
-            var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount, pm.InputMapping, pm.OrchestratorOutputs);
+            var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount, pm.InputMapping, pm.OrchestratorOutputs, GetTemplateVars(pm.Id));
             var inputs = ports.Where(p => p.IsInput).Select(p => new {
                 id = p.Id, label = p.Label, color = PortDataType.GetColor(p.DataType), required = p.IsRequired, allowMultiple = p.AllowMultiple
             }).ToList();
@@ -1356,6 +1445,8 @@
                         System.Text.Json.JsonValueKind.True => "true",
                         System.Text.Json.JsonValueKind.False => "false",
                         System.Text.Json.JsonValueKind.Number => prop.GetRawText(),
+                        System.Text.Json.JsonValueKind.Array => prop.GetRawText(),
+                        System.Text.Json.JsonValueKind.Object => prop.GetRawText(),
                         _ => prop.GetString() ?? fallback
                     };
                     if (!_moduleConfigs.ContainsKey(moduleId))
@@ -1381,6 +1472,63 @@
         var val = GetModuleConfig(moduleId, key, "");
         if (string.IsNullOrEmpty(val)) return fallback;
         return val.Equals("true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private List<TemplateVariable>? GetTemplateVars(Guid moduleId)
+    {
+        var json = GetModuleConfig(moduleId, "templateVars", "");
+        if (string.IsNullOrEmpty(json)) return null;
+        try
+        {
+            var vars = System.Text.Json.JsonSerializer.Deserialize<List<TemplateVariable>>(json);
+            return vars is { Count: > 0 } ? vars : null;
+        }
+        catch { return null; }
+    }
+
+    private async Task ToggleUseTemplate(Guid moduleId, bool useTemplate)
+    {
+        await SetModuleConfig(moduleId, "useTemplate", useTemplate.ToString().ToLower());
+        if (!useTemplate)
+        {
+            // Clear template vars when disabling template mode
+            await SetModuleConfig(moduleId, "templateVars", "");
+        }
+        // Remove connections to ports that no longer exist
+        var module = Modules.FirstOrDefault(m => m.Id == moduleId);
+        if (module is not null)
+        {
+            var sceneCount = GetSceneCount(moduleId);
+            var tplVars = useTemplate ? GetTemplateVars(moduleId) : null;
+            var validPorts = ModulePortRegistry.GetPorts(module.ModuleType, "", sceneCount, module.InputMapping, module.OrchestratorOutputs, tplVars)
+                .Select(p => p.Id).ToHashSet();
+            _connections.RemoveAll(c =>
+                (c.FromModuleId == moduleId && !validPorts.Contains(c.FromPort)) ||
+                (c.ToModuleId == moduleId && !validPorts.Contains(c.ToPort)));
+        }
+        await RebuildDrawflow();
+    }
+
+    private async Task AddTemplateVar(Guid moduleId, string name, string type)
+    {
+        var vars = GetTemplateVars(moduleId) ?? new List<TemplateVariable>();
+        if (vars.Any(v => v.Name == name)) return;
+        vars.Add(new TemplateVariable { Name = name, Type = type });
+        await SetModuleConfig(moduleId, "templateVars", System.Text.Json.JsonSerializer.Serialize(vars));
+        _tplNewVarName = "";
+        await RebuildDrawflow();
+    }
+
+    private async Task RemoveTemplateVar(Guid moduleId, string name)
+    {
+        var vars = GetTemplateVars(moduleId) ?? new List<TemplateVariable>();
+        vars.RemoveAll(v => v.Name == name);
+        var json = vars.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(vars) : "";
+        await SetModuleConfig(moduleId, "templateVars", json);
+        // Remove connections to the deleted port
+        var portId = $"input_tpl_{name}";
+        _connections.RemoveAll(c => (c.ToModuleId == moduleId && c.ToPort == portId) || (c.FromModuleId == moduleId && c.FromPort == portId));
+        await RebuildDrawflow();
     }
 
     private async Task SetModuleConfig(Guid moduleId, string key, string value)
@@ -1533,7 +1681,7 @@
         var module = Modules.FirstOrDefault(m => m.Id == moduleId);
         if (module is not null)
         {
-            var validPorts = ModulePortRegistry.GetPorts(module.ModuleType, "", count, module.InputMapping, module.OrchestratorOutputs).Select(p => p.Id).ToHashSet();
+            var validPorts = ModulePortRegistry.GetPorts(module.ModuleType, "", count, module.InputMapping, module.OrchestratorOutputs, GetTemplateVars(module.Id)).Select(p => p.Id).ToHashSet();
             _connections.RemoveAll(c =>
                 (c.FromModuleId == moduleId && !validPorts.Contains(c.FromPort)) ||
                 (c.ToModuleId == moduleId && !validPorts.Contains(c.ToPort)));
@@ -1624,8 +1772,8 @@
         var toModule = Modules.FirstOrDefault(m => m.Id == toId);
         if (fromModule is null || toModule is null) return;
 
-        var fromPorts = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromId), fromModule.InputMapping, fromModule.OrchestratorOutputs);
-        var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId), toModule.InputMapping, toModule.OrchestratorOutputs);
+        var fromPorts = ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromId), fromModule.InputMapping, fromModule.OrchestratorOutputs, GetTemplateVars(fromId));
+        var toPorts = ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toId), toModule.InputMapping, toModule.OrchestratorOutputs, GetTemplateVars(toId));
         var fromPortDef = fromPorts.FirstOrDefault(p => p.Id == fromPort && !p.IsInput);
         var toPortDef = toPorts.FirstOrDefault(p => p.Id == toPort && p.IsInput);
         if (fromPortDef is null || toPortDef is null) return;

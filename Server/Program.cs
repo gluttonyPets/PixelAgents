@@ -1147,11 +1147,21 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
                 catch { /* ignore malformed config */ }
             }
 
-            // Parse value: try bool, then int, then string
-            if (bool.TryParse(mc.Value, out var boolVal))
+            // Empty value: remove key from config
+            if (string.IsNullOrEmpty(mc.Value))
+            {
+                configDict.Remove(mc.Key);
+            }
+            // Parse value: try bool, then int, then JSON array/object, then string
+            else if (bool.TryParse(mc.Value, out var boolVal))
                 configDict[mc.Key] = boolVal;
             else if (int.TryParse(mc.Value, out var intVal))
                 configDict[mc.Key] = intVal;
+            else if (mc.Value.Length > 1 && (mc.Value[0] == '[' || mc.Value[0] == '{'))
+            {
+                try { configDict[mc.Key] = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(mc.Value); }
+                catch { configDict[mc.Key] = mc.Value; }
+            }
             else
                 configDict[mc.Key] = mc.Value;
 
