@@ -64,8 +64,23 @@ public class ModuleExecutionContext
     /// <summary>Base path for media storage.</summary>
     public required string MediaRoot { get; init; }
 
+    /// <summary>Public base URL used to expose produced files to external services.</summary>
+    public string PublicBaseUrl { get; init; } = "";
+
     /// <summary>Execution file id -> path relative to the execution workspace.</summary>
     public Dictionary<Guid, string> ExecutionFilePaths { get; init; } = [];
+
+    /// <summary>Build the public URL for a file produced during this execution.</summary>
+    public string? GetPublicFileUrl(OutputFile file)
+    {
+        if (file.FileId == Guid.Empty)
+            return null;
+
+        var path = $"/api/public/files/{Uri.EscapeDataString(TenantDbName)}/{Execution.Id}/{file.FileId}/{Uri.EscapeDataString(file.FileName)}";
+        return string.IsNullOrWhiteSpace(PublicBaseUrl)
+            ? path
+            : $"{PublicBaseUrl.TrimEnd('/')}{path}";
+    }
 
     /// <summary>Get text content from a specific input port.</summary>
     public string GetInputText(string portId, string fallback = "")

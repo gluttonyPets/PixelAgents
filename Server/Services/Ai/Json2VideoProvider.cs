@@ -253,6 +253,9 @@ namespace Server.Services.Ai
             var doc = JsonDocument.Parse(jsonInput);
             var root = doc.RootElement;
 
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("template", out _))
+                return BuildTemplatePayload(root, s);
+
             // Movie-level overrides from input JSON
             if (root.TryGetProperty("resolution", out var resEl) && resEl.ValueKind == JsonValueKind.String)
                 s.Resolution = resEl.GetString()!;
@@ -406,6 +409,32 @@ namespace Server.Services.Ai
             }
 
             return movie;
+        }
+
+        /// <summary>
+        /// Pass through Json2Video template renders. Template calls do not need
+        /// scenes in the request; Json2Video expands them from the saved template.
+        /// </summary>
+        private static object BuildTemplatePayload(JsonElement root, VideoSettings s)
+        {
+            var templateId = root.TryGetProperty("template", out var templateEl)
+                ? templateEl.GetString()
+                : null;
+
+            if (string.IsNullOrWhiteSpace(templateId))
+                throw new InvalidOperationException("Json2Video: falta el Template ID para renderizar la plantilla");
+
+            var payload = new Dictionary<string, object?>();
+            foreach (var prop in root.EnumerateObject())
+                payload[prop.Name] = ConvertJsonElement(prop.Value);
+
+            if (!payload.ContainsKey("variables"))
+                payload["variables"] = new Dictionary<string, object>();
+
+            if (!payload.ContainsKey("cache") && !s.Cache)
+                payload["cache"] = false;
+
+            return payload;
         }
 
         /// <summary>

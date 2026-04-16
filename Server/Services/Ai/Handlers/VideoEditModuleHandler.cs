@@ -102,7 +102,7 @@ public class VideoEditModuleHandler : IModuleHandler
                     }
                     catch { /* fall through */ }
                 }
-                templateVars[varName] = data.TextContent ?? "";
+                templateVars[varName] = ResolveTemplateValue(ctx, data);
             }
             else if (dataList.Count > 1)
             {
@@ -119,8 +119,9 @@ public class VideoEditModuleHandler : IModuleHandler
                         }
                         catch { /* fall through */ }
                     }
-                    if (!string.IsNullOrWhiteSpace(data.TextContent))
-                        items.Add(data.TextContent);
+                    var value = ResolveTemplateValue(ctx, data);
+                    if (!string.IsNullOrWhiteSpace(value))
+                        items.Add(value);
                 }
                 templateVars[varName] = items;
             }
@@ -148,6 +149,17 @@ public class VideoEditModuleHandler : IModuleHandler
             ["template"] = templateId,
             ["variables"] = templateVars,
         });
+    }
+
+    private static string ResolveTemplateValue(ModuleExecutionContext ctx, PortData data)
+    {
+        if (data.Files is { Count: > 0 })
+        {
+            var file = data.Files[0];
+            return ctx.GetPublicFileUrl(file) ?? file.FileName;
+        }
+
+        return data.TextContent ?? "";
     }
 
     private static string BuildSceneInput(ModuleExecutionContext ctx)

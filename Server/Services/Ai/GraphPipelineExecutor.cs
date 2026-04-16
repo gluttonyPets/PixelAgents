@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Server.Data;
 using Server.Hubs;
 using Server.Models;
@@ -22,6 +23,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
     private readonly ITenantDbContextFactory _tenantFactory;
     private readonly TelegramService _telegram;
     private readonly WhatsAppService _whatsApp;
+    private readonly IConfiguration _configuration;
     private readonly string _mediaRoot;
     private IExecutionLogger _logger;
 
@@ -38,6 +40,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         ITenantDbContextFactory tenantFactory,
         TelegramService telegram,
         WhatsAppService whatsApp,
+        IConfiguration configuration,
         IWebHostEnvironment env)
     {
         _handlers = handlers.ToDictionary(h => h.ModuleType, StringComparer.OrdinalIgnoreCase);
@@ -47,6 +50,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         _tenantFactory = tenantFactory;
         _telegram = telegram;
         _whatsApp = whatsApp;
+        _configuration = configuration;
         _mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
     }
 
@@ -458,6 +462,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             Project = project,
             TenantDbName = tenantDbName,
             WorkspacePath = workspacePath,
+            PublicBaseUrl = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/'),
             PreviousSummaryContext = previousSummaryContext,
             CancellationToken = ct,
             InputsByPort = node.InputPorts.ToDictionary(p => p.PortId, p => p.ReceivedData.ToList()),

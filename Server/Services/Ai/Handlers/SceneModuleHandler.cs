@@ -37,14 +37,14 @@ public class SceneModuleHandler : IModuleHandler
 
             foreach (var data in dataList)
             {
-                if (!string.IsNullOrWhiteSpace(data.TextContent))
+                if (data.Files is { Count: > 0 })
+                {
+                    var file = data.Files[0];
+                    sceneObj[fieldName] = ctx.GetPublicFileUrl(file) ?? file.FileName;
+                }
+                else if (!string.IsNullOrWhiteSpace(data.TextContent))
                 {
                     SetAutoTyped(sceneObj, fieldName, data.TextContent);
-                }
-                else if (data.Files is { Count: > 0 })
-                {
-                    // Use first file's info as value (URL would be resolved by executor)
-                    sceneObj[fieldName] = data.Files[0].FileName;
                 }
             }
         }
