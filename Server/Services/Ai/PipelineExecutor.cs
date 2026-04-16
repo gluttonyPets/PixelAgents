@@ -4939,7 +4939,7 @@ Datos de la ejecucion:
             await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
         }
 
-        /// <summary>Scene step: collect connected field inputs and produce a JSON scene object.</summary>
+        /// <summary>Scene step: build a JSON object from static field values + connected inputs.</summary>
         private async Task HandleSceneStepAsync(
             Project project, ProjectExecution execution, StepExecution stepExecution,
             ProjectModule pm,
@@ -4957,9 +4957,33 @@ Datos de la ejecucion:
             await _logger.LogAsync(projectId, executionId, "info",
                 $"Construyendo escena '{stepName}'...", pm.StepOrder, stepName);
 
-            // Build a JSON object from connected field inputs
             var sceneObj = new Dictionary<string, object>();
 
+            // 1. Load static field values from config (keys prefixed with "fv_")
+            foreach (var (key, val) in config)
+            {
+                if (!key.StartsWith("fv_")) continue;
+                var fieldName = key["fv_".Length..];
+                string strVal;
+                if (val is JsonElement je)
+                    strVal = je.ValueKind == JsonValueKind.String ? (je.GetString() ?? "") : je.GetRawText();
+                else
+                    strVal = val?.ToString() ?? "";
+
+                if (!string.IsNullOrEmpty(strVal))
+                {
+                    // Try to parse as number for numeric values (e.g. duration, correct_answer)
+                    if (int.TryParse(strVal, out var intVal))
+                        sceneObj[fieldName] = intVal;
+                    else if (double.TryParse(strVal, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var dblVal)
+                             && strVal.Contains('.'))
+                        sceneObj[fieldName] = dblVal;
+                    else
+                        sceneObj[fieldName] = strVal;
+                }
+            }
+
+            // 2. Override with connected input values (these take priority)
             if (config.TryGetValue("fieldInputs", out var fiVal))
             {
                 Dictionary<string, JsonElement>? fieldInputs = null;
@@ -4972,13 +4996,11 @@ Datos de la ejecucion:
                 {
                     foreach (var (portId, sourceInfo) in fieldInputs)
                     {
-                        // Extract field name from port ID (input_field_xxx → xxx)
                         var fieldName = portId.StartsWith("input_field_") ? portId["input_field_".Length..] : portId;
                         var stepOrder = sourceInfo.TryGetProperty("stepOrder", out var soProp) ? soProp.GetInt32() : 0;
 
                         if (stepOutputs.TryGetValue(stepOrder, out var srcOutput))
                         {
-                            // If the source has files, use the public URL
                             if (srcOutput.Files.Count > 0)
                             {
                                 var file = srcOutput.Files[0];

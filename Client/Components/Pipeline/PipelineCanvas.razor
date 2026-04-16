@@ -807,7 +807,7 @@
                         <div class="inspector-section">
                             <div class="inspector-section-title">Campos de la escena</div>
                             <p class="text-sm text-muted" style="margin-bottom: 0.4rem;">
-                                Define los campos que componen esta escena. Cada campo se convierte en un puerto de entrada.
+                                Define los campos y sus valores. Si un campo tiene un puerto conectado, el valor conectado tiene prioridad.
                             </p>
                             @{
                                 var sceneFields = GetTemplateVars(sel.Id) ?? new List<TemplateVariable>();
@@ -817,16 +817,33 @@
                                 @foreach (var f in sceneFields)
                                 {
                                     var capturedFieldName = f.Name;
-                                    <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; padding: 0.2rem 0.4rem; border: 1px solid var(--border); border-radius: 0.3rem;">
-                                        <span style="font-family: monospace; font-size: 0.8rem; flex: 1;">@f.Name</span>
-                                        <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
-                                            @(f.Type == "file" ? "Archivo" : "Texto")
-                                        </span>
-                                        <button type="button" title="Eliminar"
-                                                @onclick="async () => await RemoveTemplateVar(sel.Id, capturedFieldName)"
-                                                style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
+                                    var configKey = $"fv_{f.Name}";
+                                    <div style="border: 1px solid var(--border); border-radius: 0.3rem; padding: 0.3rem 0.4rem; margin-bottom: 0.3rem;">
+                                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.2rem;">
+                                            <span style="font-family: monospace; font-size: 0.78rem; flex: 1; font-weight: 600;">@f.Name</span>
+                                            <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.65rem;">
+                                                @(f.Type == "file" ? "Archivo" : "Texto")
+                                            </span>
+                                            <button type="button" title="Eliminar"
+                                                    @onclick="async () => await RemoveTemplateVar(sel.Id, capturedFieldName)"
+                                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </div>
+                                        @if (f.Type == "file")
+                                        {
+                                            <input type="text" value="@GetModuleConfig(sel.Id, configKey, "")"
+                                                   placeholder="URL del archivo..."
+                                                   @onchange="@(e => SetModuleConfig(sel.Id, configKey, e.Value?.ToString() ?? ""))"
+                                                   style="width: 100%; font-size: 0.78rem; padding: 0.15rem 0.3rem;" />
+                                        }
+                                        else
+                                        {
+                                            <input type="text" value="@GetModuleConfig(sel.Id, configKey, "")"
+                                                   placeholder="Valor..."
+                                                   @onchange="@(e => SetModuleConfig(sel.Id, configKey, e.Value?.ToString() ?? ""))"
+                                                   style="width: 100%; font-size: 0.78rem; padding: 0.15rem 0.3rem;" />
+                                        }
                                     </div>
                                 }
                             }
