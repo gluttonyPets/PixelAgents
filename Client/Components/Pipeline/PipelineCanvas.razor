@@ -1131,18 +1131,54 @@
                 <div class="inspector-log-entries">
                     @if (ExecutionLogs is not null)
                     {
-                        @foreach (var entry in ExecutionLogs.TakeLast(50))
+                        @foreach (var entry in ExecutionLogs.TakeLast(80))
                         {
-                            <div class="inspector-log-entry inspector-log-@entry.Level">
-                                <span class="inspector-log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
-                                @if (entry.StepOrder.HasValue)
-                                {
-                                    var logPm = Modules.FirstOrDefault(m => m.StepOrder == entry.StepOrder.Value);
-                                    var logLabel = logPm is not null ? GetStepLabel(logPm) : entry.StepOrder.Value.ToString();
-                                    <span class="inspector-log-step">P@(logLabel)</span>
-                                }
-                                <span>@entry.Message</span>
-                            </div>
+                            @if (entry.Level == "step-start")
+                            {
+                                <div class="inspector-log-step-header">
+                                    <span class="inspector-log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                                    @if (entry.StepOrder.HasValue && !string.IsNullOrEmpty(entry.StepName))
+                                    {
+                                        var logPm = Modules.FirstOrDefault(m => m.StepOrder == entry.StepOrder.Value);
+                                        var logLabel = logPm is not null ? GetStepLabel(logPm) : "";
+                                        @if (!string.IsNullOrEmpty(logLabel))
+                                        {
+                                            <span class="inspector-log-step-badge">@logLabel</span>
+                                        }
+                                    }
+                                    <span class="inspector-log-step-name">@entry.Message</span>
+                                </div>
+                            }
+                            else if (entry.Level == "input")
+                            {
+                                <div class="inspector-log-io inspector-log-io-in">
+                                    <span class="inspector-log-io-label">IN</span>
+                                    <span class="inspector-log-io-text">@entry.Message</span>
+                                </div>
+                            }
+                            else if (entry.Level == "output")
+                            {
+                                <div class="inspector-log-io inspector-log-io-out">
+                                    <span class="inspector-log-io-label">OUT</span>
+                                    <span class="inspector-log-io-text">@entry.Message</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="inspector-log-entry inspector-log-@entry.Level">
+                                    <span class="inspector-log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                                    @if (entry.StepOrder.HasValue)
+                                    {
+                                        var logPm = Modules.FirstOrDefault(m => m.StepOrder == entry.StepOrder.Value);
+                                        var logLabel = logPm is not null ? GetStepLabel(logPm) : "";
+                                        @if (!string.IsNullOrEmpty(logLabel))
+                                        {
+                                            <span class="inspector-log-step">P@(logLabel)</span>
+                                        }
+                                    }
+                                    <span>@entry.Message</span>
+                                </div>
+                            }
                         }
                     }
                 </div>

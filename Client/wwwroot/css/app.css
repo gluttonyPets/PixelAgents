@@ -2494,6 +2494,64 @@ a.link:hover { text-decoration: underline; }
 .inspector-log-error { color: var(--danger); background: rgba(244, 67, 54, 0.06); }
 .inspector-log-success { color: var(--success); }
 
+/* ── Step header ── */
+.inspector-log-step-header {
+    padding: 0.3rem 0.3rem 0.1rem;
+    margin-top: 0.35rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-weight: 600;
+}
+.inspector-log-step-header:first-child { margin-top: 0; border-top: none; }
+.inspector-log-step-badge {
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.58rem;
+    padding: 0.05rem 0.35rem;
+    border-radius: 3px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.inspector-log-step-name {
+    font-size: 0.7rem;
+    color: var(--text);
+}
+
+/* ── Input / Output chips ── */
+.inspector-log-io {
+    padding: 0.12rem 0.3rem 0.12rem 0.5rem;
+    display: flex;
+    gap: 0.3rem;
+    align-items: baseline;
+    font-size: 0.62rem;
+    line-height: 1.35;
+}
+.inspector-log-io-label {
+    font-size: 0.52rem;
+    font-weight: 700;
+    padding: 0.05rem 0.25rem;
+    border-radius: 2px;
+    flex-shrink: 0;
+    letter-spacing: 0.03em;
+}
+.inspector-log-io-in .inspector-log-io-label {
+    background: rgba(108, 99, 255, 0.12);
+    color: var(--accent);
+}
+.inspector-log-io-out .inspector-log-io-label {
+    background: rgba(76, 175, 80, 0.12);
+    color: var(--success);
+}
+.inspector-log-io-text {
+    color: var(--text-muted);
+    word-break: break-word;
+    max-height: 3.6em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .inspector-section {
     margin-bottom: 0.8rem;
 }

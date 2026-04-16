@@ -353,8 +353,8 @@ namespace Server.Services.Ai
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
-                    await _logger.LogAsync(projectId, executionId, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
+                    await _logger.LogAsync(projectId, executionId, "step-start",
+                        $"{stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // ── Interaction step: send message, optionally pause pipeline ──
@@ -575,23 +575,17 @@ namespace Server.Services.Ai
                             : JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count });
                     }
 
-                    if (inputs.Count > 1)
+                    // Log resolved inputs
+                    for (var ii = 0; ii < inputs.Count; ii++)
                     {
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Recibidos {inputs.Count} inputs del paso anterior — se ejecutara {inputs.Count} veces",
-                            pm.StepOrder, stepName);
+                        var inputPreview = inputs[ii].Length > 300 ? inputs[ii][..300] + "..." : inputs[ii];
+                        var inputLabel = inputs.Count > 1 ? $"[{ii + 1}/{inputs.Count}] {inputPreview}" : inputPreview;
+                        await _logger.LogAsync(projectId, executionId, "input", inputLabel, pm.StepOrder, stepName);
                     }
 
                     if (pm.AiModule.ModuleType == "Text")
                     {
                         // Text modules: single call, structured JSON output
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Enviando prompt al modelo de texto ({pm.AiModule.ModelName})...",
-                            pm.StepOrder, stepName);
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Prompt: {inputs[0]}",
-                            pm.StepOrder, stepName);
-
                         var context = new AiExecutionContext
                         {
                             ModuleType = pm.AiModule.ModuleType,
@@ -648,6 +642,23 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"Texto generado correctamente{itemsMsg}",
                             pm.StepOrder, stepName);
+
+                        // Log output content
+                        if (stepOutput.Items.Count > 0)
+                        {
+                            for (var oi = 0; oi < stepOutput.Items.Count; oi++)
+                            {
+                                var outPreview = stepOutput.Items[oi].Content;
+                                if (outPreview.Length > 300) outPreview = outPreview[..300] + "...";
+                                await _logger.LogAsync(projectId, executionId, "output",
+                                    $"[{oi + 1}/{stepOutput.Items.Count}] {outPreview}", pm.StepOrder, stepName);
+                            }
+                        }
+                        else if (!string.IsNullOrWhiteSpace(stepOutput.Content))
+                        {
+                            var outPreview = stepOutput.Content.Length > 300 ? stepOutput.Content[..300] + "..." : stepOutput.Content;
+                            await _logger.LogAsync(projectId, executionId, "output", outPreview, pm.StepOrder, stepName);
+                        }
                     }
                     else if (pm.AiModule.ModuleType == "Image")
                     {
@@ -751,9 +762,6 @@ namespace Server.Services.Ai
                                     ? $"Generando imagen {i + 1}/{inputs.Count}..."
                                     : $"Generando imagen...",
                                 pm.StepOrder, stepName);
-                            await _logger.LogAsync(projectId, executionId, "info",
-                                $"Prompt: {inputs[i]}",
-                                pm.StepOrder, stepName);
 
                             var singleInput = inputs[i];
 
@@ -854,6 +862,13 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"{outputFiles.Count} imagen(es) generada(s) correctamente",
                             pm.StepOrder, stepName);
+
+                        // Log output files
+                        foreach (var of in outputFiles)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{of.FileName} ({of.ContentType})", pm.StepOrder, stepName);
+                        }
                     }
                     else if (pm.AiModule.ModuleType == "Video")
                     {
@@ -1008,6 +1023,10 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"Video generado correctamente ({result.Metadata.GetValueOrDefault("duration", "?")}s)",
                             pm.StepOrder, stepName);
+
+                        foreach (var of in outputFiles)
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{of.FileName} ({of.ContentType})", pm.StepOrder, stepName);
                     }
                     else if (pm.AiModule.ModuleType == "VideoSearch")
                     {
@@ -1091,6 +1110,10 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"Video encontrado en Pexels (query='{pexelsQuery}', {pexelsTotal} resultados, por {pexelsPhotographer})",
                             pm.StepOrder, stepName);
+
+                        foreach (var of in outputFiles)
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{of.FileName} ({of.ContentType})", pm.StepOrder, stepName);
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
@@ -1393,6 +1416,10 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"Video editado correctamente con Json2Video (duracion={duration}s, renderizado={renderTime}s)",
                             pm.StepOrder, stepName);
+
+                        foreach (var of in outputFiles)
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{of.FileName} ({of.ContentType})", pm.StepOrder, stepName);
                     }
                     else
                     {
@@ -1445,6 +1472,14 @@ namespace Server.Services.Ai
                                 FileSize = result.FileOutput.Length,
                                 CreatedAt = DateTime.UtcNow,
                             });
+
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{fileName} ({result.ContentType})", pm.StepOrder, stepName);
+                        }
+                        else if (!string.IsNullOrWhiteSpace(result.TextOutput))
+                        {
+                            var outPreview = result.TextOutput.Length > 300 ? result.TextOutput[..300] + "..." : result.TextOutput;
+                            await _logger.LogAsync(projectId, executionId, "output", outPreview, pm.StepOrder, stepName);
                         }
                     }
 
@@ -3484,8 +3519,8 @@ Datos de la ejecucion:
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
-                    await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
+                    await _logger.LogAsync(project.Id, execution.Id, "step-start",
+                        $"{stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // Handle another interaction step
@@ -4924,10 +4959,6 @@ Datos de la ejecucion:
             var stepName = pm.StepName ?? pm.AiModule.Name;
             var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
 
-            await _logger.LogAsync(projectId, executionId, "info",
-                $"Cargando archivos adjuntos del modulo '{stepName}'...",
-                pm.StepOrder, stepName);
-
             var fileRecords = await db.ModuleFiles
                 .Where(f => f.AiModuleId == pm.AiModuleId)
                 .OrderBy(f => f.CreatedAt)
@@ -4935,9 +4966,6 @@ Datos de la ejecucion:
 
             if (fileRecords.Count == 0)
             {
-                await _logger.LogAsync(projectId, executionId, "warn",
-                    $"Modulo FileUpload '{stepName}' no tiene archivos adjuntos",
-                    pm.StepOrder, stepName);
 
                 // Still produce an empty output so the pipeline continues
                 stepOutputs[pm.StepOrder] = new StepOutput
@@ -4966,12 +4994,7 @@ Datos de la ejecucion:
             {
                 var sourcePath = Path.Combine(_mediaRoot, f.FilePath);
                 if (!File.Exists(sourcePath))
-                {
-                    await _logger.LogAsync(projectId, executionId, "warn",
-                        $"Archivo '{f.FileName}' no encontrado en disco, omitiendo",
-                        pm.StepOrder, stepName);
                     continue;
-                }
 
                 var ext = Path.GetExtension(f.FileName);
                 var destFileName = $"{f.Id}{ext}";
@@ -5035,10 +5058,6 @@ Datos de la ejecucion:
             stepExecution.OutputData = JsonSerializer.Serialize(output);
             stepExecution.EstimatedCost = 0m;
             await db.SaveChangesAsync();
-
-            await _logger.LogAsync(projectId, executionId, "info",
-                $"FileUpload completado: {outputFiles.Count} archivo(s) disponibles para el pipeline",
-                pm.StepOrder, stepName);
             await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
         }
 
@@ -5154,10 +5173,6 @@ Datos de la ejecucion:
                 else if (contentVal is string str)
                     textContent = str;
             }
-
-            await _logger.LogAsync(projectId, executionId, "info",
-                $"Texto estatico '{stepName}': {textContent.Length} caracteres",
-                pm.StepOrder, stepName);
 
             var output = new StepOutput
             {
@@ -5439,8 +5454,8 @@ Datos de la ejecucion:
                 {
                     var bStepName = bpm.StepName ?? bpm.AiModule.Name;
                     var bStepLabel = GetStepLabel(bpm, project.ProjectModules);
-                    await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"[{branchId}] Ejecutando paso {bStepLabel}: {bStepName} ({bpm.AiModule.ProviderType}/{GetEffectiveModelName(bpm)})",
+                    await _logger.LogAsync(project.Id, execution.Id, "step-start",
+                        $"[{branchId}] {bStepName} ({bpm.AiModule.ProviderType}/{GetEffectiveModelName(bpm)})",
                         bpm.StepOrder, bStepName);
 
                     var bConfig = MergeConfiguration(bpm.AiModule.Configuration, bpm.Configuration);
@@ -5585,11 +5600,13 @@ Datos de la ejecucion:
                         }
                         InjectImageCountRule(bConfig);
 
-                        await _logger.LogAsync(project.Id, execution.Id, "info",
-                            $"Enviando prompt al modelo de texto ({bpm.AiModule.ModelName})...",
-                            bpm.StepOrder, bStepName);
-                        await _logger.LogAsync(project.Id, execution.Id, "info",
-                            $"Prompt: {bInputs[0]}", bpm.StepOrder, bStepName);
+                        // Log resolved inputs for branch
+                        for (var bii = 0; bii < bInputs.Count; bii++)
+                        {
+                            var bInputPreview = bInputs[bii].Length > 300 ? bInputs[bii][..300] + "..." : bInputs[bii];
+                            var bInputLabel = bInputs.Count > 1 ? $"[{bii + 1}/{bInputs.Count}] {bInputPreview}" : bInputPreview;
+                            await _logger.LogAsync(project.Id, execution.Id, "input", bInputLabel, bpm.StepOrder, bStepName);
+                        }
 
                         var bCtx = new AiExecutionContext
                         {
@@ -6704,8 +6721,8 @@ Datos de la ejecucion:
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
-                    await _logger.LogAsync(projectId, executionId, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
+                    await _logger.LogAsync(projectId, executionId, "step-start",
+                        $"{stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // Handle interaction step during retry
@@ -6805,15 +6822,16 @@ Datos de la ejecucion:
                         ? JsonSerializer.Serialize(new { systemPrompt = retrySysPrompt, projectContext = project.Context, prompt = inputs[0] })
                         : JsonSerializer.Serialize(new { systemPrompt = retrySysPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count });
 
+                    // Log resolved inputs for retry
+                    for (var rii = 0; rii < inputs.Count; rii++)
+                    {
+                        var rInputPreview = inputs[rii].Length > 300 ? inputs[rii][..300] + "..." : inputs[rii];
+                        var rInputLabel = inputs.Count > 1 ? $"[{rii + 1}/{inputs.Count}] {rInputPreview}" : rInputPreview;
+                        await _logger.LogAsync(projectId, executionId, "input", rInputLabel, pm.StepOrder, stepName);
+                    }
+
                     if (pm.AiModule.ModuleType == "Text")
                     {
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Enviando prompt al modelo de texto ({pm.AiModule.ModelName})...",
-                            pm.StepOrder, stepName);
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Prompt: {inputs[0]}",
-                            pm.StepOrder, stepName);
-
                         var context = new AiExecutionContext
                         {
                             ModuleType = pm.AiModule.ModuleType,
@@ -6912,9 +6930,6 @@ Datos de la ejecucion:
                                 inputs.Count > 1
                                     ? $"Generando imagen {i + 1}/{inputs.Count}..."
                                     : $"Generando imagen...",
-                                pm.StepOrder, stepName);
-                            await _logger.LogAsync(projectId, executionId, "info",
-                                $"Prompt: {inputs[i]}",
                                 pm.StepOrder, stepName);
 
                             var singleInput = inputs[i];
