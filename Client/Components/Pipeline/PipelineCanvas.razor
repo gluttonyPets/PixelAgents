@@ -342,6 +342,14 @@
 
                             @if (GetModuleConfigBool(sel.Id, "useTemplate", false))
                             {
+                                <div class="inspector-field">
+                                    <label>Template ID</label>
+                                    <input type="text" value="@GetModuleConfig(sel.Id, "templateId", "")"
+                                           placeholder="ID del template en Json2Video..."
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "templateId", e.Value?.ToString() ?? ""))"
+                                           style="font-family: monospace; font-size: 0.85rem;" />
+                                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">El ID del template en tu cuenta de Json2Video.</p>
+                                </div>
                                 <div class="inspector-field" style="border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.5rem; background: var(--bg-secondary, rgba(255,255,255,0.03));">
                                     <label style="font-weight: 600; margin-bottom: 0.15rem; font-size: 0.8rem;">Variables de plantilla</label>
                                     <p class="text-sm text-muted" style="margin-bottom: 0.4rem; font-size: 0.72rem;">

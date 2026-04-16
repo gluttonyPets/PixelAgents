@@ -555,7 +555,15 @@ namespace Server.Services.Ai
                         InjectImageCountRule(config);
 
                     // Resolve inputs: check if previous step has multiple items
-                    var inputs = ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName, stepBranches);
+                    // For VideoEdit in template mode, skip input resolution (template builds its own inputs)
+                    var isVideoEditTemplate = pm.AiModule.ModuleType == "VideoEdit"
+                        && config.TryGetValue("useTemplate", out var utCheck)
+                        && (utCheck is true
+                            || utCheck is JsonElement utCheckEl && utCheckEl.ValueKind == JsonValueKind.True
+                            || utCheck is string utCheckStr && utCheckStr.Equals("true", StringComparison.OrdinalIgnoreCase));
+                    var inputs = isVideoEditTemplate
+                        ? ["(template mode)"]
+                        : ResolveInputs(pm, userInput, stepResults, stepOutputs, pm.AiModule.ModuleType, pm.AiModule.ModelName, stepBranches);
 
                     // Store raw input data including systemPrompt so history shows exactly what was sent
                     var systemPrompt = config.TryGetValue("systemPrompt", out var spVal) && spVal is string spStr ? spStr : null;
@@ -1117,6 +1125,119 @@ namespace Server.Services.Ai
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
+                        // ── Template mode: build variables JSON from templateInputs ──
+                        var isTemplateMode = config.TryGetValue("useTemplate", out var utVal)
+                            && (utVal is true
+                                || utVal is JsonElement utEl && utEl.ValueKind == JsonValueKind.True
+                                || utVal is string utStr && utStr.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+                        if (isTemplateMode)
+                        {
+                            var serverBase = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+                            var templateVars = new Dictionary<string, object>();
+
+                            if (config.TryGetValue("templateInputs", out var tiVal))
+                            {
+                                Dictionary<string, JsonElement>? templateInputs = null;
+                                if (tiVal is JsonElement tiEl && tiEl.ValueKind == JsonValueKind.Object)
+                                    templateInputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(tiEl.GetRawText());
+                                else if (tiVal is string tiStr)
+                                    templateInputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(tiStr);
+
+                                if (templateInputs is not null)
+                                {
+                                    foreach (var (portId, sourcesEl) in templateInputs)
+                                    {
+                                        var varName = portId.StartsWith("input_tpl_") ? portId["input_tpl_".Length..] : portId;
+
+                                        // Sources is an array (allowMultiple for scene ports)
+                                        if (sourcesEl.ValueKind == JsonValueKind.Array)
+                                        {
+                                            var sceneItems = new List<object>();
+                                            foreach (var srcInfo in sourcesEl.EnumerateArray())
+                                            {
+                                                var stepOrder = srcInfo.TryGetProperty("stepOrder", out var soProp) ? soProp.GetInt32() : 0;
+                                                var fromPort = srcInfo.TryGetProperty("fromPort", out var fpProp) ? fpProp.GetString() ?? "" : "";
+                                                var moduleType = srcInfo.TryGetProperty("moduleType", out var mtProp) ? mtProp.GetString() ?? "" : "";
+
+                                                if (stepOutputs.TryGetValue(stepOrder, out var srcOutput))
+                                                {
+                                                    if (moduleType == "Scene" && !string.IsNullOrWhiteSpace(srcOutput.Content))
+                                                    {
+                                                        // Scene outputs are JSON objects — parse and add to array
+                                                        try
+                                                        {
+                                                            var sceneObj = JsonSerializer.Deserialize<Dictionary<string, object>>(srcOutput.Content);
+                                                            if (sceneObj is not null) sceneItems.Add(sceneObj);
+                                                            else sceneItems.Add(srcOutput.Content);
+                                                        }
+                                                        catch { sceneItems.Add(srcOutput.Content); }
+                                                    }
+                                                    else
+                                                    {
+                                                        // Resolve value from specific port
+                                                        string? val = null;
+                                                        if (!string.IsNullOrEmpty(fromPort) && fromPort.StartsWith("output_")
+                                                            && srcOutput.Items.Count > 0
+                                                            && int.TryParse(fromPort.AsSpan("output_".Length), out var outIdx))
+                                                        {
+                                                            var idx = outIdx - 1;
+                                                            if (idx >= 0 && idx < srcOutput.Items.Count)
+                                                                val = srcOutput.Items[idx].Content;
+                                                        }
+                                                        if (val is null && srcOutput.Files.Count > 0 && srcOutput.Files[0].FileId != Guid.Empty)
+                                                            val = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{srcOutput.Files[0].FileId}/{srcOutput.Files[0].FileName}";
+                                                        if (val is null && srcOutput.Type != "orchestrator" && !string.IsNullOrWhiteSpace(srcOutput.Content))
+                                                            val = srcOutput.Content;
+                                                        if (val is not null)
+                                                            sceneItems.Add(val);
+                                                    }
+                                                }
+                                            }
+
+                                            // Single value or array
+                                            if (sceneItems.Count == 1 && sceneItems[0] is string singleStr)
+                                                templateVars[varName] = singleStr;
+                                            else if (sceneItems.Count > 0)
+                                                templateVars[varName] = sceneItems;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Also load static fv_ values from config as fallbacks
+                            foreach (var (key, val) in config)
+                            {
+                                if (!key.StartsWith("fv_")) continue;
+                                var fvName = key["fv_".Length..];
+                                if (templateVars.ContainsKey(fvName)) continue; // connected input takes priority
+                                string strVal;
+                                if (val is JsonElement je)
+                                    strVal = je.ValueKind == JsonValueKind.String ? (je.GetString() ?? "") : je.GetRawText();
+                                else
+                                    strVal = val?.ToString() ?? "";
+                                if (!string.IsNullOrEmpty(strVal))
+                                    templateVars[fvName] = strVal;
+                            }
+
+                            // Build template JSON: { "template": "...", "variables": { ... } }
+                            var templateId = "";
+                            if (config.TryGetValue("templateId", out var tidVal))
+                                templateId = tidVal is JsonElement tidEl ? tidEl.GetString() ?? "" : tidVal?.ToString() ?? "";
+
+                            var templateJson = JsonSerializer.Serialize(new Dictionary<string, object>
+                            {
+                                ["template"] = templateId,
+                                ["variables"] = templateVars
+                            });
+
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"VideoEdit template: {templateVars.Count} variables, template='{templateId}'",
+                                pm.StepOrder, stepName);
+
+                            // Pass template JSON as the input to the provider
+                            inputs = [templateJson];
+                        }
                         // Resolve script: the voiceover script for the video.
                         // Priority: videoPrompt config > Content from upstream text step > combined items
                         // Content has the full narrative text; Items are just short bullet points.
@@ -5622,8 +5743,16 @@ Datos de la ejecucion:
                     var bProvider = _registry.GetProvider(bpm.AiModule.ProviderType)
                         ?? throw new InvalidOperationException($"[{branchId}] Paso {bpm.StepOrder}: Proveedor no disponible");
 
-                    var bInputs = ResolveInputs(bpm, userInput, stepResults, stepOutputs, bpm.AiModule.ModuleType, bpm.AiModule.ModelName,
-                        BuildStepBranches(project.ProjectModules, stepModuleTypes));
+                    var bConfig = MergeConfiguration(bpm.AiModule.Configuration, bpm.Configuration);
+                    var bIsTemplate = bpm.AiModule.ModuleType == "VideoEdit"
+                        && bConfig.TryGetValue("useTemplate", out var bUtVal)
+                        && (bUtVal is true
+                            || bUtVal is JsonElement bUtEl && bUtEl.ValueKind == JsonValueKind.True
+                            || bUtVal is string bUtStr && bUtStr.Equals("true", StringComparison.OrdinalIgnoreCase));
+                    var bInputs = bIsTemplate
+                        ? ["(template mode)"]
+                        : ResolveInputs(bpm, userInput, stepResults, stepOutputs, bpm.AiModule.ModuleType, bpm.AiModule.ModelName,
+                            BuildStepBranches(project.ProjectModules, stepModuleTypes));
 
                     // Store input data so execution history shows what was sent to this step
                     var bSystemPrompt = bConfig.TryGetValue("systemPrompt", out var bspVal) && bspVal is string bspStr ? bspStr : null;
