@@ -26,9 +26,9 @@ public class TranscriptionModuleHandler : IModuleHandler
         var audioFiles = ctx.GetInputFiles("input_audio");
         foreach (var fi in audioFiles)
         {
-            var path = Path.Combine(ctx.MediaRoot, fi.FileName);
-            if (File.Exists(path))
-                inputFiles.Add(await File.ReadAllBytesAsync(path));
+            var bytes = await ctx.ReadOutputFileBytesAsync(fi);
+            if (bytes is not null)
+                inputFiles.Add(bytes);
         }
 
         var aiContext = new AiExecutionContext

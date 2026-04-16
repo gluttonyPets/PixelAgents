@@ -49,9 +49,9 @@ public class ImageModuleHandler : IModuleHandler
             // Load image files from workspace
             foreach (var fi in fileInputs)
             {
-                var path = Path.Combine(ctx.MediaRoot, fi.FileName);
-                if (File.Exists(path))
-                    inputFiles.Add(await File.ReadAllBytesAsync(path));
+                var bytes = await ctx.ReadOutputFileBytesAsync(fi);
+                if (bytes is not null)
+                    inputFiles.Add(bytes);
             }
         }
 
@@ -106,8 +106,8 @@ public class ImageModuleHandler : IModuleHandler
             }
         }
 
-        var output = OutputSchemaHelper.BuildImageOutput(outputFiles, module.ModelName,
-            new Dictionary<string, object> { ["count"] = imageCount });
+        var output = OutputSchemaHelper.BuildImageOutput(outputFiles, module.ModelName);
+        output.Metadata["count"] = imageCount;
 
         return ModuleResult.Completed(output, totalCost, producedFiles);
     }

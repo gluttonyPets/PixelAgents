@@ -37,7 +37,7 @@ public class PausedGraphState
             var key = node.ModuleId.ToString();
             state.NodeStatuses[key] = node.Status.ToString();
 
-            if (node.Status == NodeStatus.Completed && node.Output is not null)
+            if (node.Status is (NodeStatus.Completed or NodeStatus.Paused) && node.Output is not null)
             {
                 state.CompletedOutputs[key] = System.Text.Json.JsonSerializer.Serialize(node.Output);
             }

@@ -58,7 +58,9 @@ public class AudioModuleHandler : IModuleHandler
             });
         }
 
-        var output = OutputSchemaHelper.BuildAudioOutput(outputFiles, module.ModelName, result.Metadata);
+        var output = OutputSchemaHelper.BuildAudioOutput(outputFiles, module.ModelName);
+        foreach (var (key, value) in result.Metadata)
+            output.Metadata[key] = value;
         return ModuleResult.Completed(output, result.EstimatedCost, producedFiles);
     }
 }

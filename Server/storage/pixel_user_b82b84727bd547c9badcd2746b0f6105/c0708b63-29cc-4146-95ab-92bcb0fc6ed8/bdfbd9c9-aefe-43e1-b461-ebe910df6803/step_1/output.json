@@ -1,0 +1,22 @@
+```json
+{
+  "content": "Dato curioso sobre perros para post de Instagram. El contenido se centra en un hecho sorprendente y poco conocido sobre la nariz de los perros, diseñado para captar atencion, generar comentarios y compartidos. Incluye un texto principal para el caption con llamada a la accion, y un texto para la imagen del post.",
+  "summary": "Post de Instagram con dato curioso sobre la huella nasal unica de cada perro, optimizado para engagement.",
+  "items": [
+    {
+      "content": "Genera una imagen cuadrada para Instagram con fondo de color azul oscuro elegante. En la parte superior, el texto grande y llamativo en blanco que diga: Sabias que la nariz de tu perro es unica como una huella dactilar? En el centro, una ilustracion o foto realista de un primer plano de la nariz de un perro, bien iluminada y con mucho detalle, que transmita ternura y curiosidad. En la parte inferior, un texto mas pequeno en color amarillo suave que diga: No existen dos narices caninas iguales en el mundo. El estilo general debe ser limpio, profesional y atractivo para redes sociales. Sin emojis ni iconos decorativos.",
+      "label": "Prompt de imagen para el post"
+    },
+    {
+      "content": "Sabias que la nariz de tu perro funciona como una huella dactilar? Asi como los humanos tenemos huellas dactilares unicas e irrepetibles, cada perro tiene un patron de lineas y crestas en su nariz que es completamente diferente al de cualquier otro perro en el planeta. Este hecho es tan preciso que en algunos paises ya se utiliza la impresion nasal canina como metodo de identificacion oficial, similar a como nosotros usamos nuestras huellas digitales. La nariz de tu perro no solo es adorable, sino que es una verdadera obra maestra de la naturaleza. Ademas de ser unica, tiene hasta 300 millones de receptores olfativos, mientras que los humanos apenas contamos con unos 6 millones. Eso significa que tu perro percibe el mundo de una forma que ni siquiera podemos imaginar. La proxima vez que tu perro te ponga su nariz humeda en la mano, recuerda que ese pequeno gesto viene de un ser con una identidad tan irrepetible como la tuya. Guarda este post para que no se te olvide este dato increible y compartelo con alguien que ame a los perros tanto como nosotros. Cuantanos en los comentarios: tu perro te pone la nariz fria cuando quiere algo? Queremos leer tu historia.",
+      "label": "Caption del post de Instagram"
+    }
+  ],
+  "metadata": {
+    "hashtags": "#perros #datoscuriosos #mundoanimal #perrosdeinstagram #amorperruno #curiosidadesanimales #mascotas #dogsofinstagram #sabiasque #vidacanina",
+    "tono": "Cercano, sorprendente y educativo",
+    "formato": "Post unico cuadrado con caption extenso para engagement",
+    "llamada_a_la_accion": "Comentar experiencia personal, guardar y compartir"
+  }
+}
+```

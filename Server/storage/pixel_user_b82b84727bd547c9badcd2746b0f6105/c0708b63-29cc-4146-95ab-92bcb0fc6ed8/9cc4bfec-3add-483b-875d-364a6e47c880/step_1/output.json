@@ -1,0 +1,23 @@
+```json
+{
+  "content": "Post unico para Instagram con un dato curioso sobre perros. El contenido esta diseñado para generar engagement, aportar valor y sorprender a la audiencia. Incluye un caption optimizado con llamada a la accion y hashtags relevantes para maximizar el alcance organico.",
+  "summary": "Dato curioso sobre la nariz de los perros con caption optimizado para engagement en Instagram.",
+  "items": [
+    {
+      "content": "Genera una imagen cuadrada 1080x1080 para Instagram con fondo de color mostaza calido. En el centro, la ilustracion de un perro golden retriever visto de frente con expresion tierna y curiosa, estilo cartoon suave y moderno. En la parte superior, texto grande en blanco con sombra suave que diga: SABIAS QUE. En la parte inferior, texto en blanco mas pequeno que diga: La huella de la nariz de cada perro es unica, como las huellas dactilares humanas. Estilo limpio, profesional, colores calidos, sin elementos recargados. Sin texto adicional ni logos.",
+      "label": "Prompt de imagen para el post"
+    },
+    {
+      "content": "La huella de la nariz de tu perro es tan unica como tus huellas dactilares. No existe otro perro en el mundo con el mismo patron de lineas y crestas en su nariz. De hecho, algunas organizaciones ya utilizan este metodo para identificar perros, funcionando como una especie de documento de identidad biologico. Asi que la proxima vez que tu peludo te de un beso humedo en la cara, recuerda que esa naricita es literalmente irrepetible. Guarda este post para compartirlo con alguien que ame a los perros tanto como nosotros. Comenta con el nombre de tu perro, queremos conocerlos a todos.",
+      "label": "Caption del post"
+    }
+  ],
+  "metadata": {
+    "hashtags": "#perros #datoscuriosos #curiosidadesanimales #mundoperruno #amoanimales #perrosdeinstagram #mascotas #doglovers #perroslindos #sabiasthat #datosinteresantes #vidaperruna #amomiperro #mascotasfelices #mundoanimal",
+    "tipo_post": "Post unico, imagen estatica",
+    "formato": "1080x1080 cuadrado",
+    "tono": "Informativo, cercano, sorprendente",
+    "mejor_hora_publicacion": "Entre 12:00 y 14:00 o entre 19:00 y 21:00 hora local"
+  }
+}
+```

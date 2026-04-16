@@ -30,9 +30,9 @@ public class VideoModuleHandler : IModuleHandler
         var imageFiles = ctx.GetInputFiles("input_image");
         foreach (var fi in imageFiles)
         {
-            var path = Path.Combine(ctx.MediaRoot, fi.FileName);
-            if (File.Exists(path))
-                inputFiles.Add(await File.ReadAllBytesAsync(path));
+            var bytes = await ctx.ReadOutputFileBytesAsync(fi);
+            if (bytes is not null)
+                inputFiles.Add(bytes);
         }
 
         var aiContext = new AiExecutionContext

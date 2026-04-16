@@ -64,6 +64,9 @@ public class ModuleExecutionContext
     /// <summary>Base path for media storage.</summary>
     public required string MediaRoot { get; init; }
 
+    /// <summary>Execution file id -> path relative to the execution workspace.</summary>
+    public Dictionary<Guid, string> ExecutionFilePaths { get; init; } = [];
+
     /// <summary>Get text content from a specific input port.</summary>
     public string GetInputText(string portId, string fallback = "")
     {
@@ -86,6 +89,36 @@ public class ModuleExecutionContext
         if (!InputsByPort.TryGetValue(portId, out var dataList))
             return [];
         return dataList.Where(d => d.Files is not null).SelectMany(d => d.Files!).ToList();
+    }
+
+    /// <summary>Resolve an output file produced by another module to a disk path.</summary>
+    public string ResolveOutputFilePath(OutputFile file)
+    {
+        var candidates = new List<string>();
+
+        if (file.FileId != Guid.Empty && ExecutionFilePaths.TryGetValue(file.FileId, out var relativePath))
+            candidates.Add(Path.Combine(WorkspacePath, relativePath));
+
+        if (Path.IsPathRooted(file.FileName))
+        {
+            candidates.Add(file.FileName);
+        }
+        else
+        {
+            candidates.Add(Path.Combine(WorkspacePath, file.FileName));
+            candidates.Add(Path.Combine(MediaRoot, file.FileName));
+        }
+
+        return candidates.FirstOrDefault(File.Exists) ?? candidates.First();
+    }
+
+    /// <summary>Read a produced file if it is still available on disk.</summary>
+    public async Task<byte[]?> ReadOutputFileBytesAsync(OutputFile file)
+    {
+        var path = ResolveOutputFilePath(file);
+        return File.Exists(path)
+            ? await File.ReadAllBytesAsync(path, CancellationToken)
+            : null;
     }
 
     /// <summary>Get a config value as string.</summary>
