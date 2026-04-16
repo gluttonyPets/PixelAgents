@@ -1666,7 +1666,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 
             var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
                 new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.StepOrder,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
                     s.Status, s.InputData, s.OutputData, s.ErrorMessage,
                     s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                     s.Files.Select(f => new ExecutionFileResponse(
@@ -1845,7 +1845,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
 
             var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
                 new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.StepOrder,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
                     s.Status, s.InputData, s.OutputData, s.ErrorMessage,
                     s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                     s.Files.Select(f => new ExecutionFileResponse(
@@ -1930,7 +1930,7 @@ app.MapPost("/api/executions/{executionId}/orchestrator-review", async (
 
             var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
                 new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.StepOrder,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
                     s.Status, s.InputData, s.OutputData, s.ErrorMessage,
                     s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                     s.Files.Select(f => new ExecutionFileResponse(
@@ -2006,7 +2006,7 @@ app.MapPost("/api/executions/{executionId}/checkpoint-review", async (
 
             var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
                 new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.StepOrder,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
                     s.Status, s.InputData, s.OutputData, s.ErrorMessage,
                     s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                     s.Files.Select(f => new ExecutionFileResponse(
