@@ -1134,9 +1134,12 @@
                         </div>
                     }
 
-                    <div class="inspector-section">
-                        <button class="btn btn-xs btn-danger" style="width:100%;" @onclick="() => RequestDeleteNode(sel.Id)">Eliminar nodo</button>
-                    </div>
+                    @if (sel.ModuleType != "Start")
+                    {
+                        <div class="inspector-section">
+                            <button class="btn btn-xs btn-danger" style="width:100%;" @onclick="() => RequestDeleteNode(sel.Id)">Eliminar nodo</button>
+                        </div>
+                    }
                 </div>
             }
         }
@@ -1274,7 +1277,7 @@
         new("ai", "bi-cpu", "IA y Texto", ["Text", "Interaction", "Orchestrator"]),
         new("media", "bi-brush", "Generacion", ["Image", "Video", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
-        new("resources", "bi-paperclip", "Recursos", ["Start", "FileUpload", "StaticText"]),
+        new("resources", "bi-paperclip", "Recursos", ["FileUpload", "StaticText"]),
         new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Scene", "Checkpoint", "Publish", "Coordinator"]),
     ];
 

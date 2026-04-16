@@ -67,6 +67,12 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (project.ProjectModules.Count == 0)
             throw new InvalidOperationException("El proyecto no tiene modulos asignados");
 
+        var startModules = project.ProjectModules.Count(pm => pm.IsActive && pm.AiModule.ModuleType == "Start");
+        if (startModules == 0)
+            throw new InvalidOperationException("El pipeline necesita un modulo de Inicio. Anadelo desde el editor.");
+        if (startModules > 1)
+            throw new InvalidOperationException("El pipeline solo puede tener un modulo de Inicio.");
+
         var executionId = Guid.NewGuid();
         var relativeWorkspace = Path.Combine(tenantDbName, projectId.ToString(), executionId.ToString());
         var workspacePath = Path.Combine(_mediaRoot, relativeWorkspace);

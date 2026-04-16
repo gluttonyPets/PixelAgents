@@ -692,6 +692,42 @@ app.MapPost("/api/projects", async (
     db.Projects.Add(project);
     await db.SaveChangesAsync();
 
+    // Auto-create the mandatory Start module for this pipeline
+    var startAiModule = await db.AiModules.FirstOrDefaultAsync(m => m.ModuleType == "Start");
+    if (startAiModule is null)
+    {
+        startAiModule = new AiModule
+        {
+            Id = Guid.NewGuid(),
+            Name = "Inicio",
+            Description = "Punto de entrada del pipeline",
+            ProviderType = "System",
+            ModuleType = "Start",
+            ModelName = "start",
+            IsEnabled = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.AiModules.Add(startAiModule);
+        await db.SaveChangesAsync();
+    }
+
+    var startPm = new ProjectModule
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = project.Id,
+        AiModuleId = startAiModule.Id,
+        StepOrder = 0,
+        StepName = "Inicio",
+        IsActive = true,
+        PosX = 60,
+        PosY = 200,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+    db.ProjectModules.Add(startPm);
+    await db.SaveChangesAsync();
+
     return Results.Created($"/api/projects/{project.Id}",
         new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
             project.CreatedAt, project.UpdatedAt));
@@ -726,6 +762,49 @@ app.MapGet("/api/projects/{id}", async (
         .FirstOrDefaultAsync(p => p.Id == id);
 
     if (project is null) return Results.NotFound();
+
+    // Auto-migrate: ensure every project has a Start module
+    if (!project.ProjectModules.Any(pm => pm.AiModule.ModuleType == "Start"))
+    {
+        var startAiModule = await db.AiModules.FirstOrDefaultAsync(m => m.ModuleType == "Start");
+        if (startAiModule is null)
+        {
+            startAiModule = new AiModule
+            {
+                Id = Guid.NewGuid(),
+                Name = "Inicio",
+                Description = "Punto de entrada del pipeline",
+                ProviderType = "System",
+                ModuleType = "Start",
+                ModelName = "start",
+                IsEnabled = true,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            };
+            db.AiModules.Add(startAiModule);
+            await db.SaveChangesAsync();
+        }
+
+        var startPm = new ProjectModule
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = project.Id,
+            AiModuleId = startAiModule.Id,
+            StepOrder = 0,
+            StepName = "Inicio",
+            IsActive = true,
+            PosX = 60,
+            PosY = 200,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+        db.ProjectModules.Add(startPm);
+        await db.SaveChangesAsync();
+
+        // Re-include the new module
+        await db.Entry(startPm).Reference(x => x.AiModule).LoadAsync();
+        project.ProjectModules.Add(startPm);
+    }
 
     var modules = project.ProjectModules.Select(pm =>
     {
@@ -1124,6 +1203,15 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     var module = await db.AiModules.FindAsync(req.AiModuleId);
     if (module is null) return Results.BadRequest(new { error = "Modulo no encontrado" });
 
+    // Prevent adding a second Start module
+    if (module.ModuleType == "Start")
+    {
+        var existingStart = await db.ProjectModules
+            .AnyAsync(pm => pm.ProjectId == projectId && pm.AiModule.ModuleType == "Start");
+        if (existingStart)
+            return Results.BadRequest(new { error = "El pipeline ya tiene un modulo de Inicio. Solo puede existir uno." });
+    }
+
     // Always assign next available StepOrder to avoid unique constraint violations
     var maxOrder = await db.ProjectModules
         .Where(x => x.ProjectId == projectId && x.BranchId == req.BranchId)
@@ -1307,8 +1395,13 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
     if (db is null) return Results.Unauthorized();
 
     var pm = await db.ProjectModules
+        .Include(x => x.AiModule)
         .FirstOrDefaultAsync(x => x.Id == id && x.ProjectId == projectId);
     if (pm is null) return Results.NotFound();
+
+    // Prevent deleting the mandatory Start module
+    if (pm.AiModule?.ModuleType == "Start")
+        return Results.BadRequest(new { error = "No se puede eliminar el modulo de Inicio. Es obligatorio en cada pipeline." });
 
     // Remove related StepExecutions (and their files via cascade) to avoid FK Restrict violation
     var stepExecutions = await db.StepExecutions
