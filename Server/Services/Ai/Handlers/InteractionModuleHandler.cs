@@ -1,3 +1,5 @@
+using Server.Models;
+
 namespace Server.Services.Ai.Handlers;
 
 /// <summary>
@@ -10,23 +12,43 @@ public class InteractionModuleHandler : IModuleHandler
 
     public Task<ModuleResult> ExecuteAsync(ModuleExecutionContext ctx)
     {
-        var message = ctx.GetInputText("input_message");
+        var previousText = ctx.GetInputText("input_message");
+        var inputFiles = ctx.GetInputFiles("input_message");
 
-        // The actual message sending is handled by the executor (needs Telegram/WhatsApp services)
-        // This handler just prepares the output and signals pause if needed
+        var template = ctx.GetConfig("messageTemplate", "{previous_output}");
+        if (string.IsNullOrWhiteSpace(template))
+            template = "{previous_output}";
+
+        var message = template
+            .Replace("{previous_output}", previousText ?? "")
+            .Replace("{step_number}", ctx.Node.ProjectModule.StepOrder.ToString())
+            .Trim();
+
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            var stepName = ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name ?? "";
+            message = string.IsNullOrWhiteSpace(stepName)
+                ? "Revisa el contenido y confirma."
+                : $"[{stepName}] Revisa el contenido y confirma.";
+        }
+
         var waitForResponse = ctx.GetConfigBool("waitForResponse", true);
 
         var output = new StepOutput
         {
-            Type = "text",
+            Type = inputFiles.Count > 0 ? "interaction" : "text",
             Content = message,
-            Summary = "Esperando respuesta del usuario",
+            Summary = waitForResponse ? "Esperando respuesta del usuario" : "Mensaje enviado",
+            Files = inputFiles,
         };
+
+        var messageType = ctx.GetConfig("messageType", "combined");
+        if (!string.IsNullOrWhiteSpace(messageType))
+            output.Metadata["messageType"] = messageType;
 
         if (waitForResponse)
             return Task.FromResult(ModuleResult.Paused("WaitingForInput", output));
 
-        // Fire-and-forget: just pass the message through
         return Task.FromResult(ModuleResult.Completed(output));
     }
 }
