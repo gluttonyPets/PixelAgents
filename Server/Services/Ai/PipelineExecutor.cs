@@ -5120,24 +5120,53 @@ Datos de la ejecucion:
                     {
                         var fieldName = portId.StartsWith("input_field_") ? portId["input_field_".Length..] : portId;
                         var stepOrder = sourceInfo.TryGetProperty("stepOrder", out var soProp) ? soProp.GetInt32() : 0;
+                        var fromPort = sourceInfo.TryGetProperty("fromPort", out var fpProp) ? fpProp.GetString() ?? "" : "";
 
                         if (stepOutputs.TryGetValue(stepOrder, out var srcOutput))
                         {
-                            if (srcOutput.Files.Count > 0)
+                            string? resolvedValue = null;
+
+                            // For multi-output modules (Orchestrator): use fromPort to get specific output
+                            if (!string.IsNullOrEmpty(fromPort) && fromPort.StartsWith("output_")
+                                && srcOutput.Items.Count > 0
+                                && int.TryParse(fromPort.AsSpan("output_".Length), out var outIdx))
+                            {
+                                var idx = outIdx - 1;
+                                if (idx >= 0 && idx < srcOutput.Items.Count)
+                                    resolvedValue = srcOutput.Items[idx].Content;
+                            }
+
+                            // File output
+                            if (resolvedValue is null && srcOutput.Files.Count > 0)
                             {
                                 var file = srcOutput.Files[0];
                                 if (file.FileId != Guid.Empty)
-                                    sceneObj[fieldName] = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
-                                else if (!string.IsNullOrWhiteSpace(srcOutput.Content))
-                                    sceneObj[fieldName] = srcOutput.Content;
+                                    resolvedValue = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{file.FileId}/{file.FileName}";
                             }
-                            else if (!string.IsNullOrWhiteSpace(srcOutput.Content))
+
+                            // Text content (skip generic Orchestrator summaries)
+                            if (resolvedValue is null && srcOutput.Items.Count > 0 && string.IsNullOrEmpty(fromPort))
                             {
-                                sceneObj[fieldName] = srcOutput.Content;
+                                resolvedValue = string.Join("\n", srcOutput.Items.Select(i => i.Content));
                             }
-                            else if (srcOutput.Items.Count > 0)
+
+                            // Fallback to Content only for non-orchestrator types
+                            if (resolvedValue is null && srcOutput.Type != "orchestrator"
+                                && !string.IsNullOrWhiteSpace(srcOutput.Content))
                             {
-                                sceneObj[fieldName] = string.Join("\n", srcOutput.Items.Select(i => i.Content));
+                                resolvedValue = srcOutput.Content;
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(resolvedValue))
+                            {
+                                // Auto-detect numbers
+                                if (int.TryParse(resolvedValue, out var intParsed))
+                                    sceneObj[fieldName] = intParsed;
+                                else if (double.TryParse(resolvedValue, System.Globalization.NumberStyles.Any,
+                                    System.Globalization.CultureInfo.InvariantCulture, out var dblParsed) && resolvedValue.Contains('.'))
+                                    sceneObj[fieldName] = dblParsed;
+                                else
+                                    sceneObj[fieldName] = resolvedValue;
                             }
                         }
                     }
