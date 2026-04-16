@@ -404,6 +404,14 @@ public class GraphPipelineExecutor : IPipelineExecutor
                     node.ProjectModule.StepOrder,
                     node.ProjectModule.StepName ?? node.AiModule.Name);
 
+                if (IsSceneModule(node) && HasMeaningfulJsonPayload(node.StepExecution.InputData))
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "input",
+                        FormatPayloadForLog(node.StepExecution.InputData),
+                        node.ProjectModule.StepOrder,
+                        node.ProjectModule.StepName ?? node.AiModule.Name);
+                }
+
                 var task = ExecuteNodeAsync(node, graph, project, execution, tenantDbName, workspacePath,
                     previousSummaryContext, filePaths, ct);
                 running[task] = node;
@@ -511,6 +519,13 @@ public class GraphPipelineExecutor : IPipelineExecutor
             graph.PropagateOutputs(node);
             await db.SaveChangesAsync(ct);
             await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Completed");
+            if (IsSceneModule(node))
+            {
+                await _logger.LogAsync(project.Id, execution.Id, "output",
+                    FormatOutputForLog(node.Output),
+                    node.ProjectModule.StepOrder,
+                    node.ProjectModule.StepName ?? node.AiModule.Name);
+            }
             await _logger.LogAsync(project.Id, execution.Id, "success",
                 $"{node.ProjectModule.StepName ?? node.AiModule.Name} completado",
                 node.ProjectModule.StepOrder,
@@ -598,6 +613,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         UserDbContext db,
         CancellationToken ct)
     {
+        var config = MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration);
         var step = new StepExecution
         {
             Id = Guid.NewGuid(),
@@ -605,7 +621,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             ProjectModuleId = node.ModuleId,
             StepOrder = node.ProjectModule.StepOrder,
             Status = "Running",
-            InputData = JsonSerializer.Serialize(DescribeInputs(node), JsonOptions),
+            InputData = JsonSerializer.Serialize(DescribeInputs(node, config), JsonOptions),
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -877,8 +893,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
         catch { /* ignore malformed config */ }
     }
 
-    private static object DescribeInputs(ModuleNode node) =>
-        node.InputPorts.ToDictionary(
+    private static object DescribeInputs(ModuleNode node, Dictionary<string, object>? config = null)
+    {
+        var ports = node.InputPorts.ToDictionary(
             p => p.PortId,
             p => p.ReceivedData.Select(d => new
             {
@@ -887,6 +904,99 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 Files = d.Files?.Select(f => new { f.FileId, f.FileName, f.ContentType, f.FileSize }).ToList(),
                 d.SourcePortId,
             }).ToList());
+
+        if (!string.Equals(node.ModuleType, "Scene", StringComparison.OrdinalIgnoreCase))
+            return ports;
+
+        var staticFields = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        if (config is not null)
+        {
+            foreach (var (key, value) in config)
+            {
+                if (!key.StartsWith("fv_", StringComparison.OrdinalIgnoreCase)) continue;
+                staticFields[key["fv_".Length..]] = SimplifyConfigValue(value);
+            }
+        }
+
+        return new
+        {
+            staticFields,
+            ports,
+        };
+    }
+
+    private static object? SimplifyConfigValue(object? value)
+    {
+        if (value is JsonElement je)
+            return je.ValueKind == JsonValueKind.String ? je.GetString() : JsonSerializer.Deserialize<object>(je.GetRawText());
+        return value;
+    }
+
+    private static bool IsSceneModule(ModuleNode node) =>
+        string.Equals(node.ModuleType, "Scene", StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasMeaningfulJsonPayload(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            return !IsEmptyJsonValue(doc.RootElement);
+        }
+        catch
+        {
+            return !string.IsNullOrWhiteSpace(raw);
+        }
+    }
+
+    private static bool IsEmptyJsonValue(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.Object => !value.EnumerateObject().Any(p => !IsEmptyJsonValue(p.Value)),
+        JsonValueKind.Array => !value.EnumerateArray().Any(e => !IsEmptyJsonValue(e)),
+        JsonValueKind.String => string.IsNullOrWhiteSpace(value.GetString()),
+        JsonValueKind.Null or JsonValueKind.Undefined => true,
+        _ => false,
+    };
+
+    private static string FormatPayloadForLog(string? raw, int maxLength = 4000)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        try
+        {
+            using var doc = JsonDocument.Parse(raw);
+            raw = JsonSerializer.Serialize(doc.RootElement, JsonOptions);
+        }
+        catch { /* keep raw */ }
+
+        return Truncate(raw, maxLength);
+    }
+
+    private static string FormatOutputForLog(StepOutput output)
+    {
+        string value;
+
+        if (!string.IsNullOrWhiteSpace(output.Content))
+        {
+            value = output.Content!;
+        }
+        else if (output.Items.Count > 0)
+        {
+            value = string.Join(" | ", output.Items.Select(i =>
+                string.IsNullOrWhiteSpace(i.Label) ? i.Content : $"{i.Label}: {i.Content}"));
+        }
+        else if (output.Files.Count > 0)
+        {
+            value = $"{output.Files.Count} archivo(s): "
+                + string.Join(", ", output.Files.Select(f => $"{f.FileName} ({f.ContentType})"));
+        }
+        else
+        {
+            value = JsonSerializer.Serialize(output, JsonOptions);
+        }
+
+        return FormatPayloadForLog(value);
+    }
 
     private static string GetEffectiveModelName(ProjectModule pm)
     {

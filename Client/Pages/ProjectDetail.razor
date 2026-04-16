@@ -1070,6 +1070,11 @@ else
                                             {
                                                 <div class="exec-step-preview">@(preview.Content.Length > 120 ? preview.Content[..120] + "..." : preview.Content)</div>
                                             }
+                                            else if (preview?.Type == "scene" && preview.Content is not null)
+                                            {
+                                                var scenePreview = FormatJson(preview.Content) ?? preview.Content;
+                                                <div class="exec-step-preview">@(scenePreview.Length > 120 ? scenePreview[..120] + "..." : scenePreview)</div>
+                                            }
                                             else if (preview?.Files is { Count: > 0 })
                                             {
                                                 <div class="exec-step-preview">@preview.Files.Count archivo(s): @string.Join(", ", preview.Files.Select(f => f.FileName))</div>
@@ -1112,6 +1117,20 @@ else
                                                                     </div>
                                                                 }
                                                             }
+                                                            @if (inputParsed.SystemPrompt is null && inputParsed.Prompts.Count == 0)
+                                                            {
+                                                                <div class="exec-io-section">
+                                                                    <div class="exec-io-title exec-io-in">Input</div>
+                                                                    <pre class="exec-io-block">@inputParsed.RawJson</pre>
+                                                                </div>
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="exec-io-section">
+                                                                <div class="exec-io-title exec-io-in">Input</div>
+                                                                <pre class="exec-io-block">@step.InputData</pre>
+                                                            </div>
                                                         }
                                                     }
                                                 }
@@ -1169,6 +1188,27 @@ else
                                                                     }
                                                                 }
                                                             }
+                                                        </div>
+                                                    }
+                                                    else if (parsed?.Type == "scene" && parsed.Content is not null)
+                                                    {
+                                                        <div class="exec-io-section">
+                                                            <div class="exec-io-title exec-io-out">Output escena</div>
+                                                            <pre class="exec-io-block">@(FormatJson(parsed.Content) ?? parsed.Content)</pre>
+                                                        </div>
+                                                    }
+                                                    else if (parsed?.Content is not null)
+                                                    {
+                                                        <div class="exec-io-section">
+                                                            <div class="exec-io-title exec-io-out">Output</div>
+                                                            <div class="exec-io-block">@parsed.Content</div>
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="exec-io-section">
+                                                            <div class="exec-io-title exec-io-out">Output</div>
+                                                            <pre class="exec-io-block">@(FormatJson(step.OutputData) ?? step.OutputData)</pre>
                                                         </div>
                                                     }
                                                 }
