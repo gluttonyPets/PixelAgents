@@ -410,8 +410,10 @@ namespace Server.Services.Ai
                             if (orchVideoEdit is not null)
                             {
                                 var orchVeConfig = MergeConfiguration(orchVideoEdit.AiModule.Configuration, orchVideoEdit.Configuration);
-                                if (orchVeConfig.TryGetValue("sceneInputs", out var orchVeSi)
-                                    && HasPendingMainStepDependencies(orchVeSi, stepOutputs, mainModules, pm.StepOrder))
+                                var orchHasPendingDeps =
+                                    (orchVeConfig.TryGetValue("sceneInputs", out var orchVeSi) && HasPendingMainStepDependencies(orchVeSi, stepOutputs, mainModules, pm.StepOrder))
+                                    || (orchVeConfig.TryGetValue("templateInputs", out var orchVeTi) && HasPendingMainStepDependencies(orchVeTi, stepOutputs, mainModules, pm.StepOrder));
+                                if (orchHasPendingDeps)
                                 {
                                     deferredBranches.Add((branchId, branchSteps));
                                     await _logger.LogAsync(projectId, executionId, "info",
@@ -1658,16 +1660,15 @@ namespace Server.Services.Ai
                     if (videoEditInBranch is not null)
                     {
                         var veConfig = MergeConfiguration(videoEditInBranch.AiModule.Configuration, videoEditInBranch.Configuration);
-                        if (veConfig.TryGetValue("sceneInputs", out var veSi))
+                        var hasPendingMainSteps =
+                            (veConfig.TryGetValue("sceneInputs", out var veSi) && HasPendingMainStepDependencies(veSi, stepOutputs, mainModules, pm.StepOrder))
+                            || (veConfig.TryGetValue("templateInputs", out var veTi) && HasPendingMainStepDependencies(veTi, stepOutputs, mainModules, pm.StepOrder));
+                        if (hasPendingMainSteps)
                         {
-                            var hasPendingMainSteps = HasPendingMainStepDependencies(veSi, stepOutputs, mainModules, pm.StepOrder);
-                            if (hasPendingMainSteps)
-                            {
-                                deferredBranches.Add((branchId, branchSteps));
-                                await _logger.LogAsync(projectId, executionId, "info",
-                                    $"Rama '{branchId}' diferida — VideoEdit depende de pasos main posteriores");
-                                continue;
-                            }
+                            deferredBranches.Add((branchId, branchSteps));
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"Rama '{branchId}' diferida — VideoEdit depende de pasos main posteriores");
+                            continue;
                         }
                     }
 
@@ -5318,7 +5319,7 @@ Datos de la ejecucion:
             await db.SaveChangesAsync();
 
             await _logger.LogAsync(projectId, executionId, "info",
-                $"Escena '{stepName}' construida con {sceneObj.Count} campo(s)",
+                $"Escena '{stepName}' construida con {sceneObj.Count} campo(s): {sceneJson}",
                 pm.StepOrder, stepName);
             await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
         }
@@ -6030,53 +6031,157 @@ Datos de la ejecucion:
                     }
                     else if (bpm.AiModule.ModuleType == "VideoEdit")
                     {
+                        // ── Template mode in branch: build variables JSON from templateInputs ──
+                        var bIsTemplateMode = bConfig.TryGetValue("useTemplate", out var bUtModeVal)
+                            && (bUtModeVal is true
+                                || bUtModeVal is JsonElement bUtModeEl && bUtModeEl.ValueKind == JsonValueKind.True
+                                || bUtModeVal is string bUtModeStr && bUtModeStr.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+                        if (bIsTemplateMode)
+                        {
+                            var bTplServerBase = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+                            var bTemplateVars = new Dictionary<string, object>();
+
+                            if (bConfig.TryGetValue("templateInputs", out var bTiVal))
+                            {
+                                Dictionary<string, JsonElement>? bTemplateInputs = null;
+                                if (bTiVal is JsonElement bTiEl && bTiEl.ValueKind == JsonValueKind.Object)
+                                    bTemplateInputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(bTiEl.GetRawText());
+                                else if (bTiVal is string bTiStr)
+                                    bTemplateInputs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(bTiStr);
+
+                                if (bTemplateInputs is not null)
+                                {
+                                    foreach (var (portId, sourcesEl) in bTemplateInputs)
+                                    {
+                                        var varName = portId.StartsWith("input_tpl_") ? portId["input_tpl_".Length..] : portId;
+                                        if (sourcesEl.ValueKind == JsonValueKind.Array)
+                                        {
+                                            var sceneItems = new List<object>();
+                                            foreach (var srcInfo in sourcesEl.EnumerateArray())
+                                            {
+                                                var bSrcStep = srcInfo.TryGetProperty("stepOrder", out var bSoProp) ? bSoProp.GetInt32() : 0;
+                                                var bSrcPort = srcInfo.TryGetProperty("fromPort", out var bFpProp) ? bFpProp.GetString() ?? "" : "";
+                                                var bSrcType = srcInfo.TryGetProperty("moduleType", out var bMtProp) ? bMtProp.GetString() ?? "" : "";
+
+                                                if (stepOutputs.TryGetValue(bSrcStep, out var bSrcOutput))
+                                                {
+                                                    if (bSrcType == "Scene" && !string.IsNullOrWhiteSpace(bSrcOutput.Content))
+                                                    {
+                                                        try
+                                                        {
+                                                            var sceneObj = JsonSerializer.Deserialize<Dictionary<string, object>>(bSrcOutput.Content);
+                                                            if (sceneObj is not null) sceneItems.Add(sceneObj);
+                                                            else sceneItems.Add(bSrcOutput.Content);
+                                                        }
+                                                        catch { sceneItems.Add(bSrcOutput.Content); }
+                                                    }
+                                                    else
+                                                    {
+                                                        string? resolvedVal = null;
+                                                        if (!string.IsNullOrEmpty(bSrcPort) && bSrcPort.StartsWith("output_")
+                                                            && bSrcOutput.Items.Count > 0
+                                                            && int.TryParse(bSrcPort.AsSpan("output_".Length), out var bOutIdx))
+                                                        {
+                                                            var idx = bOutIdx - 1;
+                                                            if (idx >= 0 && idx < bSrcOutput.Items.Count)
+                                                                resolvedVal = bSrcOutput.Items[idx].Content;
+                                                        }
+                                                        if (resolvedVal is null && bSrcOutput.Files.Count > 0 && bSrcOutput.Files[0].FileId != Guid.Empty)
+                                                            resolvedVal = $"{bTplServerBase}/api/public/files/{tenantDbName}/{executionId}/{bSrcOutput.Files[0].FileId}/{bSrcOutput.Files[0].FileName}";
+                                                        if (resolvedVal is null && bSrcOutput.Type != "orchestrator" && !string.IsNullOrWhiteSpace(bSrcOutput.Content))
+                                                            resolvedVal = bSrcOutput.Content;
+                                                        if (resolvedVal is not null)
+                                                            sceneItems.Add(resolvedVal);
+                                                    }
+                                                }
+                                            }
+                                            if (sceneItems.Count == 1 && sceneItems[0] is string singleStr)
+                                                bTemplateVars[varName] = singleStr;
+                                            else if (sceneItems.Count > 0)
+                                                bTemplateVars[varName] = sceneItems;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Static fv_ values as fallbacks
+                            foreach (var (cfgKey, cfgVal) in bConfig)
+                            {
+                                if (!cfgKey.StartsWith("fv_")) continue;
+                                var fvName = cfgKey["fv_".Length..];
+                                if (bTemplateVars.ContainsKey(fvName)) continue;
+                                string strFv;
+                                if (cfgVal is JsonElement jeFv)
+                                    strFv = jeFv.ValueKind == JsonValueKind.String ? (jeFv.GetString() ?? "") : jeFv.GetRawText();
+                                else
+                                    strFv = cfgVal?.ToString() ?? "";
+                                if (!string.IsNullOrEmpty(strFv))
+                                    bTemplateVars[fvName] = strFv;
+                            }
+
+                            var bTemplateId = "";
+                            if (bConfig.TryGetValue("templateId", out var bTidVal))
+                                bTemplateId = bTidVal is JsonElement bTidEl ? bTidEl.GetString() ?? "" : bTidVal?.ToString() ?? "";
+
+                            var bTemplateJson = JsonSerializer.Serialize(new Dictionary<string, object>
+                            {
+                                ["template"] = bTemplateId,
+                                ["variables"] = bTemplateVars
+                            });
+
+                            await _logger.LogAsync(projectId, executionId, "info",
+                                $"[{branchId}] VideoEdit template: {bTemplateVars.Count} variables, template='{bTemplateId}'",
+                                bpm.StepOrder, bStepName);
+
+                            bInputs = [bTemplateJson];
+                        }
 
                         // Resolve script: the voiceover script for the video.
                         // Priority: videoPrompt config > Content from upstream text step > combined items
                         // Content has the full narrative text; Items are just short bullet points.
                         var bEditInput = "";
-                        if (bConfig.TryGetValue("videoPrompt", out var bVp))
+                        if (!bIsTemplateMode && bConfig.TryGetValue("videoPrompt", out var bVp))
                             bEditInput = bVp is JsonElement bVpEl ? bVpEl.GetString() ?? "" : bVp?.ToString() ?? "";
 
-                        // Search upstream steps for the full narrative Content (not items).
-                        // For branch steps: only consider steps in the same branch or main
-                        // steps at or before the fork point, so we don't pick up outputs
-                        // from sibling branches or main steps that run after the fork.
-                        if (string.IsNullOrWhiteSpace(bEditInput))
+                        if (!bIsTemplateMode)
                         {
-                            var bScriptBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
-                            var bMaxMainStep = (bpm.BranchId != "main" && bpm.BranchFromStep.HasValue)
-                                ? bpm.BranchFromStep.Value
-                                : bpm.StepOrder;
-
-                            foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderByDescending(k => k))
+                            // Search upstream steps for the full narrative Content (not items).
+                            if (string.IsNullOrWhiteSpace(bEditInput))
                             {
-                                // Skip steps outside this branch's visible scope
-                                if (bScriptBranches.TryGetValue(prevOrder, out var prevBranch))
-                                {
-                                    if (prevBranch == "main" && prevOrder > bMaxMainStep)
-                                        continue;
-                                    if (prevBranch != "main" && prevBranch != bpm.BranchId)
-                                        continue;
-                                }
+                                var bScriptBranches = BuildStepBranches(project.ProjectModules, stepModuleTypes);
+                                var bMaxMainStep = (bpm.BranchId != "main" && bpm.BranchFromStep.HasValue)
+                                    ? bpm.BranchFromStep.Value
+                                    : bpm.StepOrder;
 
-                                if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video" || pt == "Image"))
-                                    continue;
-                                if (stepOutputs.TryGetValue(prevOrder, out var po) && !string.IsNullOrWhiteSpace(po.Content))
+                                foreach (var prevOrder in stepOutputs.Keys.Where(k => k < bpm.StepOrder).OrderByDescending(k => k))
                                 {
-                                    bEditInput = po.Content;
-                                    break;
+                                    if (bScriptBranches.TryGetValue(prevOrder, out var prevBranch))
+                                    {
+                                        if (prevBranch == "main" && prevOrder > bMaxMainStep)
+                                            continue;
+                                        if (prevBranch != "main" && prevBranch != bpm.BranchId)
+                                            continue;
+                                    }
+
+                                    if (stepModuleTypes.TryGetValue(prevOrder, out var pt) && (pt == "VideoSearch" || pt == "Video" || pt == "Image"))
+                                        continue;
+                                    if (stepOutputs.TryGetValue(prevOrder, out var po) && !string.IsNullOrWhiteSpace(po.Content))
+                                    {
+                                        bEditInput = po.Content;
+                                        break;
+                                    }
                                 }
                             }
-                        }
 
-                        // Fallback: combine resolved inputs (items)
-                        if (string.IsNullOrWhiteSpace(bEditInput))
-                            bEditInput = bInputs.Count > 1
-                                ? string.Join(" ", bInputs.Where(s => !string.IsNullOrWhiteSpace(s)))
-                                : bInputs[0];
-                        if (string.IsNullOrWhiteSpace(bEditInput))
-                            throw new InvalidOperationException($"[{branchId}] VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'");
+                            // Fallback: combine resolved inputs (items)
+                            if (string.IsNullOrWhiteSpace(bEditInput))
+                                bEditInput = bInputs.Count > 1
+                                    ? string.Join(" ", bInputs.Where(s => !string.IsNullOrWhiteSpace(s)))
+                                    : bInputs[0];
+                            if (string.IsNullOrWhiteSpace(bEditInput))
+                                throw new InvalidOperationException($"[{branchId}] VideoEdit: no se encontro guion — conecta un modulo de texto al puerto 'Guion'");
+                        }
 
                         // ── Ensure all connected media source branches have been executed ──
                         // VideoEdit may depend on media from sibling branches (Image, VideoSearch).
