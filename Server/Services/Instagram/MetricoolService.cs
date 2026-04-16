@@ -46,7 +46,8 @@ namespace Server.Services.Instagram
             List<ClassifiedMedia>? media = null,
             string publishType = "post",
             string platform = "instagram",
-            TikTokPublishOptions? tikTokOptions = null)
+            TikTokPublishOptions? tikTokOptions = null,
+            CancellationToken cancellationToken = default)
         {
             // Escape text for GraphQL string literal
             var escapedText = text
@@ -130,24 +131,45 @@ namespace Server.Services.Instagram
                 }}";
 
             var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
-            request.Headers.Add("Authorization", $"Bearer {config.ApiKey}");
+            request.Headers.Add("Authorization", $"Bearer {NormalizeApiKey(config.ApiKey)}");
 
             var body = new Dictionary<string, object> { ["query"] = mutation };
             var requestBody = JsonSerializer.Serialize(body);
             request.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
-            var response = await _http.SendAsync(request);
-            var json = await response.Content.ReadAsStringAsync();
             var baseResult = new BufferPublishResult
             {
                 RequestBody = requestBody,
-                ResponseBody = json,
-                StatusCode = (int)response.StatusCode
+                ResponseBody = "",
+                StatusCode = 0
             };
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(45));
+
+            HttpResponseMessage response;
+            string json;
+            try
+            {
+                response = await _http.SendAsync(request, timeoutCts.Token);
+                json = await response.Content.ReadAsStringAsync(timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                baseResult.Error = "Timeout publicando en Buffer: la API no respondio en 45 segundos. " +
+                    "No se puede confirmar si Buffer llego a crear el post; revisa Buffer antes de reintentar para evitar duplicados.";
+                return baseResult;
+            }
+
+            baseResult.ResponseBody = json;
+            baseResult.StatusCode = (int)response.StatusCode;
 
             if (!response.IsSuccessStatusCode)
             {
                 baseResult.Error = $"Buffer API error {(int)response.StatusCode}: {json}";
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    baseResult.Error = "Buffer API error 401: token de Buffer no valido o expirado. " +
+                        "Genera una API key nueva en Buffer y guardala sin el prefijo 'Bearer '.";
                 return baseResult;
             }
 
@@ -197,7 +219,7 @@ namespace Server.Services.Instagram
                 }";
 
             var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
-            request.Headers.Add("Authorization", $"Bearer {apiKey}");
+            request.Headers.Add("Authorization", $"Bearer {NormalizeApiKey(apiKey)}");
 
             var body = new Dictionary<string, object> { ["query"] = mutation };
             request.Content = new StringContent(
@@ -232,6 +254,21 @@ namespace Server.Services.Instagram
             }
 
             return channels;
+        }
+
+        private static string NormalizeApiKey(string apiKey)
+        {
+            var value = apiKey.Trim().Trim('"', '\'');
+
+            const string authorizationPrefix = "authorization:";
+            if (value.StartsWith(authorizationPrefix, StringComparison.OrdinalIgnoreCase))
+                value = value[authorizationPrefix.Length..].Trim();
+
+            const string bearerPrefix = "bearer ";
+            if (value.StartsWith(bearerPrefix, StringComparison.OrdinalIgnoreCase))
+                value = value[bearerPrefix.Length..].Trim();
+
+            return value;
         }
 
     }

@@ -629,13 +629,19 @@ public class GraphPipelineExecutor : IPipelineExecutor
         BufferPublishResult bufferResult;
         try
         {
+            ctx.CancellationToken.ThrowIfCancellationRequested();
             bufferResult = await _buffer.PublishAsync(
                 bufferConfig,
                 caption,
                 classifiedMedia.Count > 0 ? classifiedMedia : null,
                 publishType,
                 publishPlatform,
-                tikTokOptions);
+                tikTokOptions,
+                ctx.CancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
