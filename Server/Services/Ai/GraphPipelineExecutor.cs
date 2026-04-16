@@ -186,19 +186,38 @@ public class GraphPipelineExecutor : IPipelineExecutor
         return await RetryFromModuleAsync(executionId, moduleId.Value, comment, db, tenantDbName, ct);
     }
 
-    public async Task<ProjectExecution> ResumeFromInteractionAsync(
+    public Task<ProjectExecution> ResumeFromInteractionAsync(
         Guid executionId,
         string responseText,
         UserDbContext db,
         string tenantDbName,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        ResumeInteractionInternalAsync(executionId, branchId: null, responseText, db, tenantDbName, ct);
+
+    public Task<ProjectExecution> ResumeFromBranchInteractionAsync(
+        Guid executionId,
+        string branchId,
+        string responseText,
+        UserDbContext db,
+        string tenantDbName,
+        CancellationToken ct = default) =>
+        ResumeInteractionInternalAsync(executionId, branchId, responseText, db, tenantDbName, ct);
+
+    private async Task<ProjectExecution> ResumeInteractionInternalAsync(
+        Guid executionId,
+        string? branchId,
+        string responseText,
+        UserDbContext db,
+        string tenantDbName,
+        CancellationToken ct)
     {
         _logger = _baseLogger.WithDb(db);
 
         var (execution, project, graph, workspacePath, filePaths, state) =
             await RebuildPausedGraphAsync(executionId, db, ct);
 
-        if (!graph.Nodes.TryGetValue(state.PausedModuleId, out var node))
+        var node = ResolvePausedInteractionNode(graph, state, branchId);
+        if (node is null)
             throw new InvalidOperationException("Modulo pausado no encontrado");
 
         var step = await GetPausedStepAsync(executionId, node.ModuleId, db, ct);
@@ -230,14 +249,27 @@ public class GraphPipelineExecutor : IPipelineExecutor
         return execution;
     }
 
-    public Task<ProjectExecution> ResumeFromBranchInteractionAsync(
-        Guid executionId,
-        string branchId,
-        string responseText,
-        UserDbContext db,
-        string tenantDbName,
-        CancellationToken ct = default) =>
-        ResumeFromInteractionAsync(executionId, responseText, db, tenantDbName, ct);
+    private static ModuleNode? ResolvePausedInteractionNode(
+        ExecutionGraph graph,
+        PausedGraphState state,
+        string? branchId)
+    {
+        if (!string.IsNullOrWhiteSpace(branchId))
+        {
+            var match = graph.Nodes.Values.FirstOrDefault(n =>
+                n.Status == NodeStatus.Paused
+                && n.ModuleType == "Interaction"
+                && string.Equals(n.ProjectModule.BranchId, branchId, StringComparison.OrdinalIgnoreCase));
+            if (match is not null) return match;
+        }
+
+        if (graph.Nodes.TryGetValue(state.PausedModuleId, out var stateNode)
+            && stateNode.Status == NodeStatus.Paused)
+            return stateNode;
+
+        return graph.Nodes.Values.FirstOrDefault(n =>
+            n.Status == NodeStatus.Paused && n.ModuleType == "Interaction");
+    }
 
     public async Task<ProjectExecution> ResumeFromCheckpointAsync(
         Guid executionId,
@@ -743,6 +775,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 TenantDbName = tenantDbName,
                 ChatId = config.ChatId,
                 StepOrder = node.ProjectModule.StepOrder,
+                BranchId = node.ProjectModule.BranchId,
                 CreatedAt = DateTime.UtcNow,
                 IsResolved = false,
                 State = hasActive ? "queued" : "waiting",
