@@ -381,16 +381,33 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         if (nextQueued?.QueuedMessageData is null) return;
 
-        var tgConfig = await GetTelegramConfigForCorrelationAsync(nextQueued);
-        if (tgConfig is null) return;
+        var queuedMessageData = nextQueued.QueuedMessageData;
+        var sendContext = await GetTelegramSendContextForCorrelationAsync(nextQueued);
+        if (sendContext.Config is null || sendContext.WorkspacePath is null) return;
 
-        var data = JsonSerializer.Deserialize<JsonElement>(nextQueued.QueuedMessageData);
+        var data = JsonSerializer.Deserialize<JsonElement>(queuedMessageData);
         var message = data.TryGetProperty("message", out var msg) ? msg.GetString() ?? "" : "";
-        await _telegram.SendTextMessageWithOptionsAsync(tgConfig, message, ControlOptions());
+        var mediaFiles = data.TryGetProperty("mediaFiles", out var media)
+            ? media.Deserialize<List<OutputFile>>(JsonOptions) ?? []
+            : [];
 
         nextQueued.State = "waiting";
-        nextQueued.QueuedMessageData = null;
         await _coreDb.SaveChangesAsync();
+
+        try
+        {
+            await _telegram.SendTextMessageWithOptionsAsync(sendContext.Config, message, ControlOptions());
+            await SendMediaToTelegramAsync(sendContext.Config, mediaFiles, sendContext.WorkspacePath, sendContext.FilePaths);
+            nextQueued.QueuedMessageData = null;
+            await _coreDb.SaveChangesAsync();
+        }
+        catch
+        {
+            nextQueued.State = "queued";
+            nextQueued.QueuedMessageData = queuedMessageData;
+            await _coreDb.SaveChangesAsync();
+            throw;
+        }
     }
 
     public async Task CancelQueuedInteractionsAsync(Guid executionId)
@@ -451,7 +468,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
             if (running.Count == 0)
             {
-                await FinalizeGraphAsync(graph, execution, db, ct);
+                await FinalizeGraphAsync(graph, project, execution, db, tenantDbName, workspacePath, filePaths, ct);
                 return;
             }
 
@@ -571,24 +588,6 @@ public class GraphPipelineExecutor : IPipelineExecutor
             await PersistProducedFilesAsync(node, result, db, workspacePath, filePaths, ct);
             step.Status = result.PauseReason ?? "Paused";
             step.OutputData = JsonSerializer.Serialize(node.Output, JsonOptions);
-            try
-            {
-                await SendInteractionIfNeededAsync(node, result, project, execution, tenantDbName, workspacePath, filePaths, ct);
-            }
-            catch (Exception ex)
-            {
-                node.Status = NodeStatus.Failed;
-                step.Status = "Failed";
-                step.ErrorMessage = $"Error enviando interaccion: {ex.Message}";
-                step.CompletedAt = DateTime.UtcNow;
-                graph.CascadeFailure(node);
-                await db.SaveChangesAsync(ct);
-                await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Failed");
-                await _logger.LogAsync(project.Id, execution.Id, "error", step.ErrorMessage,
-                    node.ProjectModule.StepOrder,
-                    node.ProjectModule.StepName ?? node.AiModule.Name);
-                return;
-            }
             await db.SaveChangesAsync(ct);
             await _logger.LogStepProgressAsync(project.Id, node.ModuleId, step.Status);
             return;
@@ -608,8 +607,12 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     private async Task FinalizeGraphAsync(
         ExecutionGraph graph,
+        Project project,
         ProjectExecution execution,
         UserDbContext db,
+        string tenantDbName,
+        string workspacePath,
+        Dictionary<Guid, string> filePaths,
         CancellationToken ct)
     {
         var paused = graph.Nodes.Values
@@ -624,6 +627,19 @@ public class GraphPipelineExecutor : IPipelineExecutor
             execution.PausedAtStepOrder = pausedNode.ProjectModule.StepOrder;
             execution.PausedStepData = JsonSerializer.Serialize(PausedGraphState.Capture(graph, pausedNode.ModuleId), JsonOptions);
             await db.SaveChangesAsync(ct);
+
+            foreach (var node in paused.Where(n => n.ModuleType == "Interaction"))
+            {
+                try
+                {
+                    await SendInteractionIfNeededAsync(node, project, execution, tenantDbName, workspacePath, filePaths, ct);
+                }
+                catch (Exception ex)
+                {
+                    await FailPausedInteractionAsync(node, graph, project, execution, db, ex, ct);
+                    return;
+                }
+            }
             return;
         }
 
@@ -654,6 +670,40 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await db.SaveChangesAsync(ct);
         await _logger.LogAsync(execution.ProjectId, execution.Id, "success",
             "Pipeline completado correctamente");
+    }
+
+    private async Task FailPausedInteractionAsync(
+        ModuleNode node,
+        ExecutionGraph graph,
+        Project project,
+        ProjectExecution execution,
+        UserDbContext db,
+        Exception ex,
+        CancellationToken ct)
+    {
+        node.Status = NodeStatus.Failed;
+        graph.CascadeFailure(node);
+
+        var step = node.StepExecution ?? await GetPausedStepAsync(execution.Id, node.ModuleId, db, ct);
+        if (step is not null)
+        {
+            step.Status = "Failed";
+            step.ErrorMessage = $"Error enviando interaccion: {ex.Message}";
+            step.CompletedAt = DateTime.UtcNow;
+        }
+
+        execution.Status = "Failed";
+        execution.CompletedAt = DateTime.UtcNow;
+        execution.PausedAtStepOrder = null;
+        execution.PausedStepData = null;
+        execution.TotalEstimatedCost = graph.Nodes.Values.Sum(n => n.Cost);
+
+        await db.SaveChangesAsync(ct);
+        await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Failed");
+        await _logger.LogAsync(project.Id, execution.Id, "error",
+            step?.ErrorMessage ?? $"Error enviando interaccion: {ex.Message}",
+            node.ProjectModule.StepOrder,
+            node.ProjectModule.StepName ?? node.AiModule.Name);
     }
 
     private async Task<StepExecution> CreateStepExecutionAsync(
@@ -730,7 +780,6 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     private async Task SendInteractionIfNeededAsync(
         ModuleNode node,
-        ModuleResult result,
         Project project,
         ProjectExecution execution,
         string tenantDbName,
@@ -741,16 +790,16 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (node.ModuleType != "Interaction")
             return;
 
-        var message = result.Output?.Content ?? "";
+        var message = node.Output?.Content ?? "";
         if (string.IsNullOrWhiteSpace(message))
             message = node.ProjectModule.StepName ?? node.AiModule.Name ?? "Confirmar";
 
-        var messageType = result.Output?.Metadata is { } meta && meta.TryGetValue("messageType", out var mtVal)
+        var messageType = node.Output?.Metadata is { } meta && meta.TryGetValue("messageType", out var mtVal)
             ? mtVal?.ToString() ?? "combined"
             : "combined";
         var sendImages = messageType is "image" or "combined";
         var mediaFiles = sendImages
-            ? (result.Output?.Files ?? new List<OutputFile>())
+            ? (node.Output?.Files ?? new List<OutputFile>())
                 .Where(f => f.ContentType?.StartsWith("image/") == true || f.ContentType?.StartsWith("video/") == true)
                 .ToList()
             : new List<OutputFile>();
@@ -765,30 +814,53 @@ public class GraphPipelineExecutor : IPipelineExecutor
             var config = JsonSerializer.Deserialize<TelegramConfig>(project.TelegramConfig, JsonOptions)
                 ?? throw new InvalidOperationException("Configuracion de Telegram invalida");
 
+            var branchId = node.ProjectModule.BranchId;
+            var existing = await _coreDb.TelegramCorrelations
+                .FirstOrDefaultAsync(c =>
+                    !c.IsResolved
+                    && c.ExecutionId == execution.Id
+                    && c.StepOrder == node.ProjectModule.StepOrder
+                    && c.BranchId == branchId,
+                    ct);
+            if (existing is not null)
+                return;
+
             var hasActive = await _coreDb.TelegramCorrelations
                 .AnyAsync(c => !c.IsResolved && c.ExecutionId == execution.Id && c.State != "queued", ct);
 
-            _coreDb.TelegramCorrelations.Add(new TelegramCorrelation
+            var correlation = new TelegramCorrelation
             {
                 Id = Guid.NewGuid(),
                 ExecutionId = execution.Id,
                 TenantDbName = tenantDbName,
                 ChatId = config.ChatId,
                 StepOrder = node.ProjectModule.StepOrder,
-                BranchId = node.ProjectModule.BranchId,
+                BranchId = branchId,
                 CreatedAt = DateTime.UtcNow,
                 IsResolved = false,
                 State = hasActive ? "queued" : "waiting",
-                QueuedMessageData = hasActive ? JsonSerializer.Serialize(new { message }, JsonOptions) : null,
-            });
+                QueuedMessageData = hasActive ? JsonSerializer.Serialize(new { message, mediaFiles }, JsonOptions) : null,
+            };
+
+            _coreDb.TelegramCorrelations.Add(correlation);
+            await _coreDb.SaveChangesAsync(ct);
 
             if (!hasActive)
             {
-                await _telegram.SendTextMessageWithOptionsAsync(config, message, ControlOptions());
-                await SendMediaToTelegramAsync(config, mediaFiles, workspacePath, filePaths);
+                try
+                {
+                    await _telegram.SendTextMessageWithOptionsAsync(config, message, ControlOptions());
+                    await SendMediaToTelegramAsync(config, mediaFiles, workspacePath, filePaths);
+                }
+                catch
+                {
+                    correlation.IsResolved = true;
+                    correlation.State = "send_failed";
+                    await _coreDb.SaveChangesAsync(ct);
+                    throw;
+                }
             }
 
-            await _coreDb.SaveChangesAsync(ct);
             return;
         }
 
@@ -930,14 +1002,18 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await db.StepExecutions
             .FirstOrDefaultAsync(s => s.ExecutionId == executionId && s.ProjectModuleId == moduleId, ct);
 
-    private async Task<TelegramConfig?> GetTelegramConfigForCorrelationAsync(TelegramCorrelation correlation)
+    private async Task<(TelegramConfig? Config, string? WorkspacePath, Dictionary<Guid, string> FilePaths)>
+        GetTelegramSendContextForCorrelationAsync(TelegramCorrelation correlation)
     {
         await using var db = _tenantFactory.Create(correlation.TenantDbName);
         var exec = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
-        if (exec is null) return null;
+        if (exec is null) return (null, null, []);
         var proj = await db.Projects.FindAsync(exec.ProjectId);
-        if (string.IsNullOrWhiteSpace(proj?.TelegramConfig)) return null;
-        return JsonSerializer.Deserialize<TelegramConfig>(proj.TelegramConfig, JsonOptions);
+        if (string.IsNullOrWhiteSpace(proj?.TelegramConfig)) return (null, null, []);
+
+        var config = JsonSerializer.Deserialize<TelegramConfig>(proj.TelegramConfig, JsonOptions);
+        var filePaths = await LoadExecutionFilePathsAsync(correlation.ExecutionId, db, CancellationToken.None);
+        return (config, ResolveWorkspacePath(exec.WorkspacePath), filePaths);
     }
 
     private static Dictionary<string, object> MergeConfiguration(string? moduleConfig, string? stepConfig)
