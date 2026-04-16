@@ -1,6 +1,6 @@
-# Progreso de Migración: Graph Pipeline Executor
+# Progreso de Migracion: Graph Pipeline Executor
 
-## Estado Actual: Fase 1-2 completadas, Fase 3 en progreso
+## Estado Actual: Fases 1-2 completadas. Fases 3-5 pendientes.
 
 ---
 
@@ -10,96 +10,161 @@
 | Archivo | Lineas | Estado |
 |---------|--------|--------|
 | `Server/Services/Ai/ModuleNode.cs` | 83 | Completado |
-| `Server/Services/Ai/ExecutionGraph.cs` | 180 | Completado |
-| `Server/Services/Ai/PortDataResolver.cs` | 135 | Completado |
-| `Server/Services/Ai/PausedGraphState.cs` | 75 | Completado |
-| `Server/Services/Ai/Handlers/IModuleHandler.cs` | 110 | Completado |
-
-### Descripcion:
-- **ModuleNode.cs**: Estructuras de datos runtime - `ModuleNode`, `InputPort`, `OutputPort`, `PortConnection`, `PortData`. Cada nodo tiene estado (`Pending -> Ready -> Running -> Completed/Failed/Paused`), puertos de entrada/salida, y tracking de dependencias.
-- **ExecutionGraph.cs**: Construye el grafo desde `ProjectModule` + `ModuleConnection` de la BD. Detecta nodos ready (`GetReadyNodes`), propaga outputs a downstream (`PropagateOutputs`), cascada de fallos (`CascadeFailure`), y traverse de downstream para retry (`GetDownstreamNodes`).
-- **PortDataResolver.cs**: Mapea `StepOutput` a `PortData` por cada output port. Maneja outputs indexados de Orchestrator (`output_1` -> `Items[0]`), pass-through de Checkpoint, imagenes indexadas, y tipos estandar.
-- **PausedGraphState.cs**: Serializa/deserializa el estado del grafo para pause/resume (Interaction, Checkpoint).
-- **IModuleHandler.cs**: Interfaz `IModuleHandler`, `ModuleExecutionContext` (con helpers para leer inputs/config), `ModuleResult` (con factory methods), `ProducedFile`, `ModuleFileInfo`.
+| `Server/Services/Ai/ExecutionGraph.cs` | 227 | Completado |
+| `Server/Services/Ai/PortDataResolver.cs` | 147 | Completado |
+| `Server/Services/Ai/PausedGraphState.cs` | 79 | Completado |
+| `Server/Services/Ai/Handlers/IModuleHandler.cs` | 119 | Completado |
 
 ---
 
 ## Fase 2: Module Handlers - COMPLETADA
 
-### 18 handlers creados:
-| Handler | Tipo | AI? | Lineas | Descripcion |
-|---------|------|-----|--------|-------------|
-| `StartModuleHandler` | Start | No | 25 | Emite prompt del usuario (entrada del pipeline) |
-| `StaticTextModuleHandler` | StaticText | No | 20 | Emite texto fijo configurado |
-| `FileUploadModuleHandler` | FileUpload | No | 45 | Copia archivos adjuntos al workspace |
-| `SceneModuleHandler` | Scene | No | 65 | Construye JSON escena desde valores + inputs |
-| `TextModuleHandler` | Text | Si | 60 | Generacion de texto con AI |
-| `ImageModuleHandler` | Image | Si | 110 | Generacion de imagenes (multi-imagen, img2img) |
-| `VideoModuleHandler` | Video | Si | 75 | Generacion de video desde prompt |
-| `VideoEditModuleHandler` | VideoEdit | Si | 160 | Composicion video (escenas + template mode) |
-| `VideoSearchModuleHandler` | VideoSearch | Si | 60 | Busqueda de video en Pexels |
-| `AudioModuleHandler` | Audio | Si | 55 | Text-to-Speech |
-| `TranscriptionModuleHandler` | Transcription | Si | 50 | Speech-to-Text |
-| `EmbeddingsModuleHandler` | Embeddings | Si | 45 | Generacion de embeddings |
-| `OrchestratorModuleHandler` | Orchestrator | Si | 100 | Multi-output planning con AI |
-| `CoordinatorModuleHandler` | Coordinator | Si | 70 | Agrega inputs + AI |
-| `CheckpointModuleHandler` | Checkpoint | No | 35 | Pausa para revision humana |
-| `InteractionModuleHandler` | Interaction | No | 30 | Mensajeria con pausa |
-| `DesignModuleHandler` | Design | Si | 65 | Creacion de disenos (Canva) |
-| `PublishModuleHandler` | Publish | No | 20 | Publicacion en redes sociales |
-
-### Principio clave:
-Cada handler es autocontenido: recibe `InputsByPort` pre-resuelto, devuelve `ModuleResult`. No hay logica de branches, no hay duplicacion, no hay switch/case por contexto.
+### 18 handlers creados en `Server/Services/Ai/Handlers/`:
+| Handler | Tipo | AI? | Lineas |
+|---------|------|-----|--------|
+| `StartModuleHandler.cs` | Start | No | 24 |
+| `StaticTextModuleHandler.cs` | StaticText | No | 20 |
+| `FileUploadModuleHandler.cs` | FileUpload | No | 49 |
+| `SceneModuleHandler.cs` | Scene | No | 74 |
+| `TextModuleHandler.cs` | Text | Si | 61 |
+| `ImageModuleHandler.cs` | Image | Si | 114 |
+| `VideoModuleHandler.cs` | Video | Si | 76 |
+| `VideoEditModuleHandler.cs` | VideoEdit | Si | 172 |
+| `VideoSearchModuleHandler.cs` | VideoSearch | Si | 64 |
+| `AudioModuleHandler.cs` | Audio | Si | 64 |
+| `TranscriptionModuleHandler.cs` | Transcription | Si | 56 |
+| `EmbeddingsModuleHandler.cs` | Embeddings | Si | 49 |
+| `OrchestratorModuleHandler.cs` | Orchestrator | Si | 111 |
+| `CoordinatorModuleHandler.cs` | Coordinator | Si | 69 |
+| `CheckpointModuleHandler.cs` | Checkpoint | No | 39 |
+| `InteractionModuleHandler.cs` | Interaction | No | 32 |
+| `DesignModuleHandler.cs` | Design | Si | 77 |
+| `PublishModuleHandler.cs` | Publish | No | 24 |
 
 ---
 
-## Fase 3: GraphPipelineExecutor - EN PROGRESO
+## Fase 3: GraphPipelineExecutor - PENDIENTE
 
-### Lo que falta crear:
+### Archivo a crear:
 | Archivo | Descripcion | Estado |
 |---------|-------------|--------|
-| `Server/Services/Ai/GraphPipelineExecutor.cs` | Bucle principal con Task.WhenAny | **Pendiente** |
+| `Server/Services/Ai/GraphPipelineExecutor.cs` | Bucle principal de ejecucion concurrente (~400 lineas) | **Pendiente** |
 
-### Algoritmo del executor:
-```
-1. Cargar proyecto + conexiones de BD
-2. Construir ExecutionGraph
-3. Bucle: encontrar nodos Ready -> lanzar Tasks -> WhenAny -> procesar resultado
-4. Propagar outputs -> buscar nuevos Ready -> repetir
-5. Finalizar cuando todo sea terminal
-```
+### Que hara este archivo:
+- Implementar `IPipelineExecutor`
+- Recibir `IEnumerable<IModuleHandler>` via DI para resolver handlers por ModuleType
+- **`ExecuteAsync`**: Cargar proyecto + conexiones, construir `ExecutionGraph`, inyectar userInput en nodo Start, ejecutar `RunGraphAsync`
+- **`RunGraphAsync`**: Bucle principal con `Task.WhenAny`:
+  1. Buscar nodos Ready (todos inputs satisfechos)
+  2. Lanzar Task por cada Ready (llamar al handler correspondiente)
+  3. `await Task.WhenAny(runningTasks)`
+  4. Procesar resultado: Completed -> propagar outputs | Failed -> cascada | Paused -> continuar otros
+  5. Repetir hasta que todo sea terminal
+- **`FinalizeStep`**: Guardar StepExecution, ExecutionFile, OutputData en BD
+- **`FinalizeExecution`**: Calcular estado final, generar summary, guardar en BD
+- **`ResumeFromInteractionAsync`**: Restaurar PausedGraphState, inyectar respuesta, continuar RunGraphAsync
+- **`ResumeFromCheckpointAsync`**: Similar, aprobar y propagar pass-through
+- **`RetryFromModuleAsync`**: Restaurar outputs upstream, resetear modulo + downstream a Pending, re-ejecutar
+- **`RetryFromStepAsync`**: Backward compat, busca moduleId por StepOrder, redirige a RetryFromModuleAsync
+- Helpers: `MergeConfiguration`, `BuildPreviousSummaryContext`, `GenerateExecutionSummary` (extraidos del executor actual)
+
+### Nota sobre concurrencia:
+- Los handlers se ejecutan en paralelo (llamadas a APIs externas)
+- El bucle principal es single-threaded (procesa completions uno a uno via WhenAny)
+- Solo el bucle principal escribe a BD (handlers devuelven ModuleResult, no tocan DB)
 
 ---
 
 ## Fase 4: Integracion - PENDIENTE
 
-| Tarea | Descripcion | Estado |
-|-------|-------------|--------|
-| Actualizar `IPipelineExecutor.cs` | Anadir `RetryFromModuleAsync`, simplificar resume | Pendiente |
-| Registrar en `Program.cs` | DI de handlers + executor, actualizar endpoints | Pendiente |
-| Simplificar save-graph | Eliminar InputMapping, branches, sceneInputs, etc. | Pendiente |
-| Modulo Start (cliente) | Anadir a ModulePortRegistry, catalogo, paleta | Pendiente |
+### 4.1 Actualizar IPipelineExecutor.cs
+**Archivo**: `Server/Services/Ai/IPipelineExecutor.cs`
+**Cambios**:
+- Anadir: `Task<ProjectExecution> RetryFromModuleAsync(Guid executionId, Guid moduleId, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default)`
+- Mantener: `RetryFromStepAsync` como backward compat (redirige internamente a RetryFromModuleAsync)
+- Eliminar: `ResumeFromBranchInteractionAsync` (ya no hay branches)
+- Eliminar: `ResumeFromOrchestratorAsync` (el orchestrator ya no pausa)
+
+### 4.2 Registrar en DI (Program.cs)
+**Archivo**: `Server/Program.cs` (linea ~69)
+**Cambios**:
+- Reemplazar: `builder.Services.AddTransient<IPipelineExecutor, PipelineExecutor>()` por `GraphPipelineExecutor`
+- Anadir: Registro de los 18 handlers como `IModuleHandler`:
+  ```csharp
+  builder.Services.AddTransient<IModuleHandler, StartModuleHandler>();
+  builder.Services.AddTransient<IModuleHandler, TextModuleHandler>();
+  builder.Services.AddTransient<IModuleHandler, ImageModuleHandler>();
+  // ... los 18 handlers
+  ```
+
+### 4.3 Simplificar save-graph endpoint
+**Archivo**: `Server/Program.cs` (lineas ~889-1178)
+**Eliminar**:
+- Lineas ~889-939: Computacion de `InputMapping` (derivar source/field/outputKey de conexiones)
+- Lineas ~941-1014: Computacion de `sceneInputs`, `templateInputs`, `fieldInputs`, `coordinatorInputs`
+- Lineas ~1079-1178: Auto-deteccion de branches (`BranchId`, `BranchFromStep`)
+**Mantener**:
+- Lineas ~802-809: Guardar posiciones (PosX, PosY)
+- Lineas ~812-839: Reemplazar conexiones en BD (ModuleConnection)
+- Lineas ~841-888: Topological sort para StepOrder (solo display)
+- Lineas ~1181+: Guardar SceneCounts y ModuleConfigs
+
+### 4.4 Modulo Start en cliente
+**Archivos a modificar**:
+
+**`Client/Models/PipelineGraphModels.cs`** - Anadir en `GetPorts()`:
+```csharp
+case "Start":
+    ports.Add(new("output_prompt", "Prompt", PortDataType.Text, isInput: false));
+    break;
+```
+Anadir en `GetModuleIcon()`: `"Start" => "bi-play-circle"`
+Anadir en `GetModuleColor()`: `"Start" => "#43a047"`
+
+**`Client/Pages/Modules.razor`** - Anadir al catalogo:
+```csharp
+new("start", "Inicio", "System", ["Start"], ["start","entry-point","free"], "Punto de entrada del pipeline. Captura el prompt del usuario.")
+```
+Anadir al mapping de tipos: `"Start" => "Inicio del pipeline"`
+Anadir al listado de tipos: `("Start", "Inicio", "S")`
+
+**`Client/Components/Pipeline/PipelineCanvas.razor`** - Anadir Start a un grupo de paleta (ej: resources o un nuevo grupo "control")
+
+### 4.5 Actualizar endpoints de ejecucion
+**Archivo**: `Server/Program.cs`
+**Cambios en endpoints**:
+- El endpoint `POST /api/projects/{id}/execute` ya llama a `IPipelineExecutor.ExecuteAsync` - no necesita cambio (DI lo resuelve)
+- El endpoint `POST /api/executions/{id}/retry-from-step` necesita adaptarse para usar RetryFromModuleAsync si se pasa moduleId
+- Endpoints de resume (interaction, checkpoint) siguen igual (interfaz compatible)
 
 ---
 
 ## Fase 5: Limpieza - PENDIENTE
 
-| Tarea | Descripcion | Estado |
-|-------|-------------|--------|
-| Deprecar `PipelineExecutor.cs` | Marcar [Obsolete], mantener para rollback | Pendiente |
-| Deprecar campos BD | BranchId, BranchFromStep, InputMapping -> nullable | Pendiente |
-| Limpiar branches en UI | Eliminar logica de branches en PipelineCanvas | Pendiente |
+### 5.1 Deprecar PipelineExecutor.cs
+**Archivo**: `Server/Services/Ai/PipelineExecutor.cs`
+**Cambio**: Anadir `[Obsolete("Use GraphPipelineExecutor instead")]` en la clase
+**No borrar**: Mantener como referencia/rollback hasta validar que todo funciona
+
+### 5.2 Deprecar campos de ProjectModule
+**Archivo**: `Server/Models/ProjectModule.cs`
+**Cambios**:
+- `BranchId`: Anadir `[Obsolete]` - ya no lo usa el nuevo executor
+- `BranchFromStep`: Anadir `[Obsolete]` - ya no lo usa el nuevo executor
+- `InputMapping`: Anadir `[Obsolete]` - reemplazado por ModuleConnection graph
+
+### 5.3 Limpiar UI de branches
+**Archivo**: `Client/Components/Pipeline/PipelineCanvas.razor`
+**Cambio**: Eliminar cualquier logica que dependa de `BranchId` para visualizacion (los labels de paso A7, B5, etc. se simplifican a numeros)
 
 ---
 
-## Resumen de Metricas
+## Orden de implementacion recomendado
 
-| Metrica | Antes | Despues (estimado) |
-|---------|-------|-------------------|
-| Archivo principal | PipelineExecutor.cs (7564 lineas) | GraphPipelineExecutor.cs (~400 lineas) |
-| Handlers | Todo en 1 archivo, duplicado 5x | 18 archivos, 30-160 lineas cada uno |
-| Save-graph | ~400 lineas logica | ~80 lineas |
-| Total codigo nuevo | - | ~2200 lineas en 25 archivos |
-| Duplicacion de logica | Alta (main/branch/retry/resume) | Cero |
-| Ejecucion concurrente | No | Si (Task.WhenAny) |
-| Branches | Manual (BranchId, deferred, etc.) | Automatico (grafo de dependencias) |
+1. **GraphPipelineExecutor.cs** (bloqueante para todo lo demas)
+2. **IPipelineExecutor.cs** (actualizar interfaz)
+3. **Program.cs** - DI registration (handlers + executor)
+4. **Program.cs** - Simplificar save-graph
+5. **Cliente** - Modulo Start (ModulePortRegistry + catalogo + paleta)
+6. **Program.cs** - Actualizar endpoints si es necesario
+7. **Limpieza** - [Obsolete] en PipelineExecutor y campos ProjectModule
