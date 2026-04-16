@@ -6,6 +6,7 @@ using Server.Data;
 using Server.Hubs;
 using Server.Models;
 using Server.Services.Ai.Handlers;
+using Server.Services.Instagram;
 using Server.Services.Telegram;
 using Server.Services.WhatsApp;
 
@@ -23,6 +24,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
     private readonly ITenantDbContextFactory _tenantFactory;
     private readonly TelegramService _telegram;
     private readonly WhatsAppService _whatsApp;
+    private readonly BufferService _buffer;
     private readonly IConfiguration _configuration;
     private readonly string _mediaRoot;
     private IExecutionLogger _logger;
@@ -40,6 +42,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         ITenantDbContextFactory tenantFactory,
         TelegramService telegram,
         WhatsAppService whatsApp,
+        BufferService buffer,
         IConfiguration configuration,
         IWebHostEnvironment env)
     {
@@ -50,6 +53,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         _tenantFactory = tenantFactory;
         _telegram = telegram;
         _whatsApp = whatsApp;
+        _buffer = buffer;
         _configuration = configuration;
         _mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
     }
@@ -221,13 +225,18 @@ public class GraphPipelineExecutor : IPipelineExecutor
             throw new InvalidOperationException("Modulo pausado no encontrado");
 
         var step = await GetPausedStepAsync(executionId, node.ModuleId, db, ct);
+        var pausedOutput = node.Output;
         var output = new StepOutput
         {
             Type = "text",
             Content = responseText,
             Summary = "Respuesta recibida del usuario",
+            Files = pausedOutput?.Files ?? [],
             Items = [new OutputItem { Content = responseText, Label = "respuesta" }],
         };
+        if (!string.IsNullOrWhiteSpace(pausedOutput?.Content))
+            output.Metadata["reviewMessage"] = pausedOutput.Content;
+        output.Metadata["userResponse"] = responseText;
 
         node.Output = output;
         node.Status = NodeStatus.Completed;
@@ -536,7 +545,384 @@ public class GraphPipelineExecutor : IPipelineExecutor
             ExecutionFilePaths = new Dictionary<Guid, string>(filePaths),
         };
 
+        if (node.ModuleType == "Publish")
+            return await ExecutePublishNodeAsync(ctx);
+
         return await handler.ExecuteAsync(ctx);
+    }
+
+    private async Task<ModuleResult> ExecutePublishNodeAsync(ModuleExecutionContext ctx)
+    {
+        var node = ctx.Node;
+        var stepName = node.ProjectModule.StepName ?? node.AiModule.Name;
+        var projectId = ctx.Project.Id;
+        var executionId = ctx.Execution.Id;
+
+        var publishPlatform = node.AiModule.ModelName.Equals("tiktok", StringComparison.OrdinalIgnoreCase)
+            ? "tiktok"
+            : "instagram";
+        var platformLabel = publishPlatform == "tiktok" ? "TikTok" : "Instagram";
+        var configJson = publishPlatform == "tiktok" ? ctx.Project.TikTokConfig : ctx.Project.InstagramConfig;
+
+        if (string.IsNullOrWhiteSpace(configJson))
+            return ModuleResult.Failed($"Paso {node.ProjectModule.StepOrder}: El proyecto no tiene configuracion de Buffer para {platformLabel}");
+
+        BufferConfig bufferConfig;
+        try
+        {
+            bufferConfig = JsonSerializer.Deserialize<BufferConfig>(configJson, JsonOptions)
+                ?? throw new InvalidOperationException("Configuracion vacia");
+        }
+        catch (Exception ex)
+        {
+            return ModuleResult.Failed($"Paso {node.ProjectModule.StepOrder}: Configuracion de Buffer ({platformLabel}) invalida: {ex.Message}");
+        }
+
+        if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
+            return ModuleResult.Failed($"Paso {node.ProjectModule.StepOrder}: API Key de Buffer no configurada");
+        if (string.IsNullOrWhiteSpace(bufferConfig.ChannelId))
+            return ModuleResult.Failed($"Paso {node.ProjectModule.StepOrder}: Channel ID de Buffer no configurado");
+
+        var captionTemplate = ctx.GetConfig("caption", "{previous_output}");
+        if (string.IsNullOrWhiteSpace(captionTemplate))
+            captionTemplate = "{previous_output}";
+
+        var captionSource = FindPublishCaptionSource(node);
+        var caption = !string.IsNullOrWhiteSpace(captionSource.Title) && captionTemplate == "{previous_output}"
+            ? captionSource.Title!
+            : captionTemplate
+                .Replace("{previous_output}", captionSource.Text ?? "")
+                .Replace("{step_number}", node.ProjectModule.StepOrder.ToString());
+        if (string.IsNullOrWhiteSpace(caption))
+            caption = captionSource.Text ?? "";
+
+        var mediaSource = FindPublishMediaSource(node);
+        var classifiedMedia = BuildClassifiedMedia(ctx, mediaSource.Files, mediaSource.Output);
+        var hasImages = classifiedMedia.Any(m => m.Kind == MediaKind.Image);
+        var hasVideos = classifiedMedia.Any(m => m.Kind == MediaKind.Video);
+
+        var publishType = ctx.GetConfig("publishType", "post");
+        if (string.IsNullOrWhiteSpace(publishType))
+            publishType = "post";
+        var originalPublishType = publishType;
+
+        if (hasImages && !hasVideos && publishType == "reel")
+        {
+            publishType = "post";
+            await _logger.LogAsync(projectId, executionId, "warning",
+                "publishType cambiado de 'reel' a 'post' porque solo hay imagenes (reel requiere video)",
+                node.ProjectModule.StepOrder, stepName);
+        }
+
+        TikTokPublishOptions? tikTokOptions = publishPlatform == "tiktok"
+            ? BuildTikTokOptions(ctx)
+            : null;
+
+        await LogPublishMediaDiagnosticsAsync(ctx, mediaSource, classifiedMedia, stepName);
+
+        await _logger.LogAsync(projectId, executionId, "info",
+            $"Publicando via Buffer ({platformLabel})... Caption: {Truncate(caption, 100)} | " +
+            $"Media: {classifiedMedia.Count} ({classifiedMedia.Count(m => m.Kind == MediaKind.Image)} img, {classifiedMedia.Count(m => m.Kind == MediaKind.Video)} vid) | " +
+            $"PublishType: {publishType}",
+            node.ProjectModule.StepOrder, stepName);
+
+        BufferPublishResult bufferResult;
+        try
+        {
+            bufferResult = await _buffer.PublishAsync(
+                bufferConfig,
+                caption,
+                classifiedMedia.Count > 0 ? classifiedMedia : null,
+                publishType,
+                publishPlatform,
+                tikTokOptions);
+        }
+        catch (Exception ex)
+        {
+            await _logger.LogAsync(projectId, executionId, "error",
+                $"Error publicando via Buffer: {ex.Message}",
+                node.ProjectModule.StepOrder, stepName);
+            return ModuleResult.Failed($"Error Buffer: {ex.Message}");
+        }
+
+        await _logger.LogAsync(projectId, executionId, "info",
+            $"[Buffer API] Request:\n{bufferResult.RequestBody}",
+            node.ProjectModule.StepOrder, stepName);
+        await _logger.LogAsync(projectId, executionId,
+            bufferResult.IsSuccess ? "info" : "error",
+            $"[Buffer API] Status: {bufferResult.StatusCode} | Response:\n{bufferResult.ResponseBody}",
+            node.ProjectModule.StepOrder, stepName);
+
+        if (!bufferResult.IsSuccess)
+        {
+            await _logger.LogAsync(projectId, executionId, "error",
+                $"Error publicando via Buffer: {bufferResult.Error}",
+                node.ProjectModule.StepOrder, stepName);
+            return ModuleResult.Failed($"Error Buffer: {bufferResult.Error}");
+        }
+
+        var scheduleLine = "Programado (horario pendiente de confirmacion)";
+        if (!string.IsNullOrEmpty(bufferResult.DueAt) &&
+            DateTime.TryParse(bufferResult.DueAt, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dueDate))
+        {
+            scheduleLine = $"Programado para: {dueDate:dd/MM/yyyy HH:mm} UTC";
+        }
+
+        var outputText = $"Publicacion exitosa\nPost ID: {bufferResult.PostId}\n{scheduleLine}";
+        var publishOutput = new StepOutput
+        {
+            Type = "text",
+            Content = outputText,
+            Summary = $"Publicado via Buffer ({platformLabel}) - {scheduleLine}",
+            Items = [new OutputItem { Content = outputText, Label = $"buffer {publishPlatform} publish" }],
+            Metadata = new Dictionary<string, object>
+            {
+                ["publishType"] = publishType,
+                ["originalPublishType"] = originalPublishType,
+                ["platform"] = publishPlatform,
+                ["caption"] = caption,
+                ["mediaCount"] = classifiedMedia.Count,
+                ["imageCount"] = classifiedMedia.Count(m => m.Kind == MediaKind.Image),
+                ["videoCount"] = classifiedMedia.Count(m => m.Kind == MediaKind.Video),
+                ["bufferPostId"] = bufferResult.PostId,
+                ["bufferDueAt"] = bufferResult.DueAt ?? "",
+                ["bufferRequest"] = bufferResult.RequestBody,
+                ["bufferResponse"] = bufferResult.ResponseBody,
+                ["bufferStatusCode"] = bufferResult.StatusCode
+            }
+        };
+
+        await _logger.LogAsync(projectId, executionId, "success",
+            $"Publicado via Buffer ({platformLabel}, post {bufferResult.PostId}) - {scheduleLine}",
+            node.ProjectModule.StepOrder, stepName);
+
+        return ModuleResult.Completed(publishOutput);
+    }
+
+    private sealed record PublishCaptionSource(string? Text, string? Title, ModuleNode? Node);
+    private sealed record PublishMediaSource(List<OutputFile> Files, StepOutput? Output, ModuleNode? Node, string Source);
+
+    private static PublishCaptionSource FindPublishCaptionSource(ModuleNode publishNode)
+    {
+        foreach (var candidate in GetUpstreamCandidates(publishNode))
+        {
+            if (candidate.ModuleType == "Interaction" || candidate.Output is null)
+                continue;
+
+            var text = ExtractPublishText(candidate.Output);
+            if (!string.IsNullOrWhiteSpace(candidate.Output.Title) || !string.IsNullOrWhiteSpace(text))
+                return new PublishCaptionSource(text, candidate.Output.Title, candidate);
+        }
+
+        var directText = publishNode.InputPorts
+            .SelectMany(p => p.ReceivedData)
+            .Select(d => d.TextContent ?? ExtractPublishText(d.FullOutput))
+            .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t) && !IsControlResponse(t));
+
+        return new PublishCaptionSource(directText, null, null);
+    }
+
+    private static PublishMediaSource FindPublishMediaSource(ModuleNode publishNode)
+    {
+        var direct = CollectMediaFromPortData(publishNode.InputPorts.SelectMany(p => p.ReceivedData), out var directOutput);
+        if (direct.Count > 0)
+            return new PublishMediaSource(direct, directOutput, null, "input_content");
+
+        foreach (var candidate in GetUpstreamCandidates(publishNode))
+        {
+            if (candidate.Output is null)
+                continue;
+
+            var files = candidate.Output.Files
+                .Where(IsPublishableMedia)
+                .GroupBy(FileIdentity)
+                .Select(g => g.First())
+                .ToList();
+
+            if (files.Count > 0)
+                return new PublishMediaSource(files, candidate.Output, candidate, candidate.ModuleType);
+        }
+
+        return new PublishMediaSource([], null, null, "none");
+    }
+
+    private static List<ModuleNode> GetUpstreamCandidates(ModuleNode node)
+    {
+        var result = new List<ModuleNode>();
+        var seen = new HashSet<Guid>();
+        var queue = new Queue<ModuleNode>(
+            node.InputPorts
+                .SelectMany(p => p.Connections)
+                .Select(c => c.SourceNode)
+                .OrderByDescending(n => n.ProjectModule.StepOrder));
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            if (!seen.Add(current.ModuleId))
+                continue;
+
+            result.Add(current);
+
+            foreach (var upstream in current.InputPorts
+                         .SelectMany(p => p.Connections)
+                         .Select(c => c.SourceNode)
+                         .OrderByDescending(n => n.ProjectModule.StepOrder))
+            {
+                queue.Enqueue(upstream);
+            }
+        }
+
+        return result;
+    }
+
+    private static List<OutputFile> CollectMediaFromPortData(IEnumerable<PortData> data, out StepOutput? sourceOutput)
+    {
+        sourceOutput = null;
+        var files = new List<OutputFile>();
+
+        foreach (var item in data)
+        {
+            var itemFiles = item.Files ?? item.FullOutput?.Files;
+            if (itemFiles is null || itemFiles.Count == 0)
+                continue;
+
+            sourceOutput ??= item.FullOutput;
+            files.AddRange(itemFiles.Where(IsPublishableMedia));
+        }
+
+        return files
+            .GroupBy(FileIdentity)
+            .Select(g => g.First())
+            .ToList();
+    }
+
+    private static string? ExtractPublishText(StepOutput? output)
+    {
+        if (output is null)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(output.Content) && !IsControlResponse(output.Content))
+            return output.Content;
+
+        var itemText = string.Join("\n", output.Items
+            .Select(i => i.Content)
+            .Where(t => !string.IsNullOrWhiteSpace(t) && !IsControlResponse(t)));
+        if (!string.IsNullOrWhiteSpace(itemText))
+            return itemText;
+
+        return !string.IsNullOrWhiteSpace(output.Summary) && !IsControlResponse(output.Summary)
+            ? output.Summary
+            : null;
+    }
+
+    private static bool IsControlResponse(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        var normalized = text.Trim();
+        return normalized.Equals("continue", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("continuar", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("abort", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("abortar", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("restart", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("reiniciar", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsPublishableMedia(OutputFile file) =>
+        file.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+        || file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+
+    private static string FileIdentity(OutputFile file) =>
+        file.FileId != Guid.Empty
+            ? file.FileId.ToString()
+            : $"{file.ContentType}:{file.FileName}";
+
+    private List<ClassifiedMedia> BuildClassifiedMedia(
+        ModuleExecutionContext ctx,
+        List<OutputFile> files,
+        StepOutput? sourceOutput)
+    {
+        var classified = new List<ClassifiedMedia>();
+        var externalVideoUrl = GetMetadataString(sourceOutput, "videoUrl");
+
+        foreach (var file in files)
+        {
+            var kind = file.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)
+                ? MediaKind.Video
+                : MediaKind.Image;
+
+            var publicUrl = kind == MediaKind.Video && !string.IsNullOrWhiteSpace(externalVideoUrl)
+                ? externalVideoUrl
+                : ctx.GetPublicFileUrl(file);
+
+            if (string.IsNullOrWhiteSpace(publicUrl))
+                continue;
+
+            classified.Add(new ClassifiedMedia { Url = publicUrl, Kind = kind });
+        }
+
+        return classified;
+    }
+
+    private static string? GetMetadataString(StepOutput? output, string key)
+    {
+        if (output?.Metadata.TryGetValue(key, out var value) != true)
+            return null;
+
+        if (value is JsonElement json)
+            return json.ValueKind == JsonValueKind.String ? json.GetString() : json.GetRawText();
+
+        return value?.ToString();
+    }
+
+    private static TikTokPublishOptions BuildTikTokOptions(ModuleExecutionContext ctx)
+    {
+        var options = new TikTokPublishOptions
+        {
+            PrivacyLevel = ctx.GetConfig("privacyLevel", "PUBLIC_TO_EVERYONE"),
+            AllowComments = ctx.GetConfig("allowComments", "true") != "false",
+            AllowDuet = ctx.GetConfig("allowDuet", "true") != "false",
+            AllowStitch = ctx.GetConfig("allowStitch", "true") != "false",
+            BrandedContent = ctx.GetConfig("brandedContent", "false") == "true",
+            BrandPartnership = ctx.GetConfig("brandPartnership", "false") == "true",
+        };
+
+        return options;
+    }
+
+    private async Task LogPublishMediaDiagnosticsAsync(
+        ModuleExecutionContext ctx,
+        PublishMediaSource mediaSource,
+        List<ClassifiedMedia> classifiedMedia,
+        string stepName)
+    {
+        var node = ctx.Node;
+        await _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "info",
+            $"[Publish Debug] MediaSource={mediaSource.Source}, " +
+            $"SourceStep={(mediaSource.Node is null ? "(input)" : mediaSource.Node.ProjectModule.StepOrder)}, " +
+            $"Files={mediaSource.Files.Count}, PublicUrls={classifiedMedia.Count}, " +
+            $"Types=[{string.Join(",", mediaSource.Files.Select(f => f.ContentType))}]",
+            node.ProjectModule.StepOrder, stepName);
+
+        if (classifiedMedia.Count == 0 || !string.IsNullOrWhiteSpace(GetMetadataString(mediaSource.Output, "videoUrl")))
+            return;
+
+        var serverBaseUrl = ctx.PublicBaseUrl.TrimEnd('/');
+        var isLocal = string.IsNullOrEmpty(serverBaseUrl)
+            || serverBaseUrl.Contains("localhost", StringComparison.OrdinalIgnoreCase)
+            || serverBaseUrl.Contains("127.0.0.1")
+            || serverBaseUrl.Contains("0.0.0.0");
+
+        if (isLocal)
+        {
+            await _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "warning",
+                $"La URL base del servidor ({(string.IsNullOrEmpty(serverBaseUrl) ? "(vacia)" : serverBaseUrl)}) " +
+                "no es accesible desde internet. Buffer no podra descargar las imagenes. " +
+                "Configura BaseUrl o AllowedOrigin con tu IP/dominio publico.",
+                node.ProjectModule.StepOrder, stepName);
+        }
     }
 
     private async Task ProcessNodeResultAsync(

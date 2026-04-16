@@ -74,6 +74,7 @@ public static class PortDataResolver
                 {
                     DataType = "text",
                     TextContent = output.Content ?? string.Join("\n", output.Items.Select(i => i.Content)),
+                    Files = output.Files.Count > 0 ? output.Files : null,
                     FullOutput = output,
                     SourcePortId = port.PortId,
                 },
