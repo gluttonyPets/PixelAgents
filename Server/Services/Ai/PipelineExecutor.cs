@@ -81,6 +81,13 @@ namespace Server.Services.Ai
         private static bool IsStaticTextStep(AiModule module) =>
             module.ModuleType == "StaticText";
 
+        /// <summary>
+        /// Pass-through modules (StaticText, FileUpload) are value providers, not execution steps.
+        /// They should not appear as numbered pipeline steps.
+        /// </summary>
+        private static bool IsPassThroughStep(AiModule module) =>
+            module.ModuleType is "StaticText" or "FileUpload";
+
         private static bool IsStepSkipped(ProjectModule pm)
         {
             if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
@@ -282,6 +289,52 @@ namespace Server.Services.Ai
                     continue;
                 }
 
+                // ── Pass-through modules (StaticText, FileUpload): resolve values silently ──
+                // These are value providers, not execution steps — they don't get a step label
+                // and resolve without the "Ejecutando paso" log.
+                if (IsPassThroughStep(pm.AiModule))
+                {
+                    var ptExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = executionId,
+                        ProjectModuleId = pm.Id,
+                        StepOrder = pm.StepOrder,
+                        Status = "Running",
+                        CreatedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(ptExec);
+                    await db.SaveChangesAsync();
+
+                    try
+                    {
+                        if (IsFileUploadStep(pm.AiModule))
+                        {
+                            await HandleFileUploadStepAsync(
+                                project, execution, ptExec, pm,
+                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        }
+                        else if (IsStaticTextStep(pm.AiModule))
+                        {
+                            await HandleStaticTextStepAsync(
+                                project, execution, ptExec, pm,
+                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        ptExec.Status = "Failed";
+                        ptExec.CompletedAt = DateTime.UtcNow;
+                        ptExec.ErrorMessage = ex.Message;
+                        await db.SaveChangesAsync();
+                        await _logger.LogStepProgressAsync(projectId, pm.Id, "Failed");
+                        await _logger.LogAsync(projectId, executionId, "error",
+                            $"Error resolviendo modulo pass-through '{pm.StepName ?? pm.AiModule.Name}': {ex.Message}",
+                            pm.StepOrder, pm.StepName ?? pm.AiModule.Name);
+                    }
+                    continue;
+                }
+
                 var stepExecution = new StepExecution
                 {
                     Id = Guid.NewGuid(),
@@ -300,8 +353,8 @@ namespace Server.Services.Ai
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
-                    await _logger.LogAsync(projectId, executionId, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
+                    await _logger.LogAsync(projectId, executionId, "step-start",
+                        $"{stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // ── Interaction step: send message, optionally pause pipeline ──
@@ -465,27 +518,10 @@ namespace Server.Services.Ai
                         continue;
                     }
 
-                    // ── FileUpload step: load attached files and produce output ──
-                    if (IsFileUploadStep(pm.AiModule))
-                    {
-                        await HandleFileUploadStepAsync(
-                            project, execution, stepExecution, pm,
-                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                        continue;
-                    }
-
                     // ── Scene step: collect connected inputs and produce a JSON scene object ──
                     if (IsSceneStep(pm.AiModule))
                     {
                         await HandleSceneStepAsync(
-                            project, execution, stepExecution, pm,
-                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                        continue;
-                    }
-
-                    if (IsStaticTextStep(pm.AiModule))
-                    {
-                        await HandleStaticTextStepAsync(
                             project, execution, stepExecution, pm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
@@ -539,23 +575,17 @@ namespace Server.Services.Ai
                             : JsonSerializer.Serialize(new { systemPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count });
                     }
 
-                    if (inputs.Count > 1)
+                    // Log resolved inputs
+                    for (var ii = 0; ii < inputs.Count; ii++)
                     {
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Recibidos {inputs.Count} inputs del paso anterior — se ejecutara {inputs.Count} veces",
-                            pm.StepOrder, stepName);
+                        var inputPreview = inputs[ii].Length > 300 ? inputs[ii][..300] + "..." : inputs[ii];
+                        var inputLabel = inputs.Count > 1 ? $"[{ii + 1}/{inputs.Count}] {inputPreview}" : inputPreview;
+                        await _logger.LogAsync(projectId, executionId, "input", inputLabel, pm.StepOrder, stepName);
                     }
 
                     if (pm.AiModule.ModuleType == "Text")
                     {
                         // Text modules: single call, structured JSON output
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Enviando prompt al modelo de texto ({pm.AiModule.ModelName})...",
-                            pm.StepOrder, stepName);
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Prompt: {inputs[0]}",
-                            pm.StepOrder, stepName);
-
                         var context = new AiExecutionContext
                         {
                             ModuleType = pm.AiModule.ModuleType,
@@ -612,6 +642,23 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"Texto generado correctamente{itemsMsg}",
                             pm.StepOrder, stepName);
+
+                        // Log output content
+                        if (stepOutput.Items.Count > 0)
+                        {
+                            for (var oi = 0; oi < stepOutput.Items.Count; oi++)
+                            {
+                                var outPreview = stepOutput.Items[oi].Content;
+                                if (outPreview.Length > 300) outPreview = outPreview[..300] + "...";
+                                await _logger.LogAsync(projectId, executionId, "output",
+                                    $"[{oi + 1}/{stepOutput.Items.Count}] {outPreview}", pm.StepOrder, stepName);
+                            }
+                        }
+                        else if (!string.IsNullOrWhiteSpace(stepOutput.Content))
+                        {
+                            var outPreview = stepOutput.Content.Length > 300 ? stepOutput.Content[..300] + "..." : stepOutput.Content;
+                            await _logger.LogAsync(projectId, executionId, "output", outPreview, pm.StepOrder, stepName);
+                        }
                     }
                     else if (pm.AiModule.ModuleType == "Image")
                     {
@@ -715,9 +762,6 @@ namespace Server.Services.Ai
                                     ? $"Generando imagen {i + 1}/{inputs.Count}..."
                                     : $"Generando imagen...",
                                 pm.StepOrder, stepName);
-                            await _logger.LogAsync(projectId, executionId, "info",
-                                $"Prompt: {inputs[i]}",
-                                pm.StepOrder, stepName);
 
                             var singleInput = inputs[i];
 
@@ -818,6 +862,13 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"{outputFiles.Count} imagen(es) generada(s) correctamente",
                             pm.StepOrder, stepName);
+
+                        // Log output files
+                        foreach (var of in outputFiles)
+                        {
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{of.FileName} ({of.ContentType})", pm.StepOrder, stepName);
+                        }
                     }
                     else if (pm.AiModule.ModuleType == "Video")
                     {
@@ -972,6 +1023,10 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"Video generado correctamente ({result.Metadata.GetValueOrDefault("duration", "?")}s)",
                             pm.StepOrder, stepName);
+
+                        foreach (var of in outputFiles)
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{of.FileName} ({of.ContentType})", pm.StepOrder, stepName);
                     }
                     else if (pm.AiModule.ModuleType == "VideoSearch")
                     {
@@ -1055,6 +1110,10 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"Video encontrado en Pexels (query='{pexelsQuery}', {pexelsTotal} resultados, por {pexelsPhotographer})",
                             pm.StepOrder, stepName);
+
+                        foreach (var of in outputFiles)
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{of.FileName} ({of.ContentType})", pm.StepOrder, stepName);
                     }
                     else if (pm.AiModule.ModuleType == "VideoEdit")
                     {
@@ -1357,6 +1416,10 @@ namespace Server.Services.Ai
                         await _logger.LogAsync(projectId, executionId, "success",
                             $"Video editado correctamente con Json2Video (duracion={duration}s, renderizado={renderTime}s)",
                             pm.StepOrder, stepName);
+
+                        foreach (var of in outputFiles)
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{of.FileName} ({of.ContentType})", pm.StepOrder, stepName);
                     }
                     else
                     {
@@ -1409,6 +1472,14 @@ namespace Server.Services.Ai
                                 FileSize = result.FileOutput.Length,
                                 CreatedAt = DateTime.UtcNow,
                             });
+
+                            await _logger.LogAsync(projectId, executionId, "output",
+                                $"{fileName} ({result.ContentType})", pm.StepOrder, stepName);
+                        }
+                        else if (!string.IsNullOrWhiteSpace(result.TextOutput))
+                        {
+                            var outPreview = result.TextOutput.Length > 300 ? result.TextOutput[..300] + "..." : result.TextOutput;
+                            await _logger.LogAsync(projectId, executionId, "output", outPreview, pm.StepOrder, stepName);
                         }
                     }
 
@@ -1958,34 +2029,54 @@ namespace Server.Services.Ai
 
         /// <summary>
         /// Pre-fork trunk steps show plain numbers. Post-fork: main = A, branches = B, C...
+        /// Pass-through modules (StaticText, FileUpload) are excluded from the labeling —
+        /// they are value providers, not numbered execution steps.
         /// </summary>
         private static string GetStepLabel(ProjectModule pm, ICollection<ProjectModule> allModules)
         {
-            var forkSteps = allModules.Where(m => m.BranchId != "main")
+            // Pass-through modules don't get a step label
+            if (IsPassThroughStep(pm.AiModule)) return "";
+
+            // Filter out pass-through modules for label computation
+            var labelModules = allModules.Where(m => !IsPassThroughStep(m.AiModule)).ToList();
+
+            var forkSteps = labelModules.Where(m => m.BranchId != "main")
                 .Select(m => m.BranchFromStep).Where(f => f.HasValue).Select(f => f!.Value).Distinct().ToList();
-            if (forkSteps.Count == 0) return pm.StepOrder.ToString();
+            if (forkSteps.Count == 0)
+            {
+                // Simple pipeline — label is position among non-pass-through modules
+                var mainSteps = labelModules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList();
+                var pos = mainSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
+                return (pos + 1).ToString();
+            }
 
             var maxFork = forkSteps.Max();
             if (pm.BranchId == "main" && pm.StepOrder <= maxFork)
-                return pm.StepOrder.ToString();
+            {
+                var preFork = labelModules.Where(m => m.BranchId == "main" && m.StepOrder <= maxFork)
+                    .OrderBy(m => m.StepOrder).ToList();
+                var pos = preFork.FindIndex(m => m.StepOrder == pm.StepOrder);
+                return (pos + 1).ToString();
+            }
 
             if (pm.BranchId == "main")
             {
-                var mainPostFork = allModules.Where(m => m.BranchId == "main" && m.StepOrder > maxFork)
+                var mainPostFork = labelModules.Where(m => m.BranchId == "main" && m.StepOrder > maxFork)
                     .OrderBy(m => m.StepOrder).ToList();
                 var idx = mainPostFork.FindIndex(m => m.StepOrder == pm.StepOrder);
-                return $"A{maxFork + 1 + idx}";
+                var preForkCount = labelModules.Count(m => m.BranchId == "main" && m.StepOrder <= maxFork);
+                return $"A{preForkCount + 1 + idx}";
             }
 
-            var branchIds = allModules.Where(m => m.BranchId != "main")
+            var branchIds = labelModules.Where(m => m.BranchId != "main")
                 .GroupBy(m => m.BranchId).Select(g => g.Key).OrderBy(b => b).ToList();
             var branchIdx = branchIds.IndexOf(pm.BranchId);
             var letter = (char)('B' + branchIdx);
-            var forkStep = pm.BranchFromStep ?? maxFork;
-            var branchSteps = allModules.Where(m => m.BranchId == pm.BranchId)
+            var preForkMainCount = labelModules.Count(m => m.BranchId == "main" && m.StepOrder <= maxFork);
+            var branchSteps = labelModules.Where(m => m.BranchId == pm.BranchId)
                 .OrderBy(m => m.StepOrder).ToList();
             var bIdx = branchSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
-            return $"{letter}{forkStep + 1 + bIdx}";
+            return $"{letter}{preForkMainCount + 1 + bIdx}";
         }
 
         /// <summary>
@@ -3381,6 +3472,36 @@ Datos de la ejecucion:
                     return execution;
                 }
 
+                // ── Pass-through modules: resolve silently during resume ──
+                if (IsPassThroughStep(pm.AiModule))
+                {
+                    var ptExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = execution.Id,
+                        ProjectModuleId = pm.Id,
+                        StepOrder = pm.StepOrder,
+                        Status = "Running",
+                        CreatedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(ptExec);
+                    await db.SaveChangesAsync();
+
+                    try
+                    {
+                        if (IsFileUploadStep(pm.AiModule))
+                            await HandleFileUploadStepAsync(project, execution, ptExec, pm, stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        else if (IsStaticTextStep(pm.AiModule))
+                            await HandleStaticTextStepAsync(project, execution, ptExec, pm, stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                    }
+                    catch (Exception ex)
+                    {
+                        ptExec.Status = "Failed"; ptExec.CompletedAt = DateTime.UtcNow; ptExec.ErrorMessage = ex.Message;
+                        await db.SaveChangesAsync();
+                    }
+                    continue;
+                }
+
                 var stepExecution = new StepExecution
                 {
                     Id = Guid.NewGuid(),
@@ -3398,8 +3519,8 @@ Datos de la ejecucion:
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
-                    await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
+                    await _logger.LogAsync(project.Id, execution.Id, "step-start",
+                        $"{stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // Handle another interaction step
@@ -3477,15 +3598,6 @@ Datos de la ejecucion:
                         stepExecution.Status = "Skipped";
                         stepExecution.CompletedAt = DateTime.UtcNow;
                         await db.SaveChangesAsync();
-                        continue;
-                    }
-
-                    // Handle FileUpload step during resume
-                    if (IsFileUploadStep(pm.AiModule))
-                    {
-                        await HandleFileUploadStepAsync(
-                            project, execution, stepExecution, pm,
-                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
 
@@ -4356,6 +4468,32 @@ Datos de la ejecucion:
                             var rpm = mainRemaining[ri];
                             var rStepName = rpm.StepName ?? rpm.AiModule.Name;
 
+                            // Pass-through modules: resolve silently
+                            if (IsPassThroughStep(rpm.AiModule))
+                            {
+                                var ptExec = new StepExecution
+                                {
+                                    Id = Guid.NewGuid(), ExecutionId = execution.Id,
+                                    ProjectModuleId = rpm.Id, StepOrder = rpm.StepOrder,
+                                    Status = "Running", CreatedAt = DateTime.UtcNow,
+                                };
+                                db.StepExecutions.Add(ptExec);
+                                await db.SaveChangesAsync();
+                                try
+                                {
+                                    if (IsFileUploadStep(rpm.AiModule))
+                                        await HandleFileUploadStepAsync(project, execution, ptExec, rpm, stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                                    else if (IsStaticTextStep(rpm.AiModule))
+                                        await HandleStaticTextStepAsync(project, execution, ptExec, rpm, stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                                }
+                                catch (Exception ex)
+                                {
+                                    ptExec.Status = "Failed"; ptExec.CompletedAt = DateTime.UtcNow; ptExec.ErrorMessage = ex.Message;
+                                    await db.SaveChangesAsync();
+                                }
+                                continue;
+                            }
+
                             var rStepExec = new StepExecution
                             {
                                 Id = Guid.NewGuid(),
@@ -4421,26 +4559,9 @@ Datos de la ejecucion:
                                     continue;
                                 }
 
-                                // FileUpload in resume
-                                if (IsFileUploadStep(rpm.AiModule))
-                                {
-                                    await HandleFileUploadStepAsync(
-                                        project, execution, rStepExec, rpm,
-                                        stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                                    continue;
-                                }
-
                                 if (IsSceneStep(rpm.AiModule))
                                 {
                                     await HandleSceneStepAsync(
-                                        project, execution, rStepExec, rpm,
-                                        stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                                    continue;
-                                }
-
-                                if (IsStaticTextStep(rpm.AiModule))
-                                {
-                                    await HandleStaticTextStepAsync(
                                         project, execution, rStepExec, rpm,
                                         stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                                     continue;
@@ -4606,6 +4727,32 @@ Datos de la ejecucion:
                 var pm = remainingModules[mi];
                 var stepName = pm.StepName ?? pm.AiModule.Name;
 
+                // Pass-through modules: resolve silently
+                if (IsPassThroughStep(pm.AiModule))
+                {
+                    var ptExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(), ExecutionId = execution.Id,
+                        ProjectModuleId = pm.Id, StepOrder = pm.StepOrder,
+                        Status = "Running", CreatedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(ptExec);
+                    await db.SaveChangesAsync();
+                    try
+                    {
+                        if (IsFileUploadStep(pm.AiModule))
+                            await HandleFileUploadStepAsync(project, execution, ptExec, pm, stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        else if (IsStaticTextStep(pm.AiModule))
+                            await HandleStaticTextStepAsync(project, execution, ptExec, pm, stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                    }
+                    catch (Exception ex)
+                    {
+                        ptExec.Status = "Failed"; ptExec.CompletedAt = DateTime.UtcNow; ptExec.ErrorMessage = ex.Message;
+                        await db.SaveChangesAsync();
+                    }
+                    continue;
+                }
+
                 var stepExecution = new StepExecution
                 {
                     Id = Guid.NewGuid(),
@@ -4669,15 +4816,6 @@ Datos de la ejecucion:
                         stepExecution.Status = "Skipped";
                         stepExecution.CompletedAt = DateTime.UtcNow;
                         await db.SaveChangesAsync();
-                        continue;
-                    }
-
-                    // FileUpload in remaining pipeline after checkpoint
-                    if (IsFileUploadStep(pm.AiModule))
-                    {
-                        await HandleFileUploadStepAsync(
-                            project, execution, stepExecution, pm,
-                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
 
@@ -4821,10 +4959,6 @@ Datos de la ejecucion:
             var stepName = pm.StepName ?? pm.AiModule.Name;
             var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
 
-            await _logger.LogAsync(projectId, executionId, "info",
-                $"Cargando archivos adjuntos del modulo '{stepName}'...",
-                pm.StepOrder, stepName);
-
             var fileRecords = await db.ModuleFiles
                 .Where(f => f.AiModuleId == pm.AiModuleId)
                 .OrderBy(f => f.CreatedAt)
@@ -4832,9 +4966,6 @@ Datos de la ejecucion:
 
             if (fileRecords.Count == 0)
             {
-                await _logger.LogAsync(projectId, executionId, "warn",
-                    $"Modulo FileUpload '{stepName}' no tiene archivos adjuntos",
-                    pm.StepOrder, stepName);
 
                 // Still produce an empty output so the pipeline continues
                 stepOutputs[pm.StepOrder] = new StepOutput
@@ -4863,12 +4994,7 @@ Datos de la ejecucion:
             {
                 var sourcePath = Path.Combine(_mediaRoot, f.FilePath);
                 if (!File.Exists(sourcePath))
-                {
-                    await _logger.LogAsync(projectId, executionId, "warn",
-                        $"Archivo '{f.FileName}' no encontrado en disco, omitiendo",
-                        pm.StepOrder, stepName);
                     continue;
-                }
 
                 var ext = Path.GetExtension(f.FileName);
                 var destFileName = $"{f.Id}{ext}";
@@ -4932,10 +5058,6 @@ Datos de la ejecucion:
             stepExecution.OutputData = JsonSerializer.Serialize(output);
             stepExecution.EstimatedCost = 0m;
             await db.SaveChangesAsync();
-
-            await _logger.LogAsync(projectId, executionId, "info",
-                $"FileUpload completado: {outputFiles.Count} archivo(s) disponibles para el pipeline",
-                pm.StepOrder, stepName);
             await _logger.LogStepProgressAsync(projectId, pm.Id, "Completed");
         }
 
@@ -5073,10 +5195,6 @@ Datos de la ejecucion:
                 else if (contentVal is string str)
                     textContent = str;
             }
-
-            await _logger.LogAsync(projectId, executionId, "info",
-                $"Texto estatico '{stepName}': {textContent.Length} caracteres",
-                pm.StepOrder, stepName);
 
             var output = new StepOutput
             {
@@ -5297,6 +5415,50 @@ Datos de la ejecucion:
                     continue;
                 }
 
+                // ── Pass-through modules in branches: resolve values silently ──
+                if (IsPassThroughStep(bpm.AiModule))
+                {
+                    var bPtExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(),
+                        ExecutionId = execution.Id,
+                        ProjectModuleId = bpm.Id,
+                        StepOrder = bpm.StepOrder,
+                        Status = "Running",
+                        CreatedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(bPtExec);
+                    await db.SaveChangesAsync();
+
+                    try
+                    {
+                        if (IsFileUploadStep(bpm.AiModule))
+                        {
+                            await HandleFileUploadStepAsync(
+                                project, execution, bPtExec, bpm,
+                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        }
+                        else if (IsStaticTextStep(bpm.AiModule))
+                        {
+                            await HandleStaticTextStepAsync(
+                                project, execution, bPtExec, bpm,
+                                stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        bPtExec.Status = "Failed";
+                        bPtExec.CompletedAt = DateTime.UtcNow;
+                        bPtExec.ErrorMessage = ex.Message;
+                        await db.SaveChangesAsync();
+                        await _logger.LogStepProgressAsync(project.Id, bpm.Id, "Failed");
+                        await _logger.LogAsync(project.Id, execution.Id, "error",
+                            $"[{branchId}] Error resolviendo modulo pass-through '{bpm.StepName ?? bpm.AiModule.Name}': {ex.Message}",
+                            bpm.StepOrder, bpm.StepName ?? bpm.AiModule.Name);
+                    }
+                    continue;
+                }
+
                 var branchStepExec = new StepExecution
                 {
                     Id = Guid.NewGuid(),
@@ -5314,8 +5476,8 @@ Datos de la ejecucion:
                 {
                     var bStepName = bpm.StepName ?? bpm.AiModule.Name;
                     var bStepLabel = GetStepLabel(bpm, project.ProjectModules);
-                    await _logger.LogAsync(project.Id, execution.Id, "info",
-                        $"[{branchId}] Ejecutando paso {bStepLabel}: {bStepName} ({bpm.AiModule.ProviderType}/{GetEffectiveModelName(bpm)})",
+                    await _logger.LogAsync(project.Id, execution.Id, "step-start",
+                        $"[{branchId}] {bStepName} ({bpm.AiModule.ProviderType}/{GetEffectiveModelName(bpm)})",
                         bpm.StepOrder, bStepName);
 
                     var bConfig = MergeConfiguration(bpm.AiModule.Configuration, bpm.Configuration);
@@ -5418,26 +5580,9 @@ Datos de la ejecucion:
                         continue;
                     }
 
-                    // FileUpload in branches
-                    if (IsFileUploadStep(bpm.AiModule))
-                    {
-                        await HandleFileUploadStepAsync(
-                            project, execution, branchStepExec, bpm,
-                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                        continue;
-                    }
-
                     if (IsSceneStep(bpm.AiModule))
                     {
                         await HandleSceneStepAsync(
-                            project, execution, branchStepExec, bpm,
-                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
-                        continue;
-                    }
-
-                    if (IsStaticTextStep(bpm.AiModule))
-                    {
-                        await HandleStaticTextStepAsync(
                             project, execution, branchStepExec, bpm,
                             stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
@@ -5477,11 +5622,13 @@ Datos de la ejecucion:
                         }
                         InjectImageCountRule(bConfig);
 
-                        await _logger.LogAsync(project.Id, execution.Id, "info",
-                            $"Enviando prompt al modelo de texto ({bpm.AiModule.ModelName})...",
-                            bpm.StepOrder, bStepName);
-                        await _logger.LogAsync(project.Id, execution.Id, "info",
-                            $"Prompt: {bInputs[0]}", bpm.StepOrder, bStepName);
+                        // Log resolved inputs for branch
+                        for (var bii = 0; bii < bInputs.Count; bii++)
+                        {
+                            var bInputPreview = bInputs[bii].Length > 300 ? bInputs[bii][..300] + "..." : bInputs[bii];
+                            var bInputLabel = bInputs.Count > 1 ? $"[{bii + 1}/{bInputs.Count}] {bInputPreview}" : bInputPreview;
+                            await _logger.LogAsync(project.Id, execution.Id, "input", bInputLabel, bpm.StepOrder, bStepName);
+                        }
 
                         var bCtx = new AiExecutionContext
                         {
@@ -6552,6 +6699,32 @@ Datos de la ejecucion:
                     return execution;
                 }
 
+                // Pass-through modules: resolve silently during retry
+                if (IsPassThroughStep(pm.AiModule))
+                {
+                    var ptExec = new StepExecution
+                    {
+                        Id = Guid.NewGuid(), ExecutionId = executionId,
+                        ProjectModuleId = pm.Id, StepOrder = pm.StepOrder,
+                        Status = "Running", CreatedAt = DateTime.UtcNow,
+                    };
+                    db.StepExecutions.Add(ptExec);
+                    await db.SaveChangesAsync();
+                    try
+                    {
+                        if (IsFileUploadStep(pm.AiModule))
+                            await HandleFileUploadStepAsync(project, execution, ptExec, pm, stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                        else if (IsStaticTextStep(pm.AiModule))
+                            await HandleStaticTextStepAsync(project, execution, ptExec, pm, stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
+                    }
+                    catch (Exception ex)
+                    {
+                        ptExec.Status = "Failed"; ptExec.CompletedAt = DateTime.UtcNow; ptExec.ErrorMessage = ex.Message;
+                        await db.SaveChangesAsync();
+                    }
+                    continue;
+                }
+
                 var stepExecution = new StepExecution
                 {
                     Id = Guid.NewGuid(),
@@ -6570,8 +6743,8 @@ Datos de la ejecucion:
                 {
                     var stepName = pm.StepName ?? pm.AiModule.Name;
                     var stepLabel = GetStepLabel(pm, project.ProjectModules);
-                    await _logger.LogAsync(projectId, executionId, "info",
-                        $"Ejecutando paso {stepLabel}: {stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
+                    await _logger.LogAsync(projectId, executionId, "step-start",
+                        $"{stepName} ({pm.AiModule.ProviderType}/{GetEffectiveModelName(pm)})",
                         pm.StepOrder, stepName);
 
                     // Handle interaction step during retry
@@ -6617,15 +6790,6 @@ Datos de la ejecucion:
                         stepExecution.Status = "Skipped";
                         stepExecution.CompletedAt = DateTime.UtcNow;
                         await db.SaveChangesAsync();
-                        continue;
-                    }
-
-                    // Handle FileUpload step during retry
-                    if (IsFileUploadStep(pm.AiModule))
-                    {
-                        await HandleFileUploadStepAsync(
-                            project, execution, stepExecution, pm,
-                            stepResults, stepOutputs, stepModuleTypes, db, tenantDbName);
                         continue;
                     }
 
@@ -6680,15 +6844,16 @@ Datos de la ejecucion:
                         ? JsonSerializer.Serialize(new { systemPrompt = retrySysPrompt, projectContext = project.Context, prompt = inputs[0] })
                         : JsonSerializer.Serialize(new { systemPrompt = retrySysPrompt, projectContext = project.Context, prompts = inputs, count = inputs.Count });
 
+                    // Log resolved inputs for retry
+                    for (var rii = 0; rii < inputs.Count; rii++)
+                    {
+                        var rInputPreview = inputs[rii].Length > 300 ? inputs[rii][..300] + "..." : inputs[rii];
+                        var rInputLabel = inputs.Count > 1 ? $"[{rii + 1}/{inputs.Count}] {rInputPreview}" : rInputPreview;
+                        await _logger.LogAsync(projectId, executionId, "input", rInputLabel, pm.StepOrder, stepName);
+                    }
+
                     if (pm.AiModule.ModuleType == "Text")
                     {
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Enviando prompt al modelo de texto ({pm.AiModule.ModelName})...",
-                            pm.StepOrder, stepName);
-                        await _logger.LogAsync(projectId, executionId, "info",
-                            $"Prompt: {inputs[0]}",
-                            pm.StepOrder, stepName);
-
                         var context = new AiExecutionContext
                         {
                             ModuleType = pm.AiModule.ModuleType,
@@ -6787,9 +6952,6 @@ Datos de la ejecucion:
                                 inputs.Count > 1
                                     ? $"Generando imagen {i + 1}/{inputs.Count}..."
                                     : $"Generando imagen...",
-                                pm.StepOrder, stepName);
-                            await _logger.LogAsync(projectId, executionId, "info",
-                                $"Prompt: {inputs[i]}",
                                 pm.StepOrder, stepName);
 
                             var singleInput = inputs[i];

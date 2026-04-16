@@ -79,7 +79,7 @@ public record ExecutionDetailResponse(
     decimal TotalEstimatedCost,
     List<StepExecutionResponse> Steps);
 public record StepExecutionResponse(
-    Guid Id, Guid ProjectModuleId, string ModuleName, int StepOrder,
+    Guid Id, Guid ProjectModuleId, string ModuleName, string ModuleType, int StepOrder,
     string Status, string? InputData, string? OutputData, string? ErrorMessage,
     DateTime CreatedAt, DateTime? CompletedAt, decimal EstimatedCost,
     List<ExecutionFileResponse> Files);
