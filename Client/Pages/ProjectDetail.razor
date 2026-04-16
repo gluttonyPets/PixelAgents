@@ -1021,143 +1021,209 @@ else
                         <div style="display: flex; gap: 0; height: calc(75vh - 130px); overflow: hidden;">
                             <!-- Left: Steps -->
                             <div style="flex: 1; overflow-y: auto; padding: 0 0.8rem 0.8rem; border-right: 1px solid var(--border);">
-                                @foreach (var step in _execDetailModal.Steps.OrderBy(s => s.StepOrder))
+                                @{ var visibleSteps = _execDetailModal.Steps
+                                    .Where(s => !PassThroughModuleTypes.Contains(s.ModuleType))
+                                    .OrderBy(s => s.StepOrder).ToList();
+                                   var stepIdx = 0; }
+                                @foreach (var step in visibleSteps)
                                 {
-                                    <div class="card" style="margin-bottom: 0.5rem; padding: 0.5rem;">
-                                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem;">
-                                            <span class="step-number" style="font-size: 0.7rem;">@GetStepLabelFromOrder(step.StepOrder)</span>
-                                            <span style="font-weight: 600; font-size: 0.85rem;">@step.ModuleName</span>
-                                            <span class="badge @StatusBadge(step.Status)" style="font-size: 0.6rem;">@step.Status</span>
+                                    stepIdx++;
+                                    var isExpanded = _expandedSteps.Contains(step.StepOrder);
+                                    var capturedOrder = step.StepOrder;
+                                    var duration = step.CompletedAt.HasValue ? (step.CompletedAt.Value - step.CreatedAt).TotalSeconds : 0;
+
+                                    <div class="exec-step-card @(step.Status == "Failed" ? "exec-step-failed" : step.Status == "Running" ? "exec-step-running" : "")">
+                                        @* ── Compact header (always visible) ── *@
+                                        <div class="exec-step-header" @onclick="() => ToggleStepExpanded(capturedOrder)">
+                                            <span class="exec-step-badge">@stepIdx</span>
+                                            <span class="exec-step-name">@step.ModuleName</span>
+                                            <span class="badge @StatusBadge(step.Status)" style="font-size: 0.58rem;">@step.Status</span>
                                             @if (step.EstimatedCost > 0)
                                             {
-                                                <span class="text-sm text-muted">~$@step.EstimatedCost.ToString("F4")</span>
+                                                <span class="text-sm text-muted">$@step.EstimatedCost.ToString("F4")</span>
+                                            }
+                                            @if (duration > 0)
+                                            {
+                                                <span class="text-sm text-muted">@(duration < 1 ? "<1s" : $"{duration:F0}s")</span>
                                             }
                                             @if (step.Status == "WaitingForCheckpoint" && _execDetailModal.Status == "WaitingForCheckpoint")
                                             {
-                                                <button class="btn btn-success btn-xs" style="font-size: 0.65rem; margin-left: auto; padding: 0.15rem 0.4rem;"
+                                                <button class="btn btn-success btn-xs" style="font-size: 0.6rem; margin-left: auto; padding: 0.1rem 0.35rem;"
+                                                        @onclick:stopPropagation="true"
                                                         @onclick="@(() => { _checkpointExecutionId = _execDetailModal.Id; _checkpointPreviewJson = step.InputData; _showCheckpointModal = true; StateHasChanged(); })">
                                                     Revisar
                                                 </button>
                                             }
+                                            <span class="exec-step-chevron @(isExpanded ? "expanded" : "")">&#x25B6;</span>
                                         </div>
 
                                         @if (step.ErrorMessage is not null)
                                         {
-                                            <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@step.ErrorMessage</div>
+                                            <div class="alert alert-error" style="font-size: 0.72rem; padding: 0.25rem 0.5rem; margin: 0.3rem 0 0;">@step.ErrorMessage</div>
                                         }
 
-                                        @if (step.InputData is not null && (step.Status == "WaitingForCheckpoint" || step.ModuleName?.Contains("Checkpoint", StringComparison.OrdinalIgnoreCase) == true))
+                                        @* ── Summary line (compact view): show a brief output preview ── *@
+                                        @if (!isExpanded && step.OutputData is not null)
                                         {
-                                            <details open="@(step.Status == "WaitingForCheckpoint")" style="margin-bottom: 0.3rem;">
-                                                <summary style="font-size: 0.7rem; cursor: pointer; color: #856404; user-select: none;">
-                                                    Datos del checkpoint
-                                                </summary>
-                                                <pre style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 0.4rem; font-size: 0.68rem; max-height: 200px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin-top: 0.2rem;">@step.InputData</pre>
-                                            </details>
-                                        }
-                                        else if (step.InputData is not null)
-                                        {
-                                            var inputParsed = ParseInputData(step.InputData);
-                                            @if (inputParsed is not null && (inputParsed.Prompts.Count > 0 || inputParsed.SystemPrompt is not null))
+                                            var preview = TryParseOutput(step.OutputData);
+                                            @if (preview?.Type == "text" && preview.Content is not null)
                                             {
-                                                <details style="margin-bottom: 0.3rem;">
-                                                    <summary style="font-size: 0.7rem; cursor: pointer; color: var(--text-secondary); user-select: none;">
-                                                        Datos enviados a la API
-                                                    </summary>
-                                                    @if (inputParsed.SystemPrompt is not null)
-                                                    {
-                                                        <div style="font-size: 0.65rem; font-weight: 600; color: var(--text-muted); margin-top: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em;">System Prompt</div>
-                                                        <div class="output-block" style="font-size: 0.68rem; max-height: 120px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.15rem; background: var(--bg); padding: 0.35rem 0.5rem; border-radius: 4px; border-left: 2px solid var(--accent);">@inputParsed.SystemPrompt</div>
-                                                    }
-                                                    @if (inputParsed.Prompts.Count > 0)
-                                                    {
-                                                        <div style="font-size: 0.65rem; font-weight: 600; color: var(--text-muted); margin-top: 0.3rem; text-transform: uppercase; letter-spacing: 0.03em;">@(inputParsed.Prompts.Count == 1 ? "Prompt" : $"{inputParsed.Prompts.Count} Prompts")</div>
-                                                        @foreach (var prompt in inputParsed.Prompts)
-                                                        {
-                                                            <div class="output-block" style="font-size: 0.68rem; max-height: 100px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.15rem; background: var(--bg); padding: 0.35rem 0.5rem; border-radius: 4px;">@prompt</div>
-                                                        }
-                                                    }
-                                                </details>
+                                                <div class="exec-step-preview">@(preview.Content.Length > 120 ? preview.Content[..120] + "..." : preview.Content)</div>
+                                            }
+                                            else if (preview?.Files is { Count: > 0 })
+                                            {
+                                                <div class="exec-step-preview">@preview.Files.Count archivo(s): @string.Join(", ", preview.Files.Select(f => f.FileName))</div>
                                             }
                                         }
 
-                                        @if (step.OutputData is not null)
+                                        @* ── Expanded detail ── *@
+                                        @if (isExpanded)
                                         {
-                                            var parsed = TryParseOutput(step.OutputData);
-                                            @if (parsed?.Type == "text" && parsed.Content is not null)
-                                            {
-                                                <div class="output-block" style="font-size: 0.75rem; max-height: 120px; overflow-y: auto; white-space: pre-wrap;">@parsed.Content</div>
-                                            }
-                                            else if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
-                                            {
-                                                <div class="history-image-grid">
-                                                    @foreach (var f in parsed.Files)
+                                            <div class="exec-step-detail">
+                                                @* ── INPUTS ── *@
+                                                @if (step.InputData is not null)
+                                                {
+                                                    @if (step.Status == "WaitingForCheckpoint" || step.ModuleName?.Contains("Checkpoint", StringComparison.OrdinalIgnoreCase) == true)
                                                     {
-                                                        var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
-                                                        <div class="history-image-item">
-                                                            <img src="@fileUrl" alt="@f.FileName" class="history-image-thumb" crossorigin="use-credentials" style="max-width: 200px;" />
+                                                        <div class="exec-io-section">
+                                                            <div class="exec-io-title exec-io-in">Datos del Checkpoint</div>
+                                                            <pre class="exec-io-block">@step.InputData</pre>
                                                         </div>
                                                     }
-                                                </div>
-                                            }
-                                            else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
-                                            {
-                                                @foreach (var f in parsed.Files)
-                                                {
-                                                    var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
-                                                    <video controls style="max-width: 300px; border-radius: 6px; margin-top: 0.3rem;" crossorigin="use-credentials">
-                                                        <source src="@fileUrl" type="@f.ContentType" />
-                                                    </video>
+                                                    else
+                                                    {
+                                                        var inputParsed = ParseInputData(step.InputData);
+                                                        @if (inputParsed is not null)
+                                                        {
+                                                            @if (inputParsed.SystemPrompt is not null)
+                                                            {
+                                                                <div class="exec-io-section">
+                                                                    <div class="exec-io-title exec-io-in">System Prompt</div>
+                                                                    <div class="exec-io-block">@inputParsed.SystemPrompt</div>
+                                                                </div>
+                                                            }
+                                                            @if (inputParsed.Prompts.Count > 0)
+                                                            {
+                                                                @foreach (var (prompt, pi) in inputParsed.Prompts.Select((p, i) => (p, i)))
+                                                                {
+                                                                    <div class="exec-io-section">
+                                                                        <div class="exec-io-title exec-io-in">@(inputParsed.Prompts.Count > 1 ? $"Input {pi + 1}" : "Input")</div>
+                                                                        <div class="exec-io-block">@prompt</div>
+                                                                    </div>
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                 }
-                                            }
-                                        }
 
-                                        @* Show attached files with download button *@
-                                        @if (step.Files is { Count: > 0 })
-                                        {
-                                            <div style="margin-top: 0.3rem;">
-                                                @foreach (var file in step.Files.Where(f => f.Direction == "Output"))
+                                                @* ── OUTPUTS ── *@
+                                                @if (step.OutputData is not null)
                                                 {
-                                                    var capturedFile = file;
-                                                    var capturedExecId = _execDetailModal.Id;
-                                                    <button class="btn btn-sm" style="display: inline-flex; align-items: center; gap: 0.2rem; margin-right: 0.5rem; font-size: 0.75rem; padding: 0.15rem 0.4rem;"
-                                                            @onclick="() => DownloadFile(capturedExecId, capturedFile.Id, capturedFile.FileName)">
-                                                        &#x1F4CE; @file.FileName <span class="text-muted">(@FormatFileSize(file.FileSize))</span>
-                                                    </button>
+                                                    var parsed = TryParseOutput(step.OutputData);
+                                                    @if (parsed?.Type == "text")
+                                                    {
+                                                        @if (parsed.Items is { Count: > 0 })
+                                                        {
+                                                            @foreach (var (item, oi) in parsed.Items.Select((it, i) => (it, i)))
+                                                            {
+                                                                <div class="exec-io-section">
+                                                                    <div class="exec-io-title exec-io-out">@(parsed.Items.Count > 1 ? $"Output {oi + 1}" : "Output") @(item.Label is not null ? $"({item.Label})" : "")</div>
+                                                                    <div class="exec-io-block">@item.Content</div>
+                                                                </div>
+                                                            }
+                                                        }
+                                                        @if (parsed.Content is not null)
+                                                        {
+                                                            <div class="exec-io-section">
+                                                                <div class="exec-io-title exec-io-out">@(parsed.Items is { Count: > 0 } ? "Content" : "Output")</div>
+                                                                <div class="exec-io-block">@parsed.Content</div>
+                                                            </div>
+                                                        }
+                                                    }
+                                                    else if (parsed?.Files is { Count: > 0 })
+                                                    {
+                                                        <div class="exec-io-section">
+                                                            <div class="exec-io-title exec-io-out">Output (@parsed.Files.Count archivo/s)</div>
+                                                            @if (parsed.Type == "image")
+                                                            {
+                                                                <div class="history-image-grid" style="margin-top: 0.2rem;">
+                                                                    @foreach (var f in parsed.Files)
+                                                                    {
+                                                                        var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
+                                                                        <div class="history-image-item">
+                                                                            <img src="@fileUrl" alt="@f.FileName" class="history-image-thumb" crossorigin="use-credentials" style="max-width: 200px;" />
+                                                                        </div>
+                                                                    }
+                                                                </div>
+                                                            }
+                                                            else
+                                                            {
+                                                                @foreach (var f in parsed.Files)
+                                                                {
+                                                                    var fileUrl = $"{_apiBase}/api/executions/{_execDetailModal.Id}/files/{f.FileId}";
+                                                                    @if (parsed.Type == "video")
+                                                                    {
+                                                                        <video controls style="max-width: 300px; border-radius: 6px; margin-top: 0.3rem;" crossorigin="use-credentials">
+                                                                            <source src="@fileUrl" type="@f.ContentType" />
+                                                                        </video>
+                                                                    }
+                                                                }
+                                                            }
+                                                        </div>
+                                                    }
+                                                }
+
+                                                @* ── FILES ── *@
+                                                @if (step.Files is { Count: > 0 })
+                                                {
+                                                    <div class="exec-io-section">
+                                                        <div class="exec-io-title" style="color: var(--text-muted);">Archivos</div>
+                                                        <div style="display: flex; flex-wrap: wrap; gap: 0.3rem;">
+                                                            @foreach (var file in step.Files.Where(f => f.Direction == "Output"))
+                                                            {
+                                                                var capturedFile = file;
+                                                                var capturedExecId = _execDetailModal.Id;
+                                                                <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.12rem 0.35rem;"
+                                                                        @onclick="() => DownloadFile(capturedExecId, capturedFile.Id, capturedFile.FileName)">
+                                                                    &#x2B73; @file.FileName <span class="text-muted">(@FormatFileSize(file.FileSize))</span>
+                                                                </button>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                }
+
+                                                @* ── RETRY ── *@
+                                                @if ((step.Status == "Completed" || step.Status == "Failed") && !_executing)
+                                                {
+                                                    var capturedStepOrder = step.StepOrder;
+                                                    <div style="margin-top: 0.4rem; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
+                                                        <button class="btn btn-sm btn-outline" style="font-size: 0.68rem; padding: 0.12rem 0.4rem;"
+                                                                @onclick="() => ToggleRetryPanel(capturedStepOrder)">
+                                                            &#x21BB; Reiniciar desde aqui
+                                                        </button>
+                                                        @if (_retryStepOrder == capturedStepOrder)
+                                                        {
+                                                            <input type="text" @bind="_retryComment" placeholder="Comentario..."
+                                                                   style="font-size: 0.72rem; padding: 0.15rem 0.35rem; flex: 1; min-width: 100px;" />
+                                                            <button class="btn btn-sm btn-primary" style="font-size: 0.68rem; padding: 0.12rem 0.4rem;"
+                                                                    @onclick="() => RetryFromStep(capturedStepOrder)">
+                                                                Ejecutar
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                    @if (_retryError is not null && _retryStepOrder == capturedStepOrder)
+                                                    {
+                                                        <div class="alert alert-error" style="font-size: 0.68rem; padding: 0.2rem 0.4rem; margin-top: 0.2rem;">@_retryError</div>
+                                                    }
                                                 }
                                             </div>
-                                        }
-
-                                        @* Retry from this step *@
-                                        @if ((step.Status == "Completed" || step.Status == "Failed") && !_executing)
-                                        {
-                                            var capturedStepOrder = step.StepOrder;
-                                            <div style="margin-top: 0.4rem; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
-                                                <button class="btn btn-sm btn-outline" style="font-size: 0.7rem; padding: 0.15rem 0.5rem;"
-                                                        @onclick="() => ToggleRetryPanel(capturedStepOrder)">
-                                                    &#x1F504; Reiniciar desde aqui
-                                                </button>
-                                                @if (_retryStepOrder == capturedStepOrder)
-                                                {
-                                                    <input type="text" @bind="_retryComment" placeholder="Comentario opcional..."
-                                                           style="font-size: 0.75rem; padding: 0.2rem 0.4rem; flex: 1; min-width: 120px;" />
-                                                    <button class="btn btn-sm btn-primary" style="font-size: 0.7rem; padding: 0.15rem 0.5rem;"
-                                                            @onclick="() => RetryFromStep(capturedStepOrder)">
-                                                        Ejecutar
-                                                    </button>
-                                                }
-                                            </div>
-                                            @if (_retryError is not null && _retryStepOrder == capturedStepOrder)
-                                            {
-                                                <div class="alert alert-error" style="font-size: 0.7rem; padding: 0.2rem 0.4rem; margin-top: 0.2rem;">@_retryError</div>
-                                            }
                                         }
                                     </div>
                                 }
                             </div>
 
                             <!-- Right: Logs -->
-                            <div style="width: 340px; min-width: 280px; overflow-y: auto; padding: 0 0.8rem 0.8rem; display: flex; flex-direction: column;">
+                            <div style="width: 360px; min-width: 280px; overflow-y: auto; padding: 0 0.8rem 0.8rem; display: flex; flex-direction: column;">
                                 <div style="font-weight: 600; font-size: 0.85rem; padding: 0.3rem 0; position: sticky; top: 0; background: var(--bg-secondary); z-index: 1;">
                                     Logs @(_execDetailLogs is { Count: > 0 } ? $"({_execDetailLogs.Count})" : "")
                                 </div>
@@ -1166,14 +1232,50 @@ else
                                     <div class="inspector-log-entries" style="flex: 1;">
                                         @foreach (var log in _execDetailLogs)
                                         {
-                                            <div class="inspector-log-entry inspector-log-@log.Level">
-                                                <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
-                                                @if (log.StepOrder.HasValue)
-                                                {
-                                                    <span class="inspector-log-step">P@(GetStepLabelFromOrder(log.StepOrder.Value))</span>
-                                                }
-                                                <span>@log.Message</span>
-                                            </div>
+                                            @if (log.Level == "step-start")
+                                            {
+                                                <div class="inspector-log-step-header">
+                                                    <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                                                    @if (log.StepOrder.HasValue)
+                                                    {
+                                                        var logLabel = GetStepLabelFromOrder(log.StepOrder.Value);
+                                                        @if (!string.IsNullOrEmpty(logLabel))
+                                                        {
+                                                            <span class="inspector-log-step-badge">@logLabel</span>
+                                                        }
+                                                    }
+                                                    <span class="inspector-log-step-name">@log.Message</span>
+                                                </div>
+                                            }
+                                            else if (log.Level == "input")
+                                            {
+                                                <div class="inspector-log-io inspector-log-io-in">
+                                                    <span class="inspector-log-io-label">IN</span>
+                                                    <span class="inspector-log-io-text">@log.Message</span>
+                                                </div>
+                                            }
+                                            else if (log.Level == "output")
+                                            {
+                                                <div class="inspector-log-io inspector-log-io-out">
+                                                    <span class="inspector-log-io-label">OUT</span>
+                                                    <span class="inspector-log-io-text">@log.Message</span>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="inspector-log-entry inspector-log-@log.Level">
+                                                    <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
+                                                    @if (log.StepOrder.HasValue)
+                                                    {
+                                                        var logLabel = GetStepLabelFromOrder(log.StepOrder.Value);
+                                                        @if (!string.IsNullOrEmpty(logLabel))
+                                                        {
+                                                            <span class="inspector-log-step">P@logLabel</span>
+                                                        }
+                                                    }
+                                                    <span>@log.Message</span>
+                                                </div>
+                                            }
                                         }
                                     </div>
                                 }
@@ -1805,6 +1907,10 @@ else
     private int? _retryStepOrder;
     private string _retryComment = "";
     private string? _retryError;
+
+    // Execution detail: expanded steps
+    private HashSet<int> _expandedSteps = new();
+    private static readonly HashSet<string> PassThroughModuleTypes = new() { "StaticText", "FileUpload" };
 
     // Orchestrator review
     private string _orchestratorComment = "";
@@ -3181,6 +3287,12 @@ else
             _expandedExecDetail = await Api.GetExecutionDetailAsync(id);
         }
         catch { }
+    }
+
+    private void ToggleStepExpanded(int stepOrder)
+    {
+        if (!_expandedSteps.Remove(stepOrder))
+            _expandedSteps.Add(stepOrder);
     }
 
     private void ToggleRetryPanel(int stepOrder)
