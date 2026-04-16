@@ -1235,6 +1235,7 @@ else if (!_loading)
         ("VideoEdit",   "Edicion de video",      "E"),
         ("Scene",       "Constructor de escena", "N"),
         ("StaticText",  "Texto estatico",        "T"),
+        ("Start",       "Inicio",                "S"),
         ("Orchestrator","Orquestador",           "O"),
         ("Coordinator", "Coordinador",           "K"),
     ];
@@ -1546,6 +1547,7 @@ else if (!_loading)
         new("file-upload",     "Carga de archivos",   "System", ["FileUpload"], ["file-upload","resource","free"], "Sube archivos externos (imagenes, audio, video, documentos) para usarlos como recurso en el pipeline. Sin coste."),
         new("scene-builder",   "Constructor de escenas", "System", ["Scene"], ["scene","template","data-structure","free"], "Define una escena con variables para usar en templates de Json2Video. Cada instancia representa un slide/escena."),
         new("static-text",     "Texto estatico",      "System", ["StaticText"], ["text","resource","static","free"], "Texto plano como recurso del pipeline. Ideal para valores fijos, prompts o datos que no cambian entre ejecuciones."),
+        new("start",           "Inicio",              "System", ["Start"], ["start","entry-point","free"], "Punto de entrada del pipeline. Captura el prompt del usuario al ejecutar."),
     ];
 
     // ── Available types per provider ──
@@ -1573,6 +1575,7 @@ else if (!_loading)
                 "FileUpload"    => "Carga de archivos",
                 "Scene"         => "Constructor de escena",
                 "StaticText"    => "Texto estatico",
+                "Start"         => "Inicio del pipeline",
                 _               => t
             }))
             .ToList();

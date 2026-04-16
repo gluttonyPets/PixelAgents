@@ -292,6 +292,10 @@ public static class ModulePortRegistry
                 ports.Add(new("output_text", "Texto", PortDataType.Text, isInput: false));
                 break;
 
+            case "Start":
+                ports.Add(new("output_prompt", "Prompt", PortDataType.Text, isInput: false));
+                break;
+
             default:
                 ports.Add(new("input_data", "Entrada", PortDataType.Any, isInput: true));
                 ports.Add(new("output_data", "Salida", PortDataType.Any, isInput: false));
@@ -329,6 +333,7 @@ public static class ModulePortRegistry
         "FileUpload" => "bi-paperclip",
         "Scene" => "bi-layers",
         "StaticText" => "bi-fonts",
+        "Start" => "bi-play-circle",
         _ => "bi-gear"
     };
 
@@ -350,6 +355,7 @@ public static class ModulePortRegistry
         "FileUpload" => "#607d8b",
         "Scene" => "#ff7043",
         "StaticText" => "#5c6bc0",
+        "Start" => "#43a047",
         _ => "#888"
     };
 }

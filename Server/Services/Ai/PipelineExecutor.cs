@@ -12,6 +12,7 @@ using Server.Services.Canva;
 
 namespace Server.Services.Ai
 {
+    [Obsolete("Use GraphPipelineExecutor instead. This class is kept for reference/rollback only.")]
     public class PipelineExecutor : IPipelineExecutor
     {
         private readonly IAiProviderRegistry _registry;
