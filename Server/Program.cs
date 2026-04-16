@@ -915,15 +915,26 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
                     field = "file";
             }
 
+            // Pass-through modules (StaticText, FileUpload) are not execution steps — they are
+            // value providers. Use explicit "step" source so resolution doesn't pick them up
+            // via "previous" ordering and so downstream modules always find the correct input.
+            var isUpstreamPassThru = upModule?.AiModule?.ModuleType is "StaticText" or "FileUpload";
+
             // Include outputKey when connected from a specific output port
             // (e.g. output_image_1 from Image module, output_X from Orchestrator, etc.)
             if (primaryConn is not null && !string.IsNullOrEmpty(primaryConn.FromPort) && primaryConn.FromPort.StartsWith("output_"))
             {
-                pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\",\"outputKey\":\"{primaryConn.FromPort}\"}}";
+                if (isUpstreamPassThru)
+                    pm.InputMapping = $"{{\"source\":\"step\",\"stepOrder\":{upModule!.StepOrder},\"field\":\"{field}\",\"outputKey\":\"{primaryConn.FromPort}\"}}";
+                else
+                    pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\",\"outputKey\":\"{primaryConn.FromPort}\"}}";
             }
             else
             {
-                pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\"}}";
+                if (isUpstreamPassThru)
+                    pm.InputMapping = $"{{\"source\":\"step\",\"stepOrder\":{upModule!.StepOrder},\"field\":\"{field}\"}}";
+                else
+                    pm.InputMapping = $"{{\"source\":\"previous\",\"field\":\"{field}\"}}";
             }
         }
 

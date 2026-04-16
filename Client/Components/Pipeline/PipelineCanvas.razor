@@ -1397,10 +1397,19 @@
             await UpdateExecutionVisualization();
     }
 
-    /// <summary>Compute topological execution order from connections (1-based).</summary>
+    /// <summary>Pass-through modules are value providers, not execution steps.</summary>
+    private static readonly HashSet<string> PassThroughModuleTypes = new() { "StaticText", "FileUpload" };
+
+    private static bool IsPassThroughModule(string? moduleType) =>
+        moduleType is not null && PassThroughModuleTypes.Contains(moduleType);
+
+    /// <summary>Compute topological execution order from connections (1-based).
+    /// Pass-through modules (StaticText, FileUpload) are excluded — they are value providers,
+    /// not numbered execution steps.</summary>
     private Dictionary<Guid, int> ComputeExecutionOrder()
     {
         var moduleIds = Modules.Select(m => m.Id).ToHashSet();
+        var passThroughIds = Modules.Where(m => IsPassThroughModule(m.ModuleType)).Select(m => m.Id).ToHashSet();
         var inDegree = moduleIds.ToDictionary(id => id, _ => 0);
         var adj = moduleIds.ToDictionary(id => id, _ => new List<Guid>());
 
@@ -1421,6 +1430,17 @@
         while (queue.Count > 0)
         {
             var node = queue.Dequeue();
+            // Pass-through modules don't get a step number
+            if (passThroughIds.Contains(node))
+            {
+                // Still propagate edges so downstream modules are reachable
+                foreach (var next in adj[node])
+                {
+                    inDegree[next]--;
+                    if (inDegree[next] == 0) queue.Enqueue(next);
+                }
+                continue;
+            }
             order[node] = step++;
             foreach (var next in adj[node])
             {
@@ -2081,31 +2101,48 @@
 
     private string GetStepLabel(ProjectModuleResponse pm)
     {
-        var branches = Modules.Where(m => m.BranchId != "main")
+        // Pass-through modules don't get a step label
+        if (IsPassThroughModule(pm.ModuleType)) return "";
+
+        // Filter out pass-through modules for label computation
+        var labelModules = Modules.Where(m => !IsPassThroughModule(m.ModuleType)).ToList();
+
+        var branches = labelModules.Where(m => m.BranchId != "main")
             .Select(m => m.BranchFromStep).Where(f => f.HasValue).Select(f => f!.Value).Distinct().ToList();
-        if (branches.Count == 0) return pm.StepOrder.ToString();
+        if (branches.Count == 0)
+        {
+            var mainSteps = labelModules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList();
+            var pos = mainSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
+            return (pos + 1).ToString();
+        }
 
         var maxFork = branches.Max();
         if (pm.BranchId == "main" && pm.StepOrder <= maxFork)
-            return pm.StepOrder.ToString();
+        {
+            var preFork = labelModules.Where(m => m.BranchId == "main" && m.StepOrder <= maxFork)
+                .OrderBy(m => m.StepOrder).ToList();
+            var pos = preFork.FindIndex(m => m.StepOrder == pm.StepOrder);
+            return (pos + 1).ToString();
+        }
 
         if (pm.BranchId == "main")
         {
-            var mainPostFork = Modules.Where(m => m.BranchId == "main" && m.StepOrder > maxFork)
+            var mainPostFork = labelModules.Where(m => m.BranchId == "main" && m.StepOrder > maxFork)
                 .OrderBy(m => m.StepOrder).ToList();
             var idx = mainPostFork.FindIndex(m => m.StepOrder == pm.StepOrder);
-            return $"A{maxFork + 1 + idx}";
+            var preForkCount = labelModules.Count(m => m.BranchId == "main" && m.StepOrder <= maxFork);
+            return $"A{preForkCount + 1 + idx}";
         }
 
-        var branchIds = Modules.Where(m => m.BranchId != "main")
+        var branchIds = labelModules.Where(m => m.BranchId != "main")
             .GroupBy(m => m.BranchId).Select(g => g.Key).OrderBy(b => b).ToList();
         var branchIdx = branchIds.IndexOf(pm.BranchId);
         var letter = (char)('B' + branchIdx);
-        var forkStep = pm.BranchFromStep ?? maxFork;
-        var branchSteps = Modules.Where(m => m.BranchId == pm.BranchId)
+        var preForkMainCount = labelModules.Count(m => m.BranchId == "main" && m.StepOrder <= maxFork);
+        var branchSteps = labelModules.Where(m => m.BranchId == pm.BranchId)
             .OrderBy(m => m.StepOrder).ToList();
         var bIdx = branchSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
-        return $"{letter}{forkStep + 1 + bIdx}";
+        return $"{letter}{preForkMainCount + 1 + bIdx}";
     }
 
     private async Task HandleInputMappingChange(Guid moduleId, string? mapping)
