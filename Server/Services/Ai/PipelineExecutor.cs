@@ -1133,7 +1133,7 @@ namespace Server.Services.Ai
 
                         if (isTemplateMode)
                         {
-                            var serverBase = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+                            var tplServerBase = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/');
                             var templateVars = new Dictionary<string, object>();
 
                             if (config.TryGetValue("templateInputs", out var tiVal))
@@ -1186,7 +1186,7 @@ namespace Server.Services.Ai
                                                                 val = srcOutput.Items[idx].Content;
                                                         }
                                                         if (val is null && srcOutput.Files.Count > 0 && srcOutput.Files[0].FileId != Guid.Empty)
-                                                            val = $"{serverBase}/api/public/files/{tenantDbName}/{executionId}/{srcOutput.Files[0].FileId}/{srcOutput.Files[0].FileName}";
+                                                            val = $"{tplServerBase}/api/public/files/{tenantDbName}/{executionId}/{srcOutput.Files[0].FileId}/{srcOutput.Files[0].FileName}";
                                                         if (val is null && srcOutput.Type != "orchestrator" && !string.IsNullOrWhiteSpace(srcOutput.Content))
                                                             val = srcOutput.Content;
                                                         if (val is not null)
@@ -5743,7 +5743,6 @@ Datos de la ejecucion:
                     var bProvider = _registry.GetProvider(bpm.AiModule.ProviderType)
                         ?? throw new InvalidOperationException($"[{branchId}] Paso {bpm.StepOrder}: Proveedor no disponible");
 
-                    var bConfig = MergeConfiguration(bpm.AiModule.Configuration, bpm.Configuration);
                     var bIsTemplate = bpm.AiModule.ModuleType == "VideoEdit"
                         && bConfig.TryGetValue("useTemplate", out var bUtVal)
                         && (bUtVal is true
