@@ -18,7 +18,7 @@ public class ImageModuleHandler : IModuleHandler
         var prompt = ctx.GetInputText("input_prompt");
         if (string.IsNullOrWhiteSpace(prompt))
             prompt = ctx.GetConfig("imagePrompt", "");
-        if (string.IsNullOrWhiteSpace(prompt))
+        if (string.IsNullOrWhiteSpace(prompt) && string.IsNullOrWhiteSpace(ctx.GetConfig("systemPrompt", "")))
             return ModuleResult.Failed("Sin prompt de entrada");
 
         var module = ctx.Node.AiModule;
