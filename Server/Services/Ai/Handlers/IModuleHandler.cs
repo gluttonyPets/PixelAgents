@@ -1,0 +1,119 @@
+using Server.Data;
+using Server.Models;
+
+namespace Server.Services.Ai.Handlers;
+
+public interface IModuleHandler
+{
+    string ModuleType { get; }
+    Task<ModuleResult> ExecuteAsync(ModuleExecutionContext ctx);
+}
+
+public enum ModuleResultStatus { Completed, Failed, Paused }
+
+public class ModuleResult
+{
+    public ModuleResultStatus Status { get; set; }
+    public StepOutput? Output { get; set; }
+    public string? Error { get; set; }
+    public decimal Cost { get; set; }
+    public string? PauseReason { get; set; }
+
+    /// <summary>Files produced by this module (images, videos, etc.) to be persisted by the executor.</summary>
+    public List<ProducedFile> ProducedFiles { get; set; } = [];
+
+    public static ModuleResult Completed(StepOutput output, decimal cost = 0m, List<ProducedFile>? files = null) =>
+        new() { Status = ModuleResultStatus.Completed, Output = output, Cost = cost, ProducedFiles = files ?? [] };
+
+    public static ModuleResult Failed(string error) =>
+        new() { Status = ModuleResultStatus.Failed, Error = error };
+
+    public static ModuleResult Paused(string reason, StepOutput? output = null) =>
+        new() { Status = ModuleResultStatus.Paused, PauseReason = reason, Output = output };
+}
+
+/// <summary>A file produced by a module handler, to be saved to the workspace by the executor.</summary>
+public class ProducedFile
+{
+    public byte[] Data { get; set; } = [];
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = "application/octet-stream";
+}
+
+/// <summary>Everything a module handler needs to execute.</summary>
+public class ModuleExecutionContext
+{
+    public required ModuleNode Node { get; init; }
+    public required ExecutionGraph Graph { get; init; }
+    public required ProjectExecution Execution { get; init; }
+    public required Project Project { get; init; }
+    public required string TenantDbName { get; init; }
+    public required string WorkspacePath { get; init; }
+    public string? PreviousSummaryContext { get; init; }
+    public CancellationToken CancellationToken { get; init; }
+
+    /// <summary>Pre-resolved input data grouped by port ID.</summary>
+    public Dictionary<string, List<PortData>> InputsByPort { get; init; } = [];
+
+    /// <summary>Merged configuration from AiModule + ProjectModule.</summary>
+    public Dictionary<string, object> Config { get; init; } = [];
+
+    /// <summary>Files attached to the AiModule (for FileUpload modules).</summary>
+    public List<ModuleFileInfo> ModuleFiles { get; init; } = [];
+
+    /// <summary>Base path for media storage.</summary>
+    public required string MediaRoot { get; init; }
+
+    /// <summary>Get text content from a specific input port.</summary>
+    public string GetInputText(string portId, string fallback = "")
+    {
+        if (!InputsByPort.TryGetValue(portId, out var dataList) || dataList.Count == 0)
+            return fallback;
+        return dataList[0].TextContent ?? fallback;
+    }
+
+    /// <summary>Get all text content from a port (for multi-connection ports).</summary>
+    public List<string> GetAllInputTexts(string portId)
+    {
+        if (!InputsByPort.TryGetValue(portId, out var dataList))
+            return [];
+        return dataList.Where(d => d.TextContent is not null).Select(d => d.TextContent!).ToList();
+    }
+
+    /// <summary>Get files from a specific input port.</summary>
+    public List<OutputFile> GetInputFiles(string portId)
+    {
+        if (!InputsByPort.TryGetValue(portId, out var dataList))
+            return [];
+        return dataList.Where(d => d.Files is not null).SelectMany(d => d.Files!).ToList();
+    }
+
+    /// <summary>Get a config value as string.</summary>
+    public string GetConfig(string key, string fallback = "")
+    {
+        if (!Config.TryGetValue(key, out var val)) return fallback;
+        if (val is System.Text.Json.JsonElement je)
+            return je.ValueKind == System.Text.Json.JsonValueKind.String ? je.GetString() ?? fallback : je.GetRawText();
+        return val?.ToString() ?? fallback;
+    }
+
+    /// <summary>Get a config value as bool.</summary>
+    public bool GetConfigBool(string key, bool fallback = false)
+    {
+        if (!Config.TryGetValue(key, out var val)) return fallback;
+        if (val is bool b) return b;
+        if (val is System.Text.Json.JsonElement je)
+            return je.ValueKind == System.Text.Json.JsonValueKind.True;
+        return bool.TryParse(val?.ToString(), out var parsed) ? parsed : fallback;
+    }
+}
+
+/// <summary>Info about a file attached to an AiModule (for FileUpload).</summary>
+public class ModuleFileInfo
+{
+    public Guid Id { get; set; }
+    public string FileName { get; set; } = "";
+    public string ContentType { get; set; } = "";
+    public string FilePath { get; set; } = "";
+    public long FileSize { get; set; }
+}
