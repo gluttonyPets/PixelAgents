@@ -539,7 +539,24 @@ public class GraphPipelineExecutor : IPipelineExecutor
             await PersistProducedFilesAsync(node, result, db, workspacePath, filePaths, ct);
             step.Status = result.PauseReason ?? "Paused";
             step.OutputData = JsonSerializer.Serialize(node.Output, JsonOptions);
-            await SendInteractionIfNeededAsync(node, result, project, execution, tenantDbName, ct);
+            try
+            {
+                await SendInteractionIfNeededAsync(node, result, project, execution, tenantDbName, workspacePath, filePaths, ct);
+            }
+            catch (Exception ex)
+            {
+                node.Status = NodeStatus.Failed;
+                step.Status = "Failed";
+                step.ErrorMessage = $"Error enviando interaccion: {ex.Message}";
+                step.CompletedAt = DateTime.UtcNow;
+                graph.CascadeFailure(node);
+                await db.SaveChangesAsync(ct);
+                await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Failed");
+                await _logger.LogAsync(project.Id, execution.Id, "error", step.ErrorMessage,
+                    node.ProjectModule.StepOrder,
+                    node.ProjectModule.StepName ?? node.AiModule.Name);
+                return;
+            }
             await db.SaveChangesAsync(ct);
             await _logger.LogStepProgressAsync(project.Id, node.ModuleId, step.Status);
             return;
@@ -685,12 +702,27 @@ public class GraphPipelineExecutor : IPipelineExecutor
         Project project,
         ProjectExecution execution,
         string tenantDbName,
+        string workspacePath,
+        Dictionary<Guid, string> filePaths,
         CancellationToken ct)
     {
         if (node.ModuleType != "Interaction")
             return;
 
         var message = result.Output?.Content ?? "";
+        if (string.IsNullOrWhiteSpace(message))
+            message = node.ProjectModule.StepName ?? node.AiModule.Name ?? "Confirmar";
+
+        var messageType = result.Output?.Metadata is { } meta && meta.TryGetValue("messageType", out var mtVal)
+            ? mtVal?.ToString() ?? "combined"
+            : "combined";
+        var sendImages = messageType is "image" or "combined";
+        var mediaFiles = sendImages
+            ? (result.Output?.Files ?? new List<OutputFile>())
+                .Where(f => f.ContentType?.StartsWith("image/") == true || f.ContentType?.StartsWith("video/") == true)
+                .ToList()
+            : new List<OutputFile>();
+
         var useTelegram = node.AiModule.ModelName.Equals("telegram", StringComparison.OrdinalIgnoreCase);
 
         if (useTelegram)
@@ -718,7 +750,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
             });
 
             if (!hasActive)
+            {
                 await _telegram.SendTextMessageWithOptionsAsync(config, message, ControlOptions());
+                await SendMediaToTelegramAsync(config, mediaFiles, workspacePath, filePaths);
+            }
 
             await _coreDb.SaveChangesAsync(ct);
             return;
@@ -1027,6 +1062,36 @@ public class GraphPipelineExecutor : IPipelineExecutor
         }
 
         return candidate;
+    }
+
+    private async Task SendMediaToTelegramAsync(
+        TelegramConfig config,
+        List<OutputFile> files,
+        string workspacePath,
+        Dictionary<Guid, string> filePaths)
+    {
+        foreach (var file in files)
+        {
+            var path = ResolveMediaPath(file, workspacePath, filePaths);
+            if (path is null || !File.Exists(path))
+                continue;
+
+            var bytes = await File.ReadAllBytesAsync(path);
+            var isVideo = file.ContentType?.StartsWith("video/") == true;
+            if (isVideo)
+                await _telegram.SendVideoAsync(config, bytes, file.FileName);
+            else
+                await _telegram.SendPhotoAsync(config, bytes, file.FileName);
+        }
+    }
+
+    private static string? ResolveMediaPath(OutputFile file, string workspacePath, Dictionary<Guid, string> filePaths)
+    {
+        if (file.FileId != Guid.Empty && filePaths.TryGetValue(file.FileId, out var relative))
+            return Path.Combine(workspacePath, relative);
+        if (Path.IsPathRooted(file.FileName))
+            return file.FileName;
+        return Path.Combine(workspacePath, file.FileName);
     }
 
     private static List<(string Label, string CallbackData)> ControlOptions() =>
