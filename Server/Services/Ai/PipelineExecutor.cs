@@ -6088,7 +6088,7 @@ Datos de la ejecucion:
                                                                 resolvedVal = bSrcOutput.Items[idx].Content;
                                                         }
                                                         if (resolvedVal is null && bSrcOutput.Files.Count > 0 && bSrcOutput.Files[0].FileId != Guid.Empty)
-                                                            resolvedVal = $"{bTplServerBase}/api/public/files/{tenantDbName}/{executionId}/{bSrcOutput.Files[0].FileId}/{bSrcOutput.Files[0].FileName}";
+                                                            resolvedVal = $"{bTplServerBase}/api/public/files/{tenantDbName}/{execution.Id}/{bSrcOutput.Files[0].FileId}/{bSrcOutput.Files[0].FileName}";
                                                         if (resolvedVal is null && bSrcOutput.Type != "orchestrator" && !string.IsNullOrWhiteSpace(bSrcOutput.Content))
                                                             resolvedVal = bSrcOutput.Content;
                                                         if (resolvedVal is not null)
@@ -6130,7 +6130,7 @@ Datos de la ejecucion:
                                 ["variables"] = bTemplateVars
                             });
 
-                            await _logger.LogAsync(projectId, executionId, "info",
+                            await _logger.LogAsync(project.Id, execution.Id, "info",
                                 $"[{branchId}] VideoEdit template: {bTemplateVars.Count} variables, template='{bTemplateId}'",
                                 bpm.StepOrder, bStepName);
 
@@ -6737,6 +6737,20 @@ Datos de la ejecucion:
                 "Pipeline abortado por el usuario desde Telegram");
 
             return execution;
+        }
+
+        public async Task<ProjectExecution> RetryFromModuleAsync(
+            Guid executionId, Guid moduleId, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default)
+        {
+            var stepOrder = await db.ProjectModules
+                .Where(pm => pm.Id == moduleId)
+                .Select(pm => (int?)pm.StepOrder)
+                .FirstOrDefaultAsync(ct);
+
+            if (stepOrder is null)
+                throw new InvalidOperationException("Modulo no encontrado para reintento");
+
+            return await RetryFromStepAsync(executionId, stepOrder.Value, comment, db, tenantDbName, ct);
         }
 
         public async Task<ProjectExecution> RetryFromStepAsync(

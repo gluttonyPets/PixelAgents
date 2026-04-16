@@ -42,7 +42,11 @@ public class OrchestratorModuleHandler : IModuleHandler
             return ModuleResult.Failed("Orquestador sin salidas configuradas");
 
         // Build system prompt with output schema
-        var systemPrompt = OrchestratorSchemaHelper.BuildFixedOutputsSystemPrompt(outputs, ctx.GetConfig("systemPrompt", ""));
+        var extraPrompt = ctx.GetConfig("systemPrompt", "");
+        var projectContext = string.IsNullOrWhiteSpace(extraPrompt)
+            ? ctx.Project.Context
+            : $"{ctx.Project.Context}\n\n{extraPrompt}";
+        var systemPrompt = OrchestratorSchemaHelper.BuildFixedOutputPrompt(outputs, projectContext);
 
         var config = new Dictionary<string, object>(ctx.Config)
         {
@@ -66,7 +70,13 @@ public class OrchestratorModuleHandler : IModuleHandler
             return ModuleResult.Failed(result.Error ?? "Error en orquestador");
 
         // Parse the structured plan
-        var plan = OrchestratorSchemaHelper.ParseFixedPlan(result.TextOutput ?? "", outputs);
+        var plan = OrchestratorSchemaHelper.ParseFixedPlan(result.TextOutput ?? "");
+        if (plan is null)
+            return ModuleResult.Failed("No se pudo parsear la salida del orquestador");
+
+        var validationErrors = OrchestratorSchemaHelper.ValidateFixedPlan(plan, outputs);
+        if (validationErrors.Count > 0)
+            return ModuleResult.Failed("Salida del orquestador invalida: " + string.Join("; ", validationErrors));
 
         // Build output items
         var items = new List<OutputItem>();

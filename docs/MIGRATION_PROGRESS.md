@@ -1,6 +1,6 @@
 # Progreso de Migración: Graph Pipeline Executor
 
-## Estado Actual: Fase 1-2 completadas, Fase 3 en progreso
+## Estado Actual: Fase 1-3 completadas, Fase 4 en progreso
 
 ---
 
@@ -53,12 +53,14 @@ Cada handler es autocontenido: recibe `InputsByPort` pre-resuelto, devuelve `Mod
 
 ---
 
-## Fase 3: GraphPipelineExecutor - EN PROGRESO
+## Fase 3: GraphPipelineExecutor - COMPLETADA
 
-### Lo que falta crear:
+### Archivos creados/modificados:
 | Archivo | Descripcion | Estado |
 |---------|-------------|--------|
-| `Server/Services/Ai/GraphPipelineExecutor.cs` | Bucle principal con Task.WhenAny | **Pendiente** |
+| `Server/Services/Ai/GraphPipelineExecutor.cs` | Bucle principal con Task.WhenAny, persistencia de StepExecution/ExecutionFile, pause/resume basico, retry por moduleId | Completado |
+| `Server/Services/Ai/Handlers/IModuleHandler.cs` | Helpers para resolver archivos producidos por modulos upstream | Completado |
+| `Server/Services/Ai/PausedGraphState.cs` | Captura tambien output del nodo pausado para poder reanudar | Completado |
 
 ### Algoritmo del executor:
 ```
@@ -69,14 +71,20 @@ Cada handler es autocontenido: recibe `InputsByPort` pre-resuelto, devuelve `Mod
 5. Finalizar cuando todo sea terminal
 ```
 
+### Notas:
+- `GraphPipelineExecutor` implementa `IPipelineExecutor`, pero aun NO esta registrado como implementacion principal. En `Program.cs` se registro como servicio directo para poder probarlo sin sustituir `PipelineExecutor`.
+- Los handlers quedaron registrados por DI como `IModuleHandler`.
+- Se corrigieron errores de compilacion de handlers extraidos (`Image`, `Audio`, `Orchestrator`) y referencias rotas en el executor legacy.
+- `dotnet build Server/Server.csproj` pasa correctamente.
+
 ---
 
-## Fase 4: Integracion - PENDIENTE
+## Fase 4: Integracion - EN PROGRESO
 
 | Tarea | Descripcion | Estado |
 |-------|-------------|--------|
-| Actualizar `IPipelineExecutor.cs` | Anadir `RetryFromModuleAsync`, simplificar resume | Pendiente |
-| Registrar en `Program.cs` | DI de handlers + executor, actualizar endpoints | Pendiente |
+| Actualizar `IPipelineExecutor.cs` | Anadir `RetryFromModuleAsync`, simplificar resume | Parcial: `RetryFromModuleAsync` anadido; metodos legacy siguen por compatibilidad |
+| Registrar en `Program.cs` | DI de handlers + executor, actualizar endpoints | Parcial: handlers + `GraphPipelineExecutor` registrados; `IPipelineExecutor` sigue apuntando a `PipelineExecutor` |
 | Simplificar save-graph | Eliminar InputMapping, branches, sceneInputs, etc. | Pendiente |
 | Modulo Start (cliente) | Anadir a ModulePortRegistry, catalogo, paleta | Pendiente |
 
@@ -96,7 +104,7 @@ Cada handler es autocontenido: recibe `InputsByPort` pre-resuelto, devuelve `Mod
 
 | Metrica | Antes | Despues (estimado) |
 |---------|-------|-------------------|
-| Archivo principal | PipelineExecutor.cs (7564 lineas) | GraphPipelineExecutor.cs (~400 lineas) |
+| Archivo principal | PipelineExecutor.cs (7564 lineas) | GraphPipelineExecutor.cs (~965 lineas, primera version funcional) |
 | Handlers | Todo en 1 archivo, duplicado 5x | 18 archivos, 30-160 lineas cada uno |
 | Save-graph | ~400 lineas logica | ~80 lineas |
 | Total codigo nuevo | - | ~2200 lineas en 25 archivos |
