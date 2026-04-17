@@ -212,7 +212,7 @@ public class ExecutionGraph
             "Orchestrator" => ("output_plan", "text"),
             "Scene" => ("output_scene", "scene"),
             "StaticText" => ("output_text", "text"),
-            "FileUpload" => ("output_file", "file"),
+            "FileUpload" => ("output_file", "any"),
             "Start" => ("output_prompt", "text"),
             "Interaction" => ("output_response", "text"),
             "Design" => ("output_file", "file"),

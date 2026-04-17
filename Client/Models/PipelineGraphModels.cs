@@ -272,7 +272,7 @@ public static class ModulePortRegistry
                 break;
 
             case "FileUpload":
-                ports.Add(new("output_file", "Archivo", PortDataType.File, isInput: false));
+                ports.Add(new("output_file", "Archivo", PortDataType.Any, isInput: false));
                 break;
 
             case "Scene":
