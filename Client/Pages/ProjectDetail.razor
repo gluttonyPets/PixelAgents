@@ -1,5 +1,6 @@
 @page "/projects/{ProjectId:guid}"
 @using System.Text.Json
+@using System.Text.Encodings.Web
 @using Client.Models
 @using Client.Components.Pipeline
 @using Microsoft.AspNetCore.SignalR.Client
@@ -1837,6 +1838,12 @@ else
 @code {
     [Parameter] public Guid ProjectId { get; set; }
 
+    private static readonly JsonSerializerOptions PrettyJsonOptions = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     private ProjectDetailResponse? _project;
     private List<AiModuleResponse> _modules = [];
     private List<ExecutionResponse> _executions = [];
@@ -3660,7 +3667,7 @@ else
         try
         {
             using var doc = JsonDocument.Parse(raw);
-            return JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+            return JsonSerializer.Serialize(doc.RootElement, PrettyJsonOptions);
         }
         catch { return raw; }
     }
@@ -3735,7 +3742,7 @@ else
             }
 
             // Pretty-print the raw JSON for fallback/non-AI steps
-            var rawJson = JsonSerializer.Serialize(doc, new JsonSerializerOptions { WriteIndented = true });
+            var rawJson = JsonSerializer.Serialize(doc.RootElement, PrettyJsonOptions);
 
             return new ParsedInputData(systemPrompt, projectContext, prompts, rawJson);
         }

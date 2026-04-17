@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Server.Models;
 
 namespace Server.Services.Ai
@@ -8,6 +9,10 @@ namespace Server.Services.Ai
     public class Json2VideoProvider : IAiProvider
     {
         private const string BaseUrl = "https://api.json2video.com/v2";
+        private static readonly JsonSerializerOptions PayloadJsonOptions = new(AiJson.Compact)
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
 
         public string ProviderType => "Json2Video";
         public IEnumerable<string> SupportedModuleTypes => new[] { "VideoEdit" };
@@ -51,7 +56,7 @@ namespace Server.Services.Ai
                     }
                 };
 
-                var json = JsonSerializer.Serialize(testPayload);
+                var json = JsonSerializer.Serialize(testPayload, AiJson.Compact);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
                 var resp = await http.PostAsync($"{BaseUrl}/movies", content);
 
@@ -134,10 +139,7 @@ namespace Server.Services.Ai
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(15) };
             http.DefaultRequestHeaders.Add("x-api-key", context.ApiKey);
 
-            var jsonPayload = JsonSerializer.Serialize(moviePayload, new JsonSerializerOptions
-            {
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-            });
+            var jsonPayload = JsonSerializer.Serialize(moviePayload, PayloadJsonOptions);
 
             // DEBUG: log the final payload for troubleshooting
             Console.WriteLine($"[Json2Video] Final payload ({jsonPayload.Length} chars): {jsonPayload[..Math.Min(jsonPayload.Length, 2000)]}");

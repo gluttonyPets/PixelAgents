@@ -49,7 +49,7 @@ public class SceneModuleHandler : IModuleHandler
             }
         }
 
-        var sceneJson = JsonSerializer.Serialize(sceneObj);
+        var sceneJson = JsonSerializer.Serialize(sceneObj, AiJson.Compact);
 
         var output = new StepOutput
         {

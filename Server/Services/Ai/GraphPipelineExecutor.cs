@@ -29,11 +29,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
     private readonly string _mediaRoot;
     private IExecutionLogger _logger;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        WriteIndented = false,
-    };
+    private static readonly JsonSerializerOptions JsonOptions = AiJson.Compact;
 
     public GraphPipelineExecutor(
         IEnumerable<IModuleHandler> handlers,
@@ -1436,7 +1432,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             p => p.ReceivedData.Select(d => new
             {
                 d.DataType,
-                d.TextContent,
+                TextContent = SimplifyPortTextContent(d),
                 Files = d.Files?.Select(f => new { f.FileId, f.FileName, f.ContentType, f.FileSize }).ToList(),
                 d.SourcePortId,
             }).ToList());
@@ -1464,8 +1460,21 @@ public class GraphPipelineExecutor : IPipelineExecutor
     private static object? SimplifyConfigValue(object? value)
     {
         if (value is JsonElement je)
-            return je.ValueKind == JsonValueKind.String ? je.GetString() : JsonSerializer.Deserialize<object>(je.GetRawText());
+            return je.ValueKind == JsonValueKind.String ? je.GetString() : JsonSerializer.Deserialize<object>(je.GetRawText(), JsonOptions);
         return value;
+    }
+
+    private static object? SimplifyPortTextContent(PortData data)
+    {
+        if (string.IsNullOrWhiteSpace(data.TextContent))
+            return data.TextContent;
+
+        if (!string.Equals(data.DataType, "scene", StringComparison.OrdinalIgnoreCase))
+            return data.TextContent;
+
+        return AiJson.TryParseJsonValue(data.TextContent, out var parsed)
+            ? parsed
+            : data.TextContent;
     }
 
     private static bool IsSceneModule(ModuleNode node) =>

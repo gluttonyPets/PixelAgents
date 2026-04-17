@@ -95,12 +95,11 @@ public class VideoEditModuleHandler : IModuleHandler
                 if (data.DataType == "scene" && !string.IsNullOrWhiteSpace(data.TextContent))
                 {
                     // Single scene -> parse as object
-                    try
+                    if (AiJson.TryParseJsonValue(data.TextContent, out var sceneObj) && sceneObj is not null)
                     {
-                        var sceneObj = JsonSerializer.Deserialize<Dictionary<string, object>>(data.TextContent);
-                        if (sceneObj is not null) { templateVars[varName] = sceneObj; continue; }
+                        templateVars[varName] = sceneObj;
+                        continue;
                     }
-                    catch { /* fall through */ }
                 }
                 templateVars[varName] = ResolveTemplateValue(ctx, data);
             }
@@ -112,12 +111,11 @@ public class VideoEditModuleHandler : IModuleHandler
                 {
                     if (data.DataType == "scene" && !string.IsNullOrWhiteSpace(data.TextContent))
                     {
-                        try
+                        if (AiJson.TryParseJsonValue(data.TextContent, out var sceneObj) && sceneObj is not null)
                         {
-                            var sceneObj = JsonSerializer.Deserialize<Dictionary<string, object>>(data.TextContent);
-                            if (sceneObj is not null) { items.Add(sceneObj); continue; }
+                            items.Add(sceneObj);
+                            continue;
                         }
-                        catch { /* fall through */ }
                     }
                     var value = ResolveTemplateValue(ctx, data);
                     if (!string.IsNullOrWhiteSpace(value))
@@ -148,7 +146,7 @@ public class VideoEditModuleHandler : IModuleHandler
         {
             ["template"] = templateId,
             ["variables"] = templateVars,
-        });
+        }, AiJson.Compact);
     }
 
     private static string ResolveTemplateValue(ModuleExecutionContext ctx, PortData data)
