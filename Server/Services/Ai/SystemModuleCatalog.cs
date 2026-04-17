@@ -12,14 +12,6 @@ public sealed record SystemModuleDefinition(
 
 public static class SystemModuleCatalog
 {
-    private static readonly HashSet<string> PreservedSystemModuleTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "FileUpload",
-        "StaticText",
-        "Checkpoint",
-        "Start",
-    };
-
     public static readonly IReadOnlyList<SystemModuleDefinition> DefaultModules =
     [
         new(
@@ -58,8 +50,6 @@ public static class SystemModuleCatalog
     {
         foreach (var definition in DefaultModules)
             await EnsureModuleAsync(db, definition, ct);
-
-        await DeleteLegacySystemModulesAsync(db, ct);
     }
 
     public static async Task<AiModule> EnsureModuleAsync(
@@ -100,58 +90,5 @@ public static class SystemModuleCatalog
         db.AiModules.Add(module);
         await db.SaveChangesAsync(ct);
         return module;
-    }
-
-    private static async Task DeleteLegacySystemModulesAsync(UserDbContext db, CancellationToken ct)
-    {
-        var systemModules = await db.AiModules
-            .Where(m => m.ProviderType == "System")
-            .OrderBy(m => m.CreatedAt)
-            .ToListAsync(ct);
-
-        var modulesToDelete = systemModules
-            .Where(m => !PreservedSystemModuleTypes.Contains(m.ModuleType))
-            .ToList();
-
-        foreach (var moduleType in DefaultModules.Select(d => d.ModuleType))
-        {
-            var modulesOfType = systemModules
-                .Where(m => string.Equals(m.ModuleType, moduleType, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(m => m.CreatedAt)
-                .ToList();
-
-            if (modulesOfType.Count <= 1)
-                continue;
-
-            var keep = modulesOfType.First();
-            modulesToDelete.AddRange(modulesOfType.Where(m => m.Id != keep.Id));
-        }
-
-        modulesToDelete = modulesToDelete
-            .GroupBy(m => m.Id)
-            .Select(g => g.First())
-            .ToList();
-
-        if (modulesToDelete.Count == 0)
-            return;
-
-        var moduleIds = modulesToDelete.Select(m => m.Id).ToList();
-        var projectModuleIds = await db.ProjectModules
-            .Where(pm => moduleIds.Contains(pm.AiModuleId))
-            .Select(pm => pm.Id)
-            .ToListAsync(ct);
-
-        if (projectModuleIds.Count > 0)
-        {
-            var oldSteps = await db.StepExecutions
-                .Where(se => projectModuleIds.Contains(se.ProjectModuleId))
-                .ToListAsync(ct);
-
-            if (oldSteps.Count > 0)
-                db.StepExecutions.RemoveRange(oldSteps);
-        }
-
-        db.AiModules.RemoveRange(modulesToDelete);
-        await db.SaveChangesAsync(ct);
     }
 }

@@ -467,6 +467,14 @@ app.MapGet("/api/modules", async (
             m.Configuration, m.IsEnabled, m.CreatedAt, m.UpdatedAt))
         .ToListAsync();
 
+    modules = modules
+        .Where(m => !(m.ProviderType == "System" && m.ModuleType == "Scene"))
+        .GroupBy(m => m.ProviderType == "System" && m.ModuleType is "FileUpload" or "StaticText"
+            ? $"System:{m.ModuleType}"
+            : m.Id.ToString())
+        .Select(g => g.OrderBy(m => m.CreatedAt).First())
+        .ToList();
+
     // Inject built-in Checkpoint module if not already present
     if ((providerType is null || providerType == "System") && (moduleType is null || moduleType == "Checkpoint"))
     {
@@ -793,8 +801,6 @@ app.MapGet("/api/projects/{id}", async (
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
-
-    await SystemModuleCatalog.EnsureDefaultModulesAsync(db);
 
     var project = await db.Projects
         .Include(p => p.ProjectModules.OrderBy(pm => pm.StepOrder))
@@ -1245,8 +1251,7 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     var module = await db.AiModules.FindAsync(req.AiModuleId);
     if (module is null) return Results.BadRequest(new { error = "Modulo no encontrado" });
     if (string.Equals(module.ProviderType, "System", StringComparison.OrdinalIgnoreCase)
-        && module.ModuleType != "Start"
-        && !SystemModuleCatalog.TryGetDefinition(module.ProviderType, module.ModuleType, out _))
+        && module.ModuleType == "Scene")
         return Results.BadRequest(new { error = "Los modulos de recursos solo pueden ser Archivos o Texto plano." });
 
     // Prevent adding a second Start module
