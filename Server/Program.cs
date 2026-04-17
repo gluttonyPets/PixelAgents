@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Server;
@@ -10,6 +11,17 @@ using Server.Services.Ai.Handlers;
 using Server.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
+const long MaxModuleUploadSize = 512L * 1024 * 1024;
+
+builder.WebHost.ConfigureKestrel(opt =>
+{
+    opt.Limits.MaxRequestBodySize = MaxModuleUploadSize;
+});
+
+builder.Services.Configure<FormOptions>(opt =>
+{
+    opt.MultipartBodyLengthLimit = MaxModuleUploadSize;
+});
 
 // --- Database ---
 builder.Services.AddDbContext<CoreDbContext>(opt =>
@@ -395,6 +407,17 @@ app.MapPost("/api/modules", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
+    if (SystemModuleCatalog.TryGetDefinition(req.ProviderType, req.ModuleType, out var systemDefinition))
+    {
+        var builtIn = await SystemModuleCatalog.EnsureModuleAsync(db, systemDefinition);
+        return Results.Ok(new AiModuleResponse(builtIn.Id, builtIn.Name, builtIn.Description,
+            builtIn.ProviderType, builtIn.ModuleType, builtIn.ModelName,
+            builtIn.ApiKeyId, null, builtIn.Configuration, builtIn.IsEnabled,
+            builtIn.CreatedAt, builtIn.UpdatedAt));
+    }
+    if (string.Equals(req.ProviderType, "System", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Los modulos de recursos solo pueden ser Archivos o Texto plano." });
+
     var module = new AiModule
     {
         Id = Guid.NewGuid(),
@@ -426,6 +449,8 @@ app.MapGet("/api/modules", async (
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
+
+    await SystemModuleCatalog.EnsureDefaultModulesAsync(db);
 
     var query = db.AiModules.Include(m => m.ApiKey).AsQueryable();
 
@@ -540,6 +565,8 @@ app.MapDelete("/api/modules/{id}", async (
 
     var m = await db.AiModules.FindAsync(id);
     if (m is null) return Results.NotFound();
+    if (SystemModuleCatalog.TryGetDefinition(m.ProviderType, m.ModuleType, out _))
+        return Results.BadRequest(new { error = "Los modulos de sistema son integrados y no se pueden eliminar." });
 
     db.AiModules.Remove(m);
     await db.SaveChangesAsync();
@@ -561,6 +588,11 @@ app.MapPost("/api/modules/{moduleId}/files", async (
     var form = await ctx.Request.ReadFormAsync();
     var files = form.Files;
     if (files.Count == 0) return Results.BadRequest("No se adjuntaron archivos");
+    foreach (var file in files)
+    {
+        if (file.Length > MaxModuleUploadSize)
+            return Results.BadRequest(new { error = $"El archivo '{file.FileName}' supera el limite de 512 MB." });
+    }
 
     var claims = await um.GetClaimsAsync((await um.GetUserAsync(ctx.User))!);
     var tenantDbName = claims.First(c => c.Type == "db_name").Value;
@@ -572,7 +604,15 @@ app.MapPost("/api/modules/{moduleId}/files", async (
     foreach (var file in files)
     {
         var id = Guid.NewGuid();
-        var ext = Path.GetExtension(file.FileName);
+        var originalName = Path.GetFileName(file.FileName);
+        if (string.IsNullOrWhiteSpace(originalName))
+            originalName = $"{id}.bin";
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType)
+            ? "application/octet-stream"
+            : file.ContentType;
+        if (contentType.Length > 100)
+            contentType = contentType[..100];
+        var ext = Path.GetExtension(originalName);
         var storedName = $"{id}{ext}";
         var fullPath = Path.Combine(storageDir, storedName);
 
@@ -585,8 +625,8 @@ app.MapPost("/api/modules/{moduleId}/files", async (
         {
             Id = id,
             AiModuleId = moduleId,
-            FileName = file.FileName,
-            ContentType = file.ContentType,
+            FileName = originalName,
+            ContentType = contentType,
             FilePath = Path.Combine(tenantDbName, "module-files", moduleId.ToString(), storedName),
             FileSize = file.Length,
             CreatedAt = DateTime.UtcNow
@@ -753,6 +793,8 @@ app.MapGet("/api/projects/{id}", async (
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
+
+    await SystemModuleCatalog.EnsureDefaultModulesAsync(db);
 
     var project = await db.Projects
         .Include(p => p.ProjectModules.OrderBy(pm => pm.StepOrder))
@@ -1202,6 +1244,10 @@ app.MapPost("/api/projects/{projectId}/modules", async (
 
     var module = await db.AiModules.FindAsync(req.AiModuleId);
     if (module is null) return Results.BadRequest(new { error = "Modulo no encontrado" });
+    if (string.Equals(module.ProviderType, "System", StringComparison.OrdinalIgnoreCase)
+        && module.ModuleType != "Start"
+        && !SystemModuleCatalog.TryGetDefinition(module.ProviderType, module.ModuleType, out _))
+        return Results.BadRequest(new { error = "Los modulos de recursos solo pueden ser Archivos o Texto plano." });
 
     // Prevent adding a second Start module
     if (module.ModuleType == "Start")

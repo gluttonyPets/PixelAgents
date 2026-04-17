@@ -24,7 +24,6 @@
             <option value="Canva">Canva</option>
             <option value="Pexels">Pexels (Video gratuito)</option>
             <option value="Json2Video">Json2Video (Edicion de video)</option>
-            <option value="System">Sistema (Utilidades)</option>
         </select>
     </div>
 
@@ -664,29 +663,50 @@
                     <td>@m.Name</td>
                     <td><span class="badge badge-info">@m.ProviderType</span></td>
                     <td>
-                        <select class="select-inline"
-                                value="@m.ModelName"
-                                @onchange="(e) => ChangeModel(m, e)">
-                            @foreach (var model in AllModels.Where(x => x.Provider == m.ProviderType && x.Types.Contains(m.ModuleType)))
-                            {
-                                <option value="@model.Id">@model.DisplayName</option>
-                            }
-                        </select>
+                        @if (m.ProviderType == "System")
+                        {
+                            <span class="text-muted">@m.ModelName</span>
+                        }
+                        else
+                        {
+                            <select class="select-inline"
+                                    value="@m.ModelName"
+                                    @onchange="(e) => ChangeModel(m, e)">
+                                @foreach (var model in AllModels.Where(x => x.Provider == m.ProviderType && x.Types.Contains(m.ModuleType)))
+                                {
+                                    <option value="@model.Id">@model.DisplayName</option>
+                                }
+                            </select>
+                        }
                     </td>
                     <td>
-                        <select class="select-inline"
-                                value="@(m.ApiKeyId?.ToString() ?? "")"
-                                @onchange="(e) => ChangeApiKey(m, e)">
-                            <option value="">-- Sin API Key --</option>
-                            @foreach (var k in _keys.Where(k => k.ProviderType.Equals(m.ProviderType, StringComparison.OrdinalIgnoreCase)))
-                            {
-                                <option value="@k.Id">@k.Name</option>
-                            }
-                        </select>
+                        @if (m.ProviderType == "System")
+                        {
+                            <span class="text-muted">No aplica</span>
+                        }
+                        else
+                        {
+                            <select class="select-inline"
+                                    value="@(m.ApiKeyId?.ToString() ?? "")"
+                                    @onchange="(e) => ChangeApiKey(m, e)">
+                                <option value="">-- Sin API Key --</option>
+                                @foreach (var k in _keys.Where(k => k.ProviderType.Equals(m.ProviderType, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    <option value="@k.Id">@k.Name</option>
+                                }
+                            </select>
+                        }
                     </td>
                     <td style="display: flex; gap: 0.25rem;">
                         <button class="btn btn-sm" @onclick="() => ToggleEditConfig(m)">Configurar</button>
-                        <button class="btn btn-danger btn-sm" @onclick="() => Delete(m.Id)">Eliminar</button>
+                        @if (IsBuiltInSystemModule(m))
+                        {
+                            <span class="text-muted" style="align-self: center; font-size: 0.8rem;">Integrado</span>
+                        }
+                        else
+                        {
+                            <button class="btn btn-danger btn-sm" @onclick="() => Delete(m.Id)">Eliminar</button>
+                        }
                     </td>
                 </tr>
                 @if (_editingModuleId == m.Id)
@@ -1233,8 +1253,9 @@ else if (!_loading)
         ("Design",      "Diseno",                "D"),
         ("VideoSearch", "Busqueda de video",     "S"),
         ("VideoEdit",   "Edicion de video",      "E"),
-        ("Scene",       "Constructor de escena", "N"),
-        ("StaticText",  "Texto estatico",        "T"),
+        ("FileUpload",  "Archivos",              "F"),
+        ("StaticText",  "Texto plano",           "T"),
+        ("Checkpoint",  "Checkpoint",            "C"),
         ("Orchestrator","Orquestador",           "O"),
         ("Coordinator", "Coordinador",           "K"),
     ];
@@ -1257,6 +1278,10 @@ else if (!_loading)
     }
 
     // ── Data lists ──
+    private static bool IsBuiltInSystemModule(AiModuleResponse module) =>
+        module.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase)
+        && module.ModuleType is "FileUpload" or "StaticText" or "Checkpoint";
+
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];
     private bool _loading;
@@ -1411,6 +1436,7 @@ else if (!_loading)
     private string _editCanvaDesignType = "doc";
 
     // ── Create: pending files ──
+    private const long MaxUploadFileSize = 512L * 1024 * 1024;
     private List<IBrowserFile> _createPendingFiles = [];
 
     // ── Edit: Module files ──
@@ -1542,11 +1568,6 @@ else if (!_loading)
         // ─── Json2Video: Video Editing ───
         new("json2video-v2",   "Json2Video Editor",   "Json2Video", ["VideoEdit"], ["video-editing","subtitles","tts","composition"], "Edicion automatica de video con subtitulos, voz TTS y composicion de escenas."),
 
-        // ─── System: Utilities ───
-        new("file-upload",     "Carga de archivos",   "System", ["FileUpload"], ["file-upload","resource","free"], "Sube archivos externos (imagenes, audio, video, documentos) para usarlos como recurso en el pipeline. Sin coste."),
-        new("scene-builder",   "Constructor de escenas", "System", ["Scene"], ["scene","template","data-structure","free"], "Define una escena con variables para usar en templates de Json2Video. Cada instancia representa un slide/escena."),
-        new("static-text",     "Texto estatico",      "System", ["StaticText"], ["text","resource","static","free"], "Texto plano como recurso del pipeline. Ideal para valores fijos, prompts o datos que no cambian entre ejecuciones."),
-        // Start module is auto-created with each pipeline — not user-creatable
     ];
 
     // ── Available types per provider ──
@@ -1571,9 +1592,9 @@ else if (!_loading)
                 "VideoEdit"     => "Edicion de video (Json2Video)",
                 "Orchestrator"  => "Orquestador de pipeline",
                 "Coordinator"   => "Coordinador (multi-entrada)",
-                "FileUpload"    => "Carga de archivos",
+                "FileUpload"    => "Archivos",
                 "Scene"         => "Constructor de escena",
-                "StaticText"    => "Texto estatico",
+                "StaticText"    => "Texto plano",
                 _               => t
             }))
             .ToList();
@@ -1918,8 +1939,7 @@ else if (!_loading)
                     using var content = new MultipartFormDataContent();
                     foreach (var file in _createPendingFiles)
                     {
-                        var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
-                        content.Add(new StreamContent(stream), "files", file.Name);
+                        content.Add(CreateBrowserFileContent(file), "files", file.Name);
                     }
                     await Api.UploadModuleFilesAsync(moduleId.Value, content);
                 }
@@ -2080,8 +2100,7 @@ else if (!_loading)
             using var content = new MultipartFormDataContent();
             foreach (var file in e.GetMultipleFiles(10))
             {
-                var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024); // 50MB
-                content.Add(new StreamContent(stream), "files", file.Name);
+                content.Add(CreateBrowserFileContent(file), "files", file.Name);
             }
 
             var uploaded = await Api.UploadModuleFilesAsync(_editingModuleId.Value, content);
@@ -2094,6 +2113,17 @@ else if (!_loading)
     private void OnCreateFilesSelected(InputFileChangeEventArgs e)
     {
         _createPendingFiles.AddRange(e.GetMultipleFiles(10));
+    }
+
+    private static StreamContent CreateBrowserFileContent(IBrowserFile file)
+    {
+        var stream = file.OpenReadStream(maxAllowedSize: MaxUploadFileSize);
+        var content = new StreamContent(stream);
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType)
+            ? "application/octet-stream"
+            : file.ContentType;
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+        return content;
     }
 
     private async Task DeleteModuleFile(Guid fileId, Guid moduleId)

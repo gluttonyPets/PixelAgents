@@ -156,7 +156,8 @@ public class ApiClient
         request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
         request.Content = content;
         var resp = await _http.SendAsync(request);
-        if (!resp.IsSuccessStatusCode) return [];
+        if (!resp.IsSuccessStatusCode)
+            throw new InvalidOperationException(await ReadErrorAsync(resp) ?? "Error al subir archivos");
         return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
     }
 
