@@ -55,6 +55,7 @@ namespace Server.Services
             await using (var tenantCtx = new UserDbContext(opts))
             {
                 await tenantCtx.Database.EnsureCreatedAsync();
+                await SystemModuleSeeder.EnsureSeededAsync(tenantCtx);
             }
 
             // Create account in core DB

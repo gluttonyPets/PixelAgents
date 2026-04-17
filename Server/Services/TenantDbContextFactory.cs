@@ -12,6 +12,7 @@ namespace Server.Services
     {
         private readonly IConfiguration _cfg;
         private readonly ILogger<TenantDbContextFactory> _log;
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _seededTenants = new();
 
         public TenantDbContextFactory(IConfiguration cfg, ILogger<TenantDbContextFactory> log)
         {
@@ -28,7 +29,22 @@ namespace Server.Services
                 .Options;
             var ctx = new UserDbContext(opts);
             ApplyPendingColumns(ctx, _log);
+            EnsureSystemModulesSeeded(ctx, dbName, _log);
             return ctx;
+        }
+
+        private static void EnsureSystemModulesSeeded(UserDbContext ctx, string dbName, ILogger log)
+        {
+            if (_seededTenants.ContainsKey(dbName)) return;
+            try
+            {
+                SystemModuleSeeder.EnsureSeededAsync(ctx).GetAwaiter().GetResult();
+                _seededTenants.TryAdd(dbName, 0);
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Failed to seed system utility modules for {DbName}", dbName);
+            }
         }
 
         private static void ApplyPendingColumns(UserDbContext ctx, ILogger log)

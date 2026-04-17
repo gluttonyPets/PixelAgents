@@ -637,7 +637,7 @@
     }
 </div>
 
-@if (_modules.Count > 0)
+@if (_modules.Any(m => !IsBuiltInUtility(m)))
 {
     @foreach (var group in GetModuleGroups())
     {
@@ -1239,18 +1239,34 @@ else if (!_loading)
         ("Coordinator", "Coordinador",           "K"),
     ];
 
+    // Built-in utility modules are pre-seeded per tenant and managed via
+    // "Añadir modulo" in projects — hide them from the Modules page.
+    private static readonly HashSet<(string ModuleType, string ModelName)> BuiltInUtilityKeys = new()
+    {
+        ("Start", "start"),
+        ("Checkpoint", "checkpoint"),
+        ("Interaction", "whatsapp"),
+        ("Interaction", "telegram"),
+        ("Publish", "instagram"),
+        ("Publish", "tiktok"),
+    };
+
+    private static bool IsBuiltInUtility(AiModuleResponse m)
+        => m.ProviderType == "System" && BuiltInUtilityKeys.Contains((m.ModuleType, m.ModelName));
+
     private List<ModuleGroup> GetModuleGroups()
     {
+        var visible = _modules.Where(m => !IsBuiltInUtility(m)).ToList();
         var groups = new List<ModuleGroup>();
         foreach (var (type, label, icon) in ModuleTypeOrder)
         {
-            var mods = _modules.Where(m => m.ModuleType == type).ToList();
+            var mods = visible.Where(m => m.ModuleType == type).ToList();
             if (mods.Count > 0)
                 groups.Add(new ModuleGroup(type, label, icon, mods));
         }
         // Any unknown types
         var knownTypes = ModuleTypeOrder.Select(t => t.Type).ToHashSet();
-        var others = _modules.Where(m => !knownTypes.Contains(m.ModuleType)).ToList();
+        var others = visible.Where(m => !knownTypes.Contains(m.ModuleType)).ToList();
         if (others.Count > 0)
             groups.Add(new ModuleGroup("other", "Otros", "?", others));
         return groups;

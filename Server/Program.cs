@@ -395,6 +395,9 @@ app.MapPost("/api/modules", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
+    if (SystemModuleSeeder.IsSingletonUtility(req.ProviderType, req.ModuleType, req.ModelName))
+        return Results.BadRequest(new { message = "Los modulos de utilidades ya estan disponibles por defecto." });
+
     var module = new AiModule
     {
         Id = Guid.NewGuid(),
@@ -441,49 +444,6 @@ app.MapGet("/api/modules", async (
             m.ApiKeyId, m.ApiKey != null ? m.ApiKey.Name : null,
             m.Configuration, m.IsEnabled, m.CreatedAt, m.UpdatedAt))
         .ToListAsync();
-
-    // Inject built-in Checkpoint module if not already present
-    if ((providerType is null || providerType == "System") && (moduleType is null || moduleType == "Checkpoint"))
-    {
-        if (!modules.Any(m => m.ModuleType == "Checkpoint"))
-        {
-            // Check DB directly in case another request already created it
-            var existing = await db.AiModules
-                .FirstOrDefaultAsync(m => m.ModuleType == "Checkpoint" && m.ProviderType == "System");
-
-            if (existing is null)
-            {
-                existing = new AiModule
-                {
-                    Id = Guid.NewGuid(),
-                    Name = "Checkpoint",
-                    Description = "Pausa la ejecucion para revisar los datos antes de continuar",
-                    ProviderType = "System",
-                    ModuleType = "Checkpoint",
-                    ModelName = "checkpoint",
-                    IsEnabled = true,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-                db.AiModules.Add(existing);
-                try { await db.SaveChangesAsync(); }
-                catch
-                {
-                    // Race condition: another request created it — reload
-                    db.ChangeTracker.Clear();
-                    existing = await db.AiModules
-                        .FirstOrDefaultAsync(m => m.ModuleType == "Checkpoint" && m.ProviderType == "System");
-                }
-            }
-
-            if (existing is not null)
-            {
-                modules.Add(new AiModuleResponse(existing.Id, existing.Name, existing.Description,
-                    existing.ProviderType, existing.ModuleType, existing.ModelName,
-                    null, null, null, true, existing.CreatedAt, existing.UpdatedAt));
-            }
-        }
-    }
 
     return Results.Ok(modules);
 }).RequireAuthorization();
@@ -540,6 +500,9 @@ app.MapDelete("/api/modules/{id}", async (
 
     var m = await db.AiModules.FindAsync(id);
     if (m is null) return Results.NotFound();
+
+    if (SystemModuleSeeder.IsSingletonUtility(m.ProviderType, m.ModuleType, m.ModelName))
+        return Results.BadRequest(new { message = "Los modulos de utilidades no se pueden eliminar." });
 
     db.AiModules.Remove(m);
     await db.SaveChangesAsync();
@@ -2161,24 +2124,6 @@ app.MapPut("/api/projects/{projectId:guid}/whatsapp-config", async (
     project.WhatsAppConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
 
-    // Ensure the WhatsApp Interaction sentinel module exists
-    var hasWhatsAppInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction" && m.ModelName == "whatsapp");
-    if (!hasWhatsAppInteraction)
-    {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "WhatsApp Interaction",
-            Description = "Pausa el pipeline y envia un mensaje a WhatsApp para obtener feedback del usuario.",
-            ProviderType = "System",
-            ModuleType = "Interaction",
-            ModelName = "whatsapp",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-    }
-
     await db.SaveChangesAsync();
 
     return Results.Ok(new { message = "Configuracion WhatsApp guardada" });
@@ -2277,24 +2222,6 @@ app.MapPut("/api/projects/{projectId:guid}/telegram-config", async (
     project.TelegramConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
 
-    // Ensure the Telegram Interaction sentinel module exists
-    var hasTelegramInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction" && m.ModelName == "telegram");
-    if (!hasTelegramInteraction)
-    {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "Telegram Interaction",
-            Description = "Pausa el pipeline y envia un mensaje a Telegram para obtener feedback del usuario.",
-            ProviderType = "System",
-            ModuleType = "Interaction",
-            ModelName = "telegram",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-    }
-
     await db.SaveChangesAsync();
 
     // Register webhook with Telegram
@@ -2388,24 +2315,6 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
     project.InstagramConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
 
-    // Ensure the Buffer Publish sentinel module exists
-    var hasBufferPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "instagram");
-    if (!hasBufferPublish)
-    {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "Buffer Publish",
-            Description = "Publica contenido en redes sociales (Instagram, Twitter, etc.) via Buffer.",
-            ProviderType = "System",
-            ModuleType = "Publish",
-            ModelName = "instagram",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-    }
-
     await db.SaveChangesAsync();
     return Results.Ok(new { message = "Configuracion Buffer guardada" });
 }).RequireAuthorization();
@@ -2440,24 +2349,6 @@ app.MapPut("/api/projects/{projectId:guid}/tiktok-config", async (
 
     project.TikTokConfig = System.Text.Json.JsonSerializer.Serialize(dto);
     project.UpdatedAt = DateTime.UtcNow;
-
-    // Ensure the TikTok Publish sentinel module exists
-    var hasTikTokPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "tiktok");
-    if (!hasTikTokPublish)
-    {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "TikTok Publish",
-            Description = "Publica contenido en TikTok (videos e imagenes) via Buffer.",
-            ProviderType = "System",
-            ModuleType = "Publish",
-            ModelName = "tiktok",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-    }
 
     await db.SaveChangesAsync();
     return Results.Ok(new { message = "Configuracion TikTok guardada" });
