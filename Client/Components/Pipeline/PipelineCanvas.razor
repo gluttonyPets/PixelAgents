@@ -1267,6 +1267,7 @@
     private HashSet<string> _expandedCategories = new() { "ai" };
 
     // FileUpload inspector state
+    private const long MaxUploadFileSize = 512L * 1024 * 1024;
     private List<ModuleFileResponse> _fileUploadFiles = [];
     private bool _fileUploadUploading;
     private string? _fileUploadError;
@@ -2084,8 +2085,7 @@
             using var content = new MultipartFormDataContent();
             foreach (var file in e.GetMultipleFiles(20))
             {
-                var stream = file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024);
-                content.Add(new StreamContent(stream), "files", file.Name);
+                content.Add(CreateBrowserFileContent(file), "files", file.Name);
             }
             await Api.UploadModuleFilesAsync(sel.AiModuleId, content);
             await LoadFileUploadFiles(sel.AiModuleId);
@@ -2125,6 +2125,17 @@
         var t when t.Contains("text") || t.Contains("document") => "bi-file-text",
         _ => "bi-file-earmark"
     };
+
+    private static StreamContent CreateBrowserFileContent(IBrowserFile file)
+    {
+        var stream = file.OpenReadStream(maxAllowedSize: MaxUploadFileSize);
+        var content = new StreamContent(stream);
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType)
+            ? "application/octet-stream"
+            : file.ContentType;
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+        return content;
+    }
 
     private static string FormatFileSize(long bytes)
     {

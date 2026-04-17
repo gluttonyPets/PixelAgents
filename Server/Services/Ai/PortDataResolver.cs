@@ -117,7 +117,7 @@ public static class PortDataResolver
             "output_file"
                 => new PortData
                 {
-                    DataType = "file",
+                    DataType = node.ModuleType == "FileUpload" ? "any" : "file",
                     Files = output.Files,
                     TextContent = output.Content,
                     FullOutput = output,
