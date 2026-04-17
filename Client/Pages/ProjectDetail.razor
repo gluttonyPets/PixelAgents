@@ -121,7 +121,6 @@ else
                                 OnAddModule="AddModuleFromCanvas"
                                 OnRemoveModule="RemoveModuleFromCanvas"
                                 OnSaveGraph="SaveGraph"
-                                OnInputMappingChanged="@(((Guid ModuleId, string InputMapping) args) => UpdateInputMapping(args))"
                                 Executing="_executing"
                                 StepStatuses="GetStepStatuses()"
                                 ExecutionLogs="GetExecutionLogs()">
@@ -2357,23 +2356,6 @@ else
             if (updated is not null)
             {
                 Console.WriteLine($"[ProjectDetail] SaveGraph: re-fetched {updated.Connections?.Count ?? 0} connections from server");
-                _project = updated;
-                _projectConnections = updated.Connections ?? new();
-            }
-        }
-    }
-
-    private async Task UpdateInputMapping((Guid ModuleId, string InputMapping) args)
-    {
-        var module = _project?.Modules.FirstOrDefault(m => m.Id == args.ModuleId);
-        if (module is null || _project is null) return;
-        var req = new UpdateProjectModuleRequest(module.StepOrder, module.StepName, args.InputMapping, module.Configuration, module.IsActive);
-        var (ok, _) = await Api.UpdateProjectModuleAsync(ProjectId, args.ModuleId, req);
-        if (ok)
-        {
-            var updated = await Api.GetProjectDetailAsync(ProjectId);
-            if (updated is not null)
-            {
                 _project = updated;
                 _projectConnections = updated.Connections ?? new();
             }

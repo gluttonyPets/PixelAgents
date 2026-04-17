@@ -258,23 +258,6 @@
                         }
                     </div>
 
-                    <!-- Input mapping editor -->
-                    <div class="inspector-section">
-                        <div class="inspector-section-title">Entrada de datos</div>
-                        <div class="inspector-field">
-                            <label>Fuente de datos</label>
-                            <select value="@(sel.InputMapping ?? "{\"source\":\"user\"}")"
-                                    @onchange="e => HandleInputMappingChange(sel.Id, e.Value?.ToString())">
-                                <option value='{"source":"user"}'>Entrada del usuario</option>
-                                <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
-                                <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
-                            </select>
-                            <p class="text-sm text-muted" style="margin-top: 0.2rem;">
-                                Tipo actual: <strong>@FormatInputMapping(sel.InputMapping)</strong>
-                            </p>
-                        </div>
-                    </div>
-
                     @if (sel.ModuleType == "Image")
                     {
                         <div class="inspector-section">
@@ -1229,7 +1212,6 @@
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
     [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
     [Parameter] public EventCallback<SaveGraphRequest> OnSaveGraph { get; set; }
-    [Parameter] public EventCallback<(Guid ModuleId, string InputMapping)> OnInputMappingChanged { get; set; }
 
     // Execution state from parent
     [Parameter] public bool Executing { get; set; }
@@ -2218,26 +2200,6 @@
             .OrderBy(m => m.StepOrder).ToList();
         var bIdx = branchSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
         return $"{letter}{preForkMainCount + 1 + bIdx}";
-    }
-
-    private async Task HandleInputMappingChange(Guid moduleId, string? mapping)
-    {
-        if (mapping is null) return;
-        await OnInputMappingChanged.InvokeAsync((moduleId, mapping));
-    }
-
-    private static string FormatInputMapping(string? mapping)
-    {
-        if (string.IsNullOrEmpty(mapping)) return "Usuario";
-        try
-        {
-            var el = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(mapping);
-            var source = el.TryGetProperty("source", out var s) ? s.GetString() : "user";
-            if (source == "user") return "Usuario";
-            var field = el.TryGetProperty("field", out var f) ? f.GetString() : "text";
-            return field == "file" ? "Paso anterior (archivo)" : "Paso anterior (texto)";
-        }
-        catch { return "Usuario"; }
     }
 
     public async ValueTask DisposeAsync()
