@@ -1107,6 +1107,13 @@ else
                                                                     <div class="exec-io-block">@inputParsed.SystemPrompt</div>
                                                                 </div>
                                                             }
+                                                            @if (!string.IsNullOrWhiteSpace(inputParsed.InitialUserInput))
+                                                            {
+                                                                <div class="exec-io-section">
+                                                                    <div class="exec-io-title exec-io-in">Peticion inicial del usuario</div>
+                                                                    <div class="exec-io-block">@inputParsed.InitialUserInput</div>
+                                                                </div>
+                                                            }
                                                             @if (inputParsed.Prompts.Count > 0)
                                                             {
                                                                 @foreach (var (prompt, pi) in inputParsed.Prompts.Select((p, i) => (p, i)))
@@ -3693,7 +3700,7 @@ else
         catch { return raw; }
     }
 
-    private record ParsedInputData(string? SystemPrompt, string? ProjectContext, List<string> Prompts, string RawJson);
+    private record ParsedInputData(string? SystemPrompt, string? ProjectContext, string? InitialUserInput, List<string> Prompts, string RawJson);
 
     private record CheckpointEntry(string Label, string Value);
 
@@ -3745,6 +3752,10 @@ else
             if (root.TryGetProperty("projectContext", out var pcEl) && pcEl.ValueKind == JsonValueKind.String)
                 projectContext = pcEl.GetString();
 
+            string? initialUserInput = null;
+            if (root.TryGetProperty("initialUserInput", out var iuEl) && iuEl.ValueKind == JsonValueKind.String)
+                initialUserInput = iuEl.GetString();
+
             // Single prompt
             if (root.TryGetProperty("prompt", out var promptEl) && promptEl.ValueKind == JsonValueKind.String)
             {
@@ -3765,7 +3776,7 @@ else
             // Pretty-print the raw JSON for fallback/non-AI steps
             var rawJson = JsonSerializer.Serialize(doc.RootElement, PrettyJsonOptions);
 
-            return new ParsedInputData(systemPrompt, projectContext, prompts, rawJson);
+            return new ParsedInputData(systemPrompt, projectContext, initialUserInput, prompts, rawJson);
         }
         catch { return null; }
     }

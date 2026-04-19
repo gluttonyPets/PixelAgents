@@ -36,6 +36,7 @@ public class TextModuleHandler : IModuleHandler
             Input = prompt,
             ProjectContext = ctx.Project.Context,
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
+            InitialUserInput = ctx.Execution.UserInput,
             Configuration = ctx.Config,
         };
 
