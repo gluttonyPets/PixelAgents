@@ -82,12 +82,28 @@ public class ModuleExecutionContext
             : $"{PublicBaseUrl.TrimEnd('/')}{path}";
     }
 
-    /// <summary>Get text content from a specific input port.</summary>
+    /// <summary>
+    /// Get text content from an input port. When several upstream modules connect
+    /// to the same port (fan-in) every non-empty text is concatenated with a
+    /// blank line separator so the downstream handler sees the full context.
+    /// </summary>
     public string GetInputText(string portId, string fallback = "")
     {
         if (!InputsByPort.TryGetValue(portId, out var dataList) || dataList.Count == 0)
             return fallback;
-        return dataList[0].TextContent ?? fallback;
+
+        var texts = dataList
+            .Select(d => d.TextContent)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .Cast<string>()
+            .ToList();
+
+        return texts.Count switch
+        {
+            0 => fallback,
+            1 => texts[0],
+            _ => string.Join("\n\n", texts),
+        };
     }
 
     /// <summary>Get all text content from a port (for multi-connection ports).</summary>

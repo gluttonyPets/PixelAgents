@@ -44,8 +44,12 @@ public class InputPort
     /// <summary>Data received from completed upstream modules.</summary>
     public List<PortData> ReceivedData { get; } = [];
 
-    /// <summary>A port is satisfied if it has data, is not required, or has no connections.</summary>
-    public bool IsSatisfied => ReceivedData.Count > 0 || !IsRequired || Connections.Count == 0;
+    /// <summary>
+    /// Satisfied when every connected upstream has delivered its data (fan-in:
+    /// N upstreams → wait for N). Optional ports and ports with no connections
+    /// don't block — preserves the original pipeline semantics.
+    /// </summary>
+    public bool IsSatisfied => ReceivedData.Count >= Connections.Count || !IsRequired;
 }
 
 /// <summary>An output port on a module node.</summary>
