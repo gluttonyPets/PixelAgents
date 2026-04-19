@@ -1,6 +1,7 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using Server.Models;
+using Server.Services.Ai.Handlers;
 
 namespace Server.Services.Ai;
 

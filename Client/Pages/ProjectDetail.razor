@@ -1134,9 +1134,7 @@ else
                                                         }
 
                                                         @* ── Raw payload (exact data sent to the provider API) ── *@
-                                                        @{
-                                                            var rawExpanded = _expandedRawPayloadSteps.Contains(step.StepOrder);
-                                                        }
+                                                        var rawExpanded = _expandedRawPayloadSteps.Contains(step.StepOrder);
                                                         <div class="exec-io-section">
                                                             <button type="button"
                                                                     class="btn btn-sm"
