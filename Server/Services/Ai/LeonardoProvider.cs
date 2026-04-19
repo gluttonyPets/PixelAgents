@@ -122,6 +122,8 @@ namespace Server.Services.Ai
                 initImageId = await UploadInitImageAsync(http, context.InputFiles[0]);
             }
 
+            var numImages = ReadImageCount(context.Configuration);
+
             // Step 1: Submit generation request
             var body = new Dictionary<string, object>
             {
@@ -129,7 +131,7 @@ namespace Server.Services.Ai
                 ["modelId"] = modelUuid,
                 ["width"] = width,
                 ["height"] = height,
-                ["num_images"] = 1,
+                ["num_images"] = numImages,
             };
 
             if (initImageId is not null)
@@ -207,23 +209,29 @@ namespace Server.Services.Ai
                         return AiResult.Fail("Leonardo AI completo la generacion pero no devolvio imagenes");
                     }
 
-                    var imageUrl = images[0].GetProperty("url").GetString()!;
-
-                    // Step 3: Download image (use a clean HttpClient without auth headers — CDN rejects them)
+                    // Download all returned images (CDN rejects auth headers — use a clean client)
                     using var dlClient = new HttpClient();
-                    var imgResp = await dlClient.GetAsync(imageUrl);
-                    if (!imgResp.IsSuccessStatusCode)
+                    var imageBytesList = new List<byte[]>();
+                    foreach (var img in images.EnumerateArray())
                     {
-                        return AiResult.Fail($"Leonardo AI: error descargando imagen (HTTP {(int)imgResp.StatusCode})");
+                        if (!img.TryGetProperty("url", out var urlEl)) continue;
+                        var imgUrl = urlEl.GetString();
+                        if (string.IsNullOrWhiteSpace(imgUrl)) continue;
+                        var imgResp = await dlClient.GetAsync(imgUrl);
+                        if (!imgResp.IsSuccessStatusCode) continue;
+                        imageBytesList.Add(await imgResp.Content.ReadAsByteArrayAsync());
                     }
-                    var imageBytes = await imgResp.Content.ReadAsByteArrayAsync();
 
-                    var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
+                    if (imageBytesList.Count == 0)
+                        return AiResult.Fail("Leonardo AI: no se pudo descargar ninguna imagen");
+
+                    var imgResult = AiResult.OkFiles(imageBytesList, "image/png", new Dictionary<string, object>
                     {
                         ["model"] = context.ModelName,
-                        ["revisedPrompt"] = ""
+                        ["revisedPrompt"] = "",
+                        ["count"] = imageBytesList.Count,
                     });
-                    imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName);
+                    imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName) * imageBytesList.Count;
                     return imgResult;
                 }
 
@@ -234,6 +242,23 @@ namespace Server.Services.Ai
             }
 
             return AiResult.Fail($"Timeout esperando generacion de Leonardo AI (>{maxAttempts * pollIntervalMs / 1000}s)");
+        }
+
+        private static int ReadImageCount(IDictionary<string, object> config)
+        {
+            int Parse(object? v) => v switch
+            {
+                int i => i,
+                long l => (int)l,
+                double d => (int)d,
+                JsonElement je when je.TryGetInt32(out var ji) => ji,
+                string s when int.TryParse(s, out var sp) => sp,
+                _ => 1,
+            };
+            if (config.TryGetValue("num_images", out var niv)) return Math.Max(1, Parse(niv));
+            if (config.TryGetValue("numberOfImages", out var num)) return Math.Max(1, Parse(num));
+            if (config.TryGetValue("n", out var nv)) return Math.Max(1, Parse(nv));
+            return 1;
         }
 
         /// <summary>

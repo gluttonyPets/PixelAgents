@@ -742,20 +742,13 @@ namespace Server.Services.Ai
                             }
                         }
 
-                        // Image modules: may execute multiple times if previous step had items
-                        // If module config specifies a count (n/numberOfImages), use it as the target:
-                        //   - If 1 input → expand (repeat prompt) to fill the count
-                        //   - If more inputs than count → trim to the count
+                        // Image modules: the provider reads n/numberOfImages from config
+                        // and requests all images in a single call, so the model can
+                        // generate non-repeated variations. Here we iterate any extra
+                        // user-supplied prompts (e.g. items from a previous step) and
+                        // collect every image returned per call.
                         var imageRepeatCount = GetImageRepeatCount(config);
-                        if (imageRepeatCount > 1 && inputs.Count == 1)
-                        {
-                            var singlePrompt = inputs[0];
-                            inputs = Enumerable.Repeat(singlePrompt, imageRepeatCount).ToList();
-                            await _logger.LogAsync(projectId, executionId, "info",
-                                $"Configuracion solicita {imageRepeatCount} imagenes — se repetira el prompt {imageRepeatCount} veces",
-                                pm.StepOrder, stepName);
-                        }
-                        else if (imageRepeatCount > 0 && inputs.Count > imageRepeatCount)
+                        if (imageRepeatCount > 0 && inputs.Count > imageRepeatCount)
                         {
                             await _logger.LogAsync(projectId, executionId, "info",
                                 $"Recibidos {inputs.Count} prompts pero configuracion limita a {imageRepeatCount} imagenes — se usaran los primeros {imageRepeatCount}",
@@ -765,23 +758,22 @@ namespace Server.Services.Ai
 
                         var outputFiles = new List<OutputFile>();
                         string? imageError = null;
+                        var generatedIndex = 0;
 
                         for (var i = 0; i < inputs.Count; i++)
                         {
                             await _logger.LogAsync(projectId, executionId, "info",
                                 inputs.Count > 1
-                                    ? $"Generando imagen {i + 1}/{inputs.Count}..."
-                                    : $"Generando imagen...",
+                                    ? $"Generando imagen(es) para prompt {i + 1}/{inputs.Count}..."
+                                    : $"Generando imagen(es)...",
                                 pm.StepOrder, stepName);
 
                             var singleInput = inputs[i];
 
-                            // Apply truncation safety
                             var maxLen = InputAdapter.GetMaxPromptLength(pm.AiModule.ModelName);
                             if (singleInput.Length > maxLen)
                                 singleInput = InputAdapter.TruncateAtWord(singleInput, maxLen);
 
-                            // Build InputFiles: prefer previous step files for image-to-image, fallback to module files
                             var inputFiles = previousStepFiles is { Count: > 0 }
                                 ? previousStepFiles
                                 : await LoadModuleFilesAsync(pm, db);
@@ -815,16 +807,23 @@ namespace Server.Services.Ai
                                 break;
                             }
 
-                            if (result.FileOutput is not null)
-                            {
-                                var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            var allImages = new List<byte[]>();
+                            if (result.FileOutput is { Length: > 0 }) allImages.Add(result.FileOutput);
+                            if (result.AdditionalFiles is { Count: > 0 })
+                                allImages.AddRange(result.AdditionalFiles.Where(b => b.Length > 0));
+
+                            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            if (allImages.Count > 0)
                                 Directory.CreateDirectory(stepDir);
 
+                            foreach (var imageBytes in allImages)
+                            {
+                                generatedIndex++;
                                 var ext = GetExtension(result.ContentType ?? "application/octet-stream");
-                                var fileName = inputs.Count > 1 ? $"output_{i + 1}{ext}" : $"output{ext}";
+                                var fileName = $"output_{generatedIndex}{ext}";
                                 var filePath = Path.Combine(stepDir, fileName);
 
-                                await File.WriteAllBytesAsync(filePath, result.FileOutput);
+                                await File.WriteAllBytesAsync(filePath, imageBytes);
 
                                 var execFile = new ExecutionFile
                                 {
@@ -834,7 +833,7 @@ namespace Server.Services.Ai
                                     ContentType = result.ContentType ?? "application/octet-stream",
                                     FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
                                     Direction = "Output",
-                                    FileSize = result.FileOutput.Length,
+                                    FileSize = imageBytes.Length,
                                     CreatedAt = DateTime.UtcNow,
                                 };
                                 db.ExecutionFiles.Add(execFile);
@@ -849,7 +848,6 @@ namespace Server.Services.Ai
                                 });
                             }
 
-                            // Store last result for downstream steps
                             stepResults[pm.StepOrder] = result;
                         }
 
@@ -3855,11 +3853,12 @@ Datos de la ejecucion:
 
                         var outputFiles = new List<OutputFile>();
                         string? imageError = null;
+                        var generatedIdx = 0;
 
                         for (var i = 0; i < inputs.Count; i++)
                         {
                             await _logger.LogAsync(project.Id, execution.Id, "info",
-                                inputs.Count > 1 ? $"Generando imagen {i + 1}/{inputs.Count}..." : $"Generando imagen...",
+                                inputs.Count > 1 ? $"Generando imagen(es) para prompt {i + 1}/{inputs.Count}..." : $"Generando imagen(es)...",
                                 pm.StepOrder, stepName);
 
                             var singleInput = inputs[i];
@@ -3891,13 +3890,21 @@ Datos de la ejecucion:
                                 break;
                             }
 
-                            if (result.FileOutput is not null)
-                            {
-                                var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            var allImages = new List<byte[]>();
+                            if (result.FileOutput is { Length: > 0 }) allImages.Add(result.FileOutput);
+                            if (result.AdditionalFiles is { Count: > 0 })
+                                allImages.AddRange(result.AdditionalFiles.Where(b => b.Length > 0));
+
+                            var stepDir = Path.Combine(workspacePath, $"step_{pm.StepOrder}");
+                            if (allImages.Count > 0)
                                 Directory.CreateDirectory(stepDir);
+
+                            foreach (var imageBytes in allImages)
+                            {
+                                generatedIdx++;
                                 var ext = GetExtension(result.ContentType ?? "application/octet-stream");
-                                var fileName = inputs.Count > 1 ? $"output_{i + 1}{ext}" : $"output{ext}";
-                                await File.WriteAllBytesAsync(Path.Combine(stepDir, fileName), result.FileOutput);
+                                var fileName = $"output_{generatedIdx}{ext}";
+                                await File.WriteAllBytesAsync(Path.Combine(stepDir, fileName), imageBytes);
 
                                 db.ExecutionFiles.Add(new ExecutionFile
                                 {
@@ -3907,7 +3914,7 @@ Datos de la ejecucion:
                                     ContentType = result.ContentType ?? "application/octet-stream",
                                     FilePath = Path.Combine($"step_{pm.StepOrder}", fileName),
                                     Direction = "Output",
-                                    FileSize = result.FileOutput.Length,
+                                    FileSize = imageBytes.Length,
                                     CreatedAt = DateTime.UtcNow,
                                 });
 
@@ -3916,7 +3923,7 @@ Datos de la ejecucion:
                                     FileId = Guid.NewGuid(),
                                     FileName = fileName,
                                     ContentType = result.ContentType ?? "application/octet-stream",
-                                    FileSize = result.FileOutput.Length,
+                                    FileSize = imageBytes.Length,
                                 });
                             }
 

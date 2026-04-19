@@ -157,10 +157,7 @@ namespace Server.Services.Ai
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
-            // Read number of images from config
-            var n = 1;
-            if (context.Configuration.TryGetValue("n", out var nVal))
-                n = Convert.ToInt32(nVal);
+            var n = ReadImageCount(context.Configuration);
 
             var requestBody = new Dictionary<string, object>
             {
@@ -170,7 +167,6 @@ namespace Server.Services.Ai
                 ["response_format"] = "b64_json"
             };
 
-            // Size (optional)
             if (context.Configuration.TryGetValue("size", out var size) && size is string sizeStr)
                 requestBody["size"] = sizeStr;
 
@@ -185,39 +181,50 @@ namespace Server.Services.Ai
 
             using var doc = JsonDocument.Parse(responseJson);
             var data = doc.RootElement.GetProperty("data");
-
             if (data.GetArrayLength() == 0)
                 return AiResult.Fail("xAI Grok Image: no se recibieron imagenes");
 
-            var firstImage = data[0];
+            var images = new List<byte[]>();
+            var revisedPrompt = "";
+            foreach (var item in data.EnumerateArray())
+            {
+                if (string.IsNullOrEmpty(revisedPrompt) && item.TryGetProperty("revised_prompt", out var rp))
+                    revisedPrompt = rp.GetString() ?? "";
 
-            byte[] imageBytes;
-            var revisedPrompt = firstImage.TryGetProperty("revised_prompt", out var rp)
-                ? rp.GetString() ?? "" : "";
+                if (item.TryGetProperty("b64_json", out var b64Prop))
+                    images.Add(Convert.FromBase64String(b64Prop.GetString()!));
+                else if (item.TryGetProperty("url", out var urlProp))
+                    images.Add(await http.GetByteArrayAsync(urlProp.GetString()!));
+            }
 
-            if (firstImage.TryGetProperty("b64_json", out var b64Prop))
-            {
-                imageBytes = Convert.FromBase64String(b64Prop.GetString()!);
-            }
-            else if (firstImage.TryGetProperty("url", out var urlProp))
-            {
-                imageBytes = await http.GetByteArrayAsync(urlProp.GetString()!);
-            }
-            else
-            {
+            images = images.Where(b => b.Length > 0).ToList();
+            if (images.Count == 0)
                 return AiResult.Fail("xAI Grok Image: formato de respuesta inesperado");
-            }
 
-            if (imageBytes.Length == 0)
-                return AiResult.Fail("No se recibieron datos de imagen del modelo");
-
-            var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
+            var imgResult = AiResult.OkFiles(images, "image/png", new Dictionary<string, object>
             {
                 ["model"] = modelName,
-                ["revisedPrompt"] = revisedPrompt
+                ["revisedPrompt"] = revisedPrompt,
+                ["count"] = images.Count,
             });
-            imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(modelName, context.Configuration);
+            imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(modelName, context.Configuration) * images.Count;
             return imgResult;
+        }
+
+        private static int ReadImageCount(IDictionary<string, object> config)
+        {
+            int Parse(object? v) => v switch
+            {
+                int i => i,
+                long l => (int)l,
+                double d => (int)d,
+                JsonElement je when je.TryGetInt32(out var ji) => ji,
+                string s when int.TryParse(s, out var sp) => sp,
+                _ => 1,
+            };
+            if (config.TryGetValue("n", out var nv)) return Math.Max(1, Parse(nv));
+            if (config.TryGetValue("numberOfImages", out var niv)) return Math.Max(1, Parse(niv));
+            return 1;
         }
     }
 }

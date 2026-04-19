@@ -3,8 +3,9 @@ using Server.Models;
 namespace Server.Services.Ai.Handlers;
 
 /// <summary>
-/// Image generation module. Can generate N images from a prompt.
-/// Supports image-to-image editing when connected to file inputs.
+/// Image generation module. Delegates to the provider so it can request N
+/// non-repeated images in a single API call (natively, via the model's
+/// `n`/`num_images` parameter) instead of looping with identical prompts.
 /// </summary>
 public class ImageModuleHandler : IModuleHandler
 {
@@ -30,89 +31,75 @@ public class ImageModuleHandler : IModuleHandler
         if (string.IsNullOrEmpty(apiKey))
             return ModuleResult.Failed("API Key no configurada");
 
-        // Determine image count
-        var imageCount = 1;
-        if (ctx.Config.TryGetValue("n", out var nVal))
+        // Input files for image-to-image editing
+        var inputFiles = new List<byte[]>();
+        foreach (var fi in ctx.GetInputFiles("input_prompt"))
         {
-            if (nVal is int n) imageCount = n;
-            else if (nVal is long nl) imageCount = (int)nl;
-            else if (nVal is System.Text.Json.JsonElement je && je.TryGetInt32(out var jn)) imageCount = jn;
-        }
-        if (ctx.Config.TryGetValue("numberOfImages", out var niVal))
-        {
-            if (niVal is int ni) imageCount = ni;
-            else if (niVal is long nil) imageCount = (int)nil;
-            else if (niVal is System.Text.Json.JsonElement je && je.TryGetInt32(out var jni)) imageCount = jni;
+            var bytes = await ctx.ReadOutputFileBytesAsync(fi);
+            if (bytes is not null)
+                inputFiles.Add(bytes);
         }
 
-        // Check for input files (image-to-image)
-        var inputFiles = new List<byte[]>();
-        var fileInputs = ctx.GetInputFiles("input_prompt");
-        if (fileInputs.Count > 0)
+        // Single call — the provider reads `n`/`numberOfImages` from ctx.Config and
+        // asks the API for all images at once so the model knows to vary them.
+        var aiContext = new AiExecutionContext
         {
-            // Load image files from workspace
-            foreach (var fi in fileInputs)
-            {
-                var bytes = await ctx.ReadOutputFileBytesAsync(fi);
-                if (bytes is not null)
-                    inputFiles.Add(bytes);
-            }
-        }
+            ModuleType = module.ModuleType,
+            ModelName = module.ModelName,
+            ApiKey = apiKey,
+            Input = prompt,
+            ProjectContext = ctx.Project.Context,
+            PreviousExecutionsSummary = ctx.PreviousSummaryContext,
+            Configuration = ctx.Config,
+            InputFiles = inputFiles,
+        };
+
+        var result = await provider.ExecuteAsync(aiContext);
+        if (!result.Success)
+            return ModuleResult.Failed(result.Error ?? "Error en generacion de imagen");
+
+        var allImages = new List<byte[]>();
+        if (result.FileOutput is { Length: > 0 })
+            allImages.Add(result.FileOutput);
+        if (result.AdditionalFiles is { Count: > 0 })
+            allImages.AddRange(result.AdditionalFiles.Where(b => b.Length > 0));
+
+        if (allImages.Count == 0)
+            return ModuleResult.Failed("El proveedor no devolvio imagenes");
+
+        var contentType = result.ContentType ?? "image/png";
+        var ext = contentType switch
+        {
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            _ => ".jpg"
+        };
 
         var producedFiles = new List<ProducedFile>();
         var outputFiles = new List<OutputFile>();
-        var totalCost = 0m;
+        var revisedPrompt = result.Metadata?.GetValueOrDefault("revisedPrompt")?.ToString();
 
-        for (int i = 0; i < imageCount; i++)
+        for (int i = 0; i < allImages.Count; i++)
         {
-            var aiContext = new AiExecutionContext
+            var fileName = allImages.Count > 1 ? $"image_{i + 1}{ext}" : $"output{ext}";
+            producedFiles.Add(new ProducedFile
             {
-                ModuleType = module.ModuleType,
-                ModelName = module.ModelName,
-                ApiKey = apiKey,
-                Input = prompt,
-                ProjectContext = ctx.Project.Context,
-                PreviousExecutionsSummary = ctx.PreviousSummaryContext,
-                Configuration = ctx.Config,
-                InputFiles = inputFiles,
-            };
-
-            var result = await provider.ExecuteAsync(aiContext);
-            totalCost += result.EstimatedCost;
-
-            if (!result.Success)
-                return ModuleResult.Failed(result.Error ?? "Error en generacion de imagen");
-
-            if (result.FileOutput is { Length: > 0 })
+                Data = allImages[i],
+                FileName = fileName,
+                ContentType = contentType,
+            });
+            outputFiles.Add(new OutputFile
             {
-                var ext = result.ContentType switch
-                {
-                    "image/png" => ".png",
-                    "image/webp" => ".webp",
-                    _ => ".jpg"
-                };
-                var fileName = imageCount > 1 ? $"image_{i + 1}{ext}" : $"output{ext}";
-
-                producedFiles.Add(new ProducedFile
-                {
-                    Data = result.FileOutput,
-                    FileName = fileName,
-                    ContentType = result.ContentType ?? "image/png",
-                });
-
-                outputFiles.Add(new OutputFile
-                {
-                    FileName = fileName,
-                    ContentType = result.ContentType ?? "image/png",
-                    FileSize = result.FileOutput.Length,
-                    RevisedPrompt = result.Metadata?.GetValueOrDefault("revisedPrompt")?.ToString(),
-                });
-            }
+                FileName = fileName,
+                ContentType = contentType,
+                FileSize = allImages[i].Length,
+                RevisedPrompt = revisedPrompt,
+            });
         }
 
         var output = OutputSchemaHelper.BuildImageOutput(outputFiles, module.ModelName);
-        output.Metadata["count"] = imageCount;
+        output.Metadata["count"] = allImages.Count;
 
-        return ModuleResult.Completed(output, totalCost, producedFiles);
+        return ModuleResult.Completed(output, result.EstimatedCost, producedFiles);
     }
 }
