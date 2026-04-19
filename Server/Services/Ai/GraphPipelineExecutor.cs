@@ -1420,9 +1420,26 @@ public class GraphPipelineExecutor : IPipelineExecutor
             var values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json, JsonOptions);
             if (values is null) return;
             foreach (var (key, value) in values)
-                target[key] = value.Clone();
+                target[key] = UnwrapJsonElement(value.Clone());
         }
         catch { /* ignore malformed config */ }
+    }
+
+    // Convert JsonElement scalars to native .NET types so providers can pattern-match
+    // with `value is string s` / `value is bool b` etc. Without this, systemPrompt
+    // (and other config values) arrive as JsonElement and are silently ignored.
+    private static object UnwrapJsonElement(object value)
+    {
+        if (value is not JsonElement el) return value;
+        return el.ValueKind switch
+        {
+            JsonValueKind.String => el.GetString()!,
+            JsonValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Null => null!,
+            _ => value
+        };
     }
 
     private static object DescribeInputs(ModuleNode node, Dictionary<string, object>? config = null)

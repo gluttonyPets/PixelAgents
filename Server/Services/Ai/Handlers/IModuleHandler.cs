@@ -142,6 +142,9 @@ public class ModuleExecutionContext
         if (!Config.TryGetValue(key, out var val)) return fallback;
         if (val is System.Text.Json.JsonElement je)
             return je.ValueKind == System.Text.Json.JsonValueKind.String ? je.GetString() ?? fallback : je.GetRawText();
+        // bool.ToString() yields "True"/"False"; normalize to JSON lowercase so callers
+        // that compare against "true"/"false" keep working.
+        if (val is bool b) return b ? "true" : "false";
         return val?.ToString() ?? fallback;
     }
 
