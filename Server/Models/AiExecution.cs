@@ -26,6 +26,8 @@ namespace Server.Models
         public string? Error { get; set; }
         /// <summary>Estimated cost in USD for this execution.</summary>
         public decimal EstimatedCost { get; set; }
+        /// <summary>Extra files beyond the primary FileOutput (e.g. images 2..N when n>1).</summary>
+        public List<byte[]>? AdditionalFiles { get; set; }
 
         public static AiResult Ok(string text, Dictionary<string, object>? metadata = null) => new()
         {
@@ -41,6 +43,20 @@ namespace Server.Models
             ContentType = contentType,
             Metadata = metadata ?? new()
         };
+
+        public static AiResult OkFiles(IReadOnlyList<byte[]> files, string contentType, Dictionary<string, object>? metadata = null)
+        {
+            if (files.Count == 0)
+                return Fail("Provider devolvio una lista vacia de archivos");
+            return new AiResult
+            {
+                Success = true,
+                FileOutput = files[0],
+                AdditionalFiles = files.Count > 1 ? files.Skip(1).ToList() : null,
+                ContentType = contentType,
+                Metadata = metadata ?? new()
+            };
+        }
 
         public static AiResult Fail(string error) => new()
         {

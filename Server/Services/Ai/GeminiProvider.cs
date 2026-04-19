@@ -158,6 +158,8 @@ namespace Server.Services.Ai
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
+            var requestedN = ReadImageCount(context.Configuration);
+
             // Read aspect ratio from module configuration (same pattern as GenerateVideoAsync)
             var aspectRatio = "1:1";
             if (context.Configuration.TryGetValue("aspectRatio", out var ar) && ar is string arStr)
@@ -173,85 +175,126 @@ namespace Server.Services.Ai
             };
 
             const int maxRetries = 2;
-            for (int attempt = 0; attempt <= maxRetries; attempt++)
+            var collected = new List<byte[]>();
+            string? collectedMime = null;
+            string? lastFailure = null;
+
+            // Gemini has no native batch parameter for image generation, so we loop
+            // internally but append a variation hint on each iteration so the model
+            // produces distinct, non-repeated images.
+            for (int imageIndex = 0; imageIndex < requestedN; imageIndex++)
             {
-                GenerateContentResponse response;
+                var promptForThis = requestedN > 1
+                    ? $"{prompt}\n\n[Variation {imageIndex + 1} of {requestedN}: produce a visually distinct image, different from the previous variations.]"
+                    : prompt;
 
-                if (context.InputFiles is { Count: > 0 })
+                byte[]? thisImage = null;
+                string? thisMime = null;
+
+                for (int attempt = 0; attempt <= maxRetries; attempt++)
                 {
-                    // Image editing: pass input images alongside the prompt
-                    var inputParts = new List<Part> { new Part { Text = prompt } };
-                    foreach (var fileBytes in context.InputFiles)
+                    GenerateContentResponse response;
+
+                    if (context.InputFiles is { Count: > 0 })
                     {
-                        inputParts.Add(new Part
+                        var inputParts = new List<Part> { new Part { Text = promptForThis } };
+                        foreach (var fileBytes in context.InputFiles)
                         {
-                            InlineData = new Blob
+                            inputParts.Add(new Part
                             {
-                                MimeType = "image/png",
-                                Data = fileBytes
-                            }
-                        });
+                                InlineData = new Blob
+                                {
+                                    MimeType = "image/png",
+                                    Data = fileBytes
+                                }
+                            });
+                        }
+                        response = await client.Models.GenerateContentAsync(
+                            model: imageModel,
+                            contents: new Content { Parts = inputParts, Role = "user" },
+                            config: config
+                        );
                     }
-                    response = await client.Models.GenerateContentAsync(
-                        model: imageModel,
-                        contents: new Content { Parts = inputParts, Role = "user" },
-                        config: config
-                    );
-                }
-                else
-                {
-                    response = await client.Models.GenerateContentAsync(
-                        model: imageModel,
-                        contents: prompt,
-                        config: config
-                    );
-                }
-
-                if (response.Candidates is null || response.Candidates.Count == 0)
-                {
-                    if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
-                    return AiResult.Fail("Google Gemini no devolvio respuesta para la imagen");
-                }
-
-                var parts = response.Candidates[0].Content?.Parts;
-                if (parts is null)
-                {
-                    if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
-                    return AiResult.Fail("Google Gemini no devolvio partes en la respuesta");
-                }
-
-                foreach (var part in parts)
-                {
-                    if (part.InlineData is not null && part.InlineData.MimeType?.StartsWith("image/") == true)
+                    else
                     {
-                        var imageBytes = part.InlineData.Data;
-                        var imgResult = AiResult.OkFile(imageBytes, part.InlineData.MimeType, new Dictionary<string, object>
-                        {
-                            ["model"] = imageModel,
-                            ["revisedPrompt"] = ""
-                        });
-                        imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(imageModel);
-                        return imgResult;
+                        response = await client.Models.GenerateContentAsync(
+                            model: imageModel,
+                            contents: promptForThis,
+                            config: config
+                        );
                     }
+
+                    if (response.Candidates is null || response.Candidates.Count == 0)
+                    {
+                        lastFailure = "Google Gemini no devolvio respuesta para la imagen";
+                        if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
+                        break;
+                    }
+
+                    var parts = response.Candidates[0].Content?.Parts;
+                    if (parts is null)
+                    {
+                        lastFailure = "Google Gemini no devolvio partes en la respuesta";
+                        if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
+                        break;
+                    }
+
+                    foreach (var part in parts)
+                    {
+                        if (part.InlineData is not null && part.InlineData.MimeType?.StartsWith("image/") == true)
+                        {
+                            thisImage = part.InlineData.Data;
+                            thisMime = part.InlineData.MimeType;
+                            break;
+                        }
+                    }
+
+                    if (thisImage is not null) break;
+
+                    var textReason = string.Join(" ", parts
+                        .Where(p => !string.IsNullOrEmpty(p.Text))
+                        .Select(p => p.Text));
+                    lastFailure = string.IsNullOrWhiteSpace(textReason)
+                        ? "Google Gemini no devolvio imagen tras varios intentos"
+                        : $"Google Gemini no genero imagen: {textReason}";
+
+                    if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
                 }
 
-                // No image found — collect text reason and retry
-                var textReason = string.Join(" ", parts
-                    .Where(p => !string.IsNullOrEmpty(p.Text))
-                    .Select(p => p.Text));
-
-                if (attempt < maxRetries)
+                if (thisImage is not null)
                 {
-                    await Task.Delay(1000 * (attempt + 1));
-                    continue;
+                    collected.Add(thisImage);
+                    collectedMime ??= thisMime;
                 }
-
-                return AiResult.Fail(string.IsNullOrWhiteSpace(textReason)
-                    ? "Google Gemini no devolvio imagen tras varios intentos"
-                    : $"Google Gemini no genero imagen: {textReason}");
             }
 
-            return AiResult.Fail("Google Gemini no devolvio imagen tras varios intentos");
+            if (collected.Count == 0)
+                return AiResult.Fail(lastFailure ?? "Google Gemini no devolvio imagen tras varios intentos");
+
+            var result = AiResult.OkFiles(collected, collectedMime ?? "image/png", new Dictionary<string, object>
+            {
+                ["model"] = imageModel,
+                ["revisedPrompt"] = "",
+                ["count"] = collected.Count,
+            });
+            result.EstimatedCost = PricingCatalog.EstimateImageCost(imageModel) * collected.Count;
+            return result;
+        }
+
+        private static int ReadImageCount(IDictionary<string, object> config)
+        {
+            int Parse(object? v) => v switch
+            {
+                int i => i,
+                long l => (int)l,
+                double d => (int)d,
+                JsonElement je when je.TryGetInt32(out var ji) => ji,
+                string s when int.TryParse(s, out var sp) => sp,
+                _ => 1,
+            };
+            if (config.TryGetValue("numberOfImages", out var niv)) return Math.Max(1, Parse(niv));
+            if (config.TryGetValue("n", out var nv)) return Math.Max(1, Parse(nv));
+            return 1;
         }
 
         private async Task<AiResult> GenerateVideoAsync(AiExecutionContext context)

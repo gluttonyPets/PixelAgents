@@ -215,46 +215,99 @@ namespace Server.Services.Ai
             if (prompt.Length > maxLen)
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
 
-            byte[] imageBytes;
+            // Number of images to generate. dall-e-3 only supports n=1; others up to 10.
+            var requestedN = ReadImageCount(context.Configuration);
+            var isDallE3 = context.ModelName.Equals("dall-e-3", StringComparison.OrdinalIgnoreCase);
+            var batchN = isDallE3 ? 1 : Math.Max(1, requestedN);
+            var dalle3LoopTotal = isDallE3 ? Math.Max(1, requestedN) : 1;
+
+            var images = new List<byte[]>();
             string revisedPrompt = "";
 
-            if (context.InputFiles is { Count: > 0 } && isGptImage && sizeStr == "auto")
+            for (var loop = 0; loop < dalle3LoopTotal; loop++)
             {
-                // "auto" doesn't reliably preserve aspect ratio — detect input dimensions
-                // and pick the closest supported gpt-image size instead.
-                var bestSize = DetectBestGptImageSize(context.InputFiles[0]);
-                (imageBytes, revisedPrompt) = await CallImageEditRawAsync(
-                    context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration, bestSize);
-            }
-            else if (context.InputFiles is { Count: > 0 } && isGptImage)
-            {
-                // Image editing with an explicit size the SDK supports
-                using var imageStream = new MemoryStream(context.InputFiles[0]);
-                var editOptions = new ImageEditOptions { Size = options.Size };
-                var editResult = await client.GenerateImageEditAsync(
-                    imageStream, "input.png", prompt, editOptions);
-                var gi = editResult.Value;
-                revisedPrompt = gi.RevisedPrompt ?? "";
-                imageBytes = await ExtractImageBytesAsync(gi);
-            }
-            else
-            {
-                var result = await client.GenerateImageAsync(prompt, options);
-                var gi = result.Value;
-                revisedPrompt = gi.RevisedPrompt ?? "";
-                imageBytes = await ExtractImageBytesAsync(gi);
+                if (context.InputFiles is { Count: > 0 } && isGptImage && sizeStr == "auto")
+                {
+                    var bestSize = DetectBestGptImageSize(context.InputFiles[0]);
+                    var (editBytes, editPrompt) = await CallImageEditRawAsync(
+                        context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration, bestSize, batchN);
+                    images.AddRange(editBytes);
+                    if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = editPrompt;
+                }
+                else if (context.InputFiles is { Count: > 0 } && isGptImage)
+                {
+                    using var imageStream = new MemoryStream(context.InputFiles[0]);
+                    var editOptions = new ImageEditOptions { Size = options.Size };
+                    if (batchN > 1)
+                    {
+                        var editResult = await client.GenerateImageEditsAsync(
+                            imageStream, "input.png", prompt, batchN, editOptions);
+                        foreach (var gi in editResult.Value)
+                        {
+                            images.Add(await ExtractImageBytesAsync(gi));
+                            if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = gi.RevisedPrompt ?? "";
+                        }
+                    }
+                    else
+                    {
+                        var editResult = await client.GenerateImageEditAsync(
+                            imageStream, "input.png", prompt, editOptions);
+                        var gi = editResult.Value;
+                        images.Add(await ExtractImageBytesAsync(gi));
+                        if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = gi.RevisedPrompt ?? "";
+                    }
+                }
+                else
+                {
+                    if (batchN > 1)
+                    {
+                        var result = await client.GenerateImagesAsync(prompt, batchN, options);
+                        foreach (var gi in result.Value)
+                        {
+                            images.Add(await ExtractImageBytesAsync(gi));
+                            if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = gi.RevisedPrompt ?? "";
+                        }
+                    }
+                    else
+                    {
+                        var result = await client.GenerateImageAsync(prompt, options);
+                        var gi = result.Value;
+                        images.Add(await ExtractImageBytesAsync(gi));
+                        if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = gi.RevisedPrompt ?? "";
+                    }
+                }
             }
 
-            if (imageBytes.Length == 0)
+            images = images.Where(b => b.Length > 0).ToList();
+            if (images.Count == 0)
                 return AiResult.Fail("No se recibieron datos de imagen del modelo");
 
-            var imgResult = AiResult.OkFile(imageBytes, "image/png", new Dictionary<string, object>
+            var metadata = new Dictionary<string, object>
             {
                 ["model"] = context.ModelName,
-                ["revisedPrompt"] = revisedPrompt
-            });
-            imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName, context.Configuration);
+                ["revisedPrompt"] = revisedPrompt,
+                ["count"] = images.Count,
+            };
+            var perImageCost = PricingCatalog.EstimateImageCost(context.ModelName, context.Configuration);
+            var imgResult = AiResult.OkFiles(images, "image/png", metadata);
+            imgResult.EstimatedCost = perImageCost * images.Count;
             return imgResult;
+        }
+
+        private static int ReadImageCount(IDictionary<string, object> config)
+        {
+            int Parse(object? v) => v switch
+            {
+                int i => i,
+                long l => (int)l,
+                double d => (int)d,
+                JsonElement je when je.TryGetInt32(out var ji) => ji,
+                string s when int.TryParse(s, out var sp) => sp,
+                _ => 1,
+            };
+            if (config.TryGetValue("n", out var nv)) return Math.Max(1, Parse(nv));
+            if (config.TryGetValue("numberOfImages", out var niv)) return Math.Max(1, Parse(niv));
+            return 1;
         }
 
         /// <summary>
@@ -484,9 +537,9 @@ namespace Server.Services.Ai
         /// Calls the OpenAI image edit API directly via HttpClient,
         /// passing an explicit size to preserve aspect ratio from the input image.
         /// </summary>
-        private static async Task<(byte[] ImageBytes, string RevisedPrompt)> CallImageEditRawAsync(
+        private static async Task<(List<byte[]> Images, string RevisedPrompt)> CallImageEditRawAsync(
             string apiKey, string model, byte[] inputImage, string prompt,
-            IDictionary<string, object> config, string sizeOverride = "auto")
+            IDictionary<string, object> config, string sizeOverride = "auto", int n = 1)
         {
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
@@ -495,12 +548,12 @@ namespace Server.Services.Ai
             form.Add(new StringContent(model), "model");
             form.Add(new StringContent(prompt), "prompt");
             form.Add(new StringContent(sizeOverride), "size");
+            if (n > 1)
+                form.Add(new StringContent(n.ToString()), "n");
 
-            // Quality
             if (config.TryGetValue("quality", out var q) && q is string qs && !string.IsNullOrWhiteSpace(qs))
                 form.Add(new StringContent(qs), "quality");
 
-            // Image file
             var imageContent = new ByteArrayContent(inputImage);
             imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
             form.Add(imageContent, "image[]", "input.png");
@@ -512,26 +565,28 @@ namespace Server.Services.Ai
                 throw new InvalidOperationException($"OpenAI image edit failed ({response.StatusCode}): {json}");
 
             using var doc = JsonDocument.Parse(json);
-            var data = doc.RootElement.GetProperty("data")[0];
+            var dataArr = doc.RootElement.GetProperty("data");
 
-            var revisedPrompt = data.TryGetProperty("revised_prompt", out var rp) ? rp.GetString() ?? "" : "";
+            var images = new List<byte[]>();
+            var revisedPrompt = "";
 
-            // gpt-image returns URL
-            if (data.TryGetProperty("url", out var urlProp))
+            foreach (var item in dataArr.EnumerateArray())
             {
-                var url = urlProp.GetString()!;
-                var bytes = await http.GetByteArrayAsync(url);
-                return (bytes, revisedPrompt);
+                if (string.IsNullOrEmpty(revisedPrompt) && item.TryGetProperty("revised_prompt", out var rp))
+                    revisedPrompt = rp.GetString() ?? "";
+
+                if (item.TryGetProperty("url", out var urlProp))
+                {
+                    var url = urlProp.GetString()!;
+                    images.Add(await http.GetByteArrayAsync(url));
+                }
+                else if (item.TryGetProperty("b64_json", out var b64Prop))
+                {
+                    images.Add(Convert.FromBase64String(b64Prop.GetString()!));
+                }
             }
 
-            // or base64
-            if (data.TryGetProperty("b64_json", out var b64Prop))
-            {
-                var bytes = Convert.FromBase64String(b64Prop.GetString()!);
-                return (bytes, revisedPrompt);
-            }
-
-            return (Array.Empty<byte>(), revisedPrompt);
+            return (images, revisedPrompt);
         }
     }
 }
