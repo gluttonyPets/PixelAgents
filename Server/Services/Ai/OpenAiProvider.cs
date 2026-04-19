@@ -42,8 +42,6 @@ namespace Server.Services.Ai
                 systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
-            if (!string.IsNullOrWhiteSpace(context.InitialUserInput))
-                systemParts.Add($"[Peticion inicial del usuario — intencion global del pipeline]\n{context.InitialUserInput}");
             if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
                 systemParts.Add(context.PreviousExecutionsSummary);
             messages.Add(new SystemChatMessage(string.Join("\n\n", systemParts)));
@@ -208,15 +206,9 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
                 baseInput = string.IsNullOrWhiteSpace(baseInput) ? sp : $"{sp}\n\n{baseInput}";
 
-            var contextParts = new List<string>();
+            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{baseInput}";
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                contextParts.Add($"[Contexto del proyecto: {context.ProjectContext}]");
-            if (!string.IsNullOrWhiteSpace(context.InitialUserInput))
-                contextParts.Add($"[Peticion inicial del usuario: {context.InitialUserInput}]");
-            var prefix = contextParts.Count > 0
-                ? $"{InputAdapter.GetVisualMediaRule()}\n\n{string.Join("\n\n", contextParts)}\n\n"
-                : $"{InputAdapter.GetVisualMediaRule()}\n\n";
-            var prompt = $"{prefix}{baseInput}";
+                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{baseInput}";
 
             // Truncar al máximo del modelo como red de seguridad
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);

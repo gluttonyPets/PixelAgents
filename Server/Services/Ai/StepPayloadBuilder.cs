@@ -49,7 +49,6 @@ public static class StepPayloadBuilder
             ["moduleType"] = aiCtx.ModuleType,
             ["systemPrompt"] = systemPrompt,
             ["projectContext"] = string.IsNullOrWhiteSpace(aiCtx.ProjectContext) ? null : aiCtx.ProjectContext,
-            ["initialUserInput"] = string.IsNullOrWhiteSpace(aiCtx.InitialUserInput) ? null : aiCtx.InitialUserInput,
             ["previousExecutionsSummary"] = string.IsNullOrWhiteSpace(aiCtx.PreviousExecutionsSummary) ? null : aiCtx.PreviousExecutionsSummary,
             ["prompt"] = aiCtx.Input,
             ["inputFilesCount"] = aiCtx.InputFiles?.Count ?? 0,

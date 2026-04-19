@@ -69,8 +69,6 @@ namespace Server.Services.Ai
                 systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
-            if (!string.IsNullOrWhiteSpace(context.InitialUserInput))
-                systemParts.Add($"[Peticion inicial del usuario — intencion global del pipeline]\n{context.InitialUserInput}");
             if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
                 systemParts.Add(context.PreviousExecutionsSummary);
 
@@ -150,10 +148,8 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
                 prompt = string.IsNullOrWhiteSpace(prompt) ? sp : $"{sp}\n\n{prompt}";
 
-            if (!string.IsNullOrWhiteSpace(context.InitialUserInput))
-                prompt = $"[Peticion inicial del usuario: {context.InitialUserInput}]\n\n{prompt}";
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                prompt = $"[Contexto del proyecto: {context.ProjectContext}]\n\n{prompt}";
+                prompt = $"[Contexto: {context.ProjectContext}]\n\n{prompt}";
 
             // Prepend instruction to ensure Gemini generates an image, not text
             prompt = $"{InputAdapter.GetVisualMediaRule()}\n\nGenerate an image based on this description: {prompt}";

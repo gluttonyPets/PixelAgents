@@ -149,14 +149,9 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
                 baseInput = string.IsNullOrWhiteSpace(baseInput) ? sp : $"{sp}\n\n{baseInput}";
 
-            var grokContextParts = new List<string>();
+            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{baseInput}";
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                grokContextParts.Add($"[Contexto del proyecto: {context.ProjectContext}]");
-            if (!string.IsNullOrWhiteSpace(context.InitialUserInput))
-                grokContextParts.Add($"[Peticion inicial del usuario: {context.InitialUserInput}]");
-            var prompt = grokContextParts.Count > 0
-                ? $"{InputAdapter.GetVisualMediaRule()}\n\n{string.Join("\n\n", grokContextParts)}\n\n{baseInput}"
-                : $"{InputAdapter.GetVisualMediaRule()}\n\n{baseInput}";
+                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{baseInput}";
 
             var maxLen = InputAdapter.GetMaxPromptLength(modelName);
             if (prompt.Length > maxLen)

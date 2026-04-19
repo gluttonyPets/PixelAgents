@@ -61,7 +61,6 @@ public class OrchestratorModuleHandler : IModuleHandler
             Input = prompt,
             ProjectContext = ctx.Project.Context,
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
-            InitialUserInput = ctx.Execution.UserInput,
             Configuration = config,
             SkipOutputSchema = true,
         };

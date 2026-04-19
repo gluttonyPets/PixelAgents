@@ -98,8 +98,6 @@ namespace Server.Services.Ai
                 systemParts.Add(OutputSchemaHelper.GetTextOutputInstruction());
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
-            if (!string.IsNullOrWhiteSpace(context.InitialUserInput))
-                systemParts.Add($"[Peticion inicial del usuario — intencion global del pipeline]\n{context.InitialUserInput}");
             if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
                 systemParts.Add(context.PreviousExecutionsSummary);
             parameters.System = new List<SystemMessage> { new SystemMessage(string.Join("\n\n", systemParts)) };
