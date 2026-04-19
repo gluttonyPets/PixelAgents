@@ -65,6 +65,8 @@ public class OrchestratorModuleHandler : IModuleHandler
             SkipOutputSchema = true,
         };
 
+        StepPayloadBuilder.RecordSentPayload(ctx, aiContext, effectiveProvider);
+
         var result = await provider.ExecuteAsync(aiContext);
         if (!result.Success)
             return ModuleResult.Failed(result.Error ?? "Error en orquestador");
