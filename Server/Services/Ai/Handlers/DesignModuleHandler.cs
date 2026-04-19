@@ -35,6 +35,8 @@ public class DesignModuleHandler : IModuleHandler
             Configuration = ctx.Config,
         };
 
+        StepPayloadBuilder.RecordSentPayload(ctx, aiContext, module.ProviderType);
+
         var result = await provider.ExecuteAsync(aiContext);
         if (!result.Success)
             return ModuleResult.Failed(result.Error ?? "Error en diseno");

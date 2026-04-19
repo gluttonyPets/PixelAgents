@@ -54,6 +54,8 @@ public class ImageModuleHandler : IModuleHandler
             InputFiles = inputFiles,
         };
 
+        StepPayloadBuilder.RecordSentPayload(ctx, aiContext, module.ProviderType);
+
         var result = await provider.ExecuteAsync(aiContext);
         if (!result.Success)
             return ModuleResult.Failed(result.Error ?? "Error en generacion de imagen");

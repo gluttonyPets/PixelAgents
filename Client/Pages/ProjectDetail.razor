@@ -1132,6 +1132,22 @@ else
                                                                 <pre class="exec-io-block">@step.InputData</pre>
                                                             </div>
                                                         }
+
+                                                        @* ── Raw payload (exact data sent to the provider API) ── *@
+                                                        @{
+                                                            var rawExpanded = _expandedRawPayloadSteps.Contains(step.StepOrder);
+                                                        }
+                                                        <div class="exec-io-section">
+                                                            <button type="button"
+                                                                    class="btn btn-sm"
+                                                                    @onclick="() => ToggleRawPayload(step.StepOrder)">
+                                                                @(rawExpanded ? "Ocultar payload enviado" : "Ver payload enviado a la API")
+                                                            </button>
+                                                            @if (rawExpanded)
+                                                            {
+                                                                <pre class="exec-io-block" style="margin-top:8px;">@(inputParsed?.RawJson ?? step.InputData)</pre>
+                                                            }
+                                                        </div>
                                                     }
                                                 }
 
@@ -1956,6 +1972,7 @@ else
 
     // Execution detail: expanded steps
     private HashSet<int> _expandedSteps = new();
+    private HashSet<int> _expandedRawPayloadSteps = new();
     private static readonly HashSet<string> PassThroughModuleTypes = new() { "StaticText", "FileUpload" };
 
     // Orchestrator review
@@ -3322,6 +3339,12 @@ else
     {
         if (!_expandedSteps.Remove(stepOrder))
             _expandedSteps.Add(stepOrder);
+    }
+
+    private void ToggleRawPayload(int stepOrder)
+    {
+        if (!_expandedRawPayloadSteps.Remove(stepOrder))
+            _expandedRawPayloadSteps.Add(stepOrder);
     }
 
     private void ToggleRetryPanel(int stepOrder)
