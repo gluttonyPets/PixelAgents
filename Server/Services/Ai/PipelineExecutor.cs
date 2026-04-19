@@ -2552,12 +2552,12 @@ Datos de la ejecucion:
                     previousText = fbResult.TextOutput ?? "";
             }
 
-            // Use the AI-generated title as caption if available, otherwise fall back to template
-            var caption = !string.IsNullOrWhiteSpace(previousTitle) && captionTemplate == "{previous_output}"
-                ? previousTitle
-                : captionTemplate
-                    .Replace("{previous_output}", previousText)
-                    .Replace("{step_number}", pm.StepOrder.ToString());
+            // Caption rule: only the AI-generated Title is ever published. If no title
+            // is available, leave the caption empty — never dump Content/raw JSON.
+            var titleForCaption = previousTitle ?? "";
+            var caption = captionTemplate
+                .Replace("{previous_output}", titleForCaption)
+                .Replace("{step_number}", pm.StepOrder.ToString());
 
             // Collect and classify media from the nearest non-Interaction previous step
             // Prioritize media from the SAME branch before falling back to main

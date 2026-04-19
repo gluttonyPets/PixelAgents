@@ -584,13 +584,13 @@ public class GraphPipelineExecutor : IPipelineExecutor
             captionTemplate = "{previous_output}";
 
         var captionSource = FindPublishCaptionSource(node);
-        var caption = !string.IsNullOrWhiteSpace(captionSource.Title) && captionTemplate == "{previous_output}"
-            ? captionSource.Title!
-            : captionTemplate
-                .Replace("{previous_output}", captionSource.Text ?? "")
-                .Replace("{step_number}", node.ProjectModule.StepOrder.ToString());
-        if (string.IsNullOrWhiteSpace(caption))
-            caption = captionSource.Text ?? "";
+        // Caption rule: only the upstream Title is ever published. If there is no
+        // title (parser fallback, missing field, etc.) leave the caption empty —
+        // never fall back to dumping Content/raw JSON (Instagram rejects >2196 chars).
+        var titleForCaption = captionSource.Title ?? "";
+        var caption = captionTemplate
+            .Replace("{previous_output}", titleForCaption)
+            .Replace("{step_number}", node.ProjectModule.StepOrder.ToString());
 
         var mediaSource = FindPublishMediaSource(node);
         var classifiedMedia = BuildClassifiedMedia(ctx, mediaSource.Files, mediaSource.Output);
