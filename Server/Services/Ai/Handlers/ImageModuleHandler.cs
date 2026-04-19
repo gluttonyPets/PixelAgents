@@ -35,11 +35,13 @@ public class ImageModuleHandler : IModuleHandler
         if (ctx.Config.TryGetValue("n", out var nVal))
         {
             if (nVal is int n) imageCount = n;
+            else if (nVal is long nl) imageCount = (int)nl;
             else if (nVal is System.Text.Json.JsonElement je && je.TryGetInt32(out var jn)) imageCount = jn;
         }
         if (ctx.Config.TryGetValue("numberOfImages", out var niVal))
         {
             if (niVal is int ni) imageCount = ni;
+            else if (niVal is long nil) imageCount = (int)nil;
             else if (niVal is System.Text.Json.JsonElement je && je.TryGetInt32(out var jni)) imageCount = jni;
         }
 
