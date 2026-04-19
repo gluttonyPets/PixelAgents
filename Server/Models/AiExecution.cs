@@ -9,6 +9,10 @@ namespace Server.Models
         public string? ProjectContext { get; set; }
         /// <summary>Summaries from previous executions to avoid repeating content.</summary>
         public string? PreviousExecutionsSummary { get; set; }
+        /// <summary>The initial prompt the user typed when starting the run. Carried
+        /// to every AI call so downstream modules (not only the first) know the
+        /// original intent of the user.</summary>
+        public string? InitialUserInput { get; set; }
         public Dictionary<string, object> Configuration { get; set; } = new();
         public List<byte[]>? InputFiles { get; set; }
         /// <summary>When true, providers skip the default OutputSchema JSON instructions.

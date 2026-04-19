@@ -99,9 +99,14 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
                 baseInput = string.IsNullOrWhiteSpace(baseInput) ? sp : $"{sp}\n\n{baseInput}";
 
-            var prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{baseInput}";
+            var leoContextParts = new List<string>();
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.ProjectContext}\n\n{baseInput}";
+                leoContextParts.Add($"[Contexto del proyecto: {context.ProjectContext}]");
+            if (!string.IsNullOrWhiteSpace(context.InitialUserInput))
+                leoContextParts.Add($"[Peticion inicial del usuario: {context.InitialUserInput}]");
+            var prompt = leoContextParts.Count > 0
+                ? $"{InputAdapter.GetVisualMediaRule()}\n\n{string.Join("\n\n", leoContextParts)}\n\n{baseInput}"
+                : $"{InputAdapter.GetVisualMediaRule()}\n\n{baseInput}";
 
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
             if (prompt.Length > maxLen)

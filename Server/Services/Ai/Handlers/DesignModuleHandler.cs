@@ -32,6 +32,7 @@ public class DesignModuleHandler : IModuleHandler
             ApiKey = apiKey,
             Input = prompt,
             ProjectContext = ctx.Project.Context,
+            InitialUserInput = ctx.Execution.UserInput,
             Configuration = ctx.Config,
         };
 
