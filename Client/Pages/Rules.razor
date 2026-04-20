@@ -1,0 +1,159 @@
+@page "/rules"
+@inject ApiClient Api
+
+<h2>Reglas obligatorias</h2>
+
+<p class="text-muted" style="font-size:0.85rem;">
+    Cada regla activa se inyecta automaticamente en el system prompt de TODAS las llamadas a IA del pipeline
+    (texto, imagen, coordinador, orquestador, diseno). Usalas para imponer formato, idioma, restricciones de marca, etc.
+</p>
+
+<div class="card">
+    <h3>@(_editingId is null ? "Nueva regla" : "Editar regla")</h3>
+    @if (_error is not null)
+    {
+        <div class="alert alert-error">@_error</div>
+    }
+    <div class="form-group">
+        <label>Titulo</label>
+        <input type="text" @bind="_title" placeholder="Idioma de salida" />
+    </div>
+    <div class="form-group">
+        <label>Contenido (instruccion enviada al modelo)</label>
+        <textarea rows="5" @bind="_content" placeholder="Toda salida debe estar en espanol..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Orden</label>
+            <input type="number" @bind="_sortOrder" style="width:6rem;" />
+        </div>
+        <div class="form-group" style="display:flex; align-items:end;">
+            <label style="display:flex; gap:.5rem; align-items:center;">
+                <input type="checkbox" @bind="_isActive" />
+                <span>Activa</span>
+            </label>
+        </div>
+    </div>
+    <div style="display:flex; gap:.5rem;">
+        <button class="btn btn-primary" @onclick="Save" disabled="@_loading">
+            @(_editingId is null ? "Crear" : "Guardar")
+        </button>
+        @if (_editingId is not null)
+        {
+            <button class="btn btn-sm" @onclick="CancelEdit">Cancelar</button>
+        }
+    </div>
+</div>
+
+@if (_rules.Count > 0)
+{
+    <table>
+        <thead>
+            <tr>
+                <th style="width:4rem;">Orden</th>
+                <th>Titulo</th>
+                <th>Contenido</th>
+                <th style="width:5rem;">Estado</th>
+                <th style="width:10rem;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _rules)
+            {
+                <tr style="@(r.IsActive ? "" : "opacity:.5;")">
+                    <td>@r.SortOrder</td>
+                    <td>@r.Title</td>
+                    <td style="max-width:30rem; white-space:pre-wrap; font-size:.8rem;">@r.Content</td>
+                    <td>
+                        @if (r.IsActive)
+                        {
+                            <span class="badge badge-success">Activa</span>
+                        }
+                        else
+                        {
+                            <span class="badge">Inactiva</span>
+                        }
+                    </td>
+                    <td>
+                        <button class="btn btn-sm" @onclick="() => StartEdit(r)">Editar</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(r.Id)">Eliminar</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+else if (!_loading)
+{
+    <p class="text-muted">No hay reglas configuradas.</p>
+}
+
+@code {
+    private List<RuleResponse> _rules = [];
+    private bool _loading;
+    private string? _error;
+
+    private Guid? _editingId;
+    private string _title = "";
+    private string _content = "";
+    private bool _isActive = true;
+    private int _sortOrder;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        try { _rules = await Api.GetRulesAsync(); } catch { }
+        _loading = false;
+    }
+
+    private void StartEdit(RuleResponse r)
+    {
+        _editingId = r.Id;
+        _title = r.Title;
+        _content = r.Content;
+        _isActive = r.IsActive;
+        _sortOrder = r.SortOrder;
+        _error = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _title = "";
+        _content = "";
+        _isActive = true;
+        _sortOrder = 0;
+        _error = null;
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_title) || string.IsNullOrWhiteSpace(_content))
+        {
+            _error = "Titulo y contenido son obligatorios";
+            return;
+        }
+        _loading = true;
+        try
+        {
+            (bool ok, string? error) result;
+            if (_editingId is { } id)
+                result = await Api.UpdateRuleAsync(id, new UpdateRuleRequest(_title, _content, _isActive, _sortOrder));
+            else
+                result = await Api.CreateRuleAsync(new CreateRuleRequest(_title, _content, _isActive, _sortOrder));
+
+            if (result.ok) { CancelEdit(); await Load(); }
+            else _error = result.error;
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        _loading = false;
+    }
+
+    private async Task Delete(Guid id)
+    {
+        try { await Api.DeleteRuleAsync(id); await Load(); } catch { }
+    }
+}

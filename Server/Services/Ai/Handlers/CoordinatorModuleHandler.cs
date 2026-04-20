@@ -56,6 +56,7 @@ public class CoordinatorModuleHandler : IModuleHandler
             Input = combinedInput,
             ProjectContext = ctx.Project.Context,
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
+            MandatoryRules = ctx.MandatoryRules,
             Configuration = ctx.Config,
         };
 

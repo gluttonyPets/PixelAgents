@@ -9,6 +9,10 @@ namespace Server.Models
         public string? ProjectContext { get; set; }
         /// <summary>Summaries from previous executions to avoid repeating content.</summary>
         public string? PreviousExecutionsSummary { get; set; }
+        /// <summary>Active tenant-level rules joined into a single block. Injected
+        /// into the system prompt of every AI call so the model always honours
+        /// the global rules configured in /rules.</summary>
+        public string? MandatoryRules { get; set; }
         public Dictionary<string, object> Configuration { get; set; } = new();
         public List<byte[]>? InputFiles { get; set; }
         /// <summary>When true, providers skip the default OutputSchema JSON instructions.

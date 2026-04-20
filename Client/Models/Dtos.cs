@@ -12,6 +12,11 @@ public record AuthResponse(string Email, Guid AccountId, string? DbName);
 public record CreateApiKeyRequest(string Name, string ProviderType, string Key);
 public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime CreatedAt);
 
+// ── Rule ──
+public record CreateRuleRequest(string Title, string Content, bool IsActive = true, int SortOrder = 0);
+public record UpdateRuleRequest(string Title, string Content, bool IsActive, int SortOrder);
+public record RuleResponse(Guid Id, string Title, string Content, bool IsActive, int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
+
 // ── AiModule ──
 public record CreateAiModuleRequest(
     string Name, string? Description, string ProviderType,

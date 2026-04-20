@@ -50,6 +50,8 @@ public class ModuleExecutionContext
     public required string TenantDbName { get; init; }
     public required string WorkspacePath { get; init; }
     public string? PreviousSummaryContext { get; init; }
+    /// <summary>Pre-joined mandatory rules from the tenant Rules table.</summary>
+    public string? MandatoryRules { get; init; }
     public CancellationToken CancellationToken { get; init; }
 
     /// <summary>Pre-resolved input data grouped by port ID.</summary>

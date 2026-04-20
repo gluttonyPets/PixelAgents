@@ -55,6 +55,7 @@ namespace Server.Services
             await using (var tenantCtx = new UserDbContext(opts))
             {
                 await tenantCtx.Database.EnsureCreatedAsync();
+                await SeedDefaultRulesAsync(tenantCtx);
             }
 
             // Create account in core DB
@@ -70,6 +71,20 @@ namespace Server.Services
 
             // Store tenant DB name as claim
             await _um.AddClaimAsync(user, new Claim("db_name", dbName));
+        }
+
+        private static async Task SeedDefaultRulesAsync(UserDbContext db)
+        {
+            if (await db.Rules.AnyAsync()) return;
+            db.Rules.Add(new Rule
+            {
+                Id = Guid.NewGuid(),
+                Title = "Explica que estas enviando",
+                Content = "Toda salida de un modulo debe incluir, junto a su contenido, una breve explicacion (1-2 frases) de que esta enviando y para que. Si la salida es un JSON, cada campo del JSON debe llevar una descripcion clara de su objetivo (por ejemplo, en una clave 'descripcion' o como comentario inline en el campo 'label').",
+                IsActive = true,
+                SortOrder = 0,
+            });
+            await db.SaveChangesAsync();
         }
     }
 }

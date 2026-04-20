@@ -1100,6 +1100,13 @@ else
                                                         var inputParsed = ParseInputData(step.InputData);
                                                         @if (inputParsed is not null)
                                                         {
+                                                            @if (!string.IsNullOrWhiteSpace(inputParsed.MandatoryRules))
+                                                            {
+                                                                <div class="exec-io-section">
+                                                                    <div class="exec-io-title exec-io-in">Reglas obligatorias</div>
+                                                                    <div class="exec-io-block">@inputParsed.MandatoryRules</div>
+                                                                </div>
+                                                            }
                                                             @if (inputParsed.SystemPrompt is not null)
                                                             {
                                                                 <div class="exec-io-section">
@@ -3693,7 +3700,7 @@ else
         catch { return raw; }
     }
 
-    private record ParsedInputData(string? SystemPrompt, string? ProjectContext, List<string> Prompts, string RawJson);
+    private record ParsedInputData(string? SystemPrompt, string? MandatoryRules, string? ProjectContext, List<string> Prompts, string RawJson);
 
     private record CheckpointEntry(string Label, string Value);
 
@@ -3745,6 +3752,10 @@ else
             if (root.TryGetProperty("projectContext", out var pcEl) && pcEl.ValueKind == JsonValueKind.String)
                 projectContext = pcEl.GetString();
 
+            string? mandatoryRules = null;
+            if (root.TryGetProperty("mandatoryRules", out var mrEl) && mrEl.ValueKind == JsonValueKind.String)
+                mandatoryRules = mrEl.GetString();
+
             // Single prompt
             if (root.TryGetProperty("prompt", out var promptEl) && promptEl.ValueKind == JsonValueKind.String)
             {
@@ -3765,7 +3776,7 @@ else
             // Pretty-print the raw JSON for fallback/non-AI steps
             var rawJson = JsonSerializer.Serialize(doc.RootElement, PrettyJsonOptions);
 
-            return new ParsedInputData(systemPrompt, projectContext, prompts, rawJson);
+            return new ParsedInputData(systemPrompt, mandatoryRules, projectContext, prompts, rawJson);
         }
         catch { return null; }
     }

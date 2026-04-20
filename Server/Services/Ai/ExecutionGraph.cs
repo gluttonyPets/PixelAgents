@@ -14,6 +14,9 @@ public class ExecutionGraph
     public Guid ExecutionId { get; set; }
     public string WorkspacePath { get; set; } = "";
     public string? UserInput { get; set; }
+    /// <summary>Tenant-level mandatory rules joined into a single block, injected
+    /// into every AI provider call.</summary>
+    public string? MandatoryRules { get; set; }
 
     /// <summary>
     /// Build the execution graph from DB entities.
