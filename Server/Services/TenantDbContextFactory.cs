@@ -128,28 +128,6 @@ namespace Server.Services
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_OrchestratorOutputs_ProjectModuleId"" ON ""OrchestratorOutputs"" (""ProjectModuleId"")", log);
             RunSafe(ctx, @"ALTER TABLE ""OrchestratorOutputs"" ADD COLUMN IF NOT EXISTS ""DataType"" varchar(50) NOT NULL DEFAULT 'text'", log);
-
-            // ── Mandatory rules table ──
-            RunSafe(ctx, @"
-                CREATE TABLE IF NOT EXISTS ""Rules"" (
-                    ""Id"" uuid NOT NULL PRIMARY KEY,
-                    ""Title"" varchar(200) NOT NULL,
-                    ""Content"" text NOT NULL,
-                    ""IsActive"" boolean NOT NULL DEFAULT true,
-                    ""SortOrder"" integer NOT NULL DEFAULT 0,
-                    ""CreatedAt"" timestamp with time zone NOT NULL,
-                    ""UpdatedAt"" timestamp with time zone NOT NULL
-                )", log);
-            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_Rules_IsActive_SortOrder"" ON ""Rules"" (""IsActive"", ""SortOrder"")", log);
-            // Seed default rule for tenants that don't have any rules yet
-            // (idempotent: only inserts if the table is empty).
-            RunSafe(ctx, @"
-                INSERT INTO ""Rules"" (""Id"", ""Title"", ""Content"", ""IsActive"", ""SortOrder"", ""CreatedAt"", ""UpdatedAt"")
-                SELECT gen_random_uuid(),
-                       'Explica que estas enviando',
-                       'Toda salida de un modulo debe incluir, junto a su contenido, una breve explicacion (1-2 frases) de que esta enviando y para que. Si la salida es un JSON, cada campo del JSON debe llevar una descripcion clara de su objetivo (por ejemplo, en una clave ''descripcion'' o como comentario inline en el campo ''label'').',
-                       true, 0, NOW(), NOW()
-                WHERE NOT EXISTS (SELECT 1 FROM ""Rules"")", log);
         }
 
         private static void RunSafe(UserDbContext ctx, string sql, ILogger? log = null)
