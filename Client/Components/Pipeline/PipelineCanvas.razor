@@ -1232,6 +1232,46 @@
     <div class="alert alert-error" style="margin-top: 0.5rem;">@_error</div>
 }
 
+@if (_formatEditor is not null)
+{
+    <div class="modal-overlay" @onclick="CloseFormatEditor">
+        <div class="modal-content format-modal" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3 style="margin: 0; font-size: 0.95rem;">
+                    <i class="bi bi-braces" style="margin-right: 0.3rem;"></i>
+                    Formato de la conexion
+                </h3>
+                <button class="node-btn" @onclick="CloseFormatEditor" title="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                <p class="text-sm text-muted" style="margin-top: 0; margin-bottom: 0.4rem;">
+                    <strong>@_formatEditor.FromLabel</strong>
+                    <span style="margin: 0 0.3rem;">&#x2192;</span>
+                    <strong>@_formatEditor.ToLabel</strong>
+                </p>
+                <p class="text-sm text-muted" style="margin-bottom: 0.4rem;">
+                    Define el JSON que el modulo origen debe emitir para que el destino pueda leer cada campo en su sitio. Se inyecta como instruccion al prompt del origen y guia al destino en la lectura.
+                </p>
+                <textarea rows="14" spellcheck="false"
+                          placeholder='{"images":[{"prompt":"slide 1"},{"prompt":"slide 2"},{"prompt":"slide 3"}]}'
+                          style="width: 100%; font-family: var(--font-mono, monospace); font-size: 0.8rem;"
+                          @bind="_formatEditor.Draft"
+                          @bind:event="oninput"></textarea>
+                @if (!string.IsNullOrWhiteSpace(_formatEditor.ValidationError))
+                {
+                    <div class="alert alert-error" style="font-size: 0.75rem; margin-top: 0.4rem;">@_formatEditor.ValidationError</div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm" @onclick="ClearFormatEditor" title="Quitar el formato de esta conexion">Quitar</button>
+                <div style="flex: 1;"></div>
+                <button class="btn btn-sm" @onclick="CloseFormatEditor">Cancelar</button>
+                <button class="btn btn-success btn-sm" @onclick="SaveFormatEditor">Guardar</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public Guid ProjectId { get; set; }
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
@@ -1270,6 +1310,20 @@
     ];
     private Dictionary<Guid, Dictionary<string, string>> _moduleConfigs = new();
     private bool _lastExecuting;
+
+    private FormatEditorState? _formatEditor;
+
+    private sealed class FormatEditorState
+    {
+        public Guid FromModuleId { get; set; }
+        public string FromPort { get; set; } = "";
+        public Guid ToModuleId { get; set; }
+        public string ToPort { get; set; } = "";
+        public string FromLabel { get; set; } = "";
+        public string ToLabel { get; set; } = "";
+        public string Draft { get; set; } = "";
+        public string? ValidationError { get; set; }
+    }
     private int _lastLogCount;
     private string? _pendingAutoSelectModuleType;
 
@@ -1389,7 +1443,7 @@
     {
         _positions = Modules.ToDictionary(m => m.Id, m => (m.PosX, m.PosY));
         _connections = Connections.Select(c => new ConnectionEntry(c.FromModuleId,
-            MigratePortId(c.FromPort), c.ToModuleId, MigratePortId(c.ToPort))).ToList();
+            MigratePortId(c.FromPort), c.ToModuleId, MigratePortId(c.ToPort), c.Format)).ToList();
         Console.WriteLine($"[PipelineCanvas] LoadFromParameters: {Modules.Count} modules, {Connections.Count} connections from parent, {_connections.Count} local connections");
     }
 
@@ -1463,10 +1517,31 @@
 
         await Task.Delay(100);
         await JS.InvokeVoidAsync("pipelineEditor.refreshConnections");
+        await RefreshConnectionFormatBadges();
 
         // Apply execution states if currently executing
         if (Executing || StepStatuses is { Count: > 0 })
             await UpdateExecutionVisualization();
+    }
+
+    /// <summary>
+    /// Tell the JS editor which connections have a Format set so it can paint
+    /// the midpoint badge on the right edges. Called after every rebuild and
+    /// after Format changes via the modal.
+    /// </summary>
+    private async Task RefreshConnectionFormatBadges()
+    {
+        if (!_jsInitialized) return;
+        var payload = _connections.Select(c => new
+        {
+            fromModuleId = c.FromModuleId.ToString(),
+            fromPort = c.FromPort,
+            toModuleId = c.ToModuleId.ToString(),
+            toPort = c.ToPort,
+            hasFormat = !string.IsNullOrWhiteSpace(c.Format),
+        }).ToList();
+        await JS.InvokeVoidAsync("pipelineEditor.setConnectionFormats",
+            System.Text.Json.JsonSerializer.Serialize(payload));
     }
 
     /// <summary>Update node/connection visual states based on execution progress.</summary>
@@ -2008,6 +2083,91 @@
     }
 
     [JSInvokable]
+    public void OpenConnectionFormat(string fromModuleId, string fromPort, string toModuleId, string toPort)
+    {
+        if (!Guid.TryParse(fromModuleId, out var fromId)) return;
+        if (!Guid.TryParse(toModuleId, out var toId)) return;
+
+        var conn = _connections.FirstOrDefault(c =>
+            c.FromModuleId == fromId && c.FromPort == fromPort &&
+            c.ToModuleId == toId && c.ToPort == toPort);
+        if (conn is null) return;
+
+        var fromModule = Modules.FirstOrDefault(m => m.Id == fromId);
+        var toModule = Modules.FirstOrDefault(m => m.Id == toId);
+        var fromPorts = fromModule is not null ? ModulePortRegistry.GetPorts(fromModule.ModuleType, "", GetSceneCount(fromModule.Id), fromModule.OrchestratorOutputs, GetTemplateVars(fromModule.Id)) : new();
+        var toPorts = toModule is not null ? ModulePortRegistry.GetPorts(toModule.ModuleType, "", GetSceneCount(toModule.Id), toModule.OrchestratorOutputs, GetTemplateVars(toModule.Id)) : new();
+        var fromLabel = $"{fromModule?.StepName ?? fromModule?.AiModuleName ?? "?"} · {fromPorts.FirstOrDefault(p => p.Id == fromPort)?.Label ?? fromPort}";
+        var toLabel = $"{toModule?.StepName ?? toModule?.AiModuleName ?? "?"} · {toPorts.FirstOrDefault(p => p.Id == toPort)?.Label ?? toPort}";
+
+        _formatEditor = new FormatEditorState
+        {
+            FromModuleId = fromId,
+            FromPort = fromPort,
+            ToModuleId = toId,
+            ToPort = toPort,
+            FromLabel = fromLabel,
+            ToLabel = toLabel,
+            Draft = conn.Format ?? "",
+        };
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void CloseFormatEditor()
+    {
+        _formatEditor = null;
+    }
+
+    private async Task ClearFormatEditor()
+    {
+        if (_formatEditor is null) return;
+        await ApplyFormatEdit(null);
+    }
+
+    private async Task SaveFormatEditor()
+    {
+        if (_formatEditor is null) return;
+        var draft = (_formatEditor.Draft ?? "").Trim();
+        if (!string.IsNullOrEmpty(draft))
+        {
+            try { using var _ = System.Text.Json.JsonDocument.Parse(draft); }
+            catch (Exception ex)
+            {
+                _formatEditor.ValidationError = $"JSON invalido: {ex.Message}";
+                StateHasChanged();
+                return;
+            }
+        }
+        await ApplyFormatEdit(string.IsNullOrEmpty(draft) ? null : draft);
+    }
+
+    private async Task ApplyFormatEdit(string? newFormat)
+    {
+        if (_formatEditor is null) return;
+
+        var fromId = _formatEditor.FromModuleId;
+        var fromPort = _formatEditor.FromPort;
+        var toId = _formatEditor.ToModuleId;
+        var toPort = _formatEditor.ToPort;
+
+        for (int i = 0; i < _connections.Count; i++)
+        {
+            var c = _connections[i];
+            if (c.FromModuleId == fromId && c.FromPort == fromPort &&
+                c.ToModuleId == toId && c.ToPort == toPort)
+            {
+                _connections[i] = c with { Format = newFormat };
+                break;
+            }
+        }
+
+        _formatEditor = null;
+        await AutoSaveGraph();
+        await RefreshConnectionFormatBadges();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
     public void OnNodeDeselected()
     {
         _selectedModuleId = null;
@@ -2105,6 +2265,7 @@
     private async Task NotifyGraphChanged()
     {
         await ClearNodeBadges();
+        await RefreshConnectionFormatBadges();
 
         // Debounce auto-save: wait 500ms after last change
         _saveDebounce?.Cancel();

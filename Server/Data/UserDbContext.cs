@@ -97,6 +97,7 @@ namespace Server.Data
                 e.HasKey(x => x.Id);
                 e.Property(x => x.FromPort).IsRequired().HasMaxLength(100);
                 e.Property(x => x.ToPort).IsRequired().HasMaxLength(100);
+                e.Property(x => x.Format).HasColumnType("text");
 
                 e.HasOne(x => x.Project)
                     .WithMany()

@@ -84,6 +84,9 @@ public class PortConnection
     public string SourcePortId { get; set; } = "";
     public ModuleNode TargetNode { get; set; } = null!;
     public string TargetPortId { get; set; } = "";
+    /// <summary>Optional JSON schema agreed on this edge; used to steer the
+    /// upstream producer and to disaggregate the downstream consumer.</summary>
+    public string? Format { get; set; }
 }
 
 /// <summary>A unit of data flowing between ports.</summary>

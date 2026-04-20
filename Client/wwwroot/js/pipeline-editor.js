@@ -6,6 +6,8 @@ window.pipelineEditor = {
     _moduleMap: {},     // drawflowNodeId → moduleId (guid string)
     _reverseMap: {},    // moduleId → drawflowNodeId
     _suppressEvents: false,
+    _connectionFormats: [], // [{fromModuleId, fromPort, toModuleId, toPort, hasFormat}]
+    _formatBadges: {},  // key(from-to-port-port) → DOM element
 
     init: function (dotNetRef, containerId) {
         var container = document.getElementById(containerId);
@@ -64,6 +66,8 @@ window.pipelineEditor = {
             var moduleId = this._moduleMap[id];
             if (moduleId && info)
                 this._dotNetRef.invokeMethodAsync('OnNodeMoved', moduleId, info.pos_x, info.pos_y);
+            var self = this;
+            window.requestAnimationFrame(function () { self._positionFormatBadges(); });
         });
 
         this._editor.on('connectionCreated', conn => {
@@ -307,6 +311,99 @@ window.pipelineEditor = {
         this._portMap = {};
         this._moduleMap = {};
         this._reverseMap = {};
+        this._removeAllFormatBadges();
+    },
+
+    // ── Format badges painted at the midpoint of each connection line ──
+    setConnectionFormats: function (payloadJson) {
+        if (!this._editor) return;
+        try {
+            this._connectionFormats = JSON.parse(payloadJson) || [];
+        } catch (e) {
+            this._connectionFormats = [];
+        }
+        this._rebuildFormatBadges();
+    },
+
+    _formatBadgeKey: function (fromMod, fromPort, toMod, toPort) {
+        return fromMod + '|' + fromPort + '|' + toMod + '|' + toPort;
+    },
+
+    _removeAllFormatBadges: function () {
+        Object.keys(this._formatBadges).forEach(k => {
+            var el = this._formatBadges[k];
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        });
+        this._formatBadges = {};
+    },
+
+    _rebuildFormatBadges: function () {
+        var precanvas = this._editor.precanvas;
+        if (!precanvas) return;
+        this._removeAllFormatBadges();
+        var self = this;
+        this._connectionFormats.forEach(function (entry) {
+            var badge = self._createFormatBadge(entry);
+            if (!badge) return;
+            precanvas.appendChild(badge);
+            self._formatBadges[self._formatBadgeKey(entry.fromModuleId, entry.fromPort, entry.toModuleId, entry.toPort)] = badge;
+        });
+        this._positionFormatBadges();
+    },
+
+    _createFormatBadge: function (entry) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'df-format-badge' + (entry.hasFormat ? ' has-format' : '');
+        btn.setAttribute('title', entry.hasFormat ? 'Formato definido para esta conexion' : 'Define un formato JSON para esta conexion');
+        btn.innerHTML = '<i class="bi bi-braces"></i>';
+        var self = this;
+        btn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (!self._dotNetRef) return;
+            self._dotNetRef.invokeMethodAsync('OpenConnectionFormat',
+                entry.fromModuleId, entry.fromPort, entry.toModuleId, entry.toPort);
+        });
+        return btn;
+    },
+
+    _positionFormatBadges: function () {
+        var precanvas = this._editor.precanvas;
+        if (!precanvas) return;
+        var self = this;
+        this._connectionFormats.forEach(function (entry) {
+            var key = self._formatBadgeKey(entry.fromModuleId, entry.fromPort, entry.toModuleId, entry.toPort);
+            var badge = self._formatBadges[key];
+            if (!badge) return;
+
+            var fromNodeId = self._reverseMap[entry.fromModuleId];
+            var toNodeId = self._reverseMap[entry.toModuleId];
+            if (fromNodeId === undefined || toNodeId === undefined) { badge.style.display = 'none'; return; }
+            var fromPorts = self._portMap[fromNodeId];
+            var toPorts = self._portMap[toNodeId];
+            if (!fromPorts || !toPorts) { badge.style.display = 'none'; return; }
+            var fromIdx = fromPorts.outputs.indexOf(entry.fromPort) + 1;
+            var toIdx = toPorts.inputs.indexOf(entry.toPort) + 1;
+            if (fromIdx <= 0 || toIdx <= 0) { badge.style.display = 'none'; return; }
+
+            var selector = '.connection.node_in_node-' + toNodeId + '.node_out_node-' + fromNodeId
+                + '.output_' + fromIdx + '.input_' + toIdx;
+            var connEl = precanvas.querySelector(selector);
+            if (!connEl) { badge.style.display = 'none'; return; }
+            var path = connEl.querySelector('path.main-path') || connEl.querySelector('path');
+            if (!path) { badge.style.display = 'none'; return; }
+
+            try {
+                var total = path.getTotalLength();
+                var pt = path.getPointAtLength(total / 2);
+                badge.style.display = '';
+                badge.style.left = pt.x + 'px';
+                badge.style.top = pt.y + 'px';
+            } catch (e) {
+                badge.style.display = 'none';
+            }
+        });
     },
 
     // ── Update badge on a node without full rebuild ──

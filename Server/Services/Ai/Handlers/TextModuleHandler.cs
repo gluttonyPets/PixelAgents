@@ -19,6 +19,10 @@ public class TextModuleHandler : IModuleHandler
         if (string.IsNullOrWhiteSpace(prompt))
             return ModuleResult.Failed("Sin prompt de entrada");
 
+        var outgoingFormats = ctx.GetOutgoingFormats();
+        if (outgoingFormats.Count > 0)
+            prompt = OutputSchemaHelper.GetOutputFormatInstruction(outgoingFormats) + "\n\n" + prompt;
+
         var module = ctx.Node.AiModule;
         var provider = _registry.GetProvider(module.ProviderType);
         if (provider is null)

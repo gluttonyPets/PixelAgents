@@ -48,6 +48,10 @@ public class CoordinatorModuleHandler : IModuleHandler
         if (string.IsNullOrWhiteSpace(combinedInput))
             return ModuleResult.Failed("Sin datos de entrada");
 
+        var outgoingFormats = ctx.GetOutgoingFormats();
+        if (outgoingFormats.Count > 0)
+            combinedInput = OutputSchemaHelper.GetOutputFormatInstruction(outgoingFormats) + "\n\n" + combinedInput;
+
         var aiContext = new AiExecutionContext
         {
             ModuleType = "Text",

@@ -93,6 +93,22 @@ Reglas de contenido (OBLIGATORIAS):
             "independiente y autocontenida, mostrando solo su parte correspondiente.";
 
         /// <summary>
+        /// Instruccion que obliga al modelo de texto a producir su salida como
+        /// un unico objeto JSON que cumpla los contratos declarados en las
+        /// aristas salientes del grafo. Cuando hay varios contratos distintos
+        /// (varias conexiones de salida con diferentes formatos) se listan para
+        /// que el modelo sintetice uno compatible con todos.
+        /// </summary>
+        public static string GetOutputFormatInstruction(IReadOnlyList<string> formats)
+        {
+            if (formats.Count == 0) return "";
+            var body = formats.Count == 1
+                ? formats[0]
+                : string.Join("\n\n---\n\n", formats.Select((f, i) => $"Contrato {i + 1}:\n{f}"));
+            return "IMPORTANTE: Tu respuesta debe ser EXCLUSIVAMENTE un JSON valido (sin texto fuera del JSON, sin markdown) que cumpla el siguiente contrato acordado con el modulo siguiente del pipeline. Respeta los nombres de las claves, los tipos y la forma del esquema; rellena con contenido concreto los campos descritos.\n\n" + body;
+        }
+
+        /// <summary>
         /// Construye un StepOutput para un módulo de imagen con múltiples archivos.
         /// </summary>
         public static StepOutput BuildImageOutput(List<OutputFile> files, string modelName)

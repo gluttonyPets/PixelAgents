@@ -47,10 +47,10 @@ namespace Server.Models
         List<OrchestratorOutputResponse>? OrchestratorOutputs = null);
 
     // ── ModuleConnection ──
-    public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
+    public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort, string? Format = null);
     public record SaveGraphRequest(List<NodePositionEntry> Positions, List<ConnectionEntry> Connections, List<SceneCountEntry>? SceneCounts = null, List<ModuleConfigEntry>? ModuleConfigs = null);
     public record NodePositionEntry(Guid ModuleId, double PosX, double PosY);
-    public record ConnectionEntry(Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
+    public record ConnectionEntry(Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort, string? Format = null);
     public record SceneCountEntry(Guid ModuleId, int SceneCount);
     public record ModuleConfigEntry(Guid ModuleId, string Key, string Value);
 

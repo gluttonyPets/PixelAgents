@@ -2166,6 +2166,49 @@ a.link:hover { text-decoration: underline; }
     color: var(--success);
 }
 
+/* ── Format badge painted at the midpoint of a connection line ── */
+.df-format-badge {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg-card, #1e1e2a);
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    padding: 0;
+    font-size: 0.7rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+    z-index: 10;
+    transition: transform 0.12s ease, color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.df-format-badge:hover {
+    transform: translate(-50%, -50%) scale(1.12);
+}
+.df-format-badge.has-format {
+    background: #2e7d32;
+    color: #fff;
+    border-color: #1b5e20;
+    box-shadow: 0 2px 8px rgba(46, 125, 50, 0.6);
+}
+.df-format-badge i {
+    font-size: 0.75rem;
+}
+
+/* ── Edge Format editor modal footer ── */
+.format-modal .modal-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1rem;
+    border-top: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.1);
+}
+
 /* ── Node warning badge ── */
 .df-node-warning {
     font-size: 0.65rem;

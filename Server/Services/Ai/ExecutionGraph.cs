@@ -76,6 +76,7 @@ public class ExecutionGraph
                 SourcePortId = conn.FromPort,
                 TargetNode = toNode,
                 TargetPortId = conn.ToPort,
+                Format = string.IsNullOrWhiteSpace(conn.Format) ? null : conn.Format,
             };
             outputPort.Connections.Add(portConn);
             inputPort.Connections.Add(portConn);
