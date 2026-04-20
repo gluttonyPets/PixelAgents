@@ -66,7 +66,12 @@ public class CoordinatorModuleHandler : IModuleHandler
         if (!result.Success)
             return ModuleResult.Failed(result.Error ?? "Error en coordinador");
 
-        var stepOutput = OutputSchemaHelper.ParseTextOutput(result.TextOutput ?? "", result.Metadata);
+        var stepOutput = new StepOutput
+        {
+            Type = "text",
+            Content = result.TextOutput ?? "",
+            Metadata = result.Metadata ?? new(),
+        };
         return ModuleResult.Completed(stepOutput, result.EstimatedCost);
     }
 }

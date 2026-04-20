@@ -63,7 +63,6 @@ public class OrchestratorModuleHandler : IModuleHandler
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
             MandatoryRules = ctx.MandatoryRules,
             Configuration = config,
-            SkipOutputSchema = true,
         };
 
         StepPayloadBuilder.RecordSentPayload(ctx, aiContext, effectiveProvider);
