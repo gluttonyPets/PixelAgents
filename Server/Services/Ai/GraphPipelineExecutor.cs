@@ -98,6 +98,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var connections = await LoadConnectionsAsync(projectId, db, ct);
         var modules = project.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder).ToList();
         var graph = BuildGraph(projectId, execution, userInput, modules, connections);
+        graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
         var previousSummaryContext = useHistory
             ? await BuildPreviousSummaryContextAsync(db, projectId, executionId, ct)
             : null;
@@ -129,6 +130,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         var connections = await LoadConnectionsAsync(project.Id, db, ct);
         var graph = BuildGraph(project.Id, execution, execution.UserInput, modules, connections);
+        graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
         var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
         Directory.CreateDirectory(workspacePath);
 
@@ -526,6 +528,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             WorkspacePath = workspacePath,
             PublicBaseUrl = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/'),
             PreviousSummaryContext = previousSummaryContext,
+            MandatoryRules = graph.MandatoryRules,
             CancellationToken = ct,
             InputsByPort = node.InputPorts.ToDictionary(p => p.PortId, p => p.ReceivedData.ToList()),
             Config = MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration),
@@ -1289,6 +1292,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var modules = project.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder).ToList();
         var connections = await LoadConnectionsAsync(project.Id, db, ct);
         var graph = BuildGraph(project.Id, execution, state.UserInput ?? execution.UserInput, modules, connections);
+        graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
         state.RestoreInto(graph);
 
         var stepExecutions = await db.StepExecutions
@@ -1649,6 +1653,27 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     private static string Truncate(string text, int maxLength) =>
         text.Length <= maxLength ? text : text[..maxLength] + "...";
+
+    /// <summary>
+    /// Loads the active tenant rules and joins them into a single block ready
+    /// to be inserted into the system prompt of every AI provider call.
+    /// </summary>
+    private static async Task<string?> LoadMandatoryRulesAsync(UserDbContext db, CancellationToken ct)
+    {
+        var rules = await db.Rules
+            .Where(r => r.IsActive)
+            .OrderBy(r => r.SortOrder).ThenBy(r => r.CreatedAt)
+            .Select(r => new { r.Title, r.Content })
+            .ToListAsync(ct);
+
+        if (rules.Count == 0) return null;
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("[REGLAS OBLIGATORIAS - aplican a toda salida del modulo, sin excepcion]");
+        foreach (var r in rules)
+            sb.AppendLine($"- {r.Title}: {r.Content}");
+        return sb.ToString().TrimEnd();
+    }
 
     private static async Task<string?> BuildPreviousSummaryContextAsync(
         UserDbContext db,

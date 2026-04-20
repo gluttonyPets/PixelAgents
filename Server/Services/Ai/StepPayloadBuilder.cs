@@ -52,6 +52,7 @@ public static class StepPayloadBuilder
             ["model"] = aiCtx.ModelName,
             ["moduleType"] = aiCtx.ModuleType,
             ["systemPrompt"] = systemPrompt,
+            ["mandatoryRules"] = string.IsNullOrWhiteSpace(aiCtx.MandatoryRules) ? null : aiCtx.MandatoryRules,
             ["projectContext"] = string.IsNullOrWhiteSpace(aiCtx.ProjectContext) ? null : aiCtx.ProjectContext,
             ["previousExecutionsSummary"] = string.IsNullOrWhiteSpace(aiCtx.PreviousExecutionsSummary) ? null : aiCtx.PreviousExecutionsSummary,
             ["prompt"] = aiCtx.Input,

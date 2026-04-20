@@ -64,6 +64,34 @@ public class ApiClient
         await SendAsync(HttpMethod.Delete, $"/api/apikeys/{id}");
     }
 
+    // ── Rules ──
+
+    public async Task<List<RuleResponse>> GetRulesAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/rules");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<RuleResponse>>() ?? [];
+    }
+
+    public async Task<(bool Ok, string? Error)> CreateRuleAsync(CreateRuleRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/rules", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateRuleAsync(Guid id, UpdateRuleRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/rules/{id}", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task DeleteRuleAsync(Guid id)
+    {
+        await SendAsync(HttpMethod.Delete, $"/api/rules/{id}");
+    }
+
     // ── Modules ──
 
     public async Task<List<AiModuleResponse>> GetModulesAsync(string? providerType = null, string? moduleType = null)

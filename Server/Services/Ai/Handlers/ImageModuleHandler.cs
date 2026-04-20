@@ -50,6 +50,7 @@ public class ImageModuleHandler : IModuleHandler
             Input = prompt,
             ProjectContext = ctx.Project.Context,
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
+            MandatoryRules = ctx.MandatoryRules,
             Configuration = ctx.Config,
             InputFiles = inputFiles,
         };

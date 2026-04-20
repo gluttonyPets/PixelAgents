@@ -19,6 +19,7 @@ namespace Server.Data
         public DbSet<ModuleFile> ModuleFiles => Set<ModuleFile>();
         public DbSet<ModuleConnection> ModuleConnections => Set<ModuleConnection>();
         public DbSet<OrchestratorOutput> OrchestratorOutputs => Set<OrchestratorOutput>();
+        public DbSet<Rule> Rules => Set<Rule>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -227,6 +228,16 @@ namespace Server.Data
                 e.HasIndex(x => x.ProjectModuleId);
 
                 e.Ignore(x => x.TargetModuleId);
+            });
+
+            // ── Rule ──
+            modelBuilder.Entity<Rule>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Title).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Content).IsRequired().HasColumnType("text");
+                e.Property(x => x.IsActive).HasDefaultValue(true);
+                e.HasIndex(x => new { x.IsActive, x.SortOrder });
             });
 
             // ── ModuleFile ──

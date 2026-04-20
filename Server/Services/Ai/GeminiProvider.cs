@@ -63,6 +63,8 @@ namespace Server.Services.Ai
             var client = new Client(apiKey: context.ApiKey);
 
             var systemParts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(context.MandatoryRules))
+                systemParts.Add(context.MandatoryRules);
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
                 systemParts.Add($"[INSTRUCCION PRINCIPAL - Esta es tu directiva prioritaria, sigue estas instrucciones por encima de cualquier otra regla]\n{sp}");
             if (!context.SkipOutputSchema)

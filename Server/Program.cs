@@ -398,6 +398,87 @@ app.MapDelete("/api/apikeys/{id}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+// ==================== Rule Endpoints ====================
+
+app.MapGet("/api/rules", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var rules = await db.Rules
+        .OrderBy(r => r.SortOrder).ThenBy(r => r.CreatedAt)
+        .Select(r => new RuleResponse(r.Id, r.Title, r.Content, r.IsActive, r.SortOrder, r.CreatedAt, r.UpdatedAt))
+        .ToListAsync();
+
+    return Results.Ok(rules);
+}).RequireAuthorization();
+
+app.MapPost("/api/rules", async (
+    CreateRuleRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    if (string.IsNullOrWhiteSpace(req.Title) || string.IsNullOrWhiteSpace(req.Content))
+        return Results.BadRequest("Title y Content son obligatorios");
+
+    var rule = new Rule
+    {
+        Id = Guid.NewGuid(),
+        Title = req.Title,
+        Content = req.Content,
+        IsActive = req.IsActive,
+        SortOrder = req.SortOrder,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+    db.Rules.Add(rule);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/rules/{rule.Id}",
+        new RuleResponse(rule.Id, rule.Title, rule.Content, rule.IsActive, rule.SortOrder, rule.CreatedAt, rule.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapPut("/api/rules/{id}", async (
+    Guid id, UpdateRuleRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var rule = await db.Rules.FindAsync(id);
+    if (rule is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(req.Title) || string.IsNullOrWhiteSpace(req.Content))
+        return Results.BadRequest("Title y Content son obligatorios");
+
+    rule.Title = req.Title;
+    rule.Content = req.Content;
+    rule.IsActive = req.IsActive;
+    rule.SortOrder = req.SortOrder;
+    rule.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new RuleResponse(rule.Id, rule.Title, rule.Content, rule.IsActive, rule.SortOrder, rule.CreatedAt, rule.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapDelete("/api/rules/{id}", async (
+    Guid id, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var rule = await db.Rules.FindAsync(id);
+    if (rule is null) return Results.NotFound();
+
+    db.Rules.Remove(rule);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
 // ==================== AiModule Endpoints ====================
 
 app.MapPost("/api/modules", async (
