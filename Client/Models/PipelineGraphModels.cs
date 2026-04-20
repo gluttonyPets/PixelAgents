@@ -144,7 +144,7 @@ public class PipelineConnection
 // ── Module port registry ──
 public static class ModulePortRegistry
 {
-    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, string? inputMapping = null, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null)
+    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null)
     {
         var ports = new List<PortDefinition>();
 
@@ -300,16 +300,6 @@ public static class ModulePortRegistry
                 ports.Add(new("input_data", "Entrada", PortDataType.Any, isInput: true));
                 ports.Add(new("output_data", "Salida", PortDataType.Any, isInput: false));
                 break;
-        }
-
-        // If inputMapping requests file input, widen the primary input port to accept any type
-        if (inputMapping is not null && inputMapping.Contains("\"file\""))
-        {
-            var primaryInput = ports.FirstOrDefault(p => p.IsInput);
-            if (primaryInput is not null)
-            {
-                primaryInput.DataType = PortDataType.Any;
-            }
         }
 
         return ports;

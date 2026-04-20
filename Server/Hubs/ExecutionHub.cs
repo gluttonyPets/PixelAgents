@@ -20,8 +20,8 @@ namespace Server.Hubs
     public record ExecutionLogEntry(
         string Level,
         string Message,
-        int? StepOrder,
-        string? StepName,
+        Guid? ProjectModuleId,
+        string? ModuleName,
         DateTime Timestamp
     );
 
@@ -46,7 +46,7 @@ namespace Server.Hubs
     public interface IExecutionLogger
     {
         Task LogAsync(Guid projectId, Guid executionId, string level, string message,
-            int? stepOrder = null, string? stepName = null);
+            Guid? projectModuleId = null, string? moduleName = null);
 
         Task LogTaskProgressAsync(Guid projectId, OrchestratorTaskProgressEntry progress);
 
@@ -89,10 +89,10 @@ namespace Server.Hubs
         }
 
         public async Task LogAsync(Guid projectId, Guid executionId, string level, string message,
-            int? stepOrder = null, string? stepName = null)
+            Guid? projectModuleId = null, string? moduleName = null)
         {
             var timestamp = DateTime.UtcNow;
-            var entry = new ExecutionLogEntry(level, message, stepOrder, stepName, timestamp);
+            var entry = new ExecutionLogEntry(level, message, projectModuleId, moduleName, timestamp);
 
             // Broadcast via SignalR (real-time)
             await _hub.Clients.Group(projectId.ToString())
@@ -109,8 +109,8 @@ namespace Server.Hubs
                         ExecutionId = executionId,
                         Level = level,
                         Message = message,
-                        StepOrder = stepOrder,
-                        StepName = stepName,
+                        ProjectModuleId = projectModuleId,
+                        ModuleName = moduleName,
                         Timestamp = timestamp
                     });
                     await _db.SaveChangesAsync();

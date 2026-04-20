@@ -290,8 +290,8 @@ del servidor y devuelve commit y fecha de build cuando existen.
 
 El pipeline actual se ejecuta como grafo de dependencias. El executor activo es
 `GraphPipelineExecutor`, registrado como implementacion de `IPipelineExecutor`.
-El executor legacy `PipelineExecutor` sigue en el repo para compatibilidad y
-rollback historico, pero no es el servicio activo en DI.
+El executor legacy `PipelineExecutor` fue retirado del arbol de codigo; la ruta
+activa es el grafo.
 
 Conceptos:
 
@@ -318,20 +318,21 @@ Estados de nodo:
 El flujo general de ejecucion:
 
 1. El executor carga proyecto, modulos activos y conexiones.
-2. Valida que exista exactamente un modulo `Start`.
+2. Valida que exista exactamente un modulo `Start`; ese modulo es el unico
+   punto de entrada.
 3. Crea un `ProjectExecution` y un workspace bajo `GeneratedMedia`.
 4. Construye `ExecutionGraph`.
-5. Busca nodos listos y lanza handlers.
+5. Marca el modulo `Start` como `Ready` y lanza cualquier nodo en ese estado.
 6. Cuando un handler termina, persiste `StepExecution`, archivos y logs.
-7. Propaga outputs a puertos downstream.
-8. Continua hasta completar, fallar, cancelar o pausar.
+7. `CompleteNodeAndPrepareDownstream` propaga outputs a puertos downstream y
+   solo marca como `Ready` los modulos cuyos inputs estan satisfechos.
+8. Continua el bucle de nodos `Ready` hasta completar, fallar, cancelar o
+   pausar.
 
 `GraphPipelineExecutor` tambien implementa:
 
 - reintentos por modulo: `RetryFromModuleAsync`.
-- reintentos legacy por orden: `RetryFromStepAsync`.
 - reanudacion de interacciones: `ResumeFromInteractionAsync`.
-- compatibilidad para interacciones con branch: `ResumeFromBranchInteractionAsync`.
 - aprobacion/rechazo de orquestador: `ResumeFromOrchestratorAsync`.
 - aprobacion/rechazo de checkpoint: `ResumeFromCheckpointAsync`.
 - aborto de interaccion: `AbortFromInteractionAsync`.
@@ -475,13 +476,9 @@ Gestion de pipelines:
   conteos de escenas y configs de modulos.
 - `/api/projects/{projectId}/modules`: agregar modulos al proyecto.
 - `/api/projects/{projectId}/modules/{id}`: actualizar o eliminar instancia.
-- `/api/projects/{projectId}/modules/swap`: intercambiar orden.
-- `/api/projects/{projectId}/modules/reorder`: reordenar.
-- `/api/projects/{projectId}/branches/{branchId}`: eliminar branch legacy.
 
-Aunque el executor actual trabaja como grafo, siguen existiendo campos y
-endpoints legacy relacionados con branch, `StepOrder` e `InputMapping` por
-compatibilidad.
+El orden de ejecucion no se guarda en `ProjectModule`: lo determina el modulo
+`Start` y las conexiones `OutgoingConnections`/`IncomingConnections`.
 
 ### Ejecuciones
 
@@ -491,7 +488,8 @@ Ejecucion y revision:
 - `/api/projects/{projectId}/executions`: lista ejecuciones del proyecto.
 - `/api/executions/{id}`: detalle de ejecucion.
 - `/api/executions/{executionId}/logs`: logs persistidos.
-- `/api/executions/{executionId}/retry-from-step`: retry legacy por orden.
+- `/api/executions/{executionId}/retry-from-module`: retry desde un modulo del
+  grafo.
 - `/api/executions/{executionId}/orchestrator-review`: aprobar/rechazar
   orquestador.
 - `/api/executions/{executionId}/checkpoint-review`: aprobar/rechazar
@@ -662,9 +660,9 @@ contexto historico, pero no deben leerse como unica fuente de verdad.
 Estado actual relevante:
 
 - `GraphPipelineExecutor` ya esta registrado como `IPipelineExecutor`.
-- `PipelineExecutor` sigue en el repositorio como implementacion legacy.
-- Hay endpoints y campos legacy relacionados con branches, step order e input
-  mapping.
+- `ProjectModule` no conserva orden ni ramas; la ejecucion depende de
+  `ModuleConnection`.
+- `StepExecution` no conserva orden; se vincula a `ProjectModuleId`.
 - No se detectan proyectos de tests en el repo.
 
 ## Comandos Utiles

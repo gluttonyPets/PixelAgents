@@ -26,8 +26,11 @@ public class ModuleNode
         ProjectModule = pm;
     }
 
-    /// <summary>True when all required input ports are satisfied.</summary>
-    public bool AllInputsSatisfied => InputPorts.All(p => p.IsSatisfied);
+    public bool CanStartWithoutInputs => string.Equals(ModuleType, "Start", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when this node can be marked Ready from its current inputs.</summary>
+    public bool CanBecomeReady => CanStartWithoutInputs
+        || (InputPorts.Count > 0 && InputPorts.All(p => p.IsSatisfied));
 }
 
 /// <summary>An input port on a module node.</summary>

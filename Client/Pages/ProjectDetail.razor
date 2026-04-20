@@ -97,599 +97,89 @@ else
     @if (_activeTab == "pipeline")
     {
         <div class="tab-content">
-            <!-- View mode toggle -->
-            <div style="display: flex; gap: 0.5rem; margin-bottom: 0.3rem; align-items: center; flex-shrink: 0;">
-                <button class="btn btn-xs @(_pipelineViewMode == "visual" ? "btn-primary" : "")" @onclick='() => _pipelineViewMode = "visual"'>
-                    &#x1F5A7; Visual
-                </button>
-                <button class="btn btn-xs @(_pipelineViewMode == "linear" ? "btn-primary" : "")" @onclick='() => _pipelineViewMode = "linear"'>
-                    &#x2630; Lineal
-                </button>
-            </div>
-
             @if (_editError is not null)
             {
                 <div class="alert alert-error" style="flex-shrink: 0;">@_editError</div>
             }
 
-            @if (_pipelineViewMode == "visual")
-            {
-                <PipelineCanvas @ref="_pipelineCanvasRef"
-                                ProjectId="_project.Id"
-                                Modules="_project.Modules.ToList()"
-                                AvailableModules="_modules"
-                                Connections="_projectConnections"
-                                OnAddModule="AddModuleFromCanvas"
-                                OnRemoveModule="RemoveModuleFromCanvas"
-                                OnSaveGraph="SaveGraph"
-                                Executing="_executing"
-                                StepStatuses="GetStepStatuses()"
-                                ExecutionLogs="GetExecutionLogs()">
-                    <TopPanel>
-                        <div class="execute-inline">
-                            @if (_execError is not null)
-                            {
-                                <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
-                            }
-                            <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
-                            <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas">
-                                <input type="checkbox" @bind="_useHistory" />
-                                <span>No repetir tematicas anteriores</span>
-                            </label>
-                            <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
-                                <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
-                                    @if (_executing)
-                                    {
-                                        <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
-                                        <span>Ejecutando...</span>
-                                    }
-                                    else
-                                    {
-                                        <span>Ejecutar</span>
-                                    }
-                                </button>
+            <PipelineCanvas @ref="_pipelineCanvasRef"
+                            ProjectId="_project.Id"
+                            Modules="_project.Modules.ToList()"
+                            AvailableModules="_modules"
+                            Connections="_projectConnections"
+                            OnAddModule="AddModuleFromCanvas"
+                            OnRemoveModule="RemoveModuleFromCanvas"
+                            OnSaveGraph="SaveGraph"
+                            Executing="_executing"
+                            StepStatuses="GetStepStatuses()"
+                            ExecutionLogs="GetExecutionLogs()">
+                <TopPanel>
+                    <div class="execute-inline">
+                        @if (_execError is not null)
+                        {
+                            <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
+                        }
+                        <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
+                        <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas">
+                            <input type="checkbox" @bind="_useHistory" />
+                            <span>No repetir tematicas anteriores</span>
+                        </label>
+                        <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
+                            <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
                                 @if (_executing)
                                 {
-                                    <button class="btn btn-danger btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelExecution">Cancelar</button>
+                                    <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
+                                    <span>Ejecutando...</span>
                                 }
-                            </div>
-                            @if (_executing || _result is not null)
-                            {
-                                <div class="execute-inline-status">
-                                    @if (_executing)
-                                    {
-                                        <span class="spinner" style="width: 0.6rem; height: 0.6rem;"></span>
-                                        <span>Pipeline en ejecucion...</span>
-                                    }
-                                    else if (_result is not null)
-                                    {
-                                        <span class="badge @StatusBadge(_result.Status)" style="font-size: 0.65rem;">@_result.Status</span>
-                                        @if (_result.TotalEstimatedCost > 0)
-                                        {
-                                            <span class="text-muted" style="font-size: 0.65rem;">~$@_result.TotalEstimatedCost.ToString("F4")</span>
-                                        }
-                                        <button class="btn btn-sm" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-left: auto;"
-                                                @onclick='() => { _activeTab = "history"; }'>Ver detalles</button>
-                                    }
-                                </div>
-                            }
-                            @if (_showCheckpointModal || _result?.Status == "WaitingForCheckpoint")
-                            {
-                                <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 0.4rem 0.6rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem;">
-                                    <span style="font-size: 0.75rem; color: #856404; flex: 1;">Checkpoint esperando revision</span>
-                                    <button class="btn btn-success btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" @onclick="@(() => ReviewCheckpoint(true))">Continuar</button>
-                                    <button class="btn btn-danger btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" @onclick="@(() => ReviewCheckpoint(false))">Abortar</button>
-                                    <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border: 1px solid var(--border-color);" @onclick="@(() => { _showCheckpointModal = true; StateHasChanged(); })">Ver datos</button>
-                                </div>
-                            }
-                            @if (_showOrchestratorModal || _result?.Status == "WaitingForReview")
-                            {
-                                <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 6px; padding: 0.4rem 0.6rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem;">
-                                    <span style="font-size: 0.75rem; color: #1565c0; flex: 1;">Orquestador esperando revision</span>
-                                    <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; background: #2196f3; color: #fff; border: none;" @onclick="@(() => { _showOrchestratorModal = true; StateHasChanged(); })">Revisar plan</button>
-                                </div>
-                            }
-                        </div>
-                    </TopPanel>
-                </PipelineCanvas>
-            }
-            else
-            {
-            <div style="flex: 1; min-height: 0; overflow-y: auto;">
-            @if (_project.Modules.Count > 0)
-            {
-                <div class="pipeline-format-rule">
-                    Regla global: Sin emojis, sin markdown (**, *, #), sin saltos de linea, sin caracteres decorativos. Solo texto plano ASCII.
-                </div>
-
-                <div class="pipeline-flow">
-                    @{ var __main = GetMainSteps(); }
-                    @for (var si = 0; si < __main.Count; si++)
-                    {
-                        var pm = __main[si];
-                        var nextPm = si + 1 < __main.Count ? __main[si + 1] : null;
-                        var stepCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == pm.Id)?.EstimatedCost;
-
-                        <!-- Step card -->
-                        <div class="pipeline-step">
-                            <div class="step-card-v2 @(IsStepSkipped(pm) ? "step-skipped" : "")">
-                                <div class="step-card-header">
-                                    <span class="step-number">@GetStepLabel(pm)</span>
-                                    <span class="step-title">@(pm.StepName ?? pm.AiModuleName)</span>
-                                    <span class="badge badge-@(pm.ModuleType.ToLower())">@pm.ModuleType</span>
-                                    @if (IsStepSkipped(pm))
-                                    {
-                                        <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
-                                    }
-                                </div>
-                                <div class="step-card-meta">
-                                    <span>@pm.AiModuleName</span>
-                                    <span class="text-muted">@FormatInputMapping(pm.InputMapping)</span>
-                                    @if (stepCost.HasValue && stepCost.Value > 0)
-                                    {
-                                        <span class="text-muted">~$@stepCost.Value.ToString("F4")</span>
-                                    }
-                                </div>
-                                @if (pm.ModuleType == "Text" && nextPm is not null)
+                                else
                                 {
-                                    var maxLen = GetMaxPromptLength(nextPm.ModelName);
-                                    <div class="step-rule-hint">Limite: @maxLen chars (siguiente: @nextPm.ModelName)</div>
+                                    <span>Ejecutar</span>
                                 }
-                                <div class="step-card-actions">
-                                    <button class="btn btn-xs" @onclick="() => MoveStep(pm, -1)" disabled="@(pm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
-                                    <button class="btn btn-xs" @onclick="() => MoveStep(pm, 1)" disabled="@(pm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
-                                    <button class="btn btn-xs" style="@(IsStepSkipped(pm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(pm)" title="@(IsStepSkipped(pm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(pm) ? "Activar" : "Saltar")</button>
-                                    <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(pm)">Editar</button>
-                                    <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(pm.Id)">Quitar</button>
-                                </div>
-                            </div>
+                            </button>
+                            @if (_executing)
+                            {
+                                <button class="btn btn-danger btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelExecution">Cancelar</button>
+                            }
                         </div>
-
-                        <!-- Fork branches from this step -->
-                        var forksHere = GetBranchesFromStep(pm.StepOrder);
-                        if (forksHere.Count > 0)
+                        @if (_executing || _result is not null)
                         {
-                            var remainingMain = __main.Skip(si + 1).ToList();
-                            <div class="step-connector"></div>
-                            <div class="pipeline-fork">
-                                <div class="fork-junction"></div>
-                                <div class="fork-lines" style="--branch-count: @(forksHere.Count + (remainingMain.Count > 0 ? 1 : 0));"></div>
-                                <div class="pipeline-branches">
-                                    <!-- Main continuation column -->
-                                    @if (remainingMain.Count > 0)
+                            <div class="execute-inline-status">
+                                @if (_executing)
+                                {
+                                    <span class="spinner" style="width: 0.6rem; height: 0.6rem;"></span>
+                                    <span>Pipeline en ejecucion...</span>
+                                }
+                                else if (_result is not null)
+                                {
+                                    <span class="badge @StatusBadge(_result.Status)" style="font-size: 0.65rem;">@_result.Status</span>
+                                    @if (_result.TotalEstimatedCost > 0)
                                     {
-                                        <div class="pipeline-branch branch-main" style="order: 0">
-                                            <div class="branch-header branch-header-main">
-                                                <span class="branch-name">Principal</span>
-                                            </div>
-                                            @for (var rmi = 0; rmi < remainingMain.Count; rmi++)
-                                            {
-                                                var rpm = remainingMain[rmi];
-                                                var rNextPm = rmi + 1 < remainingMain.Count ? remainingMain[rmi + 1] : null;
-                                                var rCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == rpm.Id)?.EstimatedCost;
-
-                                                @if (rmi > 0)
-                                                {
-                                                    <div class="branch-connector"></div>
-                                                }
-                                                <div class="step-card-v2 branch-step @(IsStepSkipped(rpm) ? "step-skipped" : "")">
-                                                    <div class="step-card-header">
-                                                        <span class="step-number">@GetStepLabel(rpm)</span>
-                                                        <span class="step-title">@(rpm.StepName ?? rpm.AiModuleName)</span>
-                                                        <span class="badge badge-@(rpm.ModuleType.ToLower())">@rpm.ModuleType</span>
-                                                        @if (IsStepSkipped(rpm))
-                                                        {
-                                                            <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
-                                                        }
-                                                    </div>
-                                                    <div class="step-card-meta">
-                                                        <span>@rpm.AiModuleName</span>
-                                                        <span class="text-muted">@FormatInputMapping(rpm.InputMapping)</span>
-                                                        @if (rCost.HasValue && rCost.Value > 0)
-                                                        {
-                                                            <span class="text-muted">~$@rCost.Value.ToString("F4")</span>
-                                                        }
-                                                    </div>
-                                                    @if (rpm.ModuleType == "Text" && rNextPm is not null)
-                                                    {
-                                                        var rMaxLen = GetMaxPromptLength(rNextPm.ModelName);
-                                                        <div class="step-rule-hint">Limite: @rMaxLen chars (siguiente: @rNextPm.ModelName)</div>
-                                                    }
-                                                    <div class="step-card-actions">
-                                                        <button class="btn btn-xs" @onclick="() => MoveStep(rpm, -1)" disabled="@(rpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
-                                                        <button class="btn btn-xs" @onclick="() => MoveStep(rpm, 1)" disabled="@(rpm.StepOrder >= __main.Count)" title="Bajar">&#x25BC;</button>
-                                                        <button class="btn btn-xs" style="@(IsStepSkipped(rpm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(rpm)" title="@(IsStepSkipped(rpm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(rpm) ? "Activar" : "Saltar")</button>
-                                                        <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(rpm)">Editar</button>
-                                                        <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(rpm.Id)">Quitar</button>
-                                                    </div>
-                                                </div>
-                                            }
-                                        </div>
+                                        <span class="text-muted" style="font-size: 0.65rem;">~$@_result.TotalEstimatedCost.ToString("F4")</span>
                                     }
-
-                                    <!-- Branch columns -->
-                                    @for (var bi = 0; bi < forksHere.Count; bi++)
-                                    {
-                                        var (branchId, branchSteps) = forksHere[bi];
-                                        <div class="pipeline-branch branch-fork" style="order: @(bi + 1)">
-                                            <div class="branch-header">
-                                                <span class="branch-name">@branchId</span>
-                                                <button class="btn btn-xs btn-danger" @onclick="() => DeleteBranch(branchId)" title="Eliminar rama">&#x2715;</button>
-                                            </div>
-                                            @for (var bsi = 0; bsi < branchSteps.Count; bsi++)
-                                            {
-                                                var bpm = branchSteps[bsi];
-                                                var bCost = _result?.Steps?.FirstOrDefault(s => s.ProjectModuleId == bpm.Id)?.EstimatedCost;
-
-                                                @if (bsi > 0)
-                                                {
-                                                    <div class="branch-connector"></div>
-                                                }
-                                                <div class="step-card-v2 branch-step @(IsStepSkipped(bpm) ? "step-skipped" : "")">
-                                                    <div class="step-card-header">
-                                                        <span class="step-number">@GetStepLabel(bpm)</span>
-                                                        <span class="step-title">@(bpm.StepName ?? bpm.AiModuleName)</span>
-                                                        <span class="badge badge-@(bpm.ModuleType.ToLower())">@bpm.ModuleType</span>
-                                                        @if (IsStepSkipped(bpm))
-                                                        {
-                                                            <span class="badge" style="background:#f0ad4e;color:#fff;font-size:0.6rem;">Saltado</span>
-                                                        }
-                                                    </div>
-                                                    <div class="step-card-meta">
-                                                        <span>@bpm.AiModuleName</span>
-                                                        @if (bCost.HasValue && bCost.Value > 0)
-                                                        {
-                                                            <span class="text-muted">~$@bCost.Value.ToString("F4")</span>
-                                                        }
-                                                    </div>
-                                                    <div class="step-card-actions">
-                                                        @{var bSorted = branchSteps;}
-                                                        <button class="btn btn-xs" @onclick="() => MoveStep(bpm, -1)" disabled="@(bpm.StepOrder <= 1)" title="Subir">&#x25B2;</button>
-                                                        <button class="btn btn-xs" @onclick="() => MoveStep(bpm, 1)" disabled="@(bpm.StepOrder >= bSorted.Count)" title="Bajar">&#x25BC;</button>
-                                                        <button class="btn btn-xs" style="@(IsStepSkipped(bpm) ? "color:#f0ad4e;border-color:#f0ad4e;" : "")" @onclick="() => ToggleStepSkipped(bpm)" title="@(IsStepSkipped(bpm) ? "Activar paso" : "Saltar paso")">@(IsStepSkipped(bpm) ? "Activar" : "Saltar")</button>
-                                                        <button class="btn btn-xs btn-primary" @onclick="() => StartEdit(bpm)">Editar</button>
-                                                        <button class="btn btn-xs btn-danger" @onclick="() => RemoveStep(bpm.Id)">Quitar</button>
-                                                    </div>
-                                                </div>
-                                            }
-                                            <!-- Add step to branch -->
-                                            <button class="btn btn-xs btn-outline branch-add-step"
-                                                @onclick="() => StartAddStepToBranch(branchId, branchSteps.First().BranchFromStep, branchSteps.Count + 1)">
-                                                + Paso
-                                            </button>
-                                        </div>
-                                    }
-                                </div>
+                                    <button class="btn btn-sm" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-left: auto;"
+                                            @onclick='() => { _activeTab = "history"; }'>Ver detalles</button>
+                                }
                             </div>
-                            break; // Remaining main steps already rendered inside the fork
                         }
-
-                        <!-- Connector + add branch button (only when no fork) -->
-                        @if (si < __main.Count - 1)
+                        @if (_showCheckpointModal || _result?.Status == "WaitingForCheckpoint")
                         {
-                            <div class="step-connector">
-                                <button class="btn btn-xs btn-outline fork-btn" @onclick="() => StartAddBranch(pm.StepOrder)" title="Crear rama desde este paso">
-                                    &#x2442;
-                                </button>
+                            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 0.4rem 0.6rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem;">
+                                <span style="font-size: 0.75rem; color: #856404; flex: 1;">Checkpoint esperando revision</span>
+                                <button class="btn btn-success btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" @onclick="@(() => ReviewCheckpoint(true))">Continuar</button>
+                                <button class="btn btn-danger btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" @onclick="@(() => ReviewCheckpoint(false))">Abortar</button>
+                                <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border: 1px solid var(--border-color);" @onclick="@(() => { _showCheckpointModal = true; StateHasChanged(); })">Ver datos</button>
                             </div>
                         }
-                    }
-                </div>
-
-                <!-- Add branch dialog -->
-                @if (_showAddBranch)
-                {
-                    <div class="card" style="margin-top: 0.5rem; border-color: var(--accent);">
-                        <h4 style="margin-top:0;">Nueva rama desde paso @_addBranchFromStep</h4>
-                        <div class="form-group">
-                            <label>Nombre de la rama</label>
-                            <input type="text" @bind="_newBranchName" placeholder="Ej: instagram, tiktok, twitter..." />
-                        </div>
-                        <div style="display:flex; gap:0.5rem;">
-                            <button class="btn btn-sm btn-primary" @onclick="ConfirmAddBranch">Crear rama</button>
-                            <button class="btn btn-sm" @onclick="() => _showAddBranch = false">Cancelar</button>
-                        </div>
-                    </div>
-                }
-            }
-            else
-            {
-                <div class="empty-state">
-                    <span class="empty-state-icon">&#x1F9E9;</span>
-                    <p>Pipeline vacio</p>
-                    <p class="text-sm text-muted">Agrega pasos para construir tu flujo de trabajo</p>
-                </div>
-            }
-
-            <!-- Add Step -->
-            <div class="card" style="margin-top: 1rem;">
-                <h3 style="margin-top:0;">Agregar Paso</h3>
-                @if (_stepError is not null)
-                {
-                    <div class="alert alert-error">@_stepError</div>
-                }
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Rama</label>
-                        <select value="@_stepBranchId" @onchange="OnBranchSelectChanged">
-                            <option value="main">Principal (main)</option>
-                            @{
-                                var existingBranches = (_project?.Modules ?? new())
-                                    .Where(m => m.BranchId != "main")
-                                    .Select(m => m.BranchId)
-                                    .Distinct()
-                                    .OrderBy(b => b)
-                                    .ToList();
-                            }
-                            @foreach (var b in existingBranches)
-                            {
-                                <option value="@b">@b</option>
-                            }
-                            @foreach (var pb in _pendingBranches.Where(pb => !existingBranches.Contains(pb.BranchId)))
-                            {
-                                <option value="@pb.BranchId">@pb.BranchId (nueva)</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Modulo</label>
-                        <select @bind="_stepModuleId">
-                            <option value="">-- Seleccionar --</option>
-                            @foreach (var m in _modules)
-                            {
-                                <option value="@m.Id">@m.Name (@m.ProviderType / @m.ModuleType)</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Orden</label>
-                        <input type="number" @bind="_stepOrder" />
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Nombre del paso</label>
-                        <input type="text" @bind="_stepName" placeholder="Ej: Generar texto, Traducir, Crear imagen..." />
-                    </div>
-                    <div class="form-group">
-                        <label>Entrada de datos</label>
-                        <select @bind="_inputMapping">
-                            <option value='{"source":"user"}'>Entrada del usuario</option>
-                            <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
-                            <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
-                        </select>
-                    </div>
-                </div>
-
-                @{ var selectedModule = _modules.FirstOrDefault(m => m.Id.ToString() == _stepModuleId); }
-                @if (selectedModule?.ModuleType == "Interaction")
-                {
-                    <div class="form-group">
-                        <label>Mensaje de interaccion <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior, {step_number} para el numero de paso)</span></label>
-                        <textarea @bind="_interactionTemplate" rows="3"
-                            placeholder="Resultado del paso anterior: {previous_output}. Te parece correcto? Responde SI para continuar o escribe tu feedback."></textarea>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>Tipo de mensaje</label>
-                            <select @bind="_interactionMessageType">
-                                <option value="combined">Texto + Imagenes</option>
-                                <option value="text">Solo texto</option>
-                                <option value="image">Solo imagenes</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>Esperar respuesta del usuario</label>
-                            <select @bind="_interactionWaitForResponse">
-                                <option value="true">Si - pausar pipeline hasta recibir respuesta</option>
-                                <option value="false">No - enviar y continuar (fire & forget)</option>
-                            </select>
-                        </div>
-                    </div>
-                    @if (_interactionWaitForResponse == "true")
-                    {
-                        <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                            El usuario recibira botones automaticos en Telegram:
-                            <strong>Continuar</strong> (con descripcion del siguiente paso),
-                            <strong>Abortar</strong>, y
-                            <strong>Reiniciar</strong> (con aclaracion opcional).
-                        </p>
-                    }
-                }
-
-                @if (selectedModule?.ModuleType == "Text")
-                {
-                    <div class="form-group" style="margin-top: 0.5rem;">
-                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                            <input type="checkbox" @bind="_isImagePrompt" />
-                            Este paso genera prompts para imagenes
-                        </label>
-                    </div>
-                    @if (_isImagePrompt)
-                    {
-                        <div class="form-group">
-                            <label>Numero de imagenes a generar</label>
-                            <input type="number" @bind="_imageCount" min="1" max="20" style="max-width: 100px;" />
-                            <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                                Se forzara al modelo a devolver exactamente @_imageCount item(s) en la respuesta,
-                                cada uno sera un prompt para el paso de generacion de imagenes.
-                            </p>
-                        </div>
-                    }
-                }
-
-                @if (selectedModule?.ModuleType == "Image")
-                {
-                    <div class="form-group" style="margin-top: 0.5rem;">
-                        <label>Prompt de la imagen <span class="text-sm text-muted">(opcional)</span></label>
-                        <textarea @bind="_imagePrompt" rows="3"
-                            placeholder="Describe la imagen que quieres generar..."></textarea>
-                        <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                            Si se proporciona, este prompt se usara directamente. Si se deja vacio, se usara la entrada de datos configurada arriba.
-                        </p>
-                    </div>
-                }
-
-                @if (selectedModule?.ModuleType == "Video")
-                {
-                    <div class="form-group" style="margin-top: 0.5rem;">
-                        <label>Prompt del video <span style="color: var(--danger);">*</span></label>
-                        <textarea @bind="_videoPrompt" rows="3"
-                            placeholder="Describe lo que quieres que muestre el video..."></textarea>
-                        <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                            Este prompt se enviara siempre al modelo de video. Es obligatorio.
-                        </p>
-                    </div>
-                    <div class="form-group" style="margin-top: 0.5rem;">
-                        <label>Usar imagen del paso anterior</label>
-                        <select @bind="_videoSource">
-                            <option value="prompt">No, solo texto</option>
-                            @if (selectedModule?.ModelName?.Contains("veo-3.1") == true)
-                            {
-                                <option value="both">Si, usar imagen + prompt</option>
-                            }
-                        </select>
-                        <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                            @if (_videoSource == "prompt")
-                            {
-                                <span>El video se generara unicamente a partir del prompt de texto.</span>
-                            }
-                            else
-                            {
-                                <span>Se usara la imagen generada en el paso anterior como primer fotograma junto con el prompt. Solo disponible con Veo 3.1.</span>
-                            }
-                        </p>
-                        @if (selectedModule?.ModelName?.Contains("veo-3.1") != true)
+                        @if (_showOrchestratorModal || _result?.Status == "WaitingForReview")
                         {
-                            <p class="text-sm" style="color: var(--warning); margin-top: 0.2rem;">
-                                Image-to-video solo esta disponible con modelos Veo 3.1. Este modelo solo soporta texto.
-                            </p>
-                        }
-                    </div>
-                }
-
-                @if (selectedModule?.ModuleType == "VideoEdit")
-                {
-                    <div class="form-group" style="margin-top: 0.5rem;">
-                        <label>Guion / Texto de voz <span style="color: var(--danger);">*</span></label>
-                        <textarea @bind="_videoPrompt" rows="3"
-                            placeholder="Escribe el guion que se usara como voz en off y subtitulos..."></textarea>
-                        <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                            Este texto se convertira en voz (TTS) y subtitulos automaticos. Los videos de pasos anteriores (VideoSearch) se usan automaticamente.
-                        </p>
-                    </div>
-                    <div class="form-group" style="margin-top: 0.5rem;">
-                        <label>Idioma subtitulos</label>
-                        <select @bind="_j2vSubtitleLanguage">
-                            <option value="es">Espanol</option>
-                            <option value="en">Ingles</option>
-                            <option value="fr">Frances</option>
-                            <option value="de">Aleman</option>
-                            <option value="pt">Portugues</option>
-                            <option value="auto">Auto-detectar</option>
-                        </select>
-                    </div>
-                }
-
-                @if (selectedModule?.ModuleType == "Design")
-                {
-                    <div class="form-group">
-                        <label>Formato de exportacion</label>
-                        <select @bind="_canvaExportFormat">
-                            <option value="png">PNG (imagen)</option>
-                            <option value="jpg">JPG (imagen)</option>
-                            <option value="pdf">PDF (documento)</option>
-                            <option value="pptx">PPTX (presentacion)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Titulo del diseno <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
-                        <input type="text" @bind="_canvaDesignTitle" placeholder="PixelAgents Design" />
-                    </div>
-                    <div class="form-group">
-                        <label>Brand Template ID <span class="text-sm text-muted">(opcional, sobreescribe el del modulo)</span></label>
-                        <input type="text" @bind="_canvaStepBrandTemplateId" placeholder="Ej: DAVZr1z5464... (dejar vacio para usar el del modulo)" />
-                    </div>
-                    <div class="form-group">
-                        <label>Tipo de diseno <span class="text-sm text-muted">(si no usa template)</span></label>
-                        <select @bind="_canvaDesignType">
-                            <option value="doc">Documento</option>
-                            <option value="presentation">Presentacion</option>
-                            <option value="whiteboard">Pizarra</option>
-                        </select>
-                    </div>
-                    <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                        Si se configura un Brand Template ID (aqui o en el modulo), se usara autofill
-                        con los datos del paso anterior. Si no, se creara un diseno en blanco del tipo seleccionado.
-                        Las imagenes del paso anterior se suben automaticamente como assets.
-                    </p>
-                }
-
-                @if (selectedModule?.ModuleType == "Publish")
-                {
-                    <div class="form-group">
-                        <label>Tipo de publicacion</label>
-                        <select @bind="_publishType">
-                            <option value="post">Post</option>
-                            <option value="reel">Reel</option>
-                            <option value="story">Story</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
-                        <textarea @bind="_publishCaption" rows="3"
-                            placeholder="{previous_output}"></textarea>
-                    </div>
-                    <p class="text-sm text-muted" style="margin-top: 0.3rem;">
-                        Las imagenes/videos del paso anterior se adjuntan automaticamente.
-                        Buffer publica en el canal configurado (Instagram, Twitter, LinkedIn, etc.).
-                        Programacion automatica (Buffer elige la mejor hora). Plan gratuito: 10 posts por canal.
-                    </p>
-                }
-
-                @if (selectedModule?.ModuleType == "Orchestrator")
-                {
-                    <div class="form-group">
-                        <label>Salidas del orquestador</label>
-                        @foreach (var po in _pendingOrchestratorOutputs)
-                        {
-                            <div style="border: 1px solid var(--border-color); border-radius: 0.3rem; padding: 0.4rem; margin-bottom: 0.3rem; font-size: 0.8rem; display: flex; justify-content: space-between; align-items: start;">
-                                <div>
-                                    <strong>@po.Label</strong>
-                                    <span class="text-muted" style="font-size: 0.7rem;">(@po.DataType)</span>
-                                    <div class="text-muted" style="font-size: 0.75rem;">@po.Prompt</div>
-                                </div>
-                                <button class="btn btn-xs btn-danger" style="padding: 0.1rem 0.3rem;" @onclick="() => _pendingOrchestratorOutputs.Remove(po)">X</button>
+                            <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 6px; padding: 0.4rem 0.6rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem;">
+                                <span style="font-size: 0.75rem; color: #1565c0; flex: 1;">Orquestador esperando revision</span>
+                                <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; background: #2196f3; color: #fff; border: none;" @onclick="@(() => { _showOrchestratorModal = true; StateHasChanged(); })">Revisar plan</button>
                             </div>
                         }
-                        <div style="display: flex; gap: 0.3rem; align-items: end; flex-wrap: wrap; margin-top: 0.3rem;">
-                            <div style="flex: 1; min-width: 80px;">
-                                <label class="text-sm">Label</label>
-                                <input @bind="_poLabel" placeholder="Ej: Guion" />
-                            </div>
-                            <div style="flex: 2; min-width: 120px;">
-                                <label class="text-sm">Prompt</label>
-                                <input @bind="_poPrompt" placeholder="Ej: Genera el guion del video" />
-                            </div>
-                            <div style="min-width: 80px;">
-                                <label class="text-sm">Tipo</label>
-                                <select @bind="_poDataType">
-                                    <option value="text">Texto</option>
-                                    <option value="image">Imagen</option>
-                                    <option value="video">Video</option>
-                                    <option value="audio">Audio</option>
-                                    <option value="file">Archivo</option>
-                                </select>
-                            </div>
-                            <button class="btn btn-xs btn-primary" style="padding: 0.3rem 0.5rem;" @onclick="AddPendingOutput">+</button>
-                        </div>
                     </div>
-                }
-
-                <button class="btn btn-primary mt-1" @onclick="AddStep" disabled="@_loading">Agregar</button>
-            </div>
-            </div> @* end linear scroll wrapper *@
-            } @* end linear view else *@
+                </TopPanel>
+            </PipelineCanvas>
         </div> @* end tab-content *@
 
         @* ── Edit step modal ── *@
@@ -702,7 +192,7 @@ else
                     <div class="modal-content" @onclick:stopPropagation="true">
                         <div class="modal-header">
                             <span class="badge badge-@(editPm.ModuleType.ToLower())">@editPm.ModuleType</span>
-                            <strong style="flex:1">Editar paso @GetStepLabel(editPm) &mdash; @(editPm.StepName ?? editPm.AiModuleName)</strong>
+                            <strong style="flex:1">Editar modulo &mdash; @(editPm.StepName ?? editPm.AiModuleName)</strong>
                             <button class="btn btn-xs" @onclick="CancelEdit">&#x2715;</button>
                         </div>
                         <div class="modal-body">
@@ -713,14 +203,6 @@ else
                             <div class="form-group">
                                 <label>Nombre del paso</label>
                                 <input type="text" @bind="_editStepName" placeholder="Nombre personalizado" />
-                            </div>
-                            <div class="form-group">
-                                <label>Fuente de entrada</label>
-                                <select @bind="_editInputMapping">
-                                    <option value='{"source":"user"}'>Entrada del usuario</option>
-                                    <option value='{"source":"previous","field":"text"}'>Paso anterior (texto)</option>
-                                    <option value='{"source":"previous","field":"file"}'>Paso anterior (archivo)</option>
-                                </select>
                             </div>
                             @if (editPm.ModuleType == "Image")
                             {
@@ -884,7 +366,7 @@ else
                             @if (isExpanded && _expandedExecDetail is not null && _expandedExecDetail.Id == e.Id)
                             {
                                 <div class="history-card-body">
-                                    @foreach (var step in _expandedExecDetail.Steps.OrderBy(s => s.StepOrder))
+                                    @foreach (var step in _expandedExecDetail.Steps.OrderBy(s => s.CreatedAt))
                                     {
                                         @if (step.Status == "WaitingForCheckpoint")
                                         {
@@ -908,7 +390,7 @@ else
                                             @if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
                                             {
                                                 <div class="history-step-preview">
-                                                    <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
+                                                    <span class="text-sm text-muted">Modulo: @step.ModuleName</span>
                                                     <div class="history-image-grid">
                                                         @foreach (var f in parsed.Files)
                                                         {
@@ -923,7 +405,7 @@ else
                                             else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
                                             {
                                                 <div class="history-step-preview">
-                                                    <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
+                                                    <span class="text-sm text-muted">Modulo: @step.ModuleName</span>
                                                     @foreach (var f in parsed.Files)
                                                     {
                                                         var fileUrl = $"{_apiBase}/api/executions/{_expandedExecDetail.Id}/files/{f.FileId}";
@@ -936,7 +418,7 @@ else
                                             else if (parsed?.Type == "text" && parsed.Content is not null)
                                             {
                                                 <div class="history-step-preview">
-                                                    <span class="text-sm text-muted">Paso @GetStepLabelFromOrder(step.StepOrder): @step.ModuleName</span>
+                                                    <span class="text-sm text-muted">Modulo: @step.ModuleName</span>
                                                     <div class="output-block" style="font-size: 0.8rem; max-height: 80px; overflow: hidden;">
                                                         @(parsed.Content.Length > 200 ? parsed.Content[..200] + "..." : parsed.Content)
                                                     </div>
@@ -1023,18 +505,18 @@ else
                             <div style="flex: 1; overflow-y: auto; padding: 0 0.8rem 0.8rem; border-right: 1px solid var(--border);">
                                 @{ var visibleSteps = _execDetailModal.Steps
                                     .Where(s => !PassThroughModuleTypes.Contains(s.ModuleType))
-                                    .OrderBy(s => s.StepOrder).ToList();
+                                    .OrderBy(s => s.CreatedAt).ToList();
                                    var stepIdx = 0; }
                                 @foreach (var step in visibleSteps)
                                 {
                                     stepIdx++;
-                                    var isExpanded = _expandedSteps.Contains(step.StepOrder);
-                                    var capturedOrder = step.StepOrder;
+                                    var isExpanded = _expandedSteps.Contains(step.ProjectModuleId);
+                                    var capturedModuleId = step.ProjectModuleId;
                                     var duration = step.CompletedAt.HasValue ? (step.CompletedAt.Value - step.CreatedAt).TotalSeconds : 0;
 
                                     <div class="exec-step-card @(step.Status == "Failed" ? "exec-step-failed" : step.Status == "Running" ? "exec-step-running" : "")">
                                         @* ── Compact header (always visible) ── *@
-                                        <div class="exec-step-header" @onclick="() => ToggleStepExpanded(capturedOrder)">
+                                        <div class="exec-step-header" @onclick="() => ToggleStepExpanded(capturedModuleId)">
                                             <span class="exec-step-badge">@stepIdx</span>
                                             <span class="exec-step-name">@step.ModuleName</span>
                                             <span class="badge @StatusBadge(step.Status)" style="font-size: 0.58rem;">@step.Status</span>
@@ -1141,11 +623,11 @@ else
                                                         }
 
                                                         @* ── Raw payload (exact data sent to the provider API) ── *@
-                                                        var rawExpanded = _expandedRawPayloadSteps.Contains(step.StepOrder);
+                                                        var rawExpanded = _expandedRawPayloadSteps.Contains(step.ProjectModuleId);
                                                         <div class="exec-io-section">
                                                             <button type="button"
                                                                     class="btn btn-sm"
-                                                                    @onclick="() => ToggleRawPayload(step.StepOrder)">
+                                                                    @onclick="() => ToggleRawPayload(step.ProjectModuleId)">
                                                                 @(rawExpanded ? "Ocultar payload enviado" : "Ver payload enviado a la API")
                                                             </button>
                                                             @if (rawExpanded)
@@ -1256,23 +738,23 @@ else
                                                 @* ── RETRY ── *@
                                                 @if ((step.Status == "Completed" || step.Status == "Failed") && !_executing)
                                                 {
-                                                    var capturedStepOrder = step.StepOrder;
+                                                    var capturedModuleIdForRetry = step.ProjectModuleId;
                                                     <div style="margin-top: 0.4rem; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
                                                         <button class="btn btn-sm btn-outline" style="font-size: 0.68rem; padding: 0.12rem 0.4rem;"
-                                                                @onclick="() => ToggleRetryPanel(capturedStepOrder)">
+                                                                @onclick="() => ToggleRetryPanel(capturedModuleIdForRetry)">
                                                             &#x21BB; Reiniciar desde aqui
                                                         </button>
-                                                        @if (_retryStepOrder == capturedStepOrder)
+                                                        @if (_retryModuleId == capturedModuleIdForRetry)
                                                         {
                                                             <input type="text" @bind="_retryComment" placeholder="Comentario..."
                                                                    style="font-size: 0.72rem; padding: 0.15rem 0.35rem; flex: 1; min-width: 100px;" />
                                                             <button class="btn btn-sm btn-primary" style="font-size: 0.68rem; padding: 0.12rem 0.4rem;"
-                                                                    @onclick="() => RetryFromStep(capturedStepOrder)">
+                                                                    @onclick="() => RetryFromModule(capturedModuleIdForRetry)">
                                                                 Ejecutar
                                                             </button>
                                                         }
                                                     </div>
-                                                    @if (_retryError is not null && _retryStepOrder == capturedStepOrder)
+                                                    @if (_retryError is not null && _retryModuleId == capturedModuleIdForRetry)
                                                     {
                                                         <div class="alert alert-error" style="font-size: 0.68rem; padding: 0.2rem 0.4rem; margin-top: 0.2rem;">@_retryError</div>
                                                     }
@@ -1297,13 +779,10 @@ else
                                             {
                                                 <div class="inspector-log-step-header">
                                                     <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
-                                                    @if (log.StepOrder.HasValue)
+                                                    @if (log.ProjectModuleId.HasValue)
                                                     {
-                                                        var logLabel = GetStepLabelFromOrder(log.StepOrder.Value);
-                                                        @if (!string.IsNullOrEmpty(logLabel))
-                                                        {
-                                                            <span class="inspector-log-step-badge">@logLabel</span>
-                                                        }
+                                                        var logModule = _project?.Modules.FirstOrDefault(m => m.Id == log.ProjectModuleId.Value);
+                                                        <span class="inspector-log-step-badge">@(logModule?.StepName ?? logModule?.AiModuleName ?? log.ModuleName)</span>
                                                     }
                                                     <span class="inspector-log-step-name">@log.Message</span>
                                                 </div>
@@ -1326,13 +805,10 @@ else
                                             {
                                                 <div class="inspector-log-entry inspector-log-@log.Level">
                                                     <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
-                                                    @if (log.StepOrder.HasValue)
+                                                    @if (log.ProjectModuleId.HasValue)
                                                     {
-                                                        var logLabel = GetStepLabelFromOrder(log.StepOrder.Value);
-                                                        @if (!string.IsNullOrEmpty(logLabel))
-                                                        {
-                                                            <span class="inspector-log-step">P@logLabel</span>
-                                                        }
+                                                        var logModule = _project?.Modules.FirstOrDefault(m => m.Id == log.ProjectModuleId.Value);
+                                                        <span class="inspector-log-step">@(logModule?.StepName ?? logModule?.AiModuleName ?? log.ModuleName)</span>
                                                     }
                                                     <span>@log.Message</span>
                                                 </div>
@@ -1882,18 +1358,15 @@ else
 
     // UI state
     private string _activeTab = "pipeline";
-    private string _pipelineViewMode = "visual";
     private bool _showSettings;
     private string _settingsTab = "messaging";
 
     // Pipeline visual editor
     private List<ModuleConnectionResponse> _projectConnections = new();
 
-    // Add step
+    // Add module
     private string _stepModuleId = "";
-    private int _stepOrder = 1;
     private string _stepName = "";
-    private string _inputMapping = "{\"source\":\"user\"}";
     private string? _stepError;
 
     // Interaction step
@@ -1920,14 +1393,6 @@ else
 
     // Image step
     private string _imagePrompt = "";
-
-    // Branch step
-    private string _stepBranchId = "main";
-    private int? _stepBranchFromStep;
-    private string _newBranchName = "";
-    private bool _showAddBranch = false;
-    private int _addBranchFromStep = 0;
-    private List<(string BranchId, int FromStep)> _pendingBranches = new();
 
     // Video step
     private string _videoSource = "prompt";
@@ -1962,7 +1427,6 @@ else
     // Edit step
     private Guid? _editingPmId;
     private string _editStepName = "";
-    private string _editInputMapping = "";
     private string? _editError;
 
     // Execute
@@ -1970,14 +1434,14 @@ else
     private bool _useHistory = true;
     private string? _execError;
 
-    // Retry from step
-    private int? _retryStepOrder;
+    // Retry from module
+    private Guid? _retryModuleId;
     private string _retryComment = "";
     private string? _retryError;
 
     // Execution detail: expanded steps
-    private HashSet<int> _expandedSteps = new();
-    private HashSet<int> _expandedRawPayloadSteps = new();
+    private HashSet<Guid> _expandedSteps = new();
+    private HashSet<Guid> _expandedRawPayloadSteps = new();
     private static readonly HashSet<string> PassThroughModuleTypes = new() { "StaticText", "FileUpload" };
 
     // Orchestrator review
@@ -2054,7 +1518,7 @@ else
     // API base URL for file downloads (images, etc.)
     private string _apiBase = "";
 
-    private record LogEntry(string Level, string Message, int? StepOrder, string? StepName, DateTime Timestamp);
+    private record LogEntry(string Level, string Message, Guid? ProjectModuleId, string? ModuleName, DateTime Timestamp);
 
     protected override async Task OnInitializedAsync()
     {
@@ -2256,9 +1720,6 @@ else
             _projectConnections = _project?.Connections ?? new();
             _modules = await Api.GetModulesAsync();
             _executions = await Api.GetExecutionsAsync(ProjectId);
-            if (_project is not null)
-                _stepOrder = _project.Modules.Count + 1;
-
             // Check if latest execution is waiting for checkpoint or orchestrator review
             var latestExec = _executions.FirstOrDefault();
             if (latestExec is not null && (latestExec.Status == "WaitingForCheckpoint" || latestExec.Status == "WaitingForReview"))
@@ -2341,9 +1802,7 @@ else
         _loading = true;
         try
         {
-            var mainSteps = GetMainSteps();
-            var order = mainSteps.Count + 1;
-            var req = new AddProjectModuleRequest(moduleId, order, null, "{\"source\":\"user\"}", null);
+            var req = new AddProjectModuleRequest(moduleId, null, null);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
             if (ok) await LoadAll();
             else _editError = error;
@@ -2367,7 +1826,6 @@ else
     /// <summary>
     /// Called by PipelineCanvas on every graph change (node move, connection add/remove).
     /// Saves positions + connections to dedicated DB tables.
-    /// Server recomputes StepOrder/InputMapping from graph topology.
     /// </summary>
     private async Task SaveGraph(SaveGraphRequest req)
     {
@@ -2378,7 +1836,7 @@ else
             Console.WriteLine($"[ProjectDetail] SaveGraph FAILED: {error}");
             return; // Don't re-fetch on failure — preserve local state
         }
-        // Reload to get updated StepOrder from server-side topological sort
+        // Reload to keep the local graph synchronized with server state
         if (_project is not null)
         {
             var updated = await Api.GetProjectDetailAsync(ProjectId);
@@ -2664,21 +2122,6 @@ else
         _waSaving = false;
     }
 
-    private List<ProjectModuleResponse> GetMainSteps()
-        => _project?.Modules.Where(m => m.BranchId == "main").OrderBy(m => m.StepOrder).ToList() ?? new();
-
-    private List<KeyValuePair<string, List<ProjectModuleResponse>>> GetBranchesFromStep(int stepOrder)
-        => (_project?.Modules.Where(m => m.BranchId != "main")
-            .GroupBy(m => m.BranchId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(m => m.StepOrder).ToList())
-            ?? new())
-            .Where(b => b.Value.FirstOrDefault()?.BranchFromStep == stepOrder)
-            .ToList();
-
-    /// <summary>
-    /// Compute a branch-prefixed step label. Pre-fork trunk steps show plain numbers (1, 2, 3).
-    /// Post-fork: main continuation = A + seq, other branches = B, C, D... + seq.
-    /// </summary>
     private bool IsStepSkipped(ProjectModuleResponse pm)
     {
         if (string.IsNullOrWhiteSpace(pm.Configuration)) return false;
@@ -2713,71 +2156,9 @@ else
         cfg["skipped"] = newSkipped;
         var stepConfig = JsonSerializer.Serialize(cfg);
 
-        var req = new UpdateProjectModuleRequest(pm.StepOrder, pm.StepName, pm.InputMapping, stepConfig, pm.IsActive);
+        var req = new UpdateProjectModuleRequest(pm.StepName, stepConfig, pm.IsActive);
         var (ok, _) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
         if (ok) await LoadAll();
-    }
-
-    private string GetStepLabel(ProjectModuleResponse pm)
-    {
-        if (_project is null) return pm.StepOrder.ToString();
-
-        var modules = _project.Modules;
-        var branches = modules.Where(m => m.BranchId != "main")
-            .Select(m => m.BranchFromStep).Where(f => f.HasValue).Select(f => f!.Value).Distinct().ToList();
-
-        // If no branches exist, just return the number
-        if (branches.Count == 0) return pm.StepOrder.ToString();
-
-        var maxFork = branches.Max();
-
-        // Trunk step before any fork
-        if (pm.BranchId == "main" && pm.StepOrder <= maxFork)
-            return pm.StepOrder.ToString();
-
-        // Post-fork: determine branch letter and position
-        if (pm.BranchId == "main")
-        {
-            // Main continuation after fork
-            var mainPostFork = modules.Where(m => m.BranchId == "main" && m.StepOrder > maxFork)
-                .OrderBy(m => m.StepOrder).ToList();
-            var idx = mainPostFork.FindIndex(m => m.StepOrder == pm.StepOrder);
-            return $"A{maxFork + 1 + idx}";
-        }
-        else
-        {
-            // Non-main branch: assign letter B, C, D... based on branch order
-            var branchIds = modules.Where(m => m.BranchId != "main")
-                .GroupBy(m => m.BranchId).Select(g => g.Key).OrderBy(b => b).ToList();
-            var branchIdx = branchIds.IndexOf(pm.BranchId);
-            var letter = (char)('B' + branchIdx);
-
-            var forkStep = pm.BranchFromStep ?? maxFork;
-            var branchSteps = modules.Where(m => m.BranchId == pm.BranchId)
-                .OrderBy(m => m.StepOrder).ToList();
-            var idx = branchSteps.FindIndex(m => m.StepOrder == pm.StepOrder);
-            return $"{letter}{forkStep + 1 + idx}";
-        }
-    }
-
-    /// <summary>
-    /// Compute step label from a StepOrder int (for log entries that only have the order number).
-    /// </summary>
-    private string GetStepLabelFromOrder(int stepOrder)
-    {
-        var pm = _project?.Modules.FirstOrDefault(m => m.StepOrder == stepOrder);
-        if (pm is null) return stepOrder.ToString();
-        return GetStepLabel(pm);
-    }
-
-    private static string FormatInputMapping(string? mapping)
-    {
-        if (string.IsNullOrEmpty(mapping)) return "usuario";
-        if (mapping.Contains("\"user\"")) return "usuario";
-        if (mapping.Contains("\"previous\"") && mapping.Contains("\"file\"")) return "paso anterior (archivo)";
-        if (mapping.Contains("\"previous\"")) return "paso anterior (texto)";
-        if (mapping.Contains("\"step\"")) return "paso especifico";
-        return mapping;
     }
 
     private static int GetMaxPromptLength(string modelName) => modelName.ToLowerInvariant() switch
@@ -2881,7 +2262,7 @@ else
                     subtitleLanguage = _j2vSubtitleLanguage
                 });
             }
-            var req = new AddProjectModuleRequest(moduleId, _stepOrder, _stepName, _inputMapping, stepConfig, _stepBranchId, _stepBranchFromStep);
+            var req = new AddProjectModuleRequest(moduleId, string.IsNullOrWhiteSpace(_stepName) ? null : _stepName, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
             if (ok)
             {
@@ -2889,7 +2270,7 @@ else
                 if (mod?.ModuleType == "Orchestrator" && _pendingOrchestratorOutputs.Count > 0)
                 {
                     await LoadAll();
-                    var newPm = _project.Modules.OrderByDescending(m => m.StepOrder).FirstOrDefault();
+                    var newPm = _project.Modules.LastOrDefault(m => m.AiModuleId == moduleId);
                     if (newPm is not null)
                     {
                         foreach (var po in _pendingOrchestratorOutputs)
@@ -2897,8 +2278,8 @@ else
                     }
                     _pendingOrchestratorOutputs.Clear();
                 }
-                _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _j2vSubtitleLanguage = "es"; _stepBranchId = "main"; _stepBranchFromStep = null;
-                await LoadAll(); CleanPendingBranches();
+                _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _j2vSubtitleLanguage = "es";
+                await LoadAll();
             }
             else _stepError = error;
         }
@@ -2910,7 +2291,6 @@ else
     {
         _editingPmId = pm.Id;
         _editStepName = pm.StepName ?? "";
-        _editInputMapping = pm.InputMapping ?? "{\"source\":\"user\"}";
         _editError = null;
 
         // Reset all type-specific fields
@@ -3054,36 +2434,12 @@ else
             }
 
             var req = new UpdateProjectModuleRequest(
-                pm.StepOrder,
                 string.IsNullOrWhiteSpace(_editStepName) ? null : _editStepName,
-                _editInputMapping,
                 stepConfig,
                 pm.IsActive);
             var (ok, error) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
             if (ok) { _editingPmId = null; await LoadAll(); }
             else _editError = error;
-        }
-        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
-    }
-
-    private async Task MoveStep(ProjectModuleResponse target, int direction)
-    {
-        if (_project is null) return;
-        _editError = null;
-
-        // Only swap within the same branch
-        var sameBranch = _project.Modules.Where(m => m.BranchId == target.BranchId).OrderBy(m => m.StepOrder).ToList();
-        var idx = sameBranch.FindIndex(m => m.Id == target.Id);
-        var swapIdx = idx + direction;
-        if (swapIdx < 0 || swapIdx >= sameBranch.Count) return;
-
-        var other = sameBranch[swapIdx];
-
-        try
-        {
-            var (ok, error) = await Api.SwapStepOrderAsync(ProjectId, target.Id, other.Id);
-            if (!ok) _editError = error;
-            await LoadAll();
         }
         catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
     }
@@ -3094,94 +2450,6 @@ else
         try
         {
             var (ok, error) = await Api.DeleteProjectModuleAsync(ProjectId, pmId);
-            if (ok) await LoadAll();
-            else _editError = error;
-        }
-        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
-    }
-
-    private void StartAddBranch(int fromStepOrder)
-    {
-        _addBranchFromStep = fromStepOrder;
-        _newBranchName = "";
-        _showAddBranch = true;
-    }
-
-    private void ConfirmAddBranch()
-    {
-        if (string.IsNullOrWhiteSpace(_newBranchName)) return;
-        var branchId = _newBranchName.Trim().ToLowerInvariant().Replace(" ", "-");
-        if (!_pendingBranches.Any(pb => pb.BranchId == branchId))
-            _pendingBranches.Add((branchId, _addBranchFromStep));
-        _stepBranchId = branchId;
-        _stepBranchFromStep = _addBranchFromStep;
-        _stepOrder = 1;
-        _inputMapping = $"{{\"source\":\"step\",\"stepOrder\":{_addBranchFromStep}}}";
-        _showAddBranch = false;
-    }
-
-    private void CleanPendingBranches()
-    {
-        var existing = (_project?.Modules ?? new())
-            .Where(m => m.BranchId != "main")
-            .Select(m => m.BranchId)
-            .Distinct()
-            .ToHashSet();
-        _pendingBranches.RemoveAll(pb => existing.Contains(pb.BranchId));
-    }
-
-    private void OnBranchSelectChanged(ChangeEventArgs e)
-    {
-        var selected = e.Value?.ToString() ?? "main";
-        _stepBranchId = selected;
-
-        if (selected == "main")
-        {
-            _stepBranchFromStep = null;
-            var mainSteps = GetMainSteps();
-            _stepOrder = mainSteps.Count + 1;
-            _inputMapping = mainSteps.Count > 0
-                ? "{\"source\":\"previous\",\"field\":\"text\"}"
-                : "{\"source\":\"user\"}";
-        }
-        else
-        {
-            var branchModules = (_project?.Modules ?? new())
-                .Where(m => m.BranchId == selected)
-                .OrderBy(m => m.StepOrder)
-                .ToList();
-
-            if (branchModules.Count > 0)
-            {
-                _stepBranchFromStep = branchModules.First().BranchFromStep;
-                _stepOrder = branchModules.Count + 1;
-            }
-            else
-            {
-                var pending = _pendingBranches.FirstOrDefault(pb => pb.BranchId == selected);
-                _stepBranchFromStep = pending.FromStep;
-                _stepOrder = 1;
-            }
-            _inputMapping = _stepOrder == 1
-                ? $"{{\"source\":\"step\",\"stepOrder\":{_stepBranchFromStep}}}"
-                : "{\"source\":\"previous\",\"field\":\"text\"}";
-        }
-    }
-
-    private void StartAddStepToBranch(string branchId, int? branchFromStep, int nextOrder)
-    {
-        _stepBranchId = branchId;
-        _stepBranchFromStep = branchFromStep;
-        _stepOrder = nextOrder;
-        _inputMapping = "{\"source\":\"previous\",\"field\":\"text\"}";
-    }
-
-    private async Task DeleteBranch(string branchId)
-    {
-        _editError = null;
-        try
-        {
-            var (ok, error) = await Api.DeleteBranchAsync(ProjectId, branchId);
             if (ok) await LoadAll();
             else _editError = error;
         }
@@ -3340,35 +2608,35 @@ else
         catch { }
     }
 
-    private void ToggleStepExpanded(int stepOrder)
+    private void ToggleStepExpanded(Guid moduleId)
     {
-        if (!_expandedSteps.Remove(stepOrder))
-            _expandedSteps.Add(stepOrder);
+        if (!_expandedSteps.Remove(moduleId))
+            _expandedSteps.Add(moduleId);
     }
 
-    private void ToggleRawPayload(int stepOrder)
+    private void ToggleRawPayload(Guid moduleId)
     {
-        if (!_expandedRawPayloadSteps.Remove(stepOrder))
-            _expandedRawPayloadSteps.Add(stepOrder);
+        if (!_expandedRawPayloadSteps.Remove(moduleId))
+            _expandedRawPayloadSteps.Add(moduleId);
     }
 
-    private void ToggleRetryPanel(int stepOrder)
+    private void ToggleRetryPanel(Guid moduleId)
     {
-        if (_retryStepOrder == stepOrder)
+        if (_retryModuleId == moduleId)
         {
-            _retryStepOrder = null;
+            _retryModuleId = null;
             _retryComment = "";
             _retryError = null;
         }
         else
         {
-            _retryStepOrder = stepOrder;
+            _retryModuleId = moduleId;
             _retryComment = "";
             _retryError = null;
         }
     }
 
-    private async Task RetryFromStep(int stepOrder)
+    private async Task RetryFromModule(Guid moduleId)
     {
         var execId = _execDetailModal?.Id ?? _result?.Id;
         if (execId is null) return;
@@ -3379,10 +2647,10 @@ else
         try
         {
             var commentToSend = string.IsNullOrWhiteSpace(_retryComment) ? null : _retryComment;
-            var (ok, error) = await Api.RetryFromStepAsync(execId.Value, stepOrder, commentToSend);
+            var (ok, error) = await Api.RetryFromModuleAsync(execId.Value, moduleId, commentToSend);
             if (ok)
             {
-                _retryStepOrder = null;
+                _retryModuleId = null;
                 _retryComment = "";
                 _showExecDetailModal = false;
                 StartPolling();
@@ -3646,7 +2914,7 @@ else
         _orchestratorReviewing = false;
     }
 
-    private async Task RetryFromLog(int stepOrder)
+    private async Task RetryFromLog(Guid moduleId)
     {
         if (_result is null) return;
         _retryError = null;
@@ -3655,7 +2923,7 @@ else
 
         try
         {
-            var (ok, error) = await Api.RetryFromStepAsync(_result.Id, stepOrder, null);
+            var (ok, error) = await Api.RetryFromModuleAsync(_result.Id, moduleId, null);
             if (!ok) { _execError = error; _executing = false; }
             else StartPolling();
         }
@@ -3811,7 +3079,7 @@ else
     private List<ExecutionLogEntry>? GetExecutionLogs()
     {
         if (_logEntries.Count == 0) return null;
-        return _logEntries.Select(l => new ExecutionLogEntry(l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp)).ToList();
+        return _logEntries.Select(l => new ExecutionLogEntry(l.Level, l.Message, l.ProjectModuleId, l.ModuleName, l.Timestamp)).ToList();
     }
 
     private static string FormatFileSize(long bytes)

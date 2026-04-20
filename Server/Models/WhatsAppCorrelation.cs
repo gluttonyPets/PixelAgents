@@ -4,10 +4,9 @@ namespace Server.Models
     {
         public Guid Id { get; set; }
         public Guid ExecutionId { get; set; }
+        public Guid ProjectModuleId { get; set; }
         public string TenantDbName { get; set; } = default!;
         public string RecipientNumber { get; set; } = default!;
-        public int StepOrder { get; set; }
-        public string? BranchId { get; set; }
         public DateTime CreatedAt { get; set; }
         public bool IsResolved { get; set; }
     }

@@ -6,8 +6,8 @@ namespace Server.Models
         public Guid ExecutionId { get; set; }
         public string Level { get; set; } = "info";
         public string Message { get; set; } = "";
-        public int? StepOrder { get; set; }
-        public string? StepName { get; set; }
+        public Guid? ProjectModuleId { get; set; }
+        public string? ModuleName { get; set; }
         public DateTime Timestamp { get; set; }
 
         public ProjectExecution Execution { get; set; } = null!;

@@ -38,15 +38,12 @@ namespace Server.Models
         List<ModuleConnectionResponse>? Connections = null);
 
     // ── ProjectModule ──
-    public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration, string BranchId = "main", int? BranchFromStep = null);
-    public record UpdateProjectModuleRequest(int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
-    public record SwapStepOrderRequest(Guid ModuleIdA, Guid ModuleIdB);
-    public record ReorderModuleEntry(Guid ModuleId, int StepOrder, string? InputMapping);
-    public record ReorderModulesRequest(List<ReorderModuleEntry> Entries, string? GraphLayout);
+    public record AddProjectModuleRequest(Guid AiModuleId, string? StepName, string? Configuration);
+    public record UpdateProjectModuleRequest(string? StepName, string? Configuration, bool IsActive);
     public record ProjectModuleResponse(
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
-        int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,
-        string BranchId, int? BranchFromStep, double PosX = 0, double PosY = 0,
+        string? StepName, string? Configuration, bool IsActive,
+        double PosX = 0, double PosY = 0,
         List<OrchestratorOutputResponse>? OrchestratorOutputs = null);
 
     // ── ModuleConnection ──
@@ -59,7 +56,7 @@ namespace Server.Models
 
     // ── Execution ──
     public record ExecuteProjectRequest(string? UserInput, bool UseHistory = true);
-    public record RetryFromStepRequest(int StepOrder, string? Comment);
+    public record RetryFromModuleRequest(Guid ProjectModuleId, string? Comment);
     public record OrchestratorReviewRequest(bool Approved, string? Comment);
     public record CheckpointReviewRequest(bool Approved);
 
@@ -77,7 +74,7 @@ namespace Server.Models
         decimal TotalEstimatedCost,
         List<StepExecutionResponse> Steps);
     public record StepExecutionResponse(
-        Guid Id, Guid ProjectModuleId, string ModuleName, string ModuleType, int StepOrder,
+        Guid Id, Guid ProjectModuleId, string ModuleName, string ModuleType,
         string Status, string? InputData, string? OutputData, string? ErrorMessage,
         DateTime CreatedAt, DateTime? CompletedAt, decimal EstimatedCost,
         List<ExecutionFileResponse> Files);

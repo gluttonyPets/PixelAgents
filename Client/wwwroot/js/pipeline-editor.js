@@ -169,11 +169,11 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, stepOrder, modelName, warning, skipped) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
-        var html = this._buildNodeHtml(name, moduleType, color, icon, stepOrder, modelName, warning, inputPorts.length, outputPorts.length);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length);
         var cssClass = 'df-type-' + moduleType.toLowerCase();
         if (skipped) cssClass += ' df-state-skipped';
         var nodeId = this._editor.addNode(
@@ -309,14 +309,14 @@ window.pipelineEditor = {
         this._reverseMap = {};
     },
 
-    // ── Update step order badge on a node without full rebuild ──
-    updateNodeStepOrder: function (moduleId, stepLabel) {
+    // ── Update badge on a node without full rebuild ──
+    updateNodeBadge: function (moduleId, badgeLabel) {
         var nodeId = this._reverseMap[moduleId];
         if (nodeId === undefined) return;
         var el = document.querySelector('#node-' + nodeId + ' .df-order-badge');
         if (el) {
-            el.textContent = stepLabel || '';
-            el.style.display = stepLabel ? '' : 'none';
+            el.textContent = badgeLabel || '';
+            el.style.display = badgeLabel ? '' : 'none';
         }
     },
 
