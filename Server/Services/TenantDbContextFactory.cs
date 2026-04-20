@@ -122,6 +122,7 @@ namespace Server.Services
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ProjectId"" ON ""ModuleConnections"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_FromModuleId_FromPort"" ON ""ModuleConnections"" (""FromModuleId"", ""FromPort"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ToModuleId_ToPort"" ON ""ModuleConnections"" (""ToModuleId"", ""ToPort"")", log);
+            RunSafe(ctx, @"ALTER TABLE ""ModuleConnections"" ADD COLUMN IF NOT EXISTS ""Format"" text", log);
 
             // ── Orchestrator outputs table ──
             RunSafe(ctx, @"

@@ -965,7 +965,7 @@ app.MapGet("/api/projects/{id}", async (
 
     var connections = await db.ModuleConnections
         .Where(c => c.ProjectId == id)
-        .Select(c => new ModuleConnectionResponse(c.Id, c.FromModuleId, c.FromPort, c.ToModuleId, c.ToPort))
+        .Select(c => new ModuleConnectionResponse(c.Id, c.FromModuleId, c.FromPort, c.ToModuleId, c.ToPort, c.Format))
         .ToListAsync();
 
     return Results.Ok(new ProjectDetailResponse(
@@ -1061,6 +1061,7 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             FromPort = conn.FromPort,
             ToModuleId = conn.ToModuleId,
             ToPort = conn.ToPort,
+            Format = string.IsNullOrWhiteSpace(conn.Format) ? null : conn.Format,
             CreatedAt = now
         });
         insertedCount++;

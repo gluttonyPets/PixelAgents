@@ -154,6 +154,35 @@ public class ModuleExecutionContext
             : null;
     }
 
+    /// <summary>
+    /// Collect the distinct non-empty `Format` contracts declared on every
+    /// outgoing edge of this node. Upstream handlers use them to steer the
+    /// AI response so the JSON matches what downstream modules expect.
+    /// </summary>
+    public List<string> GetOutgoingFormats()
+    {
+        return Node.OutputPorts
+            .SelectMany(p => p.Connections)
+            .Select(c => c.Format)
+            .Where(f => !string.IsNullOrWhiteSpace(f))
+            .Select(f => f!.Trim())
+            .Distinct()
+            .ToList();
+    }
+
+    /// <summary>
+    /// Read the edge `Format` declared on a given input port (first connection
+    /// with a non-empty format). Downstream handlers use it to interpret the
+    /// incoming payload as structured data.
+    /// </summary>
+    public string? GetInputFormat(string portId)
+    {
+        var port = Node.InputPorts.FirstOrDefault(p => p.PortId == portId);
+        return port?.Connections
+            .Select(c => c.Format)
+            .FirstOrDefault(f => !string.IsNullOrWhiteSpace(f));
+    }
+
     /// <summary>Get a config value as string.</summary>
     public string GetConfig(string key, string fallback = "")
     {
