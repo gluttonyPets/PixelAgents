@@ -1,5 +1,6 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Server.Models;
 using Server.Services.Ai.Handlers;
 
@@ -16,6 +17,9 @@ public static class StepPayloadBuilder
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         WriteIndented = false,
+        // Drop null fields (e.g. when the user unchecks "No repetir tematicas"
+        // the previousExecutionsSummary is null and shouldn't pollute the JSON).
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
     // Keys that are transport/identity — not model parameters. Everything else in
