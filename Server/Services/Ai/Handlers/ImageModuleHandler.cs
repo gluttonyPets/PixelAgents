@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Server.Models;
 
 namespace Server.Services.Ai.Handlers;
@@ -42,12 +43,20 @@ public class ImageModuleHandler : IModuleHandler
 
         // Single call — the provider reads `n`/`numberOfImages` from ctx.Config and
         // asks the API for all images at once so the model knows to vary them.
+        // When N>1 we prepend a rule so the model treats the composite prompt as
+        // N distinct parts (one per image) instead of producing N variants that
+        // all try to render every part together.
+        var n = ReadImageCount(ctx.Config);
+        var finalPrompt = n > 1
+            ? OutputSchemaHelper.GetMultiImageDisaggregationRule(n) + "\n\n" + prompt
+            : prompt;
+
         var aiContext = new AiExecutionContext
         {
             ModuleType = module.ModuleType,
             ModelName = module.ModelName,
             ApiKey = apiKey,
-            Input = prompt,
+            Input = finalPrompt,
             ProjectContext = ctx.Project.Context,
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
             MandatoryRules = ctx.MandatoryRules,
@@ -104,5 +113,25 @@ public class ImageModuleHandler : IModuleHandler
         output.Metadata["count"] = allImages.Count;
 
         return ModuleResult.Completed(output, result.EstimatedCost, producedFiles);
+    }
+
+    /// <summary>
+    /// Mirrors OpenAiProvider.ReadImageCount: reads `n` or `numberOfImages`
+    /// from the merged module config, tolerating int/long/double/JsonElement/string.
+    /// </summary>
+    private static int ReadImageCount(IDictionary<string, object> config)
+    {
+        int Parse(object? v) => v switch
+        {
+            int i => i,
+            long l => (int)l,
+            double d => (int)d,
+            JsonElement je when je.TryGetInt32(out var ji) => ji,
+            string s when int.TryParse(s, out var sp) => sp,
+            _ => 1,
+        };
+        if (config.TryGetValue("n", out var nv)) return Math.Max(1, Parse(nv));
+        if (config.TryGetValue("numberOfImages", out var niv)) return Math.Max(1, Parse(niv));
+        return 1;
     }
 }
