@@ -26,7 +26,15 @@ public class ModuleNode
         ProjectModule = pm;
     }
 
-    public bool CanStartWithoutInputs => string.Equals(ModuleType, "Start", StringComparison.OrdinalIgnoreCase);
+    public bool CanStartWithoutInputs => ModuleType switch
+    {
+        // Source modules: their handlers produce output without consuming
+        // upstream data, so they must auto-start even without inputs wired.
+        "Start" or "StaticText" or "FileUpload" => true,
+        // Scene can be a pure source when it has no template-variable ports wired.
+        "Scene" => InputPorts.Count == 0,
+        _ => false,
+    };
 
     /// <summary>True when this node can be marked Ready from its current inputs.</summary>
     public bool CanBecomeReady => CanStartWithoutInputs
