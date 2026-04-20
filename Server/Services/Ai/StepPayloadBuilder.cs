@@ -57,7 +57,6 @@ public static class StepPayloadBuilder
             ["previousExecutionsSummary"] = string.IsNullOrWhiteSpace(aiCtx.PreviousExecutionsSummary) ? null : aiCtx.PreviousExecutionsSummary,
             ["prompt"] = aiCtx.Input,
             ["inputFilesCount"] = aiCtx.InputFiles?.Count ?? 0,
-            ["skipOutputSchema"] = aiCtx.SkipOutputSchema,
             ["parameters"] = parameters.Count > 0 ? parameters : null,
         };
 

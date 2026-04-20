@@ -46,16 +46,22 @@ public class TextModuleHandler : IModuleHandler
         if (!result.Success)
             return ModuleResult.Failed(result.Error ?? "Error en generacion de texto");
 
-        var stepOutput = OutputSchemaHelper.ParseTextOutput(result.TextOutput ?? "", result.Metadata);
+        var rawText = result.TextOutput ?? "";
+        var stepOutput = new StepOutput
+        {
+            Type = "text",
+            Content = rawText,
+            Metadata = result.Metadata ?? new(),
+        };
 
         var producedFiles = new List<ProducedFile>();
-        if (!string.IsNullOrEmpty(result.TextOutput))
+        if (!string.IsNullOrEmpty(rawText))
         {
             producedFiles.Add(new ProducedFile
             {
-                Data = System.Text.Encoding.UTF8.GetBytes(result.TextOutput),
-                FileName = "output.json",
-                ContentType = "application/json",
+                Data = System.Text.Encoding.UTF8.GetBytes(rawText),
+                FileName = "output.txt",
+                ContentType = "text/plain",
             });
         }
 
