@@ -349,3 +349,128 @@ public static class ModulePortRegistry
         _ => "#888"
     };
 }
+
+// ── Active rules catalog ──
+
+/// <summary>A rule entry shown in the inspector so the user knows what is
+/// being injected into the prompt for a given module.</summary>
+public class ActiveRule
+{
+    public string Id { get; set; } = "";
+    public string Category { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Description { get; set; } = "";
+    /// <summary>Full text of the rule as it is sent to the provider. Null when
+    /// the rule body is dynamic or comes from the tenant DB.</summary>
+    public string? Body { get; set; }
+}
+
+/// <summary>
+/// Resolves which rules are active for a given module. Three sources:
+///   - tenant rules from /api/rules (user-managed)
+///   - built-in text formatting/brand/behavior rules (server-side
+///     OutputSchemaHelper.GetTextContentRules, mirrored here as user-facing
+///     summary)
+///   - context-dependent rules (multi-image disaggregation, per-module
+///     system prompt)
+/// Keep the text summaries in sync with Server/Services/Ai/OutputSchema.cs.
+/// </summary>
+public static class ActiveRulesRegistry
+{
+    private static readonly HashSet<string> AiCallingModules = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Text", "Coordinator", "Orchestrator", "Image", "Video", "VideoEdit",
+        "VideoSearch", "Audio", "Transcription", "Design", "Embeddings",
+    };
+
+    private static readonly HashSet<string> TextPathModules = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Text", "Coordinator", "Orchestrator",
+    };
+
+    /// <summary>Build the full list of rules that act on a module.</summary>
+    public static List<ActiveRule> GetActiveRules(
+        string moduleType,
+        int sceneCount,
+        string? systemPrompt,
+        IReadOnlyList<RuleResponse>? tenantRules)
+    {
+        var rules = new List<ActiveRule>();
+
+        var usesProvider = AiCallingModules.Contains(moduleType);
+        var usesTextPath = TextPathModules.Contains(moduleType);
+
+        // Tenant rules: injected as MandatoryRules on every provider call.
+        if (usesProvider && tenantRules is { Count: > 0 })
+        {
+            foreach (var r in tenantRules.Where(r => r.IsActive).OrderBy(r => r.SortOrder))
+            {
+                rules.Add(new ActiveRule
+                {
+                    Id = $"tenant:{r.Id}",
+                    Category = "Reglas del proyecto",
+                    Title = r.Title,
+                    Description = "Regla configurada en /rules aplicada a todos los modulos con llamada a IA.",
+                    Body = r.Content,
+                });
+            }
+        }
+
+        // Per-module system prompt override.
+        if (usesProvider && !string.IsNullOrWhiteSpace(systemPrompt))
+        {
+            rules.Add(new ActiveRule
+            {
+                Id = "systemPrompt",
+                Category = "Prompt de sistema",
+                Title = "Prompt de sistema personalizado",
+                Description = "Directiva configurada en este modulo; tiene prioridad sobre las reglas del proyecto.",
+                Body = systemPrompt,
+            });
+        }
+
+        // Text formatting / brand / behavior rules (OpenAI, Gemini, Grok, Anthropic).
+        if (usesTextPath)
+        {
+            rules.Add(new ActiveRule
+            {
+                Id = "text-behavior",
+                Category = "Comportamiento",
+                Title = "Respuesta directa",
+                Description = "No hace preguntas; decide y responde sin pedir aclaraciones.",
+                Body = "- NUNCA hagas preguntas al usuario. Si hay varias opciones posibles, elige la mejor opcion tu mismo y da directamente la respuesta final.\n- Se concreto y directo. No pidas aclaraciones, no ofrezcas alternativas, no preguntes preferencias. Decide y responde.",
+            });
+            rules.Add(new ActiveRule
+            {
+                Id = "text-format",
+                Category = "Formato",
+                Title = "ASCII plano, sin markdown ni emojis",
+                Description = "Sin emojis, ni formato markdown (**, #, listas), ni caracteres decorativos.",
+                Body = "- NO uses emojis ni emoticonos de ningun tipo (ni unicode ni shortcodes).\n- NO uses formato markdown: nada de **, *, #, ##, ```, >, -, ni listas con vinetas.\n- NO uses caracteres especiales decorativos: flechas, bullets, guiones largos, comillas tipograficas, simbolos como estrella, circulo, rombo, triangulo, flecha, etc.\n- Usa solo texto plano ASCII basico: letras, numeros, puntuacion normal (. , ; : ! ? ' \").",
+            });
+            rules.Add(new ActiveRule
+            {
+                Id = "text-brands",
+                Category = "Marcas",
+                Title = "Sin menciones de marcas",
+                Description = "Nunca nombra marcas, empresas ni productos. Usa descripciones genericas.",
+                Body = "- NUNCA menciones marcas, empresas, productos, servicios o nombres comerciales de ningun tipo. Esto incluye marcas de tecnologia, redes sociales, ropa, alimentacion, automocion, software, hardware, o cualquier otro sector.\n- Si necesitas referirte a un concepto asociado a una marca, usa una descripcion generica. Por ejemplo: en vez de \"Instagram\" di \"redes sociales\", en vez de \"iPhone\" di \"telefono movil\", en vez de \"Photoshop\" di \"editor de imagenes\".\n- No uses nombres de marcas ni siquiera como referencia, comparacion, ejemplo o metafora.",
+            });
+        }
+
+        // Multi-image disaggregation rule (Image module with n>1).
+        if (string.Equals(moduleType, "Image", StringComparison.OrdinalIgnoreCase) && sceneCount > 1)
+        {
+            rules.Add(new ActiveRule
+            {
+                Id = "multi-image",
+                Category = "Imagen",
+                Title = $"Desagregacion multi-imagen (n={sceneCount})",
+                Description = "Cada imagen generada representa una parte del prompt, no repite todas las partes.",
+                Body = $"IMPORTANTE: Vas a generar {sceneCount} imagenes a partir de este prompt. El prompt describe {sceneCount} partes, slides o secciones distintas. Genera UNA imagen por cada parte, en orden: la imagen 1 representa la primera parte del prompt, la imagen 2 la segunda, etc. NO dibujes todas las partes en cada imagen. Cada imagen debe ser visualmente independiente y autocontenida, mostrando solo su parte correspondiente.",
+            });
+        }
+
+        return rules;
+    }
+}
