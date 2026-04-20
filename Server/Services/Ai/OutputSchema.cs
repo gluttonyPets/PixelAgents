@@ -55,6 +55,29 @@ namespace Server.Services.Ai
 
     public static class OutputSchemaHelper
     {
+        private const string TextContentRules = @"Reglas generales:
+- NUNCA hagas preguntas al usuario. Si hay varias opciones posibles, elige la mejor opcion tu mismo y da directamente la respuesta final.
+- Se concreto y directo. No pidas aclaraciones, no ofrezcas alternativas, no preguntes preferencias. Decide y responde.
+
+Reglas de formato (OBLIGATORIAS):
+- NO uses emojis ni emoticonos de ningun tipo (ni unicode ni shortcodes).
+- NO uses formato markdown: nada de **, *, #, ##, ```, >, -, ni listas con vinetas.
+- NO uses caracteres especiales decorativos: flechas, bullets, guiones largos, comillas tipograficas, simbolos como estrella, circulo, rombo, triangulo, flecha, etc.
+- Usa solo texto plano ASCII basico: letras, numeros, puntuacion normal (. , ; : ! ? ' "").
+
+Reglas de contenido (OBLIGATORIAS):
+- NUNCA menciones marcas, empresas, productos, servicios o nombres comerciales de ningun tipo. Esto incluye marcas de tecnologia, redes sociales, ropa, alimentacion, automocion, software, hardware, o cualquier otro sector.
+- Si necesitas referirte a un concepto asociado a una marca, usa una descripcion generica. Por ejemplo: en vez de ""Instagram"" di ""redes sociales"", en vez de ""iPhone"" di ""telefono movil"", en vez de ""Photoshop"" di ""editor de imagenes"".
+- No uses nombres de marcas ni siquiera como referencia, comparacion, ejemplo o metafora.";
+
+        /// <summary>
+        /// Normas de comportamiento, formato ASCII y veto de marcas que se
+        /// inyectan en el system prompt de todo modulo de texto. Antes vivian
+        /// dentro del esquema JSON obligatorio; se mantienen ahora como reglas
+        /// independientes al usar texto plano.
+        /// </summary>
+        public static string GetTextContentRules() => TextContentRules;
+
         /// <summary>
         /// Construye un StepOutput para un módulo de imagen con múltiples archivos.
         /// </summary>
