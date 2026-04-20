@@ -165,15 +165,21 @@ public class ImageModuleHandler : IModuleHandler
 
         var output = OutputSchemaHelper.BuildImageOutput(outputFiles, module.ModelName);
         output.Metadata["count"] = allImages.Count;
+        output.Metadata["disaggregated"] = perImagePrompts is not null;
+        if (perImagePrompts is not null)
+            output.Metadata["promptCount"] = perImagePrompts.Count;
 
         return ModuleResult.Completed(output, totalCost, producedFiles);
     }
 
     /// <summary>
     /// Parse the upstream JSON payload and extract per-image prompts. Tries a
-    /// handful of common key names (images/slides/items/parts/prompts) and
-    /// per-entry content keys (prompt/content/text/description). Returns null
-    /// when the payload is not a JSON object or does not expose a usable list.
+    /// handful of common key names (images/slides/items/parts/prompts) and a
+    /// root-level array as fallback. For each entry, prefers prompt-like keys
+    /// (prompt/content/text/description) but falls back to the first non-empty
+    /// string value so authors can use ad-hoc keys (e.g. "slide 1"). Returns
+    /// null when the payload is not JSON or does not expose a usable list of
+    /// length n.
     /// </summary>
     private static List<string>? TryExtractPerImagePrompts(string rawInput, int n)
     {
@@ -191,35 +197,72 @@ public class ImageModuleHandler : IModuleHandler
 
         JsonDocument doc;
         try { doc = JsonDocument.Parse(trimmed); }
-        catch { return null; }
+        catch
+        {
+            Console.WriteLine("[ImageModule] Per-image disaggregation skipped: payload is not valid JSON.");
+            return null;
+        }
 
         using (doc)
         {
-            if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
+            // Case 1: root is itself an array.
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                var prompts = ExtractListOfPrompts(doc.RootElement);
+                if (prompts.Count == n) return prompts;
+                Console.WriteLine($"[ImageModule] Root array had {prompts.Count} prompts, expected {n}; falling back to batched call.");
+                return null;
+            }
 
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                Console.WriteLine($"[ImageModule] Per-image disaggregation skipped: root is {doc.RootElement.ValueKind}.");
+                return null;
+            }
+
+            // Case 2: object with a known "images-like" array key.
             var candidateArrays = new[] { "images", "slides", "items", "parts", "prompts", "generatedImages" };
             foreach (var key in candidateArrays)
             {
-                if (!doc.RootElement.TryGetProperty(key, out var arr)) continue;
-                if (arr.ValueKind != JsonValueKind.Array) continue;
-
-                var prompts = new List<string>();
-                foreach (var element in arr.EnumerateArray())
+                if (!doc.RootElement.TryGetProperty(key, out var arr) || arr.ValueKind != JsonValueKind.Array) continue;
+                var prompts = ExtractListOfPrompts(arr);
+                if (prompts.Count == n)
                 {
-                    var text = ExtractPromptFromElement(element);
-                    if (!string.IsNullOrWhiteSpace(text))
-                        prompts.Add(text);
+                    Console.WriteLine($"[ImageModule] Disaggregating {n} prompts from object key '{key}'.");
+                    return prompts;
                 }
-
-                if (prompts.Count == 0) continue;
-                // Only short-circuit to per-image mode when the number of prompts
-                // matches the module's configured image count; otherwise fall
-                // back so the user isn't silently missing outputs.
-                if (prompts.Count == n) return prompts;
+                if (prompts.Count > 0)
+                    Console.WriteLine($"[ImageModule] Key '{key}' had {prompts.Count} prompts, expected {n}.");
             }
+
+            // Case 3: object with a single property whose value is an array of n.
+            var props = doc.RootElement.EnumerateObject().ToList();
+            if (props.Count == 1 && props[0].Value.ValueKind == JsonValueKind.Array)
+            {
+                var prompts = ExtractListOfPrompts(props[0].Value);
+                if (prompts.Count == n)
+                {
+                    Console.WriteLine($"[ImageModule] Disaggregating {n} prompts from single-key object '{props[0].Name}'.");
+                    return prompts;
+                }
+            }
+
+            Console.WriteLine($"[ImageModule] Per-image disaggregation skipped: no usable array of {n} prompts found.");
         }
 
         return null;
+    }
+
+    private static List<string> ExtractListOfPrompts(JsonElement arr)
+    {
+        var prompts = new List<string>();
+        foreach (var element in arr.EnumerateArray())
+        {
+            var text = ExtractPromptFromElement(element);
+            if (!string.IsNullOrWhiteSpace(text))
+                prompts.Add(text!);
+        }
+        return prompts;
     }
 
     private static string? ExtractPromptFromElement(JsonElement element)
@@ -229,11 +272,23 @@ public class ImageModuleHandler : IModuleHandler
 
         if (element.ValueKind != JsonValueKind.Object) return null;
 
+        // Prefer well-known keys for stability when authors use the canonical shape.
         foreach (var key in new[] { "prompt", "content", "text", "description" })
         {
             if (element.TryGetProperty(key, out var prop) && prop.ValueKind == JsonValueKind.String)
             {
                 var s = prop.GetString();
+                if (!string.IsNullOrWhiteSpace(s)) return s;
+            }
+        }
+
+        // Fallback: ad-hoc keys (e.g. "slide 1") — accept the first non-empty
+        // string property so the contract syntax stays flexible.
+        foreach (var p in element.EnumerateObject())
+        {
+            if (p.Value.ValueKind == JsonValueKind.String)
+            {
+                var s = p.Value.GetString();
                 if (!string.IsNullOrWhiteSpace(s)) return s;
             }
         }
