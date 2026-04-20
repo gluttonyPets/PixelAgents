@@ -1255,18 +1255,32 @@
                 <textarea rows="14" spellcheck="false"
                           placeholder='{"images":[{"prompt":"slide 1"},{"prompt":"slide 2"},{"prompt":"slide 3"}]}'
                           style="width: 100%; font-family: var(--font-mono, monospace); font-size: 0.8rem;"
-                          @bind="_formatEditor.Draft"
-                          @bind:event="oninput"></textarea>
-                @if (!string.IsNullOrWhiteSpace(_formatEditor.ValidationError))
+                          value="@_formatEditor.Draft"
+                          @oninput="OnFormatDraftInput"></textarea>
+                @if (!_formatEditor.IsValid && !string.IsNullOrWhiteSpace(_formatEditor.Error))
                 {
-                    <div class="alert alert-error" style="font-size: 0.75rem; margin-top: 0.4rem;">@_formatEditor.ValidationError</div>
+                    <div class="alert alert-error" style="font-size: 0.75rem; margin-top: 0.4rem;">
+                        <i class="bi bi-exclamation-circle" style="margin-right: 0.25rem;"></i>@_formatEditor.Error
+                    </div>
+                }
+                else if (_formatEditor.IsValid && !string.IsNullOrWhiteSpace(_formatEditor.ShapeSummary))
+                {
+                    <div class="alert alert-success" style="font-size: 0.75rem; margin-top: 0.4rem;">
+                        <i class="bi bi-check-circle" style="margin-right: 0.25rem;"></i>
+                        <strong>Estructura:</strong> @_formatEditor.ShapeSummary
+                    </div>
                 }
             </div>
             <div class="modal-footer">
                 <button class="btn btn-sm" @onclick="ClearFormatEditor" title="Quitar el formato de esta conexion">Quitar</button>
+                <button class="btn btn-sm" @onclick="PrettyPrintFormat"
+                        disabled="@(!_formatEditor.IsValid || string.IsNullOrWhiteSpace(_formatEditor.Draft))"
+                        title="Reformatear el JSON con indentacion">
+                    <i class="bi bi-code-square" style="margin-right: 0.2rem;"></i>Pretty-print
+                </button>
                 <div style="flex: 1;"></div>
                 <button class="btn btn-sm" @onclick="CloseFormatEditor">Cancelar</button>
-                <button class="btn btn-success btn-sm" @onclick="SaveFormatEditor">Guardar</button>
+                <button class="btn btn-success btn-sm" @onclick="SaveFormatEditor" disabled="@(!_formatEditor.IsValid)">Guardar</button>
             </div>
         </div>
     </div>
@@ -1322,7 +1336,11 @@
         public string FromLabel { get; set; } = "";
         public string ToLabel { get; set; } = "";
         public string Draft { get; set; } = "";
-        public string? ValidationError { get; set; }
+        // Validation state recomputed on every keystroke. Empty draft is
+        // treated as valid (means "remove the contract" on save).
+        public bool IsValid { get; set; } = true;
+        public string? Error { get; set; }
+        public string? ShapeSummary { get; set; }
     }
     private int _lastLogCount;
     private string? _pendingAutoSelectModuleType;
@@ -2110,12 +2128,35 @@
             ToLabel = toLabel,
             Draft = conn.Format ?? "",
         };
+        ValidateFormatDraft();
         InvokeAsync(StateHasChanged);
     }
 
     private void CloseFormatEditor()
     {
         _formatEditor = null;
+    }
+
+    private void OnFormatDraftInput(ChangeEventArgs e)
+    {
+        if (_formatEditor is null) return;
+        _formatEditor.Draft = e.Value?.ToString() ?? "";
+        ValidateFormatDraft();
+    }
+
+    private void PrettyPrintFormat()
+    {
+        if (_formatEditor is null || !_formatEditor.IsValid) return;
+        var draft = (_formatEditor.Draft ?? "").Trim();
+        if (string.IsNullOrEmpty(draft)) return;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(draft);
+            _formatEditor.Draft = System.Text.Json.JsonSerializer.Serialize(doc.RootElement,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            ValidateFormatDraft();
+        }
+        catch { /* validator already reported the error */ }
     }
 
     private async Task ClearFormatEditor()
@@ -2127,18 +2168,91 @@
     private async Task SaveFormatEditor()
     {
         if (_formatEditor is null) return;
+        if (!_formatEditor.IsValid) return; // button is disabled, defensive
         var draft = (_formatEditor.Draft ?? "").Trim();
-        if (!string.IsNullOrEmpty(draft))
-        {
-            try { using var _ = System.Text.Json.JsonDocument.Parse(draft); }
-            catch (Exception ex)
-            {
-                _formatEditor.ValidationError = $"JSON invalido: {ex.Message}";
-                StateHasChanged();
-                return;
-            }
-        }
         await ApplyFormatEdit(string.IsNullOrEmpty(draft) ? null : draft);
+    }
+
+    /// <summary>
+    /// Recompute IsValid / Error / ShapeSummary from the current Draft. Empty
+    /// draft is considered valid (it means "remove the contract on save").
+    /// </summary>
+    private void ValidateFormatDraft()
+    {
+        if (_formatEditor is null) return;
+        var draft = (_formatEditor.Draft ?? "").Trim();
+        if (string.IsNullOrEmpty(draft))
+        {
+            _formatEditor.IsValid = true;
+            _formatEditor.Error = null;
+            _formatEditor.ShapeSummary = null;
+            return;
+        }
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(draft);
+            _formatEditor.IsValid = true;
+            _formatEditor.Error = null;
+            _formatEditor.ShapeSummary = BuildShapeSummary(doc.RootElement, depth: 0);
+        }
+        catch (System.Text.Json.JsonException jex)
+        {
+            _formatEditor.IsValid = false;
+            _formatEditor.ShapeSummary = null;
+            // BytePositionInLine is 0-based, surface 1-based for the user.
+            var col = jex.BytePositionInLine.HasValue ? jex.BytePositionInLine.Value + 1 : (long?)null;
+            var line = jex.LineNumber.HasValue ? jex.LineNumber.Value + 1 : (long?)null;
+            var loc = (line, col) switch
+            {
+                (long l, long c) => $"linea {l}, columna {c}",
+                (long l, null)   => $"linea {l}",
+                _ => "posicion desconocida",
+            };
+            _formatEditor.Error = $"JSON invalido en {loc}: {jex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _formatEditor.IsValid = false;
+            _formatEditor.ShapeSummary = null;
+            _formatEditor.Error = $"JSON invalido: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Recursive structural description: enumerates keys/types up to depth 3
+    /// so the user can see the shape of the contract at a glance without
+    /// needing to read the full JSON.
+    /// </summary>
+    private static string BuildShapeSummary(System.Text.Json.JsonElement el, int depth)
+    {
+        switch (el.ValueKind)
+        {
+            case System.Text.Json.JsonValueKind.Object:
+                var props = el.EnumerateObject().ToList();
+                if (depth >= 3 || props.Count == 0)
+                    return $"objeto({props.Count})";
+                var fields = props.Take(6).Select(p =>
+                    $"{p.Name}: {BuildShapeSummary(p.Value, depth + 1)}");
+                var tail = props.Count > 6 ? ", ..." : "";
+                return $"objeto · {string.Join(", ", fields)}{tail}";
+
+            case System.Text.Json.JsonValueKind.Array:
+                var arr = el.EnumerateArray().ToList();
+                if (arr.Count == 0) return "array(0)";
+                if (depth >= 3) return $"array({arr.Count})";
+                var firstKind = arr[0].ValueKind;
+                var allSame = arr.All(x => x.ValueKind == firstKind);
+                if (!allSame) return $"array({arr.Count}) mixto";
+                var inner = BuildShapeSummary(arr[0], depth + 1);
+                return $"array({arr.Count}) de {inner}";
+
+            case System.Text.Json.JsonValueKind.String: return "string";
+            case System.Text.Json.JsonValueKind.Number: return "number";
+            case System.Text.Json.JsonValueKind.True:
+            case System.Text.Json.JsonValueKind.False: return "boolean";
+            case System.Text.Json.JsonValueKind.Null:  return "null";
+            default: return "valor";
+        }
     }
 
     private async Task ApplyFormatEdit(string? newFormat)
