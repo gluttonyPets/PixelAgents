@@ -138,6 +138,19 @@ namespace Server.Services
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_OrchestratorOutputs_ProjectModuleId"" ON ""OrchestratorOutputs"" (""ProjectModuleId"")", log);
             RunSafe(ctx, @"ALTER TABLE ""OrchestratorOutputs"" ADD COLUMN IF NOT EXISTS ""DataType"" varchar(50) NOT NULL DEFAULT 'text'", log);
+
+            // Rules table: injected into system prompt of AI calls, seeded per tenant.
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""Rules"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""Title"" varchar(200) NOT NULL,
+                    ""Content"" text NOT NULL,
+                    ""IsActive"" boolean NOT NULL DEFAULT true,
+                    ""SortOrder"" integer NOT NULL DEFAULT 0,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_Rules_IsActive_SortOrder"" ON ""Rules"" (""IsActive"", ""SortOrder"")", log);
         }
 
         private static void RunSafe(UserDbContext ctx, string sql, ILogger? log = null)

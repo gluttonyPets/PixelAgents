@@ -84,7 +84,7 @@ else
                 <span class="tab-count">@_project.Modules.Count</span>
             }
         </button>
-        <button class="tab @(_activeTab == "history" ? "tab-active" : "")" @onclick='() => _activeTab = "history"'>
+        <button class="tab @(_activeTab == "history" ? "tab-active" : "")" @onclick="SwitchToHistoryTab">
             Historial
             @if (_executions.Count > 0)
             {
@@ -1720,15 +1720,28 @@ else
             _projectConnections = _project?.Connections ?? new();
             _modules = await Api.GetModulesAsync();
             _executions = await Api.GetExecutionsAsync(ProjectId);
-            // Check if latest execution is waiting for checkpoint or orchestrator review
+            // Check if latest execution is running, waiting for checkpoint, or waiting for orchestrator review
             var latestExec = _executions.FirstOrDefault();
-            if (latestExec is not null && (latestExec.Status == "WaitingForCheckpoint" || latestExec.Status == "WaitingForReview"))
+            if (latestExec is not null && (latestExec.Status == "Running" || latestExec.Status == "WaitingForCheckpoint" || latestExec.Status == "WaitingForReview"))
             {
                 var detail = await Api.GetExecutionDetailAsync(latestExec.Id);
                 if (detail is not null)
                 {
                     _result = detail;
-                    if (latestExec.Status == "WaitingForCheckpoint")
+                    if (latestExec.Status == "Running")
+                    {
+                        // Restore in-progress visuals after a page refresh: mark executing,
+                        // seed step statuses from the server, and arm the polling safety net.
+                        _executing = true;
+                        _realtimeStepStatuses.Clear();
+                        if (detail.Steps is not null)
+                        {
+                            foreach (var s in detail.Steps)
+                                _realtimeStepStatuses[s.ProjectModuleId] = s.Status;
+                        }
+                        StartPolling();
+                    }
+                    else if (latestExec.Status == "WaitingForCheckpoint")
                     {
                         _checkpointExecutionId = detail.Id;
                         var pausedStep = detail.Steps?.FirstOrDefault(s => s.Status == "WaitingForCheckpoint");
@@ -2561,6 +2574,16 @@ else
             await JS.InvokeVoidAsync("downloadFileWithCredentials", url, fileName);
         }
         catch { }
+    }
+
+    private async Task SwitchToHistoryTab()
+    {
+        _activeTab = "history";
+        try
+        {
+            _executions = await Api.GetExecutionsAsync(ProjectId);
+        }
+        catch { /* keep previously loaded list on transient failure */ }
     }
 
     private void HistoryDateNav(int direction)
