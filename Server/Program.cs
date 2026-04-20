@@ -1296,7 +1296,10 @@ app.MapPost("/api/projects/{projectId}/modules", async (
         ProjectId = projectId,
         AiModuleId = req.AiModuleId,
         StepName = req.StepName,
-        Configuration = req.Configuration,
+        // Inherit the AiModule's Configuration as the initial pipeline-level
+        // override so per-module defaults (e.g. numberOfImages, n, modelName)
+        // are honored the first time the module is added to a pipeline.
+        Configuration = req.Configuration ?? module.Configuration,
         IsActive = true,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
