@@ -453,7 +453,12 @@ public class GraphPipelineExecutor : IPipelineExecutor
             var skippedAny = false;
             foreach (var node in graph.GetReadyNodes())
             {
-                if (IsNodeSkipped(node))
+                var skipped = IsNodeSkipped(node, out var rawSkipValue);
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"[SkipCheck] {node.ProjectModule.StepName ?? node.AiModule.Name}: skipped={skipped} raw='{rawSkipValue ?? "(null)"}'",
+                    node.ProjectModule.StepOrder,
+                    node.ProjectModule.StepName ?? node.AiModule.Name);
+                if (skipped)
                 {
                     await HandleSkippedNodeAsync(node, graph, project, execution, db, ct);
                     skippedAny = true;
@@ -1670,10 +1675,18 @@ public class GraphPipelineExecutor : IPipelineExecutor
     /// flag (set from the pipeline editor). The executor must bypass the
     /// handler and pass the upstream data through to downstream modules.
     /// </summary>
-    private static bool IsNodeSkipped(ModuleNode node)
+    private static bool IsNodeSkipped(ModuleNode node) => IsNodeSkipped(node, out _);
+
+    private static bool IsNodeSkipped(ModuleNode node, out string? rawValue)
     {
+        rawValue = null;
         var cfg = MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration);
-        if (!cfg.TryGetValue("skipped", out var v)) return false;
+        if (!cfg.TryGetValue("skipped", out var v))
+        {
+            rawValue = $"not-in-config (raw: {Truncate(node.ProjectModule.Configuration ?? "(null)", 200)})";
+            return false;
+        }
+        rawValue = $"{v?.GetType().Name}:{v}";
         return v switch
         {
             bool b => b,
