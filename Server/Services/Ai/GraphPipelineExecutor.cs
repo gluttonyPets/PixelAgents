@@ -450,8 +450,16 @@ public class GraphPipelineExecutor : IPipelineExecutor
         {
             ct.ThrowIfCancellationRequested();
 
+            var skippedAny = false;
             foreach (var node in graph.GetReadyNodes())
             {
+                if (IsNodeSkipped(node))
+                {
+                    await HandleSkippedNodeAsync(node, graph, project, execution, db, ct);
+                    skippedAny = true;
+                    continue;
+                }
+
                 node.Status = NodeStatus.Running;
                 node.StepExecution = await CreateStepExecutionAsync(node, execution, db, ct);
                 await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Running");
@@ -475,6 +483,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
             if (running.Count == 0)
             {
+                // If we just skipped one or more nodes, downstream may have become
+                // ready — re-evaluate before finalizing the graph.
+                if (skippedAny) continue;
                 await FinalizeGraphAsync(graph, project, execution, db, tenantDbName, workspacePath, filePaths, ct);
                 return;
             }
@@ -1653,6 +1664,66 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     private static string Truncate(string text, int maxLength) =>
         text.Length <= maxLength ? text : text[..maxLength] + "...";
+
+    /// <summary>
+    /// True when the merged module configuration carries the "skipped": true
+    /// flag (set from the pipeline editor). The executor must bypass the
+    /// handler and pass the upstream data through to downstream modules.
+    /// </summary>
+    private static bool IsNodeSkipped(ModuleNode node)
+    {
+        var cfg = MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration);
+        if (!cfg.TryGetValue("skipped", out var v)) return false;
+        return v switch
+        {
+            bool b => b,
+            string s => bool.TryParse(s, out var bp) && bp,
+            JsonElement je => je.ValueKind == JsonValueKind.True
+                              || (je.ValueKind == JsonValueKind.String
+                                  && bool.TryParse(je.GetString(), out var bj) && bj),
+            _ => false,
+        };
+    }
+
+    /// <summary>
+    /// Pass-through for a skipped node: copies the first received PortData
+    /// (preferring data with files) into every output port so downstream nodes
+    /// see the same payload as if the skipped step were not in the graph.
+    /// </summary>
+    private async Task HandleSkippedNodeAsync(
+        ModuleNode node, ExecutionGraph graph, Project project, ProjectExecution execution,
+        UserDbContext db, CancellationToken ct)
+    {
+        var stepName = node.ProjectModule.StepName ?? node.AiModule.Name;
+        var step = await CreateStepExecutionAsync(node, execution, db, ct);
+        node.StepExecution = step;
+
+        var allInputs = node.InputPorts.SelectMany(p => p.ReceivedData).ToList();
+        var passthrough = allInputs.FirstOrDefault(d => d.Files is { Count: > 0 })
+                          ?? allInputs.FirstOrDefault();
+
+        // Build a pass-through StepOutput so PortDataResolver can populate the
+        // output ports the same way a real handler would.
+        node.Output = new StepOutput
+        {
+            Type = passthrough?.Files is { Count: > 0 } ? "image" : "text",
+            Content = passthrough?.TextContent ?? "",
+            Files = passthrough?.Files ?? [],
+        };
+
+        node.Status = NodeStatus.Skipped;
+        step.Status = "Skipped";
+        step.OutputData = JsonSerializer.Serialize(node.Output, JsonOptions);
+        step.CompletedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Skipped");
+        await _logger.LogAsync(project.Id, execution.Id, "info",
+            $"{stepName} saltado (skipped=true), pasando datos al siguiente modulo",
+            node.ProjectModule.StepOrder, stepName);
+
+        graph.PropagateOutputs(node);
+    }
 
     /// <summary>
     /// Loads the active tenant rules and joins them into a single block ready
