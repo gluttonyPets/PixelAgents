@@ -258,6 +258,41 @@
                         }
                     </div>
 
+                    @{
+                        var activeRules = GetActiveRules(sel);
+                    }
+                    @if (activeRules.Count > 0)
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">
+                                <i class="bi bi-shield-check" style="color: var(--success); margin-right: 0.3rem;"></i>
+                                Reglas activas <span class="tab-count">@activeRules.Count</span>
+                            </div>
+                            <p class="text-sm text-muted" style="margin-top: -0.2rem; margin-bottom: 0.4rem;">
+                                Estas reglas se inyectan automaticamente al prompt de este modulo.
+                            </p>
+                            @foreach (var group in activeRules.GroupBy(r => r.Category))
+                            {
+                                <div class="inspector-rules-group">
+                                    <div class="inspector-rules-group-title">@group.Key</div>
+                                    @foreach (var r in group)
+                                    {
+                                        <details class="inspector-rule-item">
+                                            <summary>
+                                                <span class="inspector-rule-title">@r.Title</span>
+                                                <span class="inspector-rule-desc">@r.Description</span>
+                                            </summary>
+                                            @if (!string.IsNullOrWhiteSpace(r.Body))
+                                            {
+                                                <pre class="inspector-rule-body">@r.Body</pre>
+                                            }
+                                        </details>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "Image")
                     {
                         <div class="inspector-section">
@@ -1202,6 +1237,7 @@
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
     [Parameter] public List<AiModuleResponse> AvailableModules { get; set; } = [];
     [Parameter] public List<ModuleConnectionResponse> Connections { get; set; } = [];
+    [Parameter] public List<RuleResponse> TenantRules { get; set; } = [];
     [Parameter] public RenderFragment? TopPanel { get; set; }
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
     [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
@@ -1393,6 +1429,7 @@
                 : null;
 
             var isSkipped = GetModuleConfigBool(pm.Id, "skipped", false);
+            var activeRulesCount = GetActiveRules(pm).Count;
 
             await JS.InvokeVoidAsync("pipelineEditor.addNode",
                 pm.Id.ToString(),
@@ -1406,7 +1443,8 @@
                 stepLabel,
                 pm.ModelName,
                 warning,
-                isSkipped);
+                isSkipped,
+                activeRulesCount);
 
             idx++;
         }
@@ -1547,6 +1585,13 @@
     {
         var val = GetModuleConfig(sel.Id, "modelName", "");
         return string.IsNullOrEmpty(val) ? "" : val;
+    }
+
+    private List<ActiveRule> GetActiveRules(ProjectModuleResponse module)
+    {
+        var sysPrompt = GetModuleConfig(module.Id, "systemPrompt", "");
+        var sceneCount = GetSceneCount(module.Id);
+        return ActiveRulesRegistry.GetActiveRules(module.ModuleType, sceneCount, sysPrompt, TenantRules);
     }
 
     private bool GetModuleConfigBool(Guid moduleId, string key, bool fallback = false)

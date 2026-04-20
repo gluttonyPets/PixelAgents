@@ -169,11 +169,11 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
-        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0);
         var cssClass = 'df-type-' + moduleType.toLowerCase();
         if (skipped) cssClass += ' df-state-skipped';
         var nodeId = this._editor.addNode(
@@ -381,10 +381,13 @@ window.pipelineEditor = {
         });
     },
 
-    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount) {
+    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount, activeRulesCount) {
         var orderBadge = stepLabel
             ? '<span class="df-order-badge">' + stepLabel + '</span>'
             : '<span class="df-order-badge" style="display:none"></span>';
+        var rulesBadge = (activeRulesCount | 0) > 0
+            ? '<span class="df-node-rules-badge" title="' + activeRulesCount + ' regla(s) activa(s) en este modulo"><i class="bi bi-shield-check"></i>' + activeRulesCount + '</span>'
+            : '';
         var modelLine = modelName
             ? '<div class="df-node-model">' + modelName + '</div>'
             : '';
@@ -402,7 +405,7 @@ window.pipelineEditor = {
         }
         return '<div class="df-node-content" style="border-left: 3px solid ' + color + ';">'
             + '<div class="df-node-overlay-spinner"></div>'
-            + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + name + '</div>'
+            + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + name + rulesBadge + '</div>'
             + '<div class="df-node-type">' + type + '</div>'
             + modelLine
             + portSummary
