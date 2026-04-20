@@ -42,12 +42,11 @@ public class ImageModuleHandler : IModuleHandler
         }
 
         var n = ReadImageCount(ctx.Config);
-        // If the incoming edge declares a Format, try to disaggregate the JSON
-        // payload into per-image prompts. When successful, call the provider N
-        // times with n=1 so each image is generated from its own prompt — the
-        // batched n=N path produces near-identical variants of the composite
-        // prompt and the user sees the same image in every output port.
-        var perImagePrompts = n > 1 && !string.IsNullOrWhiteSpace(ctx.GetInputFormat("input_prompt"))
+        // When the incoming edge declares a Format, the JSON payload is the
+        // contract: we fan out one API call per prompt found in the JSON,
+        // regardless of the `n` configured on the module UI. The batched n=N
+        // path is reserved for edges without a Format.
+        var perImagePrompts = !string.IsNullOrWhiteSpace(ctx.GetInputFormat("input_prompt"))
             ? TryExtractPerImagePrompts(prompt, n)
             : null;
 
@@ -177,9 +176,9 @@ public class ImageModuleHandler : IModuleHandler
     /// handful of common key names (images/slides/items/parts/prompts) and a
     /// root-level array as fallback. For each entry, prefers prompt-like keys
     /// (prompt/content/text/description) but falls back to the first non-empty
-    /// string value so authors can use ad-hoc keys (e.g. "slide 1"). Returns
-    /// null when the payload is not JSON or does not expose a usable list of
-    /// length n.
+    /// string value so authors can use ad-hoc keys (e.g. "slide 1"). The JSON
+    /// itself drives the number of images to generate — the `n` config on the
+    /// module is only used as a hint for logging, not as a gate.
     /// </summary>
     private static List<string>? TryExtractPerImagePrompts(string rawInput, int n)
     {
@@ -205,52 +204,55 @@ public class ImageModuleHandler : IModuleHandler
 
         using (doc)
         {
+            List<string>? result = null;
+            string? source = null;
+
             // Case 1: root is itself an array.
             if (doc.RootElement.ValueKind == JsonValueKind.Array)
             {
-                var prompts = ExtractListOfPrompts(doc.RootElement);
-                if (prompts.Count == n) return prompts;
-                Console.WriteLine($"[ImageModule] Root array had {prompts.Count} prompts, expected {n}; falling back to batched call.");
-                return null;
+                result = ExtractListOfPrompts(doc.RootElement);
+                source = "root array";
             }
+            else if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                // Case 2: object with a known "images-like" array key.
+                var candidateArrays = new[] { "images", "slides", "items", "parts", "prompts", "generatedImages" };
+                foreach (var key in candidateArrays)
+                {
+                    if (!doc.RootElement.TryGetProperty(key, out var arr) || arr.ValueKind != JsonValueKind.Array) continue;
+                    var prompts = ExtractListOfPrompts(arr);
+                    if (prompts.Count > 0) { result = prompts; source = $"key '{key}'"; break; }
+                }
 
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                // Case 3: any single-array property (fallback for ad-hoc contract keys).
+                if (result is null)
+                {
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        if (prop.Value.ValueKind != JsonValueKind.Array) continue;
+                        var prompts = ExtractListOfPrompts(prop.Value);
+                        if (prompts.Count > 0) { result = prompts; source = $"key '{prop.Name}'"; break; }
+                    }
+                }
+            }
+            else
             {
                 Console.WriteLine($"[ImageModule] Per-image disaggregation skipped: root is {doc.RootElement.ValueKind}.");
                 return null;
             }
 
-            // Case 2: object with a known "images-like" array key.
-            var candidateArrays = new[] { "images", "slides", "items", "parts", "prompts", "generatedImages" };
-            foreach (var key in candidateArrays)
+            if (result is null || result.Count == 0)
             {
-                if (!doc.RootElement.TryGetProperty(key, out var arr) || arr.ValueKind != JsonValueKind.Array) continue;
-                var prompts = ExtractListOfPrompts(arr);
-                if (prompts.Count == n)
-                {
-                    Console.WriteLine($"[ImageModule] Disaggregating {n} prompts from object key '{key}'.");
-                    return prompts;
-                }
-                if (prompts.Count > 0)
-                    Console.WriteLine($"[ImageModule] Key '{key}' had {prompts.Count} prompts, expected {n}.");
+                Console.WriteLine("[ImageModule] Per-image disaggregation skipped: no usable prompt array in the payload.");
+                return null;
             }
 
-            // Case 3: object with a single property whose value is an array of n.
-            var props = doc.RootElement.EnumerateObject().ToList();
-            if (props.Count == 1 && props[0].Value.ValueKind == JsonValueKind.Array)
-            {
-                var prompts = ExtractListOfPrompts(props[0].Value);
-                if (prompts.Count == n)
-                {
-                    Console.WriteLine($"[ImageModule] Disaggregating {n} prompts from single-key object '{props[0].Name}'.");
-                    return prompts;
-                }
-            }
-
-            Console.WriteLine($"[ImageModule] Per-image disaggregation skipped: no usable array of {n} prompts found.");
+            if (result.Count != n)
+                Console.WriteLine($"[ImageModule] Disaggregating {result.Count} prompts from {source} (module n={n}; JSON wins).");
+            else
+                Console.WriteLine($"[ImageModule] Disaggregating {result.Count} prompts from {source}.");
+            return result;
         }
-
-        return null;
     }
 
     private static List<string> ExtractListOfPrompts(JsonElement arr)
