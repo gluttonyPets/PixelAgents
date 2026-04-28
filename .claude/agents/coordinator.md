@@ -114,22 +114,27 @@ Cada subtarea debe incluir:
 
 Cuando una tarea de Leantime se mueve a Ready, eso autoriza al coordinador a trabajar y subir la rama de trabajo automáticamente.
 
-Reglas:
-- Crear siempre una rama nueva desde develop salvo que ya exista una rama válida para la tarea.
-- El formato de rama debe ser:
-  - feature/leantime-ID-descripcion-corta
-  - fix/leantime-ID-descripcion-corta
-  - hotfix/leantime-ID-descripcion-corta
-- Nunca trabajar directamente en master, main o develop.
-- Nunca hacer merge automático.
-- Nunca hacer push directo a master, main o develop.
-- Al terminar un bloque coherente de trabajo, hacer commit y subir la rama con:
+Reglas obligatorias:
+- Crear siempre una rama nueva desde `develop` salvo que ya exista una rama válida para la tarea.
+- Formato de rama (único permitido):
+  - `feature/leantime-ID-descripcion-corta`
+  - `fix/leantime-ID-descripcion-corta`
+  - `hotfix/leantime-ID-descripcion-corta`
+- Nunca trabajar ni commitear directamente en `master`, `main` o `develop`.
+- Nunca hacer merge automático, rebase automático ni `git reset --hard`.
+- **Está prohibido `git push` directo.** El único método autorizado para subir cambios es:
 
-`./tools/git_safe_commit_push.sh ID_TAREA "Leantime #ID_TAREA: descripción del cambio"`
+```
+./tools/git_safe_commit_push.sh ID_TAREA "Leantime #ID_TAREA: descripción del cambio"
+```
 
-- Si el script bloquea el push, documentar el motivo en Leantime y dejar la tarea en Blocked o Review.
-- Después de subir la rama, documentar en Leantime:
+  Esto está reforzado en `.claude/settings.json` con un `deny` global de `git push`, `git merge`, `git rebase` y `git reset --hard`. Si necesitas validar sin subir, usa `DRY_RUN=1` delante.
+
+- Antes del primer commit, comprueba con `git status` que no se cuelan archivos sensibles (.env, *.key, *.pem, credentials.json, etc.). El script también los bloquea, pero conviene anticiparlo.
+- Si el script bloquea el push, documenta el motivo en Leantime y deja la tarea en `Blocked` o `Review`. No intentes saltarte la protección.
+- Después de subir la rama, documenta en Leantime:
   - nombre de la rama
-  - commit realizado
-  - estado de validaciones
+  - hash del último commit
+  - estado de validaciones (tests/lint)
   - enlace o referencia al remoto si está disponible
+- El merge a `develop` o `master` solo lo hace un humano. Tu tarea termina dejando la tarjeta en `Review`.
