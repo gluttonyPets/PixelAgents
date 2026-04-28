@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Instalador idempotente de PixelAgents en una máquina Linux con systemd.
 # Genera y activa:
-#   - pixelagents-leantime-worker.service  (worker que escucha Leantime)
+#   - pixelagents-leantime-worker.service  (worker Node.js + Claude CLI + MCP oficial de Leantime)
 #   - pixelagents-log-server.service       (HTTP server que sirve los logs)
 #   - pixelagents-deploy.service + .timer  (auto-deploy al cambiar develop)
 #
@@ -78,8 +78,7 @@ fi
 
 CONFIG_DIR="$PA_HOME/.config/pixelagents"
 ENV_FILE="$CONFIG_DIR/leantime.env"
-VENV_DIR="$PA_PROJECT_DIR/.venv"
-WORKER_SCRIPT="$PA_PROJECT_DIR/automation/leantime_ready_worker.py"
+WORKER_SCRIPT="$PA_PROJECT_DIR/automation/leantime_mcp_worker.js"
 LOG_SERVER_SCRIPT="$PA_PROJECT_DIR/automation/log_server.py"
 LOG_DIR="$PA_PROJECT_DIR/automation/logs"
 DEPLOY_SCRIPT="$PA_PROJECT_DIR/tools/deploy_develop.sh"
@@ -102,9 +101,16 @@ install -d -o "$PA_USER" -g "$PA_USER" -m 0755 "$LOG_DIR"
 
 # Avisos sin bloquear
 [ -f "$ENV_FILE" ] || echo "[install][WARN] no existe $ENV_FILE; créalo con LEANTIME_API_URL, LEANTIME_API_KEY, LEANTIME_PROJECT_ID antes de arrancar el worker."
+[ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
 [ -f "$WORKER_SCRIPT" ] || echo "[install][WARN] no existe $WORKER_SCRIPT (worker)."
 [ -f "$LOG_SERVER_SCRIPT" ] || echo "[install][WARN] no existe $LOG_SERVER_SCRIPT (log server)."
-[ -x "$VENV_DIR/bin/python" ] || echo "[install][WARN] no existe venv en $VENV_DIR (crea uno con: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install claude-agent-sdk)."
+[ -x "/usr/bin/env" ] || echo "[install][WARN] no existe /usr/bin/env."
+[ -x "$PA_HOME/.local/bin/claude" ] || command -v claude >/dev/null 2>&1 || echo "[install][WARN] no se encontró Claude CLI en PATH ni en $PA_HOME/.local/bin/claude."
+[ -f "$PA_PROJECT_DIR/.mcp.json" ] || echo "[install][WARN] no existe $PA_PROJECT_DIR/.mcp.json."
+[ -f "$PA_PROJECT_DIR/tools/run_leantime_mcp.sh" ] || echo "[install][WARN] no existe $PA_PROJECT_DIR/tools/run_leantime_mcp.sh."
+[ -n "${LEANTIME_MCP_URL:-}" ] || echo "[install][WARN] LEANTIME_MCP_URL no está definido en $ENV_FILE."
+[ -n "${LEANTIME_MCP_TOKEN:-}" ] || echo "[install][WARN] LEANTIME_MCP_TOKEN no está definido en $ENV_FILE (o usa LEANTIME_API_KEY como fallback)."
+[ -x "$PA_HOME/.npm-global/bin/leantime-mcp" ] || command -v leantime-mcp >/dev/null 2>&1 || echo "[install][WARN] no se encontró leantime-mcp en PATH. Instálalo con: npm install -g leantime-mcp"
 [ -x "$DEPLOY_SCRIPT" ] || echo "[install][WARN] no existe $DEPLOY_SCRIPT, ¿faltan tools/?"
 
 # Marca el repo como safe para git incluso ejecutándose como root
@@ -133,7 +139,7 @@ fi
 # Worker
 cat > "$WORKER_UNIT" <<EOF
 [Unit]
-Description=PixelAgents Leantime worker
+Description=PixelAgents Leantime MCP worker
 After=network-online.target docker.service
 Wants=network-online.target
 
@@ -144,7 +150,7 @@ EnvironmentFile=$ENV_FILE
 Environment=HOME=$PA_HOME
 Environment=PATH=$PA_HOME/.local/bin:$PA_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
 WorkingDirectory=$PA_PROJECT_DIR
-ExecStart=$VENV_DIR/bin/python $WORKER_SCRIPT
+ExecStart=/usr/bin/env node $WORKER_SCRIPT
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
