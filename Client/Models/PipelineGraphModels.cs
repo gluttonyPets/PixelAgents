@@ -144,7 +144,12 @@ public class PipelineConnection
 // ── Module port registry ──
 public static class ModulePortRegistry
 {
-    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null)
+    /// <summary>Returns true when the model supports image-to-image editing (accepts image as input).</summary>
+    public static bool SupportsImageInput(string modelName) =>
+        !string.IsNullOrEmpty(modelName) &&
+        modelName.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase);
+
+    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null, string modelName = "")
     {
         var ports = new List<PortDefinition>();
 
@@ -157,6 +162,8 @@ public static class ModulePortRegistry
 
             case "Image":
                 ports.Add(new("input_prompt", "Prompt", PortDataType.Text, isInput: true));
+                if (SupportsImageInput(modelName))
+                    ports.Add(new("input_image", "Imagen entrada", PortDataType.Image, isInput: true));
                 var imgCount = Math.Max(sceneCount, 1);
                 if (imgCount == 1)
                 {

@@ -32,9 +32,9 @@ public class ImageModuleHandler : IModuleHandler
         if (string.IsNullOrEmpty(apiKey))
             return ModuleResult.Failed("API Key no configurada");
 
-        // Input files for image-to-image editing
+        // Input files for image-to-image editing (from text prompt port or dedicated image port)
         var inputFiles = new List<byte[]>();
-        foreach (var fi in ctx.GetInputFiles("input_prompt"))
+        foreach (var fi in ctx.GetInputFiles("input_prompt").Concat(ctx.GetInputFiles("input_image")))
         {
             var bytes = await ctx.ReadOutputFileBytesAsync(fi);
             if (bytes is not null)
