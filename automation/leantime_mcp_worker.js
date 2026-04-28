@@ -10,7 +10,8 @@ const LEANTIME_API_KEY = process.env.LEANTIME_API_KEY || "";
 const PROJECT_ID = Number(process.env.LEANTIME_PROJECT_ID || "3");
 const READY_STATUS_ID = Number(process.env.READY_STATUS_ID || "1");
 const IN_PROGRESS_STATUS_ID = Number(process.env.IN_PROGRESS_STATUS_ID || "2");
-const REVIEW_STATUS_ID = Number(process.env.REVIEW_STATUS_ID || "5");
+const CONFIGURED_REVIEW_STATUS_ID = Number(process.env.REVIEW_STATUS_ID || "5");
+const REVIEW_STATUS_NAME = String(process.env.REVIEW_STATUS_NAME || "Review");
 const POLL_SECONDS = Number(process.env.POLL_SECONDS || "30");
 const REPO_PATH = process.env.PIXELAGENTS_REPO || "/home/debian/Proyectos/PixelAgents";
 const LOG_DIR = process.env.WORKER_LOG_DIR || path.join(REPO_PATH, "automation", "logs");
@@ -19,6 +20,7 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "";
 const CLAUDE_MAX_TURNS = Number(process.env.CLAUDE_MAX_TURNS || "80");
 const CLAUDE_NOTE_PREFIX = "[CLAUDE_AUTOMATION]";
+let resolvedReviewStatusId = CONFIGURED_REVIEW_STATUS_ID;
 
 function resolveHome() {
   return process.env.HOME || "/home/debian";
@@ -125,6 +127,81 @@ async function getTasksByStatus(statusIds) {
   });
 }
 
+async function getProjectStatuses() {
+  const attempts = [
+    ["leantime.rpc.projects.getProjectStatuses", { projectId: PROJECT_ID }],
+    ["leantime.rpc.tickets.getStatusLabels", { projectId: PROJECT_ID }],
+    ["leantime.rpc.tickets.getStatusLabels", {}],
+  ];
+
+  for (const [method, params] of attempts) {
+    try {
+      const result = await rpc(method, params);
+      if (result && typeof result === "object") {
+        return result;
+      }
+    } catch (error) {
+      logGlobal(`[WARN] Could not read project statuses using ${method}: ${String(error.message || error)}`);
+    }
+  }
+
+  return {};
+}
+
+function normalizeStatusEntries(rawStatuses) {
+  const entries = [];
+
+  if (Array.isArray(rawStatuses)) {
+    for (const item of rawStatuses) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const id = Number(item.id || item.status || item.key || 0);
+      const name = String(item.name || item.label || item.statusLabel || item.value || "");
+      if (id && name) {
+        entries.push({ id, name });
+      }
+    }
+    return entries;
+  }
+
+  if (rawStatuses && typeof rawStatuses === "object") {
+    for (const [key, value] of Object.entries(rawStatuses)) {
+      const id = Number(key);
+      if (!id || !value || typeof value !== "object") {
+        continue;
+      }
+      const name = String(value.name || value.label || value.statusLabel || "");
+      if (name) {
+        entries.push({ id, name });
+      }
+    }
+  }
+
+  return entries;
+}
+
+async function resolveReviewStatusId() {
+  const rawStatuses = await getProjectStatuses();
+  const entries = normalizeStatusEntries(rawStatuses);
+  if (!entries.length) {
+    return CONFIGURED_REVIEW_STATUS_ID;
+  }
+
+  const wanted = REVIEW_STATUS_NAME.trim().toLowerCase();
+  const exact = entries.find((entry) => entry.name.trim().toLowerCase() === wanted);
+  if (exact) {
+    return exact.id;
+  }
+
+  const partial = entries.find((entry) => entry.name.trim().toLowerCase().includes(wanted));
+  if (partial) {
+    return partial.id;
+  }
+
+  return CONFIGURED_REVIEW_STATUS_ID;
+}
+
 async function updateTicketStatus(ticketId, statusId) {
   const ticket = await getTicket(ticketId);
   if (!ticket) {
@@ -150,28 +227,42 @@ async function updateTicketStatus(ticketId, statusId) {
 
 async function getTicketComments(ticketId) {
   const attempts = [
-    { moduleId: Number(ticketId), commentModule: "tickets" },
-    { moduleId: String(ticketId), commentModule: "tickets" },
+    ["leantime.rpc.comments.getComments", { module: "ticket", moduleId: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "tickets", moduleId: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "ticket", moduleId: String(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "tickets", moduleId: String(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "ticket", id: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "tickets", id: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "ticket", id: String(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "tickets", id: String(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "ticket", commentId: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "tickets", commentId: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { moduleId: Number(ticketId), commentModule: "tickets" }],
+    ["leantime.rpc.comments.getComments", { moduleId: String(ticketId), commentModule: "tickets" }],
   ];
 
-  for (const params of attempts) {
-    for (const method of ["leantime.rpc.comments.getComments", "leantime.rpc.comments.getAll"]) {
-      try {
-        const result = await rpc(method, params);
-        if (Array.isArray(result)) {
-          return result.filter((item) => item && typeof item === "object");
-        }
-        if (result && typeof result === "object") {
-          for (const key of ["comments", "result", "data", "rows"]) {
-            if (Array.isArray(result[key])) {
-              return result[key].filter((item) => item && typeof item === "object");
-            }
+  const errors = [];
+
+  for (const [method, params] of attempts) {
+    try {
+      const result = await rpc(method, params);
+      if (Array.isArray(result)) {
+        return result.filter((item) => item && typeof item === "object");
+      }
+      if (result && typeof result === "object") {
+        for (const key of ["comments", "result", "data", "rows"]) {
+          if (Array.isArray(result[key])) {
+            return result[key].filter((item) => item && typeof item === "object");
           }
         }
-      } catch {
-        continue;
       }
+    } catch (error) {
+      errors.push(`${method} ${JSON.stringify(params)} -> ${String(error.message || error)}`);
     }
+  }
+
+  if (errors.length) {
+    logGlobal(`[WARN] Could not read comments for ticket ${ticketId}. Attempts:\n- ${errors.join("\n- ")}`);
   }
 
   return [];
@@ -448,7 +539,7 @@ async function processReadyTask(task, state) {
     const status = refreshed ? Number(refreshed.status || -1) : -1;
     if (status === READY_STATUS_ID || status === IN_PROGRESS_STATUS_ID) {
       logGlobal(`[INFO] Ticket ${ticketId} finished without Review status. Moving it to Review.`);
-      await updateTicketStatus(ticketId, REVIEW_STATUS_ID);
+      await updateTicketStatus(ticketId, resolvedReviewStatusId);
     }
   } catch (error) {
     logger.log("error", "Claude execution failed", String(error.message || error));
@@ -516,21 +607,25 @@ async function main() {
 
   ensureDir(LOG_DIR);
   const state = loadState();
+  resolvedReviewStatusId = await resolveReviewStatusId();
 
   logGlobal("[INFO] PixelAgents Leantime MCP worker started");
   logGlobal(`[INFO] Project ID: ${PROJECT_ID}`);
   logGlobal(`[INFO] Ready status ID: ${READY_STATUS_ID}`);
   logGlobal(`[INFO] In Progress status ID: ${IN_PROGRESS_STATUS_ID}`);
-  logGlobal(`[INFO] Review status ID: ${REVIEW_STATUS_ID}`);
+  logGlobal(`[INFO] Review status ID (configured): ${CONFIGURED_REVIEW_STATUS_ID}`);
+  logGlobal(`[INFO] Review status ID (resolved): ${resolvedReviewStatusId}`);
+  logGlobal(`[INFO] Review status name: ${REVIEW_STATUS_NAME}`);
   logGlobal(`[INFO] Poll seconds: ${POLL_SECONDS}`);
   logGlobal(`[INFO] Repo path: ${REPO_PATH}`);
   logGlobal(`[INFO] Claude bin: ${CLAUDE_BIN}`);
 
   while (true) {
     try {
+      resolvedReviewStatusId = await resolveReviewStatusId();
       const readyTasks = await getTasksByStatus([READY_STATUS_ID]);
-      const reviewTasks = await getTasksByStatus([REVIEW_STATUS_ID]);
-      logGlobal(`[INFO] Poll result: ready=${readyTasks.length} review=${reviewTasks.length}`);
+      const reviewTasks = await getTasksByStatus([resolvedReviewStatusId]);
+      logGlobal(`[INFO] Poll result: ready=${readyTasks.length} review=${reviewTasks.length} review_status_id=${resolvedReviewStatusId}`);
 
       for (const task of readyTasks) {
         await processReadyTask(task, state);
