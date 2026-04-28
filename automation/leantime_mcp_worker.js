@@ -129,9 +129,9 @@ async function getTasksByStatus(statusIds) {
 
 async function getProjectStatuses() {
   const attempts = [
-    ["leantime.rpc.projects.getProjectStatuses", { projectId: PROJECT_ID }],
-    ["leantime.rpc.tickets.getStatusLabels", { projectId: PROJECT_ID }],
     ["leantime.rpc.tickets.getStatusLabels", {}],
+    ["leantime.rpc.tickets.getStatusLabels", { projectId: PROJECT_ID }],
+    ["leantime.rpc.projects.getProjectStatuses", { projectId: PROJECT_ID }],
   ];
 
   for (const [method, params] of attempts) {
@@ -227,16 +227,10 @@ async function updateTicketStatus(ticketId, statusId) {
 
 async function getTicketComments(ticketId) {
   const attempts = [
-    ["leantime.rpc.comments.getComments", { module: "ticket", moduleId: Number(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "tickets", moduleId: Number(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "ticket", moduleId: String(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "tickets", moduleId: String(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "ticket", id: Number(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "tickets", id: Number(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "ticket", id: String(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "tickets", id: String(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "ticket", commentId: Number(ticketId) }],
-    ["leantime.rpc.comments.getComments", { module: "tickets", commentId: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "ticket", entityId: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "tickets", entityId: Number(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "ticket", entityId: String(ticketId) }],
+    ["leantime.rpc.comments.getComments", { module: "tickets", entityId: String(ticketId) }],
     ["leantime.rpc.comments.getComments", { moduleId: Number(ticketId), commentModule: "tickets" }],
     ["leantime.rpc.comments.getComments", { moduleId: String(ticketId), commentModule: "tickets" }],
   ];
