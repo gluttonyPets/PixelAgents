@@ -51,6 +51,7 @@ POLL_SECONDS = int(os.environ.get("POLL_SECONDS", "30"))
 
 READY_STATUS_ID = int(os.environ["READY_STATUS_ID"])
 IN_PROGRESS_STATUS_ID = int(os.environ["IN_PROGRESS_STATUS_ID"])
+REVIEW_STATUS_ID = int(os.environ.get("REVIEW_STATUS_ID", "5"))
 
 STATE_FILE = Path(os.environ.get(
     "WORKER_STATE_FILE",
@@ -341,19 +342,63 @@ def rpc(method: str, params: dict[str, Any] | None = None):
 # Estado local del worker
 # =========================
 
-def load_processed() -> set[int]:
+def load_worker_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
-        return set()
+        return {
+            "processed_ready_tasks": [],
+            "review_comment_markers": {},
+        }
 
     try:
-        return set(json.loads(STATE_FILE.read_text()))
+        raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
     except Exception:
-        return set()
+        raw = None
+
+    if isinstance(raw, list):
+        return {
+            "processed_ready_tasks": raw,
+            "review_comment_markers": {},
+        }
+
+    if isinstance(raw, dict):
+        processed = raw.get("processed_ready_tasks", [])
+        review_markers = raw.get("review_comment_markers", {})
+
+        if not isinstance(processed, list):
+            processed = []
+
+        if not isinstance(review_markers, dict):
+            review_markers = {}
+
+        return {
+            "processed_ready_tasks": processed,
+            "review_comment_markers": review_markers,
+        }
+
+    return {
+        "processed_ready_tasks": [],
+        "review_comment_markers": {},
+    }
 
 
-def save_processed(processed: set[int]) -> None:
+def save_worker_state(state: dict[str, Any]) -> None:
+    payload = {
+        "processed_ready_tasks": sorted({
+            int(ticket_id)
+            for ticket_id in state.get("processed_ready_tasks", [])
+        }),
+        "review_comment_markers": {
+            str(ticket_id): str(marker)
+            for ticket_id, marker in state.get("review_comment_markers", {}).items()
+            if marker
+        },
+    }
+
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(sorted(processed), indent=2))
+    STATE_FILE.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 # =========================
@@ -368,8 +413,16 @@ def get_all_tasks() -> list[dict[str, Any]]:
 
 
 def get_ready_tasks() -> list[dict[str, Any]]:
+    return get_tasks_by_status({READY_STATUS_ID})
+
+
+def get_review_tasks() -> list[dict[str, Any]]:
+    return get_tasks_by_status({REVIEW_STATUS_ID})
+
+
+def get_tasks_by_status(status_ids: set[int]) -> list[dict[str, Any]]:
     tasks = get_all_tasks()
-    ready = []
+    matching = []
 
     for task in tasks:
         try:
@@ -381,10 +434,10 @@ def get_ready_tasks() -> list[dict[str, Any]]:
         if task_project_id != PROJECT_ID:
             continue
 
-        if task_status_id == READY_STATUS_ID:
-            ready.append(task)
+        if task_status_id in status_ids:
+            matching.append(task)
 
-    return ready
+    return matching
 
 
 def get_ticket(ticket_id: int) -> dict[str, Any] | None:
@@ -412,6 +465,139 @@ def update_ticket_status(ticket_id: int, status_id: int):
     # Leantime's update RPC expects the full ticket payload. Sending only the
     # status risks clearing fields such as description.
     return rpc("leantime.rpc.tickets.updateTicket", update_values)
+
+
+def normalize_comments_payload(result: Any) -> list[dict[str, Any]]:
+    if isinstance(result, list):
+        return [item for item in result if isinstance(item, dict)]
+
+    if isinstance(result, dict):
+        for key in ("comments", "result", "data", "rows"):
+            value = result.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+
+    return []
+
+
+def get_ticket_comments(ticket_id: int) -> list[dict[str, Any]]:
+    candidate_calls = [
+        ("leantime.rpc.comments.getComments", {
+            "moduleId": int(ticket_id),
+            "commentModule": "tickets",
+        }),
+        ("leantime.rpc.comments.getComments", {
+            "moduleId": str(ticket_id),
+            "commentModule": "tickets",
+        }),
+        ("leantime.rpc.comments.getAll", {
+            "moduleId": int(ticket_id),
+            "commentModule": "tickets",
+        }),
+        ("leantime.rpc.comments.getAll", {
+            "moduleId": str(ticket_id),
+            "commentModule": "tickets",
+        }),
+    ]
+
+    for method, params in candidate_calls:
+        result = rpc(method, params)
+        comments = normalize_comments_payload(result)
+        if comments:
+            return comments
+
+    return []
+
+
+def comment_sort_key(comment: dict[str, Any]) -> tuple[int, str, str]:
+    raw_id = (
+        comment.get("id")
+        or comment.get("commentId")
+        or comment.get("pk")
+        or 0
+    )
+
+    try:
+        comment_id = int(raw_id)
+    except Exception:
+        comment_id = 0
+
+    ts = str(
+        comment.get("dateModified")
+        or comment.get("dateCreated")
+        or comment.get("createdAt")
+        or comment.get("modifiedAt")
+        or ""
+    )
+
+    parent = str(comment.get("commentParent") or "")
+    return (comment_id, ts, parent)
+
+
+def comment_signature(comment: dict[str, Any]) -> str:
+    comment_id, ts, parent = comment_sort_key(comment)
+    preview = str(
+        comment.get("comment")
+        or comment.get("content")
+        or comment.get("description")
+        or ""
+    ).strip()
+    preview = re.sub(r"\s+", " ", preview)[:120]
+    return f"{comment_id}|{ts}|{parent}|{preview}"
+
+
+def sort_comments(comments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(comments, key=comment_sort_key)
+
+
+def latest_comment_signature(comments: list[dict[str, Any]]) -> str:
+    if not comments:
+        return ""
+    return comment_signature(sort_comments(comments)[-1])
+
+
+def comments_after_signature(
+    comments: list[dict[str, Any]],
+    signature: str,
+) -> list[dict[str, Any]]:
+    ordered = sort_comments(comments)
+
+    if not signature:
+        return ordered
+
+    seen_signature = False
+    pending: list[dict[str, Any]] = []
+
+    for comment in ordered:
+        if seen_signature:
+            pending.append(comment)
+            continue
+
+        if comment_signature(comment) == signature:
+            seen_signature = True
+
+    if seen_signature:
+        return pending
+
+    return ordered
+
+
+def comment_text(comment: dict[str, Any]) -> str:
+    author = (
+        comment.get("fullName")
+        or comment.get("name")
+        or comment.get("user")
+        or comment.get("author")
+        or "desconocido"
+    )
+    body = str(
+        comment.get("comment")
+        or comment.get("content")
+        or comment.get("description")
+        or ""
+    ).strip()
+    body = body or "(sin texto)"
+    return f"Autor: {author}\n{body}"
 
 
 def ensure_agent_users_provisioned() -> bool:
@@ -481,10 +667,42 @@ def ensure_agent_users_provisioned() -> bool:
 # Prompt
 # =========================
 
-def build_prompt(task: dict[str, Any]) -> str:
+def build_prompt(
+    task: dict[str, Any],
+    trigger: str = "ready",
+    review_comments: list[dict[str, Any]] | None = None,
+) -> str:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
     description = task.get("description", "")
+    review_comments = review_comments or []
+
+    if trigger == "review_feedback":
+        trigger_context = "\n".join([
+            "- Esta tarea ya estaba en Review.",
+            "- El worker ha detectado comentarios nuevos del humano en la tarea o subtarea.",
+            "- Debes tratar esos comentarios como feedback correctivo y reanudar el trabajo.",
+        ])
+        trigger_rules = "\n".join([
+            "- Primero resume qué correcciones pide el humano en los comentarios nuevos.",
+            "- Si la tarea o subtarea estaba en Review, devuélvela a In Progress mientras aplicas los cambios.",
+            "- Responde en comentarios de Leantime indicando qué has corregido o qué bloqueo impide corregirlo.",
+            "- Cuando acabes las correcciones y validaciones, vuelve a dejar la tarea en Review.",
+        ])
+    else:
+        trigger_context = "\n".join([
+            "- Esta tarea fue movida a Ready por el usuario humano.",
+            "- El worker la ha detectado y debe comenzar el flujo de trabajo.",
+        ])
+        trigger_rules = ""
+
+    comments_block = ""
+    if review_comments:
+        rendered_comments = "\n\n".join(
+            f"Comentario {idx + 1}\n{comment_text(comment)}"
+            for idx, comment in enumerate(review_comments[-5:])
+        )
+        comments_block = f"\n\nComentarios nuevos a procesar:\n{rendered_comments}"
 
     return f"""
 Actúa como el agente principal `coordinator` del proyecto PixelAgents.
@@ -498,11 +716,11 @@ Descripción:
 {description}
 
 Contexto operativo:
-- Esta tarea fue movida a Ready por el usuario humano.
-- El worker la ha detectado y debe comenzar el flujo de trabajo.
+{trigger_context}
 - Usa Leantime como fuente de verdad.
 - Usa el MCP de Leantime siempre que esté disponible.
 - Si MCP falla, usa ./tools/leantime.sh como fallback.
+{comments_block}
 
 Reglas obligatorias:
 - Primero escribe en la salida: INICIANDO TAREA {ticket_id}
@@ -542,6 +760,7 @@ Reglas obligatorias:
 - Si el trabajo queda bloqueado, mueve la tarea a Blocked y explica el motivo en Leantime.
 - Si terminas implementación, validaciones y revisión interna, deja la tarea principal en Review.
 - Al terminar, deja un resumen final en la salida y en Leantime.
+{trigger_rules}
 
 Empieza ahora.
 """.strip()
@@ -1100,10 +1319,14 @@ def build_sdk_options() -> ClaudeAgentOptions:
     )
 
 
-async def run_claude_sdk_for_task_async(task: dict[str, Any]) -> bool:
+async def run_claude_sdk_for_task_async(
+    task: dict[str, Any],
+    trigger: str = "ready",
+    review_comments: list[dict[str, Any]] | None = None,
+) -> bool:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
-    prompt = build_prompt(task)
+    prompt = build_prompt(task, trigger=trigger, review_comments=review_comments)
 
     logger = LiveReportLogger(ticket_id=ticket_id, headline=headline, prompt=prompt)
     options = build_sdk_options()
@@ -1157,17 +1380,27 @@ async def run_claude_sdk_for_task_async(task: dict[str, Any]) -> bool:
     return ok
 
 
-def run_claude_for_task(task: dict[str, Any]) -> bool:
+def run_claude_for_task(
+    task: dict[str, Any],
+    trigger: str = "ready",
+    review_comments: list[dict[str, Any]] | None = None,
+) -> bool:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
 
     print(
-        f"[INFO] Launching Claude Agent SDK for ticket {ticket_id}: {headline}",
+        f"[INFO] Launching Claude Agent SDK for ticket {ticket_id}: {headline} (trigger={trigger})",
         flush=True,
     )
 
     try:
-        return asyncio.run(run_claude_sdk_for_task_async(task))
+        return asyncio.run(
+            run_claude_sdk_for_task_async(
+                task,
+                trigger=trigger,
+                review_comments=review_comments,
+            )
+        )
     except Exception as e:
         print(
             f"[ERROR] Claude SDK runner crashed for ticket {ticket_id}: {e}",
@@ -1176,65 +1409,147 @@ def run_claude_for_task(task: dict[str, Any]) -> bool:
         return False
 
 
+def process_ready_task(task: dict[str, Any], state: dict[str, Any]) -> None:
+    ticket_id = int(task["id"])
+    headline = task.get("headline", "")
+    processed = {
+        int(task_id)
+        for task_id in state.get("processed_ready_tasks", [])
+    }
+
+    if ticket_id in processed:
+        return
+
+    print(
+        f"[INFO] Found Ready ticket {ticket_id}: {headline}",
+        flush=True,
+    )
+
+    if not ensure_agent_users_provisioned():
+        print(
+            "[ERROR] Could not provision Leantime agent users. "
+            f"Skipping ticket {ticket_id}.",
+            flush=True,
+        )
+        return
+
+    updated = update_ticket_status(ticket_id, IN_PROGRESS_STATUS_ID)
+
+    if updated is None:
+        print(
+            f"[ERROR] Could not move ticket {ticket_id} to In Progress. Skipping.",
+            flush=True,
+        )
+        return
+
+    ok = run_claude_for_task(task, trigger="ready")
+
+    processed.add(ticket_id)
+    state["processed_ready_tasks"] = sorted(processed)
+
+    latest_signature = latest_comment_signature(get_ticket_comments(ticket_id))
+    if latest_signature:
+        review_markers = state.setdefault("review_comment_markers", {})
+        review_markers[str(ticket_id)] = latest_signature
+
+    save_worker_state(state)
+
+    if not ok:
+        print(
+            f"[ERROR] Claude finished with error for ticket {ticket_id}. Review worker logs.",
+            flush=True,
+        )
+
+
+def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) -> None:
+    ticket_id = int(task["id"])
+    headline = task.get("headline", "")
+    comments = get_ticket_comments(ticket_id)
+    latest_signature = latest_comment_signature(comments)
+
+    review_markers = state.setdefault("review_comment_markers", {})
+    known_signature = str(review_markers.get(str(ticket_id), "") or "")
+
+    if not latest_signature:
+        return
+
+    if not known_signature:
+        review_markers[str(ticket_id)] = latest_signature
+        save_worker_state(state)
+        return
+
+    if latest_signature == known_signature:
+        return
+
+    pending_comments = comments_after_signature(comments, known_signature)
+
+    print(
+        f"[INFO] Found new Review feedback for ticket {ticket_id}: {headline}",
+        flush=True,
+    )
+
+    if not ensure_agent_users_provisioned():
+        print(
+            "[ERROR] Could not provision Leantime agent users. "
+            f"Skipping review feedback for ticket {ticket_id}.",
+            flush=True,
+        )
+        return
+
+    updated = update_ticket_status(ticket_id, IN_PROGRESS_STATUS_ID)
+    if updated is None:
+        print(
+            f"[ERROR] Could not move ticket {ticket_id} back to In Progress.",
+            flush=True,
+        )
+        return
+
+    ok = run_claude_for_task(
+        task,
+        trigger="review_feedback",
+        review_comments=pending_comments,
+    )
+
+    refreshed_comments = get_ticket_comments(ticket_id)
+    refreshed_signature = latest_comment_signature(refreshed_comments)
+    if refreshed_signature:
+        review_markers[str(ticket_id)] = refreshed_signature
+        save_worker_state(state)
+
+    if not ok:
+        print(
+            f"[ERROR] Claude finished with error while processing review feedback for ticket {ticket_id}.",
+            flush=True,
+        )
+
+
 # =========================
 # Main loop
 # =========================
 
 def main():
-    print("[INFO] PixelAgents Leantime Ready worker started", flush=True)
+    print("[INFO] PixelAgents Leantime Ready/Review worker started", flush=True)
     print(f"[INFO] Project ID: {PROJECT_ID}", flush=True)
     print(f"[INFO] Ready status ID: {READY_STATUS_ID}", flush=True)
     print(f"[INFO] In Progress status ID: {IN_PROGRESS_STATUS_ID}", flush=True)
+    print(f"[INFO] Review status ID: {REVIEW_STATUS_ID}", flush=True)
     print(f"[INFO] Poll seconds: {POLL_SECONDS}", flush=True)
     print(f"[INFO] Repo path: {REPO_PATH}", flush=True)
     print(f"[INFO] Claude binary: {CLAUDE_BIN}", flush=True)
     print(f"[INFO] Permission mode: {CLAUDE_PERMISSION_MODE}", flush=True)
     print("[INFO] Using Claude Agent SDK + modular two-panel live HTML viewer", flush=True)
 
-    processed = load_processed()
+    state = load_worker_state()
 
     while True:
         ready_tasks = get_ready_tasks()
+        review_tasks = get_review_tasks()
 
         for task in ready_tasks:
-            ticket_id = int(task["id"])
-            headline = task.get("headline", "")
+            process_ready_task(task, state)
 
-            if ticket_id in processed:
-                continue
-
-            print(
-                f"[INFO] Found Ready ticket {ticket_id}: {headline}",
-                flush=True,
-            )
-
-            if not ensure_agent_users_provisioned():
-                print(
-                    "[ERROR] Could not provision Leantime agent users. "
-                    f"Skipping ticket {ticket_id}.",
-                    flush=True,
-                )
-                continue
-
-            updated = update_ticket_status(ticket_id, IN_PROGRESS_STATUS_ID)
-
-            if updated is None:
-                print(
-                    f"[ERROR] Could not move ticket {ticket_id} to In Progress. Skipping.",
-                    flush=True,
-                )
-                continue
-
-            ok = run_claude_for_task(task)
-
-            processed.add(ticket_id)
-            save_processed(processed)
-
-            if not ok:
-                print(
-                    f"[ERROR] Claude finished with error for ticket {ticket_id}. Review worker logs.",
-                    flush=True,
-                )
+        for task in review_tasks:
+            process_review_feedback_task(task, state)
 
         time.sleep(POLL_SECONDS)
 

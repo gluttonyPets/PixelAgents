@@ -65,6 +65,8 @@ Siempre reporta:
 - Si hay bloqueo, actualiza la tarea a Blocked y explica el motivo.
 - No marques Done sin aprobación humana.
 - No hagas merge a develop ni master sin aprobación humana.
+- Una tarea en Review no se considera cerrada: si el humano añade comentarios con correcciones en la tarea o subtarea, reanuda el trabajo.
+- Cuando entren correcciones por comentarios en Review, vuelve la tarea o subtarea a In Progress, aplica los cambios, documenta la respuesta en comentarios y devuélvela a Review.
 - Si MCP falla, usa `./tools/leantime.sh` como respaldo.
 
 ## Descomposición autónoma en subtareas
