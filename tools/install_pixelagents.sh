@@ -83,6 +83,7 @@ WORKER_SCRIPT="$PA_PROJECT_DIR/automation/leantime_ready_worker.py"
 LOG_SERVER_SCRIPT="$PA_PROJECT_DIR/automation/log_server.py"
 LOG_DIR="$PA_PROJECT_DIR/automation/logs"
 DEPLOY_SCRIPT="$PA_PROJECT_DIR/tools/deploy_develop.sh"
+LOG_SERVER_SCRIPT="$PA_PROJECT_DIR/tools/log_server.py"
 
 WORKER_UNIT="/etc/systemd/system/pixelagents-leantime-worker.service"
 LOG_UNIT="/etc/systemd/system/pixelagents-log-server.service"
@@ -153,7 +154,14 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-# Servidor de logs
+# Servidor de logs (visor con index custom; cae a un http.server si falta el script)
+if [ -f "$LOG_SERVER_SCRIPT" ]; then
+  LOG_EXEC_START="/usr/bin/python3 $LOG_SERVER_SCRIPT --root $LOG_DIR --port $LOG_PORT --bind 0.0.0.0"
+else
+  echo "[install][WARN] no existe $LOG_SERVER_SCRIPT, usando http.server básico (sin index custom)."
+  LOG_EXEC_START="/usr/bin/python3 -m http.server $LOG_PORT --bind 0.0.0.0"
+fi
+
 cat > "$LOG_UNIT" <<EOF
 [Unit]
 Description=PixelAgents log viewer (HTTP)
@@ -163,7 +171,7 @@ After=network-online.target
 Type=simple
 User=$PA_USER
 WorkingDirectory=$LOG_DIR
-ExecStart=/usr/bin/python3 $LOG_SERVER_SCRIPT --bind 0.0.0.0 --port $LOG_PORT --log-dir $LOG_DIR
+ExecStart=$LOG_EXEC_START
 Restart=on-failure
 RestartSec=5
 

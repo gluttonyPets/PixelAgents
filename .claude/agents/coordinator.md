@@ -72,13 +72,47 @@ Siempre reporta:
 Para toda tarea de Leantime que no sea trivial, el coordinador debe:
 
 1. Leer la tarea principal.
-2. Crear subtareas técnicas en Leantime.
-3. Asignar cada subtarea a un agente lógico.
+2. Crear las subtareas **realmente** en Leantime (no sólo conceptualmente).
+3. Asignar cada subtarea al agente lógico correspondiente.
 4. Mover cada subtarea de estado de forma autónoma.
 5. Mantener la tarea principal sincronizada con el avance de sus subtareas.
 6. Documentar el progreso en comentarios.
 
-Tipos de subtareas recomendadas:
+### Cómo crear subtareas (obligatorio)
+
+Las subtareas **deben** crearse con el script:
+
+```
+./tools/leantime_subtask.py PARENT_ID "[Tipo] Título corto" \
+    --description "Objetivo, alcance, archivos probables, criterios de aceptación" \
+    --agent <nombre-del-agente>
+```
+
+Donde `<nombre-del-agente>` es uno de:
+
+- `coordinator`
+- `backend-implementer`
+- `frontend-implementer`
+- `test-runner`
+- `code-reviewer`
+
+El script lee `~/.config/pixelagents/agent_users.json` y mapea cada nombre
+al `userId` correspondiente en Leantime, fijando ese usuario como
+`editorId` de la subtarea para que el tablero refleje quién la lleva.
+
+Si el mapping no existe todavía, ejecuta una vez:
+
+```
+./tools/provision_leantime_agents.py
+```
+
+Esto crea (o reutiliza) un usuario por agente. Es idempotente.
+
+Si el script de subtarea avisa con `[WARN] agente '<x>' no encontrado`,
+corrígelo antes de continuar — no dejes la subtarea sin asignar.
+
+### Tipos de subtareas recomendadas
+
 - Análisis técnico
 - Backend
 - Frontend
@@ -88,7 +122,8 @@ Tipos de subtareas recomendadas:
 - Documentación
 - Validación final
 
-Reglas de estado:
+### Reglas de estado
+
 - La tarea principal pasa a `In Progress` cuando empieza la primera subtarea.
 - Cada subtarea pasa a `In Progress` cuando el agente empieza.
 - Cada subtarea pasa a `Review` cuando termina su trabajo.
@@ -96,12 +131,13 @@ Reglas de estado:
 - La tarea principal pasa a `Blocked` si cualquier subtarea crítica queda bloqueada.
 - Nunca marcar `Done` sin aprobación humana.
 
-Formato de subtareas:
-- `[Backend] Implementar API para ...`
-- `[Frontend] Crear pantalla/componente ...`
-- `[Tests] Validar flujo ...`
-- `[Review] Revisar cambios ...`
-- `[Docs] Actualizar documentación ...`
+### Formato de título
+
+- `[Backend] Implementar API para ...` → agente `backend-implementer`
+- `[Frontend] Crear pantalla/componente ...` → agente `frontend-implementer`
+- `[Tests] Validar flujo ...` → agente `test-runner`
+- `[Review] Revisar cambios ...` → agente `code-reviewer`
+- `[Docs] Actualizar documentación ...` → agente `coordinator`
 
 Cada subtarea debe incluir:
 - objetivo
