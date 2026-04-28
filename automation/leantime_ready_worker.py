@@ -90,6 +90,7 @@ MAX_TOOL_RESULT_CHARS = int(os.environ.get("MAX_TOOL_RESULT_CHARS", "2200"))
 MAX_ASSISTANT_TEXT_CHARS = int(os.environ.get("MAX_ASSISTANT_TEXT_CHARS", "9000"))
 
 CLAUDE_SESSION_MARKER_PREFIX = "[CLAUDE_SESSION]"
+CLAUDE_RESOLVED_MARKER_PREFIX = "[CLAUDE_RESOLVED]"
 
 
 # =========================
@@ -525,12 +526,12 @@ def get_ticket_comments(ticket_id: int) -> list[dict[str, Any]]:
     return []
 
 
-def add_ticket_comment(ticket_id: int, comment: str) -> Any:
+def add_ticket_comment(ticket_id: int, comment: str, comment_parent: str = "") -> Any:
     return rpc("leantime.rpc.comments.addComment", {
         "moduleId": int(ticket_id),
         "commentModule": "tickets",
         "comment": comment,
-        "commentParent": "",
+        "commentParent": str(comment_parent or ""),
     })
 
 
@@ -544,6 +545,16 @@ def is_session_marker_comment(comment: dict[str, Any]) -> bool:
     return body.startswith(CLAUDE_SESSION_MARKER_PREFIX)
 
 
+def is_resolved_marker_comment(comment: dict[str, Any]) -> bool:
+    body = str(
+        comment.get("comment")
+        or comment.get("content")
+        or comment.get("description")
+        or ""
+    ).strip()
+    return body.startswith(CLAUDE_RESOLVED_MARKER_PREFIX)
+
+
 def extract_session_id_from_marker_comment(comment: dict[str, Any]) -> str:
     body = str(
         comment.get("comment")
@@ -555,11 +566,33 @@ def extract_session_id_from_marker_comment(comment: dict[str, Any]) -> str:
     return match.group(1) if match else ""
 
 
+def get_comment_id(comment: dict[str, Any]) -> str:
+    raw_id = (
+        comment.get("id")
+        or comment.get("commentId")
+        or comment.get("pk")
+        or ""
+    )
+    return str(raw_id or "")
+
+
+def extract_resolved_comment_id(comment: dict[str, Any]) -> str:
+    body = str(
+        comment.get("comment")
+        or comment.get("content")
+        or comment.get("description")
+        or ""
+    ).strip()
+    match = re.search(r"comment_id=([A-Za-z0-9._:-]+)", body)
+    return match.group(1) if match else ""
+
+
 def get_review_relevant_comments(ticket_id: int) -> list[dict[str, Any]]:
     return [
         comment
         for comment in get_ticket_comments(ticket_id)
         if not is_session_marker_comment(comment)
+        and not is_resolved_marker_comment(comment)
     ]
 
 
@@ -590,6 +623,51 @@ def sync_ticket_session_marker(ticket_id: int, session_id: str) -> None:
         "Etiqueta técnica para reanudar o reconstruir el contexto de Claude."
     )
     add_ticket_comment(ticket_id, marker_comment)
+
+
+def has_resolution_reply(
+    comment: dict[str, Any],
+    all_comments: list[dict[str, Any]],
+) -> bool:
+    target_comment_id = get_comment_id(comment)
+    if not target_comment_id:
+        return False
+
+    for candidate in all_comments:
+        if not is_resolved_marker_comment(candidate):
+            continue
+
+        candidate_parent = str(candidate.get("commentParent") or "")
+        resolved_comment_id = extract_resolved_comment_id(candidate)
+
+        if candidate_parent == target_comment_id or resolved_comment_id == target_comment_id:
+            return True
+
+    return False
+
+
+def acknowledge_resolved_review_comments(
+    ticket_id: int,
+    resolved_comments: list[dict[str, Any]],
+) -> None:
+    if not resolved_comments:
+        return
+
+    all_comments = get_ticket_comments(ticket_id)
+
+    for comment in resolved_comments:
+        comment_id = get_comment_id(comment)
+        if not comment_id:
+            continue
+
+        if has_resolution_reply(comment, all_comments):
+            continue
+
+        reply = (
+            f"{CLAUDE_RESOLVED_MARKER_PREFIX} comment_id={comment_id}\n"
+            "Corregido y devuelto a Review. Si ves algo más en este punto, añade otro comentario en este hilo."
+        )
+        add_ticket_comment(ticket_id, reply, comment_parent=comment_id)
 
 
 def comment_sort_key(comment: dict[str, Any]) -> tuple[int, str, str]:
@@ -666,6 +744,7 @@ def comments_after_signature(
 
 
 def comment_text(comment: dict[str, Any]) -> str:
+    comment_id = get_comment_id(comment)
     author = (
         comment.get("fullName")
         or comment.get("name")
@@ -680,7 +759,7 @@ def comment_text(comment: dict[str, Any]) -> str:
         or ""
     ).strip()
     body = body or "(sin texto)"
-    return f"Autor: {author}\n{body}"
+    return f"ID comentario: {comment_id or 'desconocido'}\nAutor: {author}\n{body}"
 
 
 def ensure_agent_users_provisioned() -> bool:
@@ -771,6 +850,7 @@ def build_prompt(
             "- Primero resume qué correcciones pide el humano en los comentarios nuevos.",
             "- Si la tarea o subtarea estaba en Review, devuélvela a In Progress mientras aplicas los cambios.",
             "- Responde en comentarios de Leantime indicando qué has corregido o qué bloqueo impide corregirlo.",
+            "- Siempre que puedas, responde en el hilo del comentario corregido usando su ID de comentario como referencia.",
             "- Cuando acabes las correcciones y validaciones, vuelve a dejar la tarea en Review.",
         ])
     else:
@@ -1670,6 +1750,9 @@ def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) ->
     if session_id:
         ticket_sessions[str(ticket_id)] = session_id
         sync_ticket_session_marker(ticket_id, session_id)
+
+    if ok:
+        acknowledge_resolved_review_comments(ticket_id, pending_comments)
 
     save_worker_state(state)
 
