@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "leantime": {
+      "command": "bash",
+      "args": [
+        "./tools/run_leantime_mcp.sh"
+      ]
+    }
+  }
+}

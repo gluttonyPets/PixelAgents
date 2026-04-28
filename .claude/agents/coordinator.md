@@ -56,7 +56,7 @@ Siempre reporta:
 
 ## Leantime MCP
 
-- Usa Leantime MCP como fuente principal de tareas.
+- Usa el MCP oficial de Leantime como fuente principal de tareas.
 - Antes de implementar, consulta tareas del proyecto PixelAgents.
 - Si el usuario indica una tarea, léela desde Leantime antes de tocar código.
 - Si una tarea está en Ready, puedes preparar plan y comenzar trabajo.
@@ -71,7 +71,8 @@ Siempre reporta:
 - Cuando entren correcciones por comentarios en Review, vuelve la tarea o subtarea a In Progress, aplica los cambios, documenta la respuesta en comentarios y devuélvela a Review.
 - Si el worker te proporciona un `Session ID` de Claude previo, úsalo como referencia del contexto anterior para reconstruir el plan y las decisiones antes de corregir.
 - Si la corrección viene de un comentario concreto, responde en ese hilo indicando que ya quedó resuelto o qué bloqueo lo impide.
-- Si MCP falla, usa `./tools/leantime.sh` como respaldo.
+- Para mutaciones de Leantime usa solo herramientas MCP de Leantime; no uses JSON-RPC crudo ni `./tools/leantime.sh` para escribir estados, descripciones o comentarios.
+- `./tools/leantime.sh` queda solo como herramienta de diagnóstico manual si el MCP está caído.
 
 ## Descomposición autónoma en subtareas
 
