@@ -89,10 +89,10 @@
     [Parameter] public EventCallback OnDelete { get; set; }
     [Parameter] public EventCallback<int> OnSceneCountChanged { get; set; }
 
-    private List<PortDefinition> InputPorts => ModulePortRegistry.GetPorts(Module.ModuleType, "", SceneCount, orchestratorOutputs: Module.OrchestratorOutputs)
+    private List<PortDefinition> InputPorts => ModulePortRegistry.GetPorts(Module.ModuleType, "", SceneCount, orchestratorOutputs: Module.OrchestratorOutputs, modelName: Module.ModelName)
         .Where(p => p.IsInput).ToList();
 
-    private List<PortDefinition> OutputPorts => ModulePortRegistry.GetPorts(Module.ModuleType, "", SceneCount, orchestratorOutputs: Module.OrchestratorOutputs)
+    private List<PortDefinition> OutputPorts => ModulePortRegistry.GetPorts(Module.ModuleType, "", SceneCount, orchestratorOutputs: Module.OrchestratorOutputs, modelName: Module.ModelName)
         .Where(p => !p.IsInput).ToList();
 
     private async Task OnHeaderMouseDown(MouseEventArgs e)
