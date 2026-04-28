@@ -156,7 +156,7 @@ public static class ModulePortRegistry
                 break;
 
             case "Image":
-                ports.Add(new("input_prompt", "Prompt", PortDataType.Text, isInput: true));
+                ports.Add(new("input_prompt", "Prompt", PortDataType.Any, isInput: true));
                 var imgCount = Math.Max(sceneCount, 1);
                 if (imgCount == 1)
                 {
