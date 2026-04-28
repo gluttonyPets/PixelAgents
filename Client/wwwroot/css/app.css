@@ -1720,7 +1720,7 @@ a.link:hover { text-decoration: underline; }
 }
 
 .project-card {
-    background: var(--card-bg);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
@@ -1734,8 +1734,10 @@ a.link:hover { text-decoration: underline; }
 }
 
 .project-card-body {
-    padding: 1rem 1rem 0.6rem;
+    padding: 1rem 1rem 0.75rem;
     cursor: pointer;
+    display: flex;
+    flex-direction: column;
 }
 
 .project-card-title {
@@ -1759,11 +1761,7 @@ a.link:hover { text-decoration: underline; }
     margin-bottom: 0.3rem;
 }
 
-.project-card-date {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    opacity: 0.5;
-}
+/* .project-card-date eliminado — reemplazado por .project-card-meta (tarea #34) */
 
 .project-card-actions {
     display: flex;
@@ -1824,6 +1822,95 @@ a.link:hover { text-decoration: underline; }
     display: flex;
     gap: 0.4rem;
     margin-top: 0.5rem;
+}
+
+/* Projects page header */
+.projects-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.projects-page-header h2 {
+    margin: 0;
+}
+
+/* Project card avatar */
+.project-card-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 1.1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.6rem;
+    flex-shrink: 0;
+}
+
+/* Project card meta row */
+.project-card-meta {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.project-card-meta span {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    opacity: 0.75;
+    display: flex;
+    align-items: center;
+    gap: 0.2rem;
+}
+
+/* Modal footer */
+.modal-footer {
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+/* Modal close button */
+.modal-close-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+}
+
+.modal-close-btn:hover {
+    color: var(--text);
+    background: var(--bg-input);
+}
+
+/* Empty state */
+.projects-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+}
+
+.projects-empty-icon {
+    font-size: 3rem;
+    margin-bottom: 0.75rem;
+}
+
+.projects-empty p {
+    margin-bottom: 1rem;
+    font-size: 0.95rem;
 }
 
 /* History date filter bar */
