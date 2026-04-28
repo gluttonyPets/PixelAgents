@@ -466,6 +466,46 @@ def get_ticket(ticket_id: int) -> dict[str, Any] | None:
     return result
 
 
+def build_ticket_update_values(ticket: dict[str, Any], ticket_id: int, status_id: int) -> dict[str, Any]:
+    update_values: dict[str, Any] = {}
+
+    allowed_fields = {
+        "id",
+        "headline",
+        "description",
+        "projectId",
+        "status",
+        "type",
+        "editorId",
+        "sprint",
+        "milestoneid",
+        "dependingTicketId",
+        "dateToFinish",
+        "date",
+        "priority",
+        "planHours",
+        "hourBudget",
+        "hoursBudget",
+        "acceptanceCriteria",
+        "storyPoints",
+        "tags",
+    }
+
+    for key, value in ticket.items():
+        if key not in allowed_fields:
+            continue
+
+        if isinstance(value, (dict, list, tuple, set)):
+            continue
+
+        update_values[key] = value
+
+    update_values["id"] = int(ticket_id)
+    update_values["status"] = str(status_id)
+
+    return update_values
+
+
 def update_ticket_status(ticket_id: int, status_id: int):
     ticket = get_ticket(ticket_id)
     if not ticket:
@@ -475,13 +515,38 @@ def update_ticket_status(ticket_id: int, status_id: int):
         )
         return None
 
-    update_values = dict(ticket)
-    update_values["id"] = int(ticket_id)
-    update_values["status"] = str(status_id)
+    update_values = build_ticket_update_values(ticket, ticket_id, status_id)
+    attempts = [
+        ("minimal", {
+            "id": int(ticket_id),
+            "status": str(status_id),
+        }),
+        ("minimal-values", {
+            "values": {
+                "id": int(ticket_id),
+                "status": str(status_id),
+            },
+        }),
+        ("sanitized-full", update_values),
+        ("sanitized-full-values", {
+            "values": update_values,
+        }),
+    ]
 
-    # Leantime's update RPC expects the full ticket payload. Sending only the
-    # status risks clearing fields such as description.
-    return rpc("leantime.rpc.tickets.updateTicket", update_values)
+    for label, params in attempts:
+        print(
+            f"[INFO] Updating ticket {ticket_id} to status {status_id} using payload={label}",
+            flush=True,
+        )
+        result = rpc("leantime.rpc.tickets.updateTicket", params)
+        if result is not None:
+            return result
+
+    print(
+        f"[ERROR] All updateTicket payload variants failed for ticket {ticket_id}.",
+        flush=True,
+    )
+    return None
 
 
 def normalize_comments_payload(result: Any) -> list[dict[str, Any]]:
@@ -1701,6 +1766,17 @@ def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) ->
         or str(ticket_sessions.get(str(ticket_id), "") or "")
     )
 
+    print(
+        "[INFO] Review scan "
+        f"ticket={ticket_id} "
+        f"comments={len(comments)} "
+        f"known_signature={'yes' if known_signature else 'no'} "
+        f"latest_signature={'yes' if latest_signature else 'no'} "
+        f"previous_session={'yes' if previous_session_id else 'no'} "
+        f"title={headline}",
+        flush=True,
+    )
+
     if not latest_signature:
         return
 
@@ -1784,6 +1860,11 @@ def main():
     while True:
         ready_tasks = get_ready_tasks()
         review_tasks = get_review_tasks()
+
+        print(
+            f"[INFO] Poll result: ready={len(ready_tasks)} review={len(review_tasks)}",
+            flush=True,
+        )
 
         for task in ready_tasks:
             process_ready_task(task, state)
