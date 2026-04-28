@@ -8,7 +8,7 @@ namespace Server.Models
     // ── ApiKey ──
     public record CreateApiKeyRequest(string Name, string ProviderType, string Key);
     public record UpdateApiKeyRequest(string Name, string ProviderType, string? Key);
-    public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime CreatedAt);
+    public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime CreatedAt, DateTime UpdatedAt, int ModulesCount);
 
     // ── Rule ──
     public record CreateRuleRequest(string Title, string Content, bool IsActive = true, int SortOrder = 0);

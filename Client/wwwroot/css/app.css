@@ -227,23 +227,132 @@ table {
     font-size: 0.85rem;
 }
 
+thead {
+    border-bottom: 1px solid var(--border);
+}
+
 th {
     text-align: left;
-    padding: 0.5rem;
-    border-bottom: 2px solid var(--border);
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border);
     color: var(--text-muted);
     font-weight: 600;
     font-size: 0.8rem;
     text-transform: uppercase;
+    letter-spacing: 0.06em;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+tbody tr {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 td {
-    padding: 0.5rem;
-    border-bottom: 1px solid var(--border);
+    padding: 0.65rem 0.75rem;
+    vertical-align: middle;
+    transition: background 0.12s;
 }
 
 tr:hover td {
-    background: rgba(108, 99, 255, 0.05);
+    background: rgba(108, 99, 255, 0.07);
+}
+
+/* ─── Data Table — Estilo mejorado reutilizable ─────────────── */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+.data-table thead {
+    background: linear-gradient(180deg, rgba(108,99,255,0.06) 0%, rgba(108,99,255,0.02) 100%);
+}
+
+.data-table thead th {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    padding: 0.65rem 0.85rem;
+    border-bottom: 2px solid rgba(108, 99, 255, 0.25);
+    background: transparent;
+    white-space: nowrap;
+}
+
+.data-table thead th:first-child { padding-left: 1rem; }
+.data-table thead th:last-child  { padding-right: 1rem; }
+
+.data-table tbody tr {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    transition: background 0.15s, box-shadow 0.15s;
+    position: relative;
+}
+
+.data-table tbody tr:last-child {
+    border-bottom: none;
+}
+
+.data-table tbody tr:nth-child(even) td {
+    background: rgba(255, 255, 255, 0.015);
+}
+
+.data-table tbody td {
+    padding: 0.7rem 0.85rem;
+    vertical-align: middle;
+    color: var(--text);
+}
+
+.data-table tbody td:first-child { padding-left: 1rem; }
+.data-table tbody td:last-child  { padding-right: 1rem; }
+
+.data-table tbody tr:hover td {
+    background: rgba(108, 99, 255, 0.1) !important;
+}
+
+.data-table tbody tr:hover {
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+/* Fila inactiva/desactivada */
+.data-table tbody tr.row-inactive td {
+    opacity: 0.5;
+}
+.data-table tbody tr.row-inactive:hover td {
+    opacity: 1;
+}
+
+/* Wrap the data-table in this for card effect */
+.table-wrap {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-top: 1.25rem;
+    background: var(--bg-card);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ─── Utilidades de celda ──────────────────────────────────── */
+td.cell-actions {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+}
+
+td.cell-right,
+th.cell-right {
+    text-align: right;
+}
+
+td.cell-mono {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+td.cell-muted {
+    color: var(--text-muted);
+    font-size: 0.82rem;
 }
 
 /* Badges */
@@ -3005,6 +3114,233 @@ a.link:hover { text-decoration: underline; }
     font-style: italic;
     padding-left: 1rem;
     opacity: 0.6;
+}
+
+/* Utility */
+.mt-1 { margin-top: 0.5rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.text-muted { color: var(--text-muted); }
+
+/* ─── API Keys – Provider badges ─────────────────────────────── */
+.badge-openai     { background: rgba(16, 163, 127, 0.15); color: #10a37f; }
+.badge-anthropic  { background: rgba(232, 131, 12, 0.15);  color: #e8830c; }
+.badge-google     { background: rgba(66, 133, 244, 0.15);  color: #4285f4; }
+.badge-leonardo   { background: rgba(139, 92, 246, 0.15);  color: #a78bfa; }
+.badge-xai        { background: rgba(156, 163, 175, 0.15); color: #9ca3af; }
+.badge-pexels     { background: rgba(5, 160, 129, 0.15);   color: #05a081; }
+.badge-json2video { background: rgba(255, 112, 67, 0.15);  color: #ff7043; }
+
+/* ─── API Keys – Table & layout ──────────────────────────────── */
+.apikeys-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.6rem;
+}
+
+.apikeys-stats {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.apikeys-stat-total {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.provider-icon {
+    margin-right: 0.25rem;
+    font-style: normal;
+}
+
+.key-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+.key-date {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    cursor: default;
+}
+
+.key-id {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    letter-spacing: 0.02em;
+    cursor: default;
+    user-select: all;
+}
+
+.apikeys-table tr.row-confirming td {
+    background: rgba(244, 67, 54, 0.08) !important;
+}
+.apikeys-table tr.row-confirming:hover td {
+    background: rgba(244, 67, 54, 0.14) !important;
+}
+
+.apikeys-actions {
+    text-align: right;
+    white-space: nowrap;
+}
+
+/* ─── API Keys – Toolbar (search + filters) ──────────────────── */
+.apikeys-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.apikeys-search-wrap {
+    flex: 0 0 220px;
+}
+
+.apikeys-search {
+    width: 100%;
+    padding: 0.35rem 0.65rem;
+    font-size: 0.85rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.apikeys-search:focus {
+    border-color: var(--accent);
+}
+
+.apikeys-search::placeholder {
+    color: var(--text-muted);
+}
+
+.apikeys-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    line-height: 1.4;
+}
+
+.filter-pill:hover {
+    background: rgba(255,255,255,0.06);
+    color: var(--text);
+}
+
+.filter-pill.active {
+    background: rgba(108, 99, 255, 0.15);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+/* Provider-colored active pills */
+.filter-pill.active.badge-openai     { background: rgba(16, 163, 127, 0.15);  border-color: #10a37f; color: #10a37f; }
+.filter-pill.active.badge-anthropic  { background: rgba(232, 131, 12, 0.15);  border-color: #e8830c; color: #e8830c; }
+.filter-pill.active.badge-google     { background: rgba(66, 133, 244, 0.15);  border-color: #4285f4; color: #4285f4; }
+.filter-pill.active.badge-leonardo   { background: rgba(139, 92, 246, 0.15);  border-color: #a78bfa; color: #a78bfa; }
+.filter-pill.active.badge-xai        { background: rgba(156, 163, 175, 0.15); border-color: #9ca3af; color: #9ca3af; }
+.filter-pill.active.badge-pexels     { background: rgba(5, 160, 129, 0.15);   border-color: #05a081; color: #05a081; }
+.filter-pill.active.badge-json2video { background: rgba(255, 112, 67, 0.15);  border-color: #ff7043; color: #ff7043; }
+
+.filter-count {
+    font-size: 0.7rem;
+    opacity: 0.75;
+    font-weight: 600;
+}
+
+/* ─── API Keys – Enhanced table (extiende .data-table) ──────── */
+/* Solo reglas exclusivas de ApiKeys; el estilo base viene de .data-table */
+.apikeys-table .col-provider { width: 160px; }
+.apikeys-table .col-name     { }
+.apikeys-table .col-id       { width: 130px; }
+.apikeys-table .col-date     { width: 130px; }
+.apikeys-table .col-actions  { width: 130px; }
+.apikeys-table .col-usage    { width: 120px; }
+
+/* ─── API Keys – Usage badge ─────────────────────────────── */
+.key-usage-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.key-usage-active {
+    background: rgba(16, 185, 129, 0.12);
+    color: #10b981;
+    border-color: rgba(16, 185, 129, 0.3);
+}
+
+.key-usage-idle {
+    background: rgba(156, 163, 175, 0.08);
+    color: var(--text-muted);
+    border-color: var(--border);
+}
+
+/* ─── API Keys – Unused row ──────────────────────────────── */
+.apikeys-table tr.row-unused td {
+    opacity: 0.6;
+}
+
+.apikeys-table tr.row-unused:hover td {
+    opacity: 1;
+}
+
+/* ─── API Keys – Empty state ──────────────────────────────────── */
+.apikeys-empty {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: var(--text-muted);
+}
+
+.apikeys-empty-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.8rem;
+    opacity: 0.6;
+}
+
+.apikeys-empty-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 0.4rem;
+}
+
+.apikeys-empty-desc {
+    font-size: 0.85rem;
+    max-width: 380px;
+    margin: 0 auto;
 }
 
 /* Utility */

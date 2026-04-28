@@ -338,7 +338,7 @@ app.MapPost("/api/apikeys", async (
     await db.SaveChangesAsync();
 
     return Results.Created($"/api/apikeys/{apiKey.Id}",
-        new ApiKeyResponse(apiKey.Id, apiKey.Name, apiKey.ProviderType, apiKey.CreatedAt));
+        new ApiKeyResponse(apiKey.Id, apiKey.Name, apiKey.ProviderType, apiKey.CreatedAt, apiKey.UpdatedAt, 0));
 }).RequireAuthorization();
 
 app.MapGet("/api/apikeys", async (
@@ -349,7 +349,9 @@ app.MapGet("/api/apikeys", async (
 
     var keys = await db.ApiKeys
         .OrderByDescending(k => k.CreatedAt)
-        .Select(k => new ApiKeyResponse(k.Id, k.Name, k.ProviderType, k.CreatedAt))
+        .Select(k => new ApiKeyResponse(
+            k.Id, k.Name, k.ProviderType, k.CreatedAt, k.UpdatedAt,
+            k.AiModules.Count))
         .ToListAsync();
 
     return Results.Ok(keys);
@@ -362,10 +364,15 @@ app.MapGet("/api/apikeys/{id}", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    var key = await db.ApiKeys.FindAsync(id);
+    var key = await db.ApiKeys
+        .Where(k => k.Id == id)
+        .Select(k => new ApiKeyResponse(
+            k.Id, k.Name, k.ProviderType, k.CreatedAt, k.UpdatedAt,
+            k.AiModules.Count))
+        .FirstOrDefaultAsync();
     if (key is null) return Results.NotFound();
 
-    return Results.Ok(new ApiKeyResponse(key.Id, key.Name, key.ProviderType, key.CreatedAt));
+    return Results.Ok(key);
 }).RequireAuthorization();
 
 app.MapPut("/api/apikeys/{id}", async (
@@ -384,7 +391,8 @@ app.MapPut("/api/apikeys/{id}", async (
     key.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
-    return Results.Ok(new ApiKeyResponse(key.Id, key.Name, key.ProviderType, key.CreatedAt));
+    var modulesCount = await db.AiModules.CountAsync(m => m.ApiKeyId == key.Id);
+    return Results.Ok(new ApiKeyResponse(key.Id, key.Name, key.ProviderType, key.CreatedAt, key.UpdatedAt, modulesCount));
 }).RequireAuthorization();
 
 app.MapDelete("/api/apikeys/{id}", async (

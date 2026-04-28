@@ -14,7 +14,8 @@ else if (_files.Count == 0)
 }
 else
 {
-    <table>
+    <div class="table-wrap">
+    <table class="data-table">
         <thead>
             <tr>
                 <th>Archivo</th>
@@ -38,7 +39,7 @@ else
                         <a href="/modules" class="link">@f.ModuleName</a>
                     </td>
                     <td>@f.CreatedAt.ToString("dd MMM yyyy HH:mm")</td>
-                    <td style="display: flex; gap: 0.25rem;">
+                    <td class="cell-actions">
                         <a href="/api/module-files/@f.Id/download" target="_blank" class="btn btn-sm">Descargar</a>
                         <button class="btn btn-danger btn-sm" @onclick="() => Delete(f.Id)">Eliminar</button>
                     </td>
@@ -46,6 +47,7 @@ else
             }
         </tbody>
     </table>
+    </div>
 }
 
 @code {
