@@ -60,8 +60,6 @@ LOG_DIR = Path(os.environ.get(
     "/home/debian/Proyectos/PixelAgents/automation/logs",
 ))
 
-CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or shutil.which("claude") or "claude"
-
 CLAUDE_PERMISSION_MODE = os.environ.get(
     "CLAUDE_PERMISSION_MODE",
     "bypassPermissions",
@@ -91,6 +89,63 @@ MAX_ASSISTANT_TEXT_CHARS = int(os.environ.get("MAX_ASSISTANT_TEXT_CHARS", "9000"
 # =========================
 # Utilidades
 # =========================
+
+def resolve_runtime_home() -> str:
+    return os.environ.get("HOME", "/home/debian")
+
+
+def build_runtime_path(home: str | None = None) -> str:
+    home = home or resolve_runtime_home()
+    current_path = os.environ.get("PATH", "")
+
+    preferred = [
+        f"{home}/.local/bin",
+        f"{home}/.npm-global/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+
+    path_parts: list[str] = []
+    seen: set[str] = set()
+
+    for entry in preferred + current_path.split(os.pathsep):
+        cleaned = entry.strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        path_parts.append(cleaned)
+
+    return os.pathsep.join(path_parts)
+
+
+def resolve_claude_bin() -> str:
+    configured = os.environ.get("CLAUDE_BIN")
+    if configured:
+        return configured
+
+    home = resolve_runtime_home()
+    search_path = build_runtime_path(home)
+
+    found = shutil.which("claude", path=search_path)
+    if found:
+        return found
+
+    candidates = [
+        Path(home) / ".local/bin/claude",
+        Path(home) / ".npm-global/bin/claude",
+        Path("/usr/local/bin/claude"),
+        Path("/usr/bin/claude"),
+    ]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return "claude"
+
+
+CLAUDE_BIN = resolve_claude_bin()
 
 def truncate(value: Any, limit: int) -> str:
     if value is None:
@@ -447,11 +502,14 @@ class LiveReportLogger:
         self.headline = headline
         self.prompt = prompt
 
-        self.live_log_path = LOG_DIR / f"ticket-{ticket_id}.live.log"
-        self.report_md_path = LOG_DIR / f"ticket-{ticket_id}.report.md"
-        self.report_html_path = LOG_DIR / f"ticket-{ticket_id}.report.html"
-        self.events_json_path = LOG_DIR / f"ticket-{ticket_id}.events.json"
-        self.raw_log_path = LOG_DIR / f"ticket-{ticket_id}.raw.jsonl"
+        self.ticket_dir = LOG_DIR / f"ticket-{ticket_id}"
+        self.ticket_dir.mkdir(parents=True, exist_ok=True)
+
+        self.live_log_path = self.ticket_dir / "live.log"
+        self.report_md_path = self.ticket_dir / "report.md"
+        self.report_html_path = self.ticket_dir / "report.html"
+        self.events_json_path = self.ticket_dir / "events.json"
+        self.raw_log_path = self.ticket_dir / "raw.jsonl"
 
         self.live_file = self.live_log_path.open("w", encoding="utf-8")
         self.raw_file = self.raw_log_path.open("w", encoding="utf-8") if WORKER_LOG_RAW_EVENTS else None
@@ -471,10 +529,10 @@ class LiveReportLogger:
 
     def copy_static_assets(self):
         if CSS_SOURCE_PATH.exists():
-            shutil.copyfile(CSS_SOURCE_PATH, LOG_DIR / "report.css")
+            shutil.copyfile(CSS_SOURCE_PATH, self.ticket_dir / "report.css")
 
         if JS_SOURCE_PATH.exists():
-            shutil.copyfile(JS_SOURCE_PATH, LOG_DIR / "report.js")
+            shutil.copyfile(JS_SOURCE_PATH, self.ticket_dir / "report.js")
 
     def close(self):
         self.write_events_json()
@@ -910,11 +968,8 @@ def sdk_message_to_events(message: Any) -> list[HumanEvent]:
 
 def build_sdk_options() -> ClaudeAgentOptions:
     env = os.environ.copy()
-    env["HOME"] = env.get("HOME", "/home/debian")
-    env["PATH"] = env.get(
-        "PATH",
-        "/home/debian/.local/bin:/usr/local/bin:/usr/bin:/bin",
-    )
+    env["HOME"] = resolve_runtime_home()
+    env["PATH"] = build_runtime_path(env["HOME"])
 
     mcp_servers = {
         "leantime": {

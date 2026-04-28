@@ -80,6 +80,7 @@ CONFIG_DIR="$PA_HOME/.config/pixelagents"
 ENV_FILE="$CONFIG_DIR/leantime.env"
 VENV_DIR="$PA_PROJECT_DIR/.venv"
 WORKER_SCRIPT="$PA_PROJECT_DIR/automation/leantime_ready_worker.py"
+LOG_SERVER_SCRIPT="$PA_PROJECT_DIR/automation/log_server.py"
 LOG_DIR="$PA_PROJECT_DIR/automation/logs"
 DEPLOY_SCRIPT="$PA_PROJECT_DIR/tools/deploy_develop.sh"
 
@@ -101,6 +102,7 @@ install -d -o "$PA_USER" -g "$PA_USER" -m 0755 "$LOG_DIR"
 # Avisos sin bloquear
 [ -f "$ENV_FILE" ] || echo "[install][WARN] no existe $ENV_FILE; créalo con LEANTIME_API_URL, LEANTIME_API_KEY, LEANTIME_PROJECT_ID antes de arrancar el worker."
 [ -f "$WORKER_SCRIPT" ] || echo "[install][WARN] no existe $WORKER_SCRIPT (worker)."
+[ -f "$LOG_SERVER_SCRIPT" ] || echo "[install][WARN] no existe $LOG_SERVER_SCRIPT (log server)."
 [ -x "$VENV_DIR/bin/python" ] || echo "[install][WARN] no existe venv en $VENV_DIR (crea uno con: python3 -m venv $VENV_DIR && $VENV_DIR/bin/pip install claude-agent-sdk)."
 [ -x "$DEPLOY_SCRIPT" ] || echo "[install][WARN] no existe $DEPLOY_SCRIPT, ¿faltan tools/?"
 
@@ -138,6 +140,8 @@ Wants=network-online.target
 Type=simple
 User=$PA_USER
 EnvironmentFile=$ENV_FILE
+Environment=HOME=$PA_HOME
+Environment=PATH=$PA_HOME/.local/bin:$PA_HOME/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
 WorkingDirectory=$PA_PROJECT_DIR
 ExecStart=$VENV_DIR/bin/python $WORKER_SCRIPT
 Restart=on-failure
@@ -159,7 +163,7 @@ After=network-online.target
 Type=simple
 User=$PA_USER
 WorkingDirectory=$LOG_DIR
-ExecStart=/usr/bin/python3 -m http.server $LOG_PORT --bind 0.0.0.0
+ExecStart=/usr/bin/python3 $LOG_SERVER_SCRIPT --bind 0.0.0.0 --port $LOG_PORT --log-dir $LOG_DIR
 Restart=on-failure
 RestartSec=5
 
