@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import asyncio
 import html
+import inspect
 import json
 import os
 import re
@@ -87,6 +88,8 @@ WORKER_LOG_PROMPT = os.environ.get("WORKER_LOG_PROMPT", "0") == "1"
 MAX_TOOL_INPUT_CHARS = int(os.environ.get("MAX_TOOL_INPUT_CHARS", "1200"))
 MAX_TOOL_RESULT_CHARS = int(os.environ.get("MAX_TOOL_RESULT_CHARS", "2200"))
 MAX_ASSISTANT_TEXT_CHARS = int(os.environ.get("MAX_ASSISTANT_TEXT_CHARS", "9000"))
+
+CLAUDE_SESSION_MARKER_PREFIX = "[CLAUDE_SESSION]"
 
 
 # =========================
@@ -347,6 +350,7 @@ def load_worker_state() -> dict[str, Any]:
         return {
             "processed_ready_tasks": [],
             "review_comment_markers": {},
+            "ticket_sessions": {},
         }
 
     try:
@@ -358,11 +362,13 @@ def load_worker_state() -> dict[str, Any]:
         return {
             "processed_ready_tasks": raw,
             "review_comment_markers": {},
+            "ticket_sessions": {},
         }
 
     if isinstance(raw, dict):
         processed = raw.get("processed_ready_tasks", [])
         review_markers = raw.get("review_comment_markers", {})
+        ticket_sessions = raw.get("ticket_sessions", {})
 
         if not isinstance(processed, list):
             processed = []
@@ -370,14 +376,19 @@ def load_worker_state() -> dict[str, Any]:
         if not isinstance(review_markers, dict):
             review_markers = {}
 
+        if not isinstance(ticket_sessions, dict):
+            ticket_sessions = {}
+
         return {
             "processed_ready_tasks": processed,
             "review_comment_markers": review_markers,
+            "ticket_sessions": ticket_sessions,
         }
 
     return {
         "processed_ready_tasks": [],
         "review_comment_markers": {},
+        "ticket_sessions": {},
     }
 
 
@@ -391,6 +402,11 @@ def save_worker_state(state: dict[str, Any]) -> None:
             str(ticket_id): str(marker)
             for ticket_id, marker in state.get("review_comment_markers", {}).items()
             if marker
+        },
+        "ticket_sessions": {
+            str(ticket_id): str(session_id)
+            for ticket_id, session_id in state.get("ticket_sessions", {}).items()
+            if session_id
         },
     }
 
@@ -507,6 +523,73 @@ def get_ticket_comments(ticket_id: int) -> list[dict[str, Any]]:
             return comments
 
     return []
+
+
+def add_ticket_comment(ticket_id: int, comment: str) -> Any:
+    return rpc("leantime.rpc.comments.addComment", {
+        "moduleId": int(ticket_id),
+        "commentModule": "tickets",
+        "comment": comment,
+        "commentParent": "",
+    })
+
+
+def is_session_marker_comment(comment: dict[str, Any]) -> bool:
+    body = str(
+        comment.get("comment")
+        or comment.get("content")
+        or comment.get("description")
+        or ""
+    ).strip()
+    return body.startswith(CLAUDE_SESSION_MARKER_PREFIX)
+
+
+def extract_session_id_from_marker_comment(comment: dict[str, Any]) -> str:
+    body = str(
+        comment.get("comment")
+        or comment.get("content")
+        or comment.get("description")
+        or ""
+    ).strip()
+    match = re.search(r"session_id=([A-Za-z0-9._:-]+)", body)
+    return match.group(1) if match else ""
+
+
+def get_review_relevant_comments(ticket_id: int) -> list[dict[str, Any]]:
+    return [
+        comment
+        for comment in get_ticket_comments(ticket_id)
+        if not is_session_marker_comment(comment)
+    ]
+
+
+def get_ticket_session_id_from_comments(ticket_id: int) -> str:
+    marker_comments = [
+        comment
+        for comment in get_ticket_comments(ticket_id)
+        if is_session_marker_comment(comment)
+    ]
+
+    if not marker_comments:
+        return ""
+
+    latest_marker = sort_comments(marker_comments)[-1]
+    return extract_session_id_from_marker_comment(latest_marker)
+
+
+def sync_ticket_session_marker(ticket_id: int, session_id: str) -> None:
+    if not session_id:
+        return
+
+    current_session_id = get_ticket_session_id_from_comments(ticket_id)
+    if current_session_id == session_id:
+        return
+
+    marker_comment = (
+        f"{CLAUDE_SESSION_MARKER_PREFIX} session_id={session_id}\n"
+        "Etiqueta técnica para reanudar o reconstruir el contexto de Claude."
+    )
+    add_ticket_comment(ticket_id, marker_comment)
 
 
 def comment_sort_key(comment: dict[str, Any]) -> tuple[int, str, str]:
@@ -671,6 +754,7 @@ def build_prompt(
     task: dict[str, Any],
     trigger: str = "ready",
     review_comments: list[dict[str, Any]] | None = None,
+    previous_session_id: str = "",
 ) -> str:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
@@ -704,6 +788,14 @@ def build_prompt(
         )
         comments_block = f"\n\nComentarios nuevos a procesar:\n{rendered_comments}"
 
+    session_block = ""
+    if previous_session_id:
+        session_block = (
+            "\n\nContexto de conversación Claude previo:\n"
+            f"- Session ID anterior: {previous_session_id}\n"
+            "- Usa este identificador para referenciar el trabajo previo, su plan y sus decisiones."
+        )
+
     return f"""
 Actúa como el agente principal `coordinator` del proyecto PixelAgents.
 
@@ -721,6 +813,7 @@ Contexto operativo:
 - Usa el MCP de Leantime siempre que esté disponible.
 - Si MCP falla, usa ./tools/leantime.sh como fallback.
 {comments_block}
+{session_block}
 
 Reglas obligatorias:
 - Primero escribe en la salida: INICIANDO TAREA {ticket_id}
@@ -820,6 +913,7 @@ class LiveReportLogger:
         self.events: list[HumanEvent] = []
         self.started_at = time.time()
         self.status = "running"
+        self.session_id = ""
 
         self.tool_id_to_name: dict[str, str] = {}
 
@@ -978,6 +1072,10 @@ class LiveReportLogger:
 
     def event(self, event: HumanEvent):
         event = self.resolve_tool_name(event)
+
+        session_id = str(event.meta.get("session_id", "") or "")
+        if session_id:
+            self.session_id = session_id
 
         if event.kind == "assistant":
             self.stats.assistant_messages += 1
@@ -1189,6 +1287,7 @@ def sdk_message_to_events(message: Any) -> list[HumanEvent]:
                 body=body,
                 meta={
                     "tool": "system",
+                    "session_id": str(nested.get("session_id", "") or ""),
                 },
             )]
 
@@ -1259,6 +1358,9 @@ def sdk_message_to_events(message: Any) -> list[HumanEvent]:
             kind="result",
             title="Resultado final",
             body=truncate(body, MAX_ASSISTANT_TEXT_CHARS),
+            meta={
+                "session_id": str(data.get("session_id", "") or ""),
+            },
         )]
 
     return []
@@ -1268,7 +1370,16 @@ def sdk_message_to_events(message: Any) -> list[HumanEvent]:
 # Claude SDK runner
 # =========================
 
-def build_sdk_options() -> ClaudeAgentOptions:
+def claude_options_supports(field_name: str) -> bool:
+    try:
+        signature = inspect.signature(ClaudeAgentOptions)
+    except Exception:
+        return False
+
+    return field_name in signature.parameters
+
+
+def build_sdk_options(resume_session_id: str = "") -> ClaudeAgentOptions:
     env = os.environ.copy()
     env["HOME"] = resolve_runtime_home()
     env["PATH"] = build_runtime_path(env["HOME"])
@@ -1281,15 +1392,15 @@ def build_sdk_options() -> ClaudeAgentOptions:
         }
     }
 
-    return ClaudeAgentOptions(
-        cwd=REPO_PATH,
-        cli_path=CLAUDE_BIN,
-        permission_mode=CLAUDE_PERMISSION_MODE,
-        max_turns=CLAUDE_MAX_TURNS,
-        max_budget_usd=CLAUDE_MAX_BUDGET_USD,
-        include_partial_messages=False,
-        mcp_servers=mcp_servers,
-        allowed_tools=[
+    option_kwargs: dict[str, Any] = {
+        "cwd": REPO_PATH,
+        "cli_path": CLAUDE_BIN,
+        "permission_mode": CLAUDE_PERMISSION_MODE,
+        "max_turns": CLAUDE_MAX_TURNS,
+        "max_budget_usd": CLAUDE_MAX_BUDGET_USD,
+        "include_partial_messages": False,
+        "mcp_servers": mcp_servers,
+        "allowed_tools": [
             "Read",
             "Write",
             "Edit",
@@ -1303,7 +1414,7 @@ def build_sdk_options() -> ClaudeAgentOptions:
             "Task",
             "mcp__leantime__*",
         ],
-        disallowed_tools=[
+        "disallowed_tools": [
             "Bash(git push:*)",
             "Bash(git merge:*)",
             "Bash(git rebase:*)",
@@ -1312,28 +1423,56 @@ def build_sdk_options() -> ClaudeAgentOptions:
             "Bash(sudo:*)",
             "Bash(rm -rf:*)",
         ],
-        env=env,
-        extra_args={
+        "env": env,
+        "extra_args": {
             "agent": CLAUDE_AGENT,
         },
-    )
+    }
+
+    if resume_session_id and claude_options_supports("resume"):
+        option_kwargs["resume"] = resume_session_id
+
+    return ClaudeAgentOptions(**option_kwargs)
 
 
 async def run_claude_sdk_for_task_async(
     task: dict[str, Any],
     trigger: str = "ready",
     review_comments: list[dict[str, Any]] | None = None,
-) -> bool:
+    previous_session_id: str = "",
+) -> tuple[bool, str]:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
-    prompt = build_prompt(task, trigger=trigger, review_comments=review_comments)
+    prompt = build_prompt(
+        task,
+        trigger=trigger,
+        review_comments=review_comments,
+        previous_session_id=previous_session_id,
+    )
 
     logger = LiveReportLogger(ticket_id=ticket_id, headline=headline, prompt=prompt)
-    options = build_sdk_options()
+    can_resume = bool(previous_session_id and claude_options_supports("resume"))
+    options = build_sdk_options(
+        resume_session_id=previous_session_id if can_resume else "",
+    )
 
     ok = True
 
     try:
+        if previous_session_id:
+            logger.event(HumanEvent(
+                kind="system",
+                title="Contexto de sesión",
+                body=(
+                    f"Session ID previo: {previous_session_id}\n"
+                    f"Resume SDK activo: {'sí' if can_resume else 'no'}"
+                ),
+                meta={
+                    "tool": "system",
+                    "session_id": previous_session_id,
+                },
+            ))
+
         async def consume():
             async for message in query(prompt=prompt, options=options):
                 logger.raw(message)
@@ -1377,14 +1516,15 @@ async def run_claude_sdk_for_task_async(
         logger.finish(ok)
         logger.close()
 
-    return ok
+    return ok, logger.session_id
 
 
 def run_claude_for_task(
     task: dict[str, Any],
     trigger: str = "ready",
     review_comments: list[dict[str, Any]] | None = None,
-) -> bool:
+    previous_session_id: str = "",
+) -> tuple[bool, str]:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
 
@@ -1399,6 +1539,7 @@ def run_claude_for_task(
                 task,
                 trigger=trigger,
                 review_comments=review_comments,
+                previous_session_id=previous_session_id,
             )
         )
     except Exception as e:
@@ -1406,7 +1547,7 @@ def run_claude_for_task(
             f"[ERROR] Claude SDK runner crashed for ticket {ticket_id}: {e}",
             flush=True,
         )
-        return False
+        return False, ""
 
 
 def process_ready_task(task: dict[str, Any], state: dict[str, Any]) -> None:
@@ -1442,15 +1583,20 @@ def process_ready_task(task: dict[str, Any], state: dict[str, Any]) -> None:
         )
         return
 
-    ok = run_claude_for_task(task, trigger="ready")
+    ok, session_id = run_claude_for_task(task, trigger="ready")
 
     processed.add(ticket_id)
     state["processed_ready_tasks"] = sorted(processed)
 
-    latest_signature = latest_comment_signature(get_ticket_comments(ticket_id))
+    latest_signature = latest_comment_signature(get_review_relevant_comments(ticket_id))
     if latest_signature:
         review_markers = state.setdefault("review_comment_markers", {})
         review_markers[str(ticket_id)] = latest_signature
+
+    if session_id:
+        ticket_sessions = state.setdefault("ticket_sessions", {})
+        ticket_sessions[str(ticket_id)] = session_id
+        sync_ticket_session_marker(ticket_id, session_id)
 
     save_worker_state(state)
 
@@ -1464,11 +1610,16 @@ def process_ready_task(task: dict[str, Any], state: dict[str, Any]) -> None:
 def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) -> None:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
-    comments = get_ticket_comments(ticket_id)
+    comments = get_review_relevant_comments(ticket_id)
     latest_signature = latest_comment_signature(comments)
 
     review_markers = state.setdefault("review_comment_markers", {})
+    ticket_sessions = state.setdefault("ticket_sessions", {})
     known_signature = str(review_markers.get(str(ticket_id), "") or "")
+    previous_session_id = (
+        get_ticket_session_id_from_comments(ticket_id)
+        or str(ticket_sessions.get(str(ticket_id), "") or "")
+    )
 
     if not latest_signature:
         return
@@ -1504,17 +1655,23 @@ def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) ->
         )
         return
 
-    ok = run_claude_for_task(
+    ok, session_id = run_claude_for_task(
         task,
         trigger="review_feedback",
         review_comments=pending_comments,
+        previous_session_id=previous_session_id,
     )
 
-    refreshed_comments = get_ticket_comments(ticket_id)
+    refreshed_comments = get_review_relevant_comments(ticket_id)
     refreshed_signature = latest_comment_signature(refreshed_comments)
     if refreshed_signature:
         review_markers[str(ticket_id)] = refreshed_signature
-        save_worker_state(state)
+
+    if session_id:
+        ticket_sessions[str(ticket_id)] = session_id
+        sync_ticket_session_marker(ticket_id, session_id)
+
+    save_worker_state(state)
 
     if not ok:
         print(

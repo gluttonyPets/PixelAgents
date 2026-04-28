@@ -67,6 +67,7 @@ Siempre reporta:
 - No hagas merge a develop ni master sin aprobación humana.
 - Una tarea en Review no se considera cerrada: si el humano añade comentarios con correcciones en la tarea o subtarea, reanuda el trabajo.
 - Cuando entren correcciones por comentarios en Review, vuelve la tarea o subtarea a In Progress, aplica los cambios, documenta la respuesta en comentarios y devuélvela a Review.
+- Si el worker te proporciona un `Session ID` de Claude previo, úsalo como referencia del contexto anterior para reconstruir el plan y las decisiones antes de corregir.
 - Si MCP falla, usa `./tools/leantime.sh` como respaldo.
 
 ## Descomposición autónoma en subtareas
