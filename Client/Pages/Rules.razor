@@ -47,41 +47,43 @@
 
 @if (_rules.Count > 0)
 {
-    <table>
-        <thead>
-            <tr>
-                <th style="width:4rem;">Orden</th>
-                <th>Titulo</th>
-                <th>Contenido</th>
-                <th style="width:5rem;">Estado</th>
-                <th style="width:10rem;"></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var r in _rules)
-            {
-                <tr style="@(r.IsActive ? "" : "opacity:.5;")">
-                    <td>@r.SortOrder</td>
-                    <td>@r.Title</td>
-                    <td style="max-width:30rem; white-space:pre-wrap; font-size:.8rem;">@r.Content</td>
-                    <td>
-                        @if (r.IsActive)
-                        {
-                            <span class="badge badge-success">Activa</span>
-                        }
-                        else
-                        {
-                            <span class="badge">Inactiva</span>
-                        }
-                    </td>
-                    <td>
-                        <button class="btn btn-sm" @onclick="() => StartEdit(r)">Editar</button>
-                        <button class="btn btn-sm btn-danger" @onclick="() => Delete(r.Id)">Eliminar</button>
-                    </td>
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width:4rem;">Orden</th>
+                    <th>Titulo</th>
+                    <th>Contenido</th>
+                    <th style="width:5rem;">Estado</th>
+                    <th style="width:10rem;"></th>
                 </tr>
-            }
-        </tbody>
-    </table>
+            </thead>
+            <tbody>
+                @foreach (var r in _rules)
+                {
+                    <tr class="@(!r.IsActive ? "row-inactive" : string.Empty)">
+                        <td>@r.SortOrder</td>
+                        <td>@r.Title</td>
+                        <td class="cell-mono" style="max-width:30rem; white-space:pre-wrap;">@r.Content</td>
+                        <td>
+                            @if (r.IsActive)
+                            {
+                                <span class="badge badge-success">Activa</span>
+                            }
+                            else
+                            {
+                                <span class="badge">Inactiva</span>
+                            }
+                        </td>
+                        <td>
+                            <button class="btn btn-sm" @onclick="() => StartEdit(r)">Editar</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => Delete(r.Id)">Eliminar</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
 }
 else if (!_loading)
 {

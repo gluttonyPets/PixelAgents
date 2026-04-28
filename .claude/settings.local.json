@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash /home/debian/Proyectos/PixelAgents/tools/leantime.sh raw '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"leantime.rpc.tickets.updateTicket\",\"params\":{\"id\":20,\"values\":{\"status\":3}}}')",
+      "Bash(python3 -m json.tool)",
+      "Bash(bash /home/debian/Proyectos/PixelAgents/tools/leantime.sh raw '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"leantime.rpc.tickets.updateTicket\",\"params\":{\"values\":{\"id\":20,\"status\":3}}}')",
+      "Bash(bash /home/debian/Proyectos/PixelAgents/tools/leantime.sh raw '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"leantime.rpc.tickets.updateTicket\",\"params\":{\"values\":{\"id\":20,\"status\":3,\"projectId\":3}}}')",
+      "Bash(bash /home/debian/Proyectos/PixelAgents/tools/leantime.sh raw '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"leantime.rpc.tickets.getStatusLabels\",\"params\":{}}')",
+      "Bash(bash /home/debian/Proyectos/PixelAgents/tools/leantime.sh raw '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"leantime.rpc.projects.getProjectStatuses\",\"params\":{\"projectId\":3}}')",
+      "Bash(bash /home/debian/Proyectos/PixelAgents/tools/leantime.sh raw '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"leantime.rpc.tickets.updateTicket\",\"params\":{\"values\":{\"id\":20,\"status\":2,\"projectId\":3}}}')",
+      "Bash(git -C /home/debian/Proyectos/PixelAgents diff --stat HEAD)",
+      "Bash(git -C /home/debian/Proyectos/PixelAgents status)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(git merge *)",
+      "Bash(git push *)",
+      "Bash(ssh *)",
+      "Read(//home/debian/.ssh/**)",
+      "Bash(bash /home/debian/Proyectos/PixelAgents/tools/leantime.sh raw '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"leantime.rpc.tickets.updateTicket\",\"params\":{\"values\":{\"id\":20,\"status\":0,\"projectId\":3}}}')"
+    ]
+  }
+}

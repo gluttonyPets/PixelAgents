@@ -10,7 +10,7 @@ public record AuthResponse(string Email, Guid AccountId, string? DbName);
 
 // ── ApiKey ──
 public record CreateApiKeyRequest(string Name, string ProviderType, string Key);
-public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime CreatedAt);
+public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime CreatedAt, DateTime UpdatedAt, int ModulesCount);
 
 // ── Rule ──
 public record CreateRuleRequest(string Title, string Content, bool IsActive = true, int SortOrder = 0);

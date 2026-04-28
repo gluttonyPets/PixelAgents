@@ -646,7 +646,8 @@
                 <h3 class="module-group-title">@group.Label</h3>
                 <span class="badge badge-@(group.Type.ToLower()) module-group-count">@group.Modules.Count</span>
             </div>
-            <table>
+            <div class="table-wrap">
+            <table class="data-table">
                 <thead>
                     <tr>
                         <th>Nombre</th>
@@ -697,7 +698,7 @@
                             </select>
                         }
                     </td>
-                    <td style="display: flex; gap: 0.25rem;">
+                    <td class="cell-actions">
                         <button class="btn btn-sm" @onclick="() => ToggleEditConfig(m)">Configurar</button>
                         @if (IsBuiltInSystemModule(m))
                         {
@@ -1230,6 +1231,7 @@
                     }
                 </tbody>
             </table>
+            </div>
         </div>
     }
 }
