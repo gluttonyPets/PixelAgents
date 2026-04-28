@@ -5,6 +5,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -385,13 +387,94 @@ def get_ready_tasks() -> list[dict[str, Any]]:
     return ready
 
 
-def update_ticket_status(ticket_id: int, status_id: int):
-    return rpc("leantime.rpc.tickets.updateTicket", {
-        "values": {
-            "id": int(ticket_id),
-            "status": int(status_id),
-        }
+def get_ticket(ticket_id: int) -> dict[str, Any] | None:
+    result = rpc("leantime.rpc.tickets.getTicket", {
+        "id": int(ticket_id),
     })
+    if not isinstance(result, dict):
+        return None
+    return result
+
+
+def update_ticket_status(ticket_id: int, status_id: int):
+    ticket = get_ticket(ticket_id)
+    if not ticket:
+        print(
+            f"[ERROR] Could not read ticket {ticket_id} before updating status.",
+            flush=True,
+        )
+        return None
+
+    update_values = dict(ticket)
+    update_values["id"] = int(ticket_id)
+    update_values["status"] = str(status_id)
+
+    # Leantime's update RPC expects the full ticket payload. Sending only the
+    # status risks clearing fields such as description.
+    return rpc("leantime.rpc.tickets.updateTicket", update_values)
+
+
+def ensure_agent_users_provisioned() -> bool:
+    home = Path(resolve_runtime_home())
+    config_dir = Path(os.environ.get(
+        "PIXELAGENTS_CONFIG_DIR",
+        home / ".config/pixelagents",
+    ))
+    agents_file = Path(os.environ.get(
+        "PIXELAGENTS_AGENT_USERS_FILE",
+        config_dir / "agent_users.json",
+    ))
+
+    if agents_file.exists():
+        try:
+            mapping = json.loads(agents_file.read_text(encoding="utf-8"))
+            if isinstance(mapping, dict) and mapping:
+                return True
+        except Exception:
+            pass
+
+    provision_script = Path(REPO_PATH) / "tools" / "provision_leantime_agents.py"
+    if not provision_script.exists():
+        print(
+            f"[ERROR] Missing provision script: {provision_script}",
+            flush=True,
+        )
+        return False
+
+    env = os.environ.copy()
+    env["HOME"] = resolve_runtime_home()
+    env["PATH"] = build_runtime_path(env["HOME"])
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(provision_script)],
+            cwd=REPO_PATH,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except Exception as exc:
+        print(
+            f"[ERROR] Failed provisioning Leantime agent users: {exc}",
+            flush=True,
+        )
+        return False
+
+    if result.stdout.strip():
+        print(result.stdout.strip(), flush=True)
+    if result.stderr.strip():
+        print(result.stderr.strip(), flush=True)
+
+    if result.returncode != 0:
+        print(
+            f"[ERROR] provision_leantime_agents.py exited with code {result.returncode}",
+            flush=True,
+        )
+        return False
+
+    return agents_file.exists()
 
 
 # =========================
@@ -1124,6 +1207,14 @@ def main():
                 f"[INFO] Found Ready ticket {ticket_id}: {headline}",
                 flush=True,
             )
+
+            if not ensure_agent_users_provisioned():
+                print(
+                    "[ERROR] Could not provision Leantime agent users. "
+                    f"Skipping ticket {ticket_id}.",
+                    flush=True,
+                )
+                continue
 
             updated = update_ticket_status(ticket_id, IN_PROGRESS_STATUS_ID)
 
