@@ -447,11 +447,14 @@ class LiveReportLogger:
         self.headline = headline
         self.prompt = prompt
 
-        self.live_log_path = LOG_DIR / f"ticket-{ticket_id}.live.log"
-        self.report_md_path = LOG_DIR / f"ticket-{ticket_id}.report.md"
-        self.report_html_path = LOG_DIR / f"ticket-{ticket_id}.report.html"
-        self.events_json_path = LOG_DIR / f"ticket-{ticket_id}.events.json"
-        self.raw_log_path = LOG_DIR / f"ticket-{ticket_id}.raw.jsonl"
+        self.ticket_dir = LOG_DIR / f"ticket-{ticket_id}"
+        self.ticket_dir.mkdir(parents=True, exist_ok=True)
+
+        self.live_log_path = self.ticket_dir / "live.log"
+        self.report_md_path = self.ticket_dir / "report.md"
+        self.report_html_path = self.ticket_dir / "report.html"
+        self.events_json_path = self.ticket_dir / "events.json"
+        self.raw_log_path = self.ticket_dir / "raw.jsonl"
 
         self.live_file = self.live_log_path.open("w", encoding="utf-8")
         self.raw_file = self.raw_log_path.open("w", encoding="utf-8") if WORKER_LOG_RAW_EVENTS else None
@@ -471,10 +474,10 @@ class LiveReportLogger:
 
     def copy_static_assets(self):
         if CSS_SOURCE_PATH.exists():
-            shutil.copyfile(CSS_SOURCE_PATH, LOG_DIR / "report.css")
+            shutil.copyfile(CSS_SOURCE_PATH, self.ticket_dir / "report.css")
 
         if JS_SOURCE_PATH.exists():
-            shutil.copyfile(JS_SOURCE_PATH, LOG_DIR / "report.js")
+            shutil.copyfile(JS_SOURCE_PATH, self.ticket_dir / "report.js")
 
     def close(self):
         self.write_events_json()
