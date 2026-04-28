@@ -2,30 +2,9 @@
 @inject ApiClient Api
 @inject NavigationManager Nav
 
-<h2>Proyectos</h2>
-
-<div class="card">
-    <h3>Nuevo Proyecto</h3>
-    @if (_error is not null)
-    {
-        <div class="alert alert-error">@_error</div>
-    }
-    <div class="form-row">
-        <div class="form-group">
-            <label>Nombre</label>
-            <input type="text" @bind="_name" placeholder="Mi pipeline de IA" />
-        </div>
-        <div class="form-group">
-            <label>Descripcion</label>
-            <input type="text" @bind="_desc" placeholder="Pipeline que genera texto e imagen" />
-        </div>
-    </div>
-    <div class="form-group">
-        <label>Contexto del proyecto</label>
-        <textarea @bind="_context" rows="3" placeholder="Ej: Este proyecto genera contenido para una marca de mascotas llamada 'PetWorld'. El tono debe ser amigable, cercano y dirigido a duenos de perros y gatos. Las imagenes deben incluir mascotas felices."></textarea>
-        <span class="text-sm text-muted">Este contexto se inyecta automaticamente en todos los modulos del proyecto.</span>
-    </div>
-    <button class="btn btn-primary" @onclick="Create" disabled="@_loading">Crear Proyecto</button>
+<div class="projects-page-header">
+    <h2>Proyectos</h2>
+    <button class="btn btn-primary" @onclick="OpenCreateModal">+ Crear nuevo</button>
 </div>
 
 @if (_projects.Count > 0)
@@ -59,13 +38,21 @@
                 else
                 {
                     <div class="project-card-body" @onclick="() => GoTo(p.Id)">
+                        <div class="project-card-avatar">@(p.Name.Length > 0 ? p.Name[0].ToString().ToUpper() : "P")</div>
                         <div class="project-card-title">@p.Name</div>
-                        <div class="project-card-desc">@(p.Description ?? "Sin descripcion")</div>
+                        <div class="project-card-desc">@(p.Description ?? "Sin descripción")</div>
                         @if (!string.IsNullOrEmpty(p.Context))
                         {
-                            <div class="project-card-context">@Truncate(p.Context, 80)</div>
+                            <div class="project-card-context">@Truncate(p.Context, 90)</div>
                         }
-                        <div class="project-card-date">@p.CreatedAt.ToString("dd MMM yyyy")</div>
+                        <div class="project-card-meta">
+                            <span title="Creado el @p.CreatedAt.ToString("dd MMM yyyy")">
+                                &#x1F4C5; @p.CreatedAt.ToString("dd MMM yyyy")
+                            </span>
+                            <span title="Última actualización">
+                                &#x1F504; @RelativeTime(p.UpdatedAt)
+                            </span>
+                        </div>
                     </div>
                     <div class="project-card-actions">
                         <button class="project-action-btn action-edit" @onclick="() => StartEdit(p)" title="Editar">&#x270E;</button>
@@ -79,7 +66,50 @@
 }
 else if (!_loading)
 {
-    <p class="text-muted">No hay proyectos creados.</p>
+    <div class="projects-empty">
+        <div class="projects-empty-icon">&#x1F4C1;</div>
+        <p>No hay proyectos creados todavía.</p>
+        <button class="btn btn-primary" @onclick="OpenCreateModal">+ Crear tu primer proyecto</button>
+    </div>
+}
+
+@if (_showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseCreateModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <span style="font-size:1.1rem; font-weight:600;">Nuevo Proyecto</span>
+                <button class="modal-close-btn" @onclick="CloseCreateModal" title="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error">@_error</div>
+                }
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input type="text" @bind="_name" placeholder="Mi pipeline de IA" />
+                    </div>
+                    <div class="form-group">
+                        <label>Descripción</label>
+                        <input type="text" @bind="_desc" placeholder="Pipeline que genera texto e imagen" />
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Contexto del proyecto</label>
+                    <textarea @bind="_context" rows="4" placeholder="Ej: Este proyecto genera contenido para una marca de mascotas llamada 'PetWorld'. El tono debe ser amigable, cercano y dirigido a dueños de perros y gatos. Las imágenes deben incluir mascotas felices."></textarea>
+                    <span class="text-sm text-muted">Este contexto se inyecta automáticamente en todos los módulos del proyecto.</span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="CloseCreateModal">Cancelar</button>
+                <button class="btn btn-primary" @onclick="Create" disabled="@_loading">
+                    @(_loading ? "Creando..." : "Crear Proyecto")
+                </button>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
@@ -87,6 +117,7 @@ else if (!_loading)
     private bool _loading;
     private string? _error;
 
+    private bool _showCreateModal;
     private string _name = "";
     private string _desc = "";
     private string _context = "";
@@ -109,19 +140,46 @@ else if (!_loading)
         _loading = false;
     }
 
+    private void OpenCreateModal()
+    {
+        _error = null;
+        _name = "";
+        _desc = "";
+        _context = "";
+        _showCreateModal = true;
+    }
+
+    private void CloseCreateModal()
+    {
+        _showCreateModal = false;
+        _error = null;
+        _name = ""; _desc = ""; _context = "";
+    }
+
     private async Task Create()
     {
-        _error = null; _loading = true;
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            _error = "El nombre del proyecto es obligatorio.";
+            return;
+        }
+        _loading = true;
         try
         {
             var (ok, error) = await Api.CreateProjectAsync(new CreateProjectRequest(
-                _name,
-                string.IsNullOrWhiteSpace(_desc) ? null : _desc,
-                string.IsNullOrWhiteSpace(_context) ? null : _context));
-            if (ok) { _name = ""; _desc = ""; _context = ""; await Load(); }
+                _name.Trim(),
+                string.IsNullOrWhiteSpace(_desc) ? null : _desc.Trim(),
+                string.IsNullOrWhiteSpace(_context) ? null : _context.Trim()));
+            if (ok)
+            {
+                _showCreateModal = false;
+                _name = ""; _desc = ""; _context = "";
+                await Load();
+            }
             else _error = error;
         }
-        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        catch (Exception ex) { _error = $"Error de conexión: {ex.Message}"; }
         _loading = false;
     }
 
@@ -168,5 +226,17 @@ else if (!_loading)
     {
         if (string.IsNullOrEmpty(text)) return "-";
         return text.Length <= max ? text : text[..max] + "...";
+    }
+
+    private static string RelativeTime(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt.ToUniversalTime();
+        if (diff.TotalSeconds < 0) return "ahora mismo";   // fecha futura / desfase de reloj
+        if (diff.TotalMinutes < 1) return "ahora mismo";
+        if (diff.TotalMinutes < 60) return $"hace {(int)diff.TotalMinutes} min";
+        if (diff.TotalHours < 24) return $"hace {(int)diff.TotalHours}h";
+        if (diff.TotalDays < 7) return $"hace {(int)diff.TotalDays}d";
+        if (diff.TotalDays < 30) return $"hace {(int)(diff.TotalDays / 7)} sem";
+        return dt.ToString("dd MMM yyyy");
     }
 }
