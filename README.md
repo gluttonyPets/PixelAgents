@@ -663,6 +663,7 @@ Estado actual relevante:
 - `ProjectModule` no conserva orden ni ramas; la ejecucion depende de
   `ModuleConnection`.
 - `StepExecution` no conserva orden; se vincula a `ProjectModuleId`.
+
 - No se detectan proyectos de tests en el repo.
 
 ## Comandos Utiles

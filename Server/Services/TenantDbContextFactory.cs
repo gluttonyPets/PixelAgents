@@ -141,6 +141,7 @@ namespace Server.Services
             RunSafe(ctx, @"ALTER TABLE ""OrchestratorOutputs"" ADD COLUMN IF NOT EXISTS ""DataType"" varchar(50) NOT NULL DEFAULT 'text'", log);
 
             // Rules table: injected into system prompt of AI calls, seeded per tenant.
+
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""Rules"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
