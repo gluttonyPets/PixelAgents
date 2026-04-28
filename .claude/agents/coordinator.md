@@ -65,6 +65,8 @@ Siempre reporta:
 - Si hay bloqueo, actualiza la tarea a Blocked y explica el motivo.
 - No marques Done sin aprobación humana.
 - No hagas merge a develop ni master sin aprobación humana.
+- La descripción/definición original de la tarea no se toca nunca.
+- No escribas resúmenes tipo `IMPLEMENTADO ...` en la descripción; ese contenido va siempre a comentarios de Discusión.
 - Una tarea en Review no se considera cerrada: si el humano añade comentarios con correcciones en la tarea o subtarea, reanuda el trabajo.
 - Cuando entren correcciones por comentarios en Review, vuelve la tarea o subtarea a In Progress, aplica los cambios, documenta la respuesta en comentarios y devuélvela a Review.
 - Si el worker te proporciona un `Session ID` de Claude previo, úsalo como referencia del contexto anterior para reconstruir el plan y las decisiones antes de corregir.

@@ -91,6 +91,7 @@ MAX_ASSISTANT_TEXT_CHARS = int(os.environ.get("MAX_ASSISTANT_TEXT_CHARS", "9000"
 
 CLAUDE_SESSION_MARKER_PREFIX = "[CLAUDE_SESSION]"
 CLAUDE_RESOLVED_MARKER_PREFIX = "[CLAUDE_RESOLVED]"
+CLAUDE_SUMMARY_MARKER_PREFIX = "[CLAUDE_SUMMARY]"
 
 
 # =========================
@@ -501,9 +502,61 @@ def build_ticket_update_values(ticket: dict[str, Any], ticket_id: int, status_id
         update_values[key] = value
 
     update_values["id"] = int(ticket_id)
-    update_values["status"] = str(status_id)
+    update_values["status"] = int(status_id)
+
+    project_id = ticket.get("projectId", PROJECT_ID)
+    try:
+        update_values["projectId"] = int(project_id)
+    except Exception:
+        update_values["projectId"] = PROJECT_ID
 
     return update_values
+
+
+def update_ticket_fields(ticket_id: int, values: dict[str, Any], ticket: dict[str, Any] | None = None):
+    ticket = ticket or get_ticket(ticket_id)
+    if not ticket:
+        print(
+            f"[ERROR] Could not read ticket {ticket_id} before updating fields.",
+            flush=True,
+        )
+        return None
+
+    project_id = ticket.get("projectId", PROJECT_ID)
+    try:
+        project_id = int(project_id)
+    except Exception:
+        project_id = PROJECT_ID
+
+    normalized_values = dict(values)
+    normalized_values.setdefault("id", int(ticket_id))
+    normalized_values.setdefault("projectId", project_id)
+
+    attempts = [
+        ("id+values", {
+            "id": int(ticket_id),
+            "values": normalized_values,
+        }),
+        ("values", {
+            "values": normalized_values,
+        }),
+        ("flat", normalized_values),
+    ]
+
+    for label, params in attempts:
+        print(
+            f"[INFO] Updating ticket {ticket_id} using payload={label}",
+            flush=True,
+        )
+        result = rpc("leantime.rpc.tickets.updateTicket", params)
+        if result is not None:
+            return result
+
+    print(
+        f"[ERROR] All updateTicket payload variants failed for ticket {ticket_id}.",
+        flush=True,
+    )
+    return None
 
 
 def update_ticket_status(ticket_id: int, status_id: int):
@@ -516,37 +569,20 @@ def update_ticket_status(ticket_id: int, status_id: int):
         return None
 
     update_values = build_ticket_update_values(ticket, ticket_id, status_id)
-    attempts = [
-        ("minimal", {
-            "id": int(ticket_id),
-            "status": str(status_id),
-        }),
-        ("minimal-values", {
-            "values": {
-                "id": int(ticket_id),
-                "status": str(status_id),
-            },
-        }),
-        ("sanitized-full", update_values),
-        ("sanitized-full-values", {
-            "values": update_values,
-        }),
+
+    status_attempts = [
+        {"status": int(status_id)},
+        {"status": int(status_id), "projectId": int(update_values.get("projectId", PROJECT_ID))},
     ]
 
-    for label, params in attempts:
-        print(
-            f"[INFO] Updating ticket {ticket_id} to status {status_id} using payload={label}",
-            flush=True,
-        )
-        result = rpc("leantime.rpc.tickets.updateTicket", params)
+    for values in status_attempts:
+        result = update_ticket_fields(ticket_id, values, ticket=ticket)
         if result is not None:
             return result
 
-    print(
-        f"[ERROR] All updateTicket payload variants failed for ticket {ticket_id}.",
-        flush=True,
-    )
-    return None
+    # Last resort: reuse the sanitized ticket payload, but only after the
+    # status-specific payloads fail.
+    return update_ticket_fields(ticket_id, update_values, ticket=ticket)
 
 
 def normalize_comments_payload(result: Any) -> list[dict[str, Any]]:
@@ -592,12 +628,18 @@ def get_ticket_comments(ticket_id: int) -> list[dict[str, Any]]:
 
 
 def add_ticket_comment(ticket_id: int, comment: str, comment_parent: str = "") -> Any:
-    return rpc("leantime.rpc.comments.addComment", {
+    result = rpc("leantime.rpc.comments.addComment", {
         "moduleId": int(ticket_id),
         "commentModule": "tickets",
         "comment": comment,
         "commentParent": str(comment_parent or ""),
     })
+    if result is None:
+        print(
+            f"[ERROR] Could not add discussion comment for ticket {ticket_id}.",
+            flush=True,
+        )
+    return result
 
 
 def is_session_marker_comment(comment: dict[str, Any]) -> bool:
@@ -618,6 +660,16 @@ def is_resolved_marker_comment(comment: dict[str, Any]) -> bool:
         or ""
     ).strip()
     return body.startswith(CLAUDE_RESOLVED_MARKER_PREFIX)
+
+
+def is_summary_marker_comment(comment: dict[str, Any]) -> bool:
+    body = str(
+        comment.get("comment")
+        or comment.get("content")
+        or comment.get("description")
+        or ""
+    ).strip()
+    return body.startswith(CLAUDE_SUMMARY_MARKER_PREFIX)
 
 
 def extract_session_id_from_marker_comment(comment: dict[str, Any]) -> str:
@@ -658,6 +710,7 @@ def get_review_relevant_comments(ticket_id: int) -> list[dict[str, Any]]:
         for comment in get_ticket_comments(ticket_id)
         if not is_session_marker_comment(comment)
         and not is_resolved_marker_comment(comment)
+        and not is_summary_marker_comment(comment)
     ]
 
 
@@ -688,6 +741,58 @@ def sync_ticket_session_marker(ticket_id: int, session_id: str) -> None:
         "Etiqueta técnica para reanudar o reconstruir el contexto de Claude."
     )
     add_ticket_comment(ticket_id, marker_comment)
+
+
+def sync_ticket_summary_comment(
+    ticket_id: int,
+    final_result: str,
+    session_id: str = "",
+) -> None:
+    summary = str(final_result or "").strip()
+    if not summary:
+        return
+
+    comments = get_ticket_comments(ticket_id)
+    for comment in comments:
+        body = str(
+            comment.get("comment")
+            or comment.get("content")
+            or comment.get("description")
+            or ""
+        ).strip()
+        if not body.startswith(CLAUDE_SUMMARY_MARKER_PREFIX):
+            continue
+        if summary in body:
+            return
+
+    marker_comment = (
+        f"{CLAUDE_SUMMARY_MARKER_PREFIX}"
+        + (f" session_id={session_id}" if session_id else "")
+        + "\n"
+        + summary
+    )
+    add_ticket_comment(ticket_id, marker_comment)
+
+
+def restore_ticket_description_if_changed(
+    ticket_id: int,
+    original_description: str,
+) -> None:
+    current_ticket = get_ticket(ticket_id)
+    if not current_ticket:
+        return
+
+    current_description = str(current_ticket.get("description", "") or "")
+    if current_description == str(original_description or ""):
+        return
+
+    print(
+        f"[WARN] Restoring immutable description for ticket {ticket_id}.",
+        flush=True,
+    )
+    update_ticket_fields(ticket_id, {
+        "description": str(original_description or ""),
+    }, ticket=current_ticket)
 
 
 def has_resolution_reply(
@@ -984,6 +1089,8 @@ Reglas obligatorias:
   - riesgos
   - decisiones pendientes
   - siguiente paso
+- La descripción/definición original de la tarea es inmutable: nunca la edites, nunca la sustituyas por un resumen y nunca escribas "IMPLEMENTADO ..." ahí.
+- Todo resumen de progreso, implementación, rama, commit, validación o corrección debe ir en comentarios de la sección Discusión, no en la descripción.
 - No marques la tarea principal como Done sin aprobación humana.
 - Puedes hacer commits automáticamente SOLO en ramas feature/*, fix/* o hotfix/*.
 - Debes subir automáticamente la rama de trabajo para que el usuario pueda verla desde otro equipo.
@@ -1585,7 +1692,7 @@ async def run_claude_sdk_for_task_async(
     trigger: str = "ready",
     review_comments: list[dict[str, Any]] | None = None,
     previous_session_id: str = "",
-) -> tuple[bool, str]:
+) -> tuple[bool, str, str]:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
     prompt = build_prompt(
@@ -1661,7 +1768,7 @@ async def run_claude_sdk_for_task_async(
         logger.finish(ok)
         logger.close()
 
-    return ok, logger.session_id
+    return ok, logger.session_id, logger.stats.final_result
 
 
 def run_claude_for_task(
@@ -1669,7 +1776,7 @@ def run_claude_for_task(
     trigger: str = "ready",
     review_comments: list[dict[str, Any]] | None = None,
     previous_session_id: str = "",
-) -> tuple[bool, str]:
+) -> tuple[bool, str, str]:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
 
@@ -1692,12 +1799,13 @@ def run_claude_for_task(
             f"[ERROR] Claude SDK runner crashed for ticket {ticket_id}: {e}",
             flush=True,
         )
-        return False, ""
+        return False, "", ""
 
 
 def process_ready_task(task: dict[str, Any], state: dict[str, Any]) -> None:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
+    original_description = str(task.get("description", "") or "")
     processed = {
         int(task_id)
         for task_id in state.get("processed_ready_tasks", [])
@@ -1728,7 +1836,7 @@ def process_ready_task(task: dict[str, Any], state: dict[str, Any]) -> None:
         )
         return
 
-    ok, session_id = run_claude_for_task(task, trigger="ready")
+    ok, session_id, final_result = run_claude_for_task(task, trigger="ready")
 
     processed.add(ticket_id)
     state["processed_ready_tasks"] = sorted(processed)
@@ -1743,6 +1851,26 @@ def process_ready_task(task: dict[str, Any], state: dict[str, Any]) -> None:
         ticket_sessions[str(ticket_id)] = session_id
         sync_ticket_session_marker(ticket_id, session_id)
 
+    restore_ticket_description_if_changed(ticket_id, original_description)
+
+    if ok:
+        sync_ticket_summary_comment(ticket_id, final_result, session_id=session_id)
+
+        refreshed_ticket = get_ticket(ticket_id)
+        current_status = None
+        if refreshed_ticket:
+            try:
+                current_status = int(refreshed_ticket.get("status", -1))
+            except Exception:
+                current_status = None
+
+        if current_status in {READY_STATUS_ID, IN_PROGRESS_STATUS_ID}:
+            print(
+                f"[INFO] Ticket {ticket_id} finished without Review status. Moving it to Review.",
+                flush=True,
+            )
+            update_ticket_status(ticket_id, REVIEW_STATUS_ID)
+
     save_worker_state(state)
 
     if not ok:
@@ -1755,6 +1883,7 @@ def process_ready_task(task: dict[str, Any], state: dict[str, Any]) -> None:
 def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) -> None:
     ticket_id = int(task["id"])
     headline = task.get("headline", "")
+    original_description = str(task.get("description", "") or "")
     comments = get_review_relevant_comments(ticket_id)
     latest_signature = latest_comment_signature(comments)
 
@@ -1811,7 +1940,7 @@ def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) ->
         )
         return
 
-    ok, session_id = run_claude_for_task(
+    ok, session_id, final_result = run_claude_for_task(
         task,
         trigger="review_feedback",
         review_comments=pending_comments,
@@ -1827,7 +1956,10 @@ def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) ->
         ticket_sessions[str(ticket_id)] = session_id
         sync_ticket_session_marker(ticket_id, session_id)
 
+    restore_ticket_description_if_changed(ticket_id, original_description)
+
     if ok:
+        sync_ticket_summary_comment(ticket_id, final_result, session_id=session_id)
         acknowledge_resolved_review_comments(ticket_id, pending_comments)
 
     save_worker_state(state)
