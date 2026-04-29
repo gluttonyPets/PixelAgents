@@ -5,7 +5,7 @@ namespace Server.Services.Ai;
 
 /// <summary>
 /// Builds and manages the runtime execution graph from ProjectModules and ModuleConnections.
-/// Replaces all branch logic, InputMapping, sceneInputs, templateInputs, etc.
+/// Replaces all branch logic, sceneInputs, templateInputs, etc.
 /// </summary>
 public class ExecutionGraph
 {
@@ -76,6 +76,7 @@ public class ExecutionGraph
                 SourcePortId = conn.FromPort,
                 TargetNode = toNode,
                 TargetPortId = conn.ToPort,
+                Format = string.IsNullOrWhiteSpace(conn.Format) ? null : conn.Format,
             };
             outputPort.Connections.Add(portConn);
             inputPort.Connections.Add(portConn);
@@ -91,21 +92,30 @@ public class ExecutionGraph
         return graph;
     }
 
-    /// <summary>Returns all nodes that are Pending and have all inputs satisfied.</summary>
+    /// <summary>Marks initial runnable nodes. Only Start modules may run without inputs.</summary>
+    public void MarkInitialReadyNodes()
+    {
+        foreach (var node in Nodes.Values.Where(n => n.Status == NodeStatus.Pending && n.CanStartWithoutInputs))
+            node.Status = NodeStatus.Ready;
+    }
+
+    /// <summary>Returns all nodes explicitly marked Ready.</summary>
     public List<ModuleNode> GetReadyNodes()
     {
         return Nodes.Values
-            .Where(n => n.Status == NodeStatus.Pending && n.AllInputsSatisfied)
+            .Where(n => n.Status == NodeStatus.Ready)
             .ToList();
     }
 
     /// <summary>
-    /// After a node completes, resolve its output ports and deliver data to downstream input ports.
+    /// After a node completes, deliver data to downstream input ports and mark
+    /// only satisfied downstream modules as Ready.
     /// </summary>
-    public void PropagateOutputs(ModuleNode completedNode)
+    public void CompleteNodeAndPrepareDownstream(ModuleNode completedNode)
     {
         PortDataResolver.ResolveOutputPorts(completedNode);
 
+        var touchedTargets = new HashSet<ModuleNode>();
         foreach (var outputPort in completedNode.OutputPorts)
         {
             if (outputPort.Data is null) continue;
@@ -115,8 +125,24 @@ public class ExecutionGraph
                 var targetPort = conn.TargetNode.InputPorts
                     .FirstOrDefault(p => p.PortId == conn.TargetPortId);
                 targetPort?.ReceivedData.Add(outputPort.Data);
+                touchedTargets.Add(conn.TargetNode);
             }
         }
+
+        foreach (var target in touchedTargets)
+            MarkReadyIfSatisfied(target);
+    }
+
+    public void MarkReadyIfSatisfied(ModuleNode node)
+    {
+        if (node.Status == NodeStatus.Pending && node.CanBecomeReady)
+            node.Status = NodeStatus.Ready;
+    }
+
+    public void RefreshReadyNodes()
+    {
+        foreach (var node in Nodes.Values)
+            MarkReadyIfSatisfied(node);
     }
 
     /// <summary>Mark a failed node and cascade failure to all unreachable downstream nodes.</summary>

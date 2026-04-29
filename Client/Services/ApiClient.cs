@@ -280,31 +280,9 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
-    public async Task<(bool Ok, string? Error)> ReorderModulesAsync(Guid projectId, ReorderModulesRequest req)
-    {
-        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/modules/reorder", req);
-        if (resp.IsSuccessStatusCode) return (true, null);
-        return (false, await ReadErrorAsync(resp));
-    }
-
-    public async Task<(bool Ok, string? Error)> SwapStepOrderAsync(Guid projectId, Guid moduleIdA, Guid moduleIdB)
-    {
-        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/modules/swap",
-            new { ModuleIdA = moduleIdA, ModuleIdB = moduleIdB });
-        if (resp.IsSuccessStatusCode) return (true, null);
-        return (false, await ReadErrorAsync(resp));
-    }
-
     public async Task<(bool Ok, string? Error)> DeleteProjectModuleAsync(Guid projectId, Guid id)
     {
         var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/modules/{id}");
-        if (resp.IsSuccessStatusCode) return (true, null);
-        return (false, await ReadErrorAsync(resp));
-    }
-
-    public async Task<(bool Ok, string? Error)> DeleteBranchAsync(Guid projectId, string branchId)
-    {
-        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/branches/{branchId}");
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }
@@ -342,12 +320,12 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ExecutionLogResponse>>();
     }
 
-    public async Task<(bool Ok, string? Error)> RetryFromStepAsync(
-        Guid executionId, int stepOrder, string? comment)
+    public async Task<(bool Ok, string? Error)> RetryFromModuleAsync(
+        Guid executionId, Guid projectModuleId, string? comment)
     {
         var resp = await SendAsync(HttpMethod.Post,
-            $"/api/executions/{executionId}/retry-from-step",
-            new RetryFromStepRequest(stepOrder, comment));
+            $"/api/executions/{executionId}/retry-from-module",
+            new RetryFromModuleRequest(projectModuleId, comment));
         if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
             return (false, await ReadErrorAsync(resp));

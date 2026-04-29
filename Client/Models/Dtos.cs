@@ -10,7 +10,7 @@ public record AuthResponse(string Email, Guid AccountId, string? DbName);
 
 // ── ApiKey ──
 public record CreateApiKeyRequest(string Name, string ProviderType, string Key);
-public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime CreatedAt);
+public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime CreatedAt, DateTime UpdatedAt, int ModulesCount);
 
 // ── Rule ──
 public record CreateRuleRequest(string Title, string Content, bool IsActive = true, int SortOrder = 0);
@@ -42,31 +42,29 @@ public record ProjectDetailResponse(
 }
 
 // ── ProjectModule ──
-public record AddProjectModuleRequest(Guid AiModuleId, int StepOrder, string? StepName, string? InputMapping, string? Configuration, string BranchId = "main", int? BranchFromStep = null);
-public record UpdateProjectModuleRequest(int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive);
-public record ReorderModuleEntry(Guid ModuleId, int StepOrder, string? InputMapping);
-public record ReorderModulesRequest(List<ReorderModuleEntry> Entries, string? GraphLayout);
+public record AddProjectModuleRequest(Guid AiModuleId, string? StepName, string? Configuration);
+public record UpdateProjectModuleRequest(string? StepName, string? Configuration, bool IsActive);
 public record ProjectModuleResponse(
     Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
-    int StepOrder, string? StepName, string? InputMapping, string? Configuration, bool IsActive,
-    string BranchId, int? BranchFromStep, double PosX = 0, double PosY = 0,
+    string? StepName, string? Configuration, bool IsActive,
+    double PosX = 0, double PosY = 0,
     List<OrchestratorOutputResponse>? OrchestratorOutputs = null);
 
 // ── ModuleConnection ──
-public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
+public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort, string? Format = null);
 public record SaveGraphRequest(List<NodePositionEntry> Positions, List<ConnectionEntry> Connections, List<SceneCountEntry>? SceneCounts = null, List<ModuleConfigEntry>? ModuleConfigs = null);
 public record ModuleConfigEntry(Guid ModuleId, string Key, string Value);
 public record NodePositionEntry(Guid ModuleId, double PosX, double PosY);
-public record ConnectionEntry(Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort);
+public record ConnectionEntry(Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort, string? Format = null);
 public record SceneCountEntry(Guid ModuleId, int SceneCount);
 
 // ── Pipeline execution visualization ──
 public record StepExecutionStatus(Guid ProjectModuleId, string Status);
-public record ExecutionLogEntry(string Level, string Message, int? StepOrder, string? StepName, DateTime Timestamp);
+public record ExecutionLogEntry(string Level, string Message, Guid? ProjectModuleId, string? ModuleName, DateTime Timestamp);
 
 // ── Execution ──
 public record ExecuteProjectRequest(string? UserInput, bool UseHistory = true);
-public record RetryFromStepRequest(int StepOrder, string? Comment);
+public record RetryFromModuleRequest(Guid ProjectModuleId, string? Comment);
 public record OrchestratorReviewRequest(bool Approved, string? Comment);
 public record CheckpointReviewRequest(bool Approved);
 
@@ -84,7 +82,7 @@ public record ExecutionDetailResponse(
     decimal TotalEstimatedCost,
     List<StepExecutionResponse> Steps);
 public record StepExecutionResponse(
-    Guid Id, Guid ProjectModuleId, string ModuleName, string ModuleType, int StepOrder,
+    Guid Id, Guid ProjectModuleId, string ModuleName, string ModuleType,
     string Status, string? InputData, string? OutputData, string? ErrorMessage,
     DateTime CreatedAt, DateTime? CompletedAt, decimal EstimatedCost,
     List<ExecutionFileResponse> Files);
@@ -94,7 +92,7 @@ public record ExecutionFileResponse(
 
 // ── Execution Logs ──
 public record ExecutionLogResponse(
-    string Level, string Message, int? StepOrder, string? StepName, DateTime Timestamp);
+    string Level, string Message, Guid? ProjectModuleId, string? ModuleName, DateTime Timestamp);
 
 // ── Orchestrator Task Progress ──
 public record OrchestratorTaskProgressEntry(

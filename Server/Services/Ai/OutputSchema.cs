@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Server.Services.Ai
@@ -56,82 +55,57 @@ namespace Server.Services.Ai
 
     public static class OutputSchemaHelper
     {
-        private const string TextOutputInstruction = @"IMPORTANTE: Debes responder SIEMPRE en JSON valido con esta estructura exacta (sin texto adicional fuera del JSON):
-{
-  ""title"": ""titulo corto y atractivo para publicacion"",
-  ""content"": ""tu respuesta completa aqui"",
-  ""summary"": ""resumen de 1-2 frases"",
-  ""items"": [
-    { ""content"": ""elemento individual para el siguiente paso"", ""label"": ""etiqueta descriptiva"" }
-  ],
-  ""metadata"": {}
-}
-
-Reglas:
-- ""title"" es obligatorio: crea un titulo corto, atractivo y descriptivo (maximo 100 caracteres). Este titulo se usara como descripcion de la publicacion en redes sociales.
-- ""content"" es obligatorio: pon aqui tu respuesta principal completa.
-- ""summary"" es obligatorio: resumen breve del contenido.
-- Si generas multiples elementos (slides, prompts de imagen, secciones, partes), pon cada uno como un objeto en ""items"" con su ""content"" y ""label"".
-- Si solo generas un texto unico sin partes, deja ""items"" como array vacio [].
-- ""metadata"" es para informacion extra relevante (caption, hashtags, tono, etc). Dejalo como {} si no aplica.
-- NO incluyas texto fuera del JSON. Solo el JSON.
+        private const string TextContentRules = @"Reglas generales:
 - NUNCA hagas preguntas al usuario. Si hay varias opciones posibles, elige la mejor opcion tu mismo y da directamente la respuesta final.
 - Se concreto y directo. No pidas aclaraciones, no ofrezcas alternativas, no preguntes preferencias. Decide y responde.
 
-Reglas de formato (OBLIGATORIAS para todos los valores de texto):
+Reglas de formato (OBLIGATORIAS):
 - NO uses emojis ni emoticonos de ningun tipo (ni unicode ni shortcodes).
-- NO uses formato markdown: nada de **, *, #, ##, ```, >, -, ni listas con viñetas.
-- NO uses saltos de linea (\n) dentro de los valores de texto. Escribe todo en una sola linea continua.
+- NO uses formato markdown: nada de **, *, #, ##, ```, >, -, ni listas con vinetas.
 - NO uses caracteres especiales decorativos: flechas, bullets, guiones largos, comillas tipograficas, simbolos como estrella, circulo, rombo, triangulo, flecha, etc.
 - Usa solo texto plano ASCII basico: letras, numeros, puntuacion normal (. , ; : ! ? ' "").
-- Si necesitas separar ideas, usa comas o puntos, nunca saltos de linea ni listas.
 
 Reglas de contenido (OBLIGATORIAS):
 - NUNCA menciones marcas, empresas, productos, servicios o nombres comerciales de ningun tipo. Esto incluye marcas de tecnologia, redes sociales, ropa, alimentacion, automocion, software, hardware, o cualquier otro sector.
 - Si necesitas referirte a un concepto asociado a una marca, usa una descripcion generica. Por ejemplo: en vez de ""Instagram"" di ""redes sociales"", en vez de ""iPhone"" di ""telefono movil"", en vez de ""Photoshop"" di ""editor de imagenes"".
-- Esta regla aplica a todos los campos: title, content, summary, items y metadata.
 - No uses nombres de marcas ni siquiera como referencia, comparacion, ejemplo o metafora.";
 
-        public static string GetTextOutputInstruction() => TextOutputInstruction;
+        /// <summary>
+        /// Normas de comportamiento, formato ASCII y veto de marcas que se
+        /// inyectan en el system prompt de todo modulo de texto. Antes vivian
+        /// dentro del esquema JSON obligatorio; se mantienen ahora como reglas
+        /// independientes al usar texto plano.
+        /// </summary>
+        public static string GetTextContentRules() => TextContentRules;
 
         /// <summary>
-        /// Parsea la respuesta JSON de un módulo de texto a StepOutput.
-        /// Si falla el parseo, crea un StepOutput con el texto raw como content (fallback).
+        /// Instruccion para el provider de imagen cuando se piden N imagenes
+        /// desde un prompt compuesto (p.ej. un carrousel de N slides): cada
+        /// imagen debe representar UNA parte del prompt en orden, no repetir
+        /// todas las partes en cada variante.
         /// </summary>
-        public static StepOutput ParseTextOutput(string rawText, Dictionary<string, object>? providerMetadata = null)
+        public static string GetMultiImageDisaggregationRule(int n) =>
+            $"IMPORTANTE: Vas a generar {n} imagenes a partir de este prompt. " +
+            $"El prompt describe {n} partes, slides o secciones distintas. " +
+            "Genera UNA imagen por cada parte, en orden: la imagen 1 representa " +
+            "la primera parte del prompt, la imagen 2 la segunda, etc. NO dibujes " +
+            "todas las partes en cada imagen. Cada imagen debe ser visualmente " +
+            "independiente y autocontenida, mostrando solo su parte correspondiente.";
+
+        /// <summary>
+        /// Instruccion que obliga al modelo de texto a producir su salida como
+        /// un unico objeto JSON que cumpla los contratos declarados en las
+        /// aristas salientes del grafo. Cuando hay varios contratos distintos
+        /// (varias conexiones de salida con diferentes formatos) se listan para
+        /// que el modelo sintetice uno compatible con todos.
+        /// </summary>
+        public static string GetOutputFormatInstruction(IReadOnlyList<string> formats)
         {
-            // Intentar extraer JSON si viene envuelto en markdown code blocks
-            var jsonText = ExtractJson(rawText);
-
-            try
-            {
-                var parsed = JsonSerializer.Deserialize<StepOutput>(jsonText, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
-
-                if (parsed is not null && !string.IsNullOrWhiteSpace(parsed.Content))
-                {
-                    parsed.Type = "text";
-                    if (providerMetadata is not null)
-                    {
-                        foreach (var kv in providerMetadata)
-                            parsed.Metadata[kv.Key] = kv.Value;
-                    }
-                    return parsed;
-                }
-            }
-            catch { }
-
-            // Fallback: texto no estructurado
-            var fallback = new StepOutput
-            {
-                Type = "text",
-                Content = rawText,
-                Summary = rawText.Length > 100 ? rawText[..100] + "..." : rawText,
-                Metadata = providerMetadata ?? new()
-            };
-            return fallback;
+            if (formats.Count == 0) return "";
+            var body = formats.Count == 1
+                ? formats[0]
+                : string.Join("\n\n---\n\n", formats.Select((f, i) => $"Contrato {i + 1}:\n{f}"));
+            return "IMPORTANTE: Tu respuesta debe ser EXCLUSIVAMENTE un JSON valido (sin texto fuera del JSON, sin markdown) que cumpla el siguiente contrato acordado con el modulo siguiente del pipeline. Respeta los nombres de las claves, los tipos y la forma del esquema; rellena con contenido concreto los campos descritos.\n\n" + body;
         }
 
         /// <summary>

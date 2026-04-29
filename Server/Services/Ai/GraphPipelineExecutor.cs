@@ -96,9 +96,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await db.SaveChangesAsync(ct);
 
         var connections = await LoadConnectionsAsync(projectId, db, ct);
-        var modules = project.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder).ToList();
+        var modules = project.ProjectModules.Where(pm => pm.IsActive).ToList();
         var graph = BuildGraph(projectId, execution, userInput, modules, connections);
         graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
+        graph.MarkInitialReadyNodes();
         var previousSummaryContext = useHistory
             ? await BuildPreviousSummaryContextAsync(db, projectId, executionId, ct)
             : null;
@@ -124,7 +125,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         var execution = await LoadExecutionAsync(executionId, db, ct);
         var project = await LoadProjectAsync(execution.ProjectId, db, ct);
-        var modules = project.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder).ToList();
+        var modules = project.ProjectModules.Where(pm => pm.IsActive).ToList();
         var target = modules.FirstOrDefault(pm => pm.Id == moduleId)
             ?? throw new InvalidOperationException("Modulo no encontrado para reintento");
 
@@ -139,7 +140,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
             .Where(s => s.ExecutionId == executionId)
             .ToListAsync(ct);
 
-        var stepsToRemove = oldSteps.Where(s => s.StepOrder >= target.StepOrder).ToList();
+        var affectedModuleIds = graph.GetDownstreamNodes(target.Id);
+        affectedModuleIds.Add(target.Id);
+        var stepsToRemove = oldSteps.Where(s => affectedModuleIds.Contains(s.ProjectModuleId)).ToList();
         foreach (var step in stepsToRemove)
         {
             db.ExecutionFiles.RemoveRange(step.Files);
@@ -148,17 +151,17 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         execution.Status = "Running";
         execution.CompletedAt = null;
-        execution.PausedAtStepOrder = null;
+        execution.PausedAtModuleId = null;
         execution.PausedStepData = null;
-        execution.PausedBranches = null;
         await db.SaveChangesAsync(ct);
 
         var filePaths = await LoadExecutionFilePathsAsync(executionId, db, ct);
         foreach (var step in oldSteps.Except(stepsToRemove).Where(s => s.Status == "Completed"))
             RestoreCompletedStep(graph, step);
+        graph.RefreshReadyNodes();
 
         await _logger.LogAsync(project.Id, executionId, "info",
-            $"Reintentando desde modulo {target.StepOrder}: {target.StepName ?? target.AiModule.Name}");
+            $"Reintentando desde modulo {target.StepName ?? target.AiModule.Name}", target.Id, target.StepName ?? target.AiModule.Name);
 
         var previousSummaryContext = await BuildPreviousSummaryContextAsync(db, project.Id, executionId, ct);
         if (!string.IsNullOrWhiteSpace(comment))
@@ -168,46 +171,16 @@ public class GraphPipelineExecutor : IPipelineExecutor
         return execution;
     }
 
-    public async Task<ProjectExecution> RetryFromStepAsync(
-        Guid executionId,
-        int fromStepOrder,
-        string? comment,
-        UserDbContext db,
-        string tenantDbName,
-        CancellationToken ct = default)
-    {
-        var execution = await LoadExecutionAsync(executionId, db, ct);
-        var moduleId = await db.ProjectModules
-            .Where(pm => pm.ProjectId == execution.ProjectId && pm.StepOrder == fromStepOrder)
-            .Select(pm => (Guid?)pm.Id)
-            .FirstOrDefaultAsync(ct);
-
-        if (moduleId is null)
-            throw new InvalidOperationException($"No existe el paso {fromStepOrder}");
-
-        return await RetryFromModuleAsync(executionId, moduleId.Value, comment, db, tenantDbName, ct);
-    }
-
     public Task<ProjectExecution> ResumeFromInteractionAsync(
         Guid executionId,
         string responseText,
         UserDbContext db,
         string tenantDbName,
         CancellationToken ct = default) =>
-        ResumeInteractionInternalAsync(executionId, branchId: null, responseText, db, tenantDbName, ct);
-
-    public Task<ProjectExecution> ResumeFromBranchInteractionAsync(
-        Guid executionId,
-        string branchId,
-        string responseText,
-        UserDbContext db,
-        string tenantDbName,
-        CancellationToken ct = default) =>
-        ResumeInteractionInternalAsync(executionId, branchId, responseText, db, tenantDbName, ct);
+        ResumeInteractionInternalAsync(executionId, responseText, db, tenantDbName, ct);
 
     private async Task<ProjectExecution> ResumeInteractionInternalAsync(
         Guid executionId,
-        string? branchId,
         string responseText,
         UserDbContext db,
         string tenantDbName,
@@ -218,7 +191,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var (execution, project, graph, workspacePath, filePaths, state) =
             await RebuildPausedGraphAsync(executionId, db, ct);
 
-        var node = ResolvePausedInteractionNode(graph, state, branchId);
+        var node = ResolvePausedInteractionNode(graph, state);
         if (node is null)
             throw new InvalidOperationException("Modulo pausado no encontrado");
 
@@ -245,9 +218,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
             step.CompletedAt = DateTime.UtcNow;
         }
 
-        graph.PropagateOutputs(node);
+        graph.CompleteNodeAndPrepareDownstream(node);
         execution.Status = "Running";
-        execution.PausedAtStepOrder = null;
+        execution.PausedAtModuleId = null;
         execution.PausedStepData = null;
         await db.SaveChangesAsync(ct);
 
@@ -258,18 +231,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     private static ModuleNode? ResolvePausedInteractionNode(
         ExecutionGraph graph,
-        PausedGraphState state,
-        string? branchId)
+        PausedGraphState state)
     {
-        if (!string.IsNullOrWhiteSpace(branchId))
-        {
-            var match = graph.Nodes.Values.FirstOrDefault(n =>
-                n.Status == NodeStatus.Paused
-                && n.ModuleType == "Interaction"
-                && string.Equals(n.ProjectModule.BranchId, branchId, StringComparison.OrdinalIgnoreCase));
-            if (match is not null) return match;
-        }
-
         if (graph.Nodes.TryGetValue(state.PausedModuleId, out var stateNode)
             && stateNode.Status == NodeStatus.Paused)
             return stateNode;
@@ -299,7 +262,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             node.Status = NodeStatus.Failed;
             execution.Status = "Cancelled";
             execution.CompletedAt = DateTime.UtcNow;
-            execution.PausedAtStepOrder = null;
+            execution.PausedAtModuleId = null;
             execution.PausedStepData = null;
             if (step is not null)
             {
@@ -320,9 +283,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
             step.CompletedAt = DateTime.UtcNow;
         }
 
-        graph.PropagateOutputs(node);
+        graph.CompleteNodeAndPrepareDownstream(node);
         execution.Status = "Running";
-        execution.PausedAtStepOrder = null;
+        execution.PausedAtModuleId = null;
         execution.PausedStepData = null;
         await db.SaveChangesAsync(ct);
 
@@ -363,9 +326,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         execution.Status = "Cancelled";
         execution.CompletedAt = DateTime.UtcNow;
-        execution.PausedAtStepOrder = null;
+        execution.PausedAtModuleId = null;
         execution.PausedStepData = null;
-        execution.PausedBranches = null;
 
         foreach (var step in execution.StepExecutions.Where(s => s.Status.StartsWith("Waiting")))
         {
@@ -456,7 +418,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 var skipped = IsNodeSkipped(node, out var rawSkipValue);
                 await _logger.LogAsync(project.Id, execution.Id, "info",
                     $"[SkipCheck] {node.ProjectModule.StepName ?? node.AiModule.Name}: skipped={skipped} raw='{rawSkipValue ?? "(null)"}'",
-                    node.ProjectModule.StepOrder,
+                    node.ModuleId,
                     node.ProjectModule.StepName ?? node.AiModule.Name);
                 if (skipped)
                 {
@@ -470,14 +432,14 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Running");
                 await _logger.LogAsync(project.Id, execution.Id, "step-start",
                     $"{node.ProjectModule.StepName ?? node.AiModule.Name} ({node.AiModule.ProviderType}/{GetEffectiveModelName(node.ProjectModule)})",
-                    node.ProjectModule.StepOrder,
+                    node.ModuleId,
                     node.ProjectModule.StepName ?? node.AiModule.Name);
 
                 if (IsSceneModule(node) && HasMeaningfulJsonPayload(node.StepExecution.InputData))
                 {
                     await _logger.LogAsync(project.Id, execution.Id, "input",
                         FormatPayloadForLog(node.StepExecution.InputData),
-                        node.ProjectModule.StepOrder,
+                        node.ModuleId,
                         node.ProjectModule.StepName ?? node.AiModule.Name);
                 }
 
@@ -580,7 +542,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var configJson = publishPlatform == "tiktok" ? ctx.Project.TikTokConfig : ctx.Project.InstagramConfig;
 
         if (string.IsNullOrWhiteSpace(configJson))
-            return ModuleResult.Failed($"Paso {node.ProjectModule.StepOrder}: El proyecto no tiene configuracion de Buffer para {platformLabel}");
+            return ModuleResult.Failed($"Modulo {stepName}: El proyecto no tiene configuracion de Buffer para {platformLabel}");
 
         BufferConfig bufferConfig;
         try
@@ -590,13 +552,13 @@ public class GraphPipelineExecutor : IPipelineExecutor
         }
         catch (Exception ex)
         {
-            return ModuleResult.Failed($"Paso {node.ProjectModule.StepOrder}: Configuracion de Buffer ({platformLabel}) invalida: {ex.Message}");
+            return ModuleResult.Failed($"Modulo {stepName}: Configuracion de Buffer ({platformLabel}) invalida: {ex.Message}");
         }
 
         if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
-            return ModuleResult.Failed($"Paso {node.ProjectModule.StepOrder}: API Key de Buffer no configurada");
+            return ModuleResult.Failed($"Modulo {stepName}: API Key de Buffer no configurada");
         if (string.IsNullOrWhiteSpace(bufferConfig.ChannelId))
-            return ModuleResult.Failed($"Paso {node.ProjectModule.StepOrder}: Channel ID de Buffer no configurado");
+            return ModuleResult.Failed($"Modulo {stepName}: Channel ID de Buffer no configurado");
 
         var captionTemplate = ctx.GetConfig("caption", "{previous_output}");
         if (string.IsNullOrWhiteSpace(captionTemplate))
@@ -609,7 +571,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var titleForCaption = captionSource.Title ?? "";
         var caption = captionTemplate
             .Replace("{previous_output}", titleForCaption)
-            .Replace("{step_number}", node.ProjectModule.StepOrder.ToString());
+            .Replace("{step_number}", stepName)
+            .Replace("{module_name}", stepName);
 
         var mediaSource = FindPublishMediaSource(node);
         var classifiedMedia = BuildClassifiedMedia(ctx, mediaSource.Files, mediaSource.Output);
@@ -626,7 +589,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             publishType = "post";
             await _logger.LogAsync(projectId, executionId, "warning",
                 "publishType cambiado de 'reel' a 'post' porque solo hay imagenes (reel requiere video)",
-                node.ProjectModule.StepOrder, stepName);
+                node.ModuleId, stepName);
         }
 
         TikTokPublishOptions? tikTokOptions = publishPlatform == "tiktok"
@@ -639,7 +602,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             $"Publicando via Buffer ({platformLabel})... Caption: {Truncate(caption, 100)} | " +
             $"Media: {classifiedMedia.Count} ({classifiedMedia.Count(m => m.Kind == MediaKind.Image)} img, {classifiedMedia.Count(m => m.Kind == MediaKind.Video)} vid) | " +
             $"PublishType: {publishType}",
-            node.ProjectModule.StepOrder, stepName);
+            node.ModuleId, stepName);
 
         BufferPublishResult bufferResult;
         try
@@ -662,23 +625,23 @@ public class GraphPipelineExecutor : IPipelineExecutor
         {
             await _logger.LogAsync(projectId, executionId, "error",
                 $"Error publicando via Buffer: {ex.Message}",
-                node.ProjectModule.StepOrder, stepName);
+                node.ModuleId, stepName);
             return ModuleResult.Failed($"Error Buffer: {ex.Message}");
         }
 
         await _logger.LogAsync(projectId, executionId, "info",
             $"[Buffer API] Request:\n{bufferResult.RequestBody}",
-            node.ProjectModule.StepOrder, stepName);
+            node.ModuleId, stepName);
         await _logger.LogAsync(projectId, executionId,
             bufferResult.IsSuccess ? "info" : "error",
             $"[Buffer API] Status: {bufferResult.StatusCode} | Response:\n{bufferResult.ResponseBody}",
-            node.ProjectModule.StepOrder, stepName);
+            node.ModuleId, stepName);
 
         if (!bufferResult.IsSuccess)
         {
             await _logger.LogAsync(projectId, executionId, "error",
                 $"Error publicando via Buffer: {bufferResult.Error}",
-                node.ProjectModule.StepOrder, stepName);
+                node.ModuleId, stepName);
             return ModuleResult.Failed($"Error Buffer: {bufferResult.Error}");
         }
 
@@ -715,7 +678,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         await _logger.LogAsync(projectId, executionId, "success",
             $"Publicado via Buffer ({platformLabel}, post {bufferResult.PostId}) - {scheduleLine}",
-            node.ProjectModule.StepOrder, stepName);
+            node.ModuleId, stepName);
 
         return ModuleResult.Completed(publishOutput);
     }
@@ -774,8 +737,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var queue = new Queue<ModuleNode>(
             node.InputPorts
                 .SelectMany(p => p.Connections)
-                .Select(c => c.SourceNode)
-                .OrderByDescending(n => n.ProjectModule.StepOrder));
+                .Select(c => c.SourceNode));
 
         while (queue.Count > 0)
         {
@@ -787,8 +749,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
             foreach (var upstream in current.InputPorts
                          .SelectMany(p => p.Connections)
-                         .Select(c => c.SourceNode)
-                         .OrderByDescending(n => n.ProjectModule.StepOrder))
+                         .Select(c => c.SourceNode))
             {
                 queue.Enqueue(upstream);
             }
@@ -922,10 +883,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var node = ctx.Node;
         await _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "info",
             $"[Publish Debug] MediaSource={mediaSource.Source}, " +
-            $"SourceStep={(mediaSource.Node is null ? "(input)" : mediaSource.Node.ProjectModule.StepOrder)}, " +
+            $"SourceModule={(mediaSource.Node is null ? "(input)" : mediaSource.Node.ProjectModule.StepName ?? mediaSource.Node.AiModule.Name)}, " +
             $"Files={mediaSource.Files.Count}, PublicUrls={classifiedMedia.Count}, " +
             $"Types=[{string.Join(",", mediaSource.Files.Select(f => f.ContentType))}]",
-            node.ProjectModule.StepOrder, stepName);
+            node.ModuleId, stepName);
 
         if (classifiedMedia.Count == 0 || !string.IsNullOrWhiteSpace(GetMetadataString(mediaSource.Output, "videoUrl")))
             return;
@@ -942,7 +903,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 $"La URL base del servidor ({(string.IsNullOrEmpty(serverBaseUrl) ? "(vacia)" : serverBaseUrl)}) " +
                 "no es accesible desde internet. Buffer no podra descargar las imagenes. " +
                 "Configura BaseUrl o AllowedOrigin con tu IP/dominio publico.",
-                node.ProjectModule.StepOrder, stepName);
+                node.ModuleId, stepName);
         }
     }
 
@@ -972,19 +933,19 @@ public class GraphPipelineExecutor : IPipelineExecutor
             step.Status = "Completed";
             step.OutputData = JsonSerializer.Serialize(node.Output, JsonOptions);
             step.CompletedAt = DateTime.UtcNow;
-            graph.PropagateOutputs(node);
+            graph.CompleteNodeAndPrepareDownstream(node);
             await db.SaveChangesAsync(ct);
             await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Completed");
             if (IsSceneModule(node))
             {
                 await _logger.LogAsync(project.Id, execution.Id, "output",
                     FormatOutputForLog(node.Output),
-                    node.ProjectModule.StepOrder,
+                    node.ModuleId,
                     node.ProjectModule.StepName ?? node.AiModule.Name);
             }
             await _logger.LogAsync(project.Id, execution.Id, "success",
                 $"{node.ProjectModule.StepName ?? node.AiModule.Name} completado",
-                node.ProjectModule.StepOrder,
+                node.ModuleId,
                 node.ProjectModule.StepName ?? node.AiModule.Name);
             return;
         }
@@ -1008,7 +969,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await db.SaveChangesAsync(ct);
         await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Failed");
         await _logger.LogAsync(project.Id, execution.Id, "error", step.ErrorMessage,
-            node.ProjectModule.StepOrder,
+            node.ModuleId,
             node.ProjectModule.StepName ?? node.AiModule.Name);
     }
 
@@ -1024,14 +985,13 @@ public class GraphPipelineExecutor : IPipelineExecutor
     {
         var paused = graph.Nodes.Values
             .Where(n => n.Status == NodeStatus.Paused)
-            .OrderBy(n => n.ProjectModule.StepOrder)
             .ToList();
 
         if (paused.Count > 0)
         {
             var pausedNode = paused[0];
             execution.Status = pausedNode.ModuleType == "Checkpoint" ? "WaitingForCheckpoint" : "WaitingForInput";
-            execution.PausedAtStepOrder = pausedNode.ProjectModule.StepOrder;
+            execution.PausedAtModuleId = pausedNode.ModuleId;
             execution.PausedStepData = JsonSerializer.Serialize(PausedGraphState.Capture(graph, pausedNode.ModuleId), JsonOptions);
             await db.SaveChangesAsync(ct);
 
@@ -1101,7 +1061,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         execution.Status = "Failed";
         execution.CompletedAt = DateTime.UtcNow;
-        execution.PausedAtStepOrder = null;
+        execution.PausedAtModuleId = null;
         execution.PausedStepData = null;
         execution.TotalEstimatedCost = graph.Nodes.Values.Sum(n => n.Cost);
 
@@ -1109,7 +1069,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Failed");
         await _logger.LogAsync(project.Id, execution.Id, "error",
             step?.ErrorMessage ?? $"Error enviando interaccion: {ex.Message}",
-            node.ProjectModule.StepOrder,
+            node.ModuleId,
             node.ProjectModule.StepName ?? node.AiModule.Name);
     }
 
@@ -1125,7 +1085,6 @@ public class GraphPipelineExecutor : IPipelineExecutor
             Id = Guid.NewGuid(),
             ExecutionId = execution.Id,
             ProjectModuleId = node.ModuleId,
-            StepOrder = node.ProjectModule.StepOrder,
             Status = "Running",
             InputData = JsonSerializer.Serialize(DescribeInputs(node, config), JsonOptions),
             CreatedAt = DateTime.UtcNow,
@@ -1147,7 +1106,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (result.ProducedFiles.Count == 0 || node.StepExecution is null)
             return;
 
-        var stepDirName = $"step_{node.ProjectModule.StepOrder}";
+        var stepDirName = $"module_{node.ModuleId:N}";
         var stepDir = Path.Combine(workspacePath, stepDirName);
         Directory.CreateDirectory(stepDir);
 
@@ -1221,13 +1180,11 @@ public class GraphPipelineExecutor : IPipelineExecutor
             var config = JsonSerializer.Deserialize<TelegramConfig>(project.TelegramConfig, JsonOptions)
                 ?? throw new InvalidOperationException("Configuracion de Telegram invalida");
 
-            var branchId = node.ProjectModule.BranchId;
             var existing = await _coreDb.TelegramCorrelations
                 .FirstOrDefaultAsync(c =>
                     !c.IsResolved
                     && c.ExecutionId == execution.Id
-                    && c.StepOrder == node.ProjectModule.StepOrder
-                    && c.BranchId == branchId,
+                    && c.ProjectModuleId == node.ModuleId,
                     ct);
             if (existing is not null)
                 return;
@@ -1239,10 +1196,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
             {
                 Id = Guid.NewGuid(),
                 ExecutionId = execution.Id,
+                ProjectModuleId = node.ModuleId,
                 TenantDbName = tenantDbName,
                 ChatId = config.ChatId,
-                StepOrder = node.ProjectModule.StepOrder,
-                BranchId = branchId,
                 CreatedAt = DateTime.UtcNow,
                 IsResolved = false,
                 State = hasActive ? "queued" : "waiting",
@@ -1282,9 +1238,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
         {
             Id = Guid.NewGuid(),
             ExecutionId = execution.Id,
+            ProjectModuleId = node.ModuleId,
             TenantDbName = tenantDbName,
             RecipientNumber = waConfig.RecipientNumber,
-            StepOrder = node.ProjectModule.StepOrder,
             CreatedAt = DateTime.UtcNow,
             IsResolved = false,
         });
@@ -1305,7 +1261,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             ?? throw new InvalidOperationException("Estado de grafo pausado invalido");
 
         var project = await LoadProjectAsync(execution.ProjectId, db, ct);
-        var modules = project.ProjectModules.Where(pm => pm.IsActive).OrderBy(pm => pm.StepOrder).ToList();
+        var modules = project.ProjectModules.Where(pm => pm.IsActive).ToList();
         var connections = await LoadConnectionsAsync(project.Id, db, ct);
         var graph = BuildGraph(project.Id, execution, state.UserInput ?? execution.UserInput, modules, connections);
         graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
@@ -1384,7 +1340,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             node.Output = JsonSerializer.Deserialize<StepOutput>(step.OutputData, JsonOptions);
             node.Status = NodeStatus.Completed;
             if (node.Output is not null)
-                graph.PropagateOutputs(node);
+                graph.CompleteNodeAndPrepareDownstream(node);
         }
         catch { /* ignore malformed historical output */ }
     }
@@ -1654,14 +1610,14 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (!string.IsNullOrWhiteSpace(userInput))
             parts.Add($"Input: {Truncate(userInput, 160)}");
 
-        foreach (var node in graph.Nodes.Values.OrderBy(n => n.ProjectModule.StepOrder))
+        foreach (var node in graph.Nodes.Values)
         {
             if (node.Output is null) continue;
             var value = node.Output.Summary ?? node.Output.Content;
             if (!string.IsNullOrWhiteSpace(value))
-                parts.Add($"{node.ProjectModule.StepOrder}. {node.ModuleType}: {Truncate(value, 160)}");
+                parts.Add($"{node.ProjectModule.StepName ?? node.AiModule.Name} ({node.ModuleType}): {Truncate(value, 160)}");
             else if (node.Output.Files.Count > 0)
-                parts.Add($"{node.ProjectModule.StepOrder}. {node.ModuleType}: {node.Output.Files.Count} archivo(s)");
+                parts.Add($"{node.ProjectModule.StepName ?? node.AiModule.Name} ({node.ModuleType}): {node.Output.Files.Count} archivo(s)");
         }
 
         return string.Join(" | ", parts.Take(8));
@@ -1733,9 +1689,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Skipped");
         await _logger.LogAsync(project.Id, execution.Id, "info",
             $"{stepName} saltado (skipped=true), pasando datos al siguiente modulo",
-            node.ProjectModule.StepOrder, stepName);
+            node.ModuleId, stepName);
 
-        graph.PropagateOutputs(node);
+        graph.CompleteNodeAndPrepareDownstream(node);
     }
 
     /// <summary>

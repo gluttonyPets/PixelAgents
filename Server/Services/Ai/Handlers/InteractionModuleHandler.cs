@@ -21,7 +21,8 @@ public class InteractionModuleHandler : IModuleHandler
 
         var message = template
             .Replace("{previous_output}", previousText ?? "")
-            .Replace("{step_number}", ctx.Node.ProjectModule.StepOrder.ToString())
+            .Replace("{step_number}", ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name)
+            .Replace("{module_name}", ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name)
             .Trim();
 
         if (string.IsNullOrWhiteSpace(message))

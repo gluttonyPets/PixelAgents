@@ -8,12 +8,10 @@ namespace Server.Models
         public string WorkspacePath { get; set; } = default!;
         public DateTime CreatedAt { get; set; }
         public DateTime? CompletedAt { get; set; }
-        public int? PausedAtStepOrder { get; set; }
+        public Guid? PausedAtModuleId { get; set; }
         public string? PausedStepData { get; set; }
         public string? UserInput { get; set; }
         public decimal TotalEstimatedCost { get; set; }
-        /// <summary>JSON array of branches currently paused waiting for user input.</summary>
-        public string? PausedBranches { get; set; }
         /// <summary>AI-generated summary of what was produced in this execution, used as context for future runs.</summary>
         public string? ExecutionSummary { get; set; }
 

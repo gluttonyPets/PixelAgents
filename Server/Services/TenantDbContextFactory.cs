@@ -39,7 +39,8 @@ namespace Server.Services
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"InstagramConfig\" text", log);
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"TikTokConfig\" text", log);
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"GraphLayout\" text", log);
-            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtStepOrder\" integer", log);
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtModuleId\" uuid", log);
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" DROP COLUMN IF EXISTS \"PausedAtStepOrder\"", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"UserInput\" text", log);
             RunSafe(ctx, @"
@@ -48,14 +49,22 @@ namespace Server.Services
                     ""ExecutionId"" uuid NOT NULL REFERENCES ""ProjectExecutions""(""Id"") ON DELETE CASCADE,
                     ""Level"" varchar(20) NOT NULL DEFAULT 'info',
                     ""Message"" text NOT NULL,
-                    ""StepOrder"" integer,
-                    ""StepName"" varchar(200),
+                    ""ProjectModuleId"" uuid,
+                    ""ModuleName"" varchar(200),
                     ""Timestamp"" timestamp with time zone NOT NULL
                 )", log);
+            RunSafe(ctx, @"ALTER TABLE ""ExecutionLogs"" ADD COLUMN IF NOT EXISTS ""ProjectModuleId"" uuid", log);
+            RunSafe(ctx, @"ALTER TABLE ""ExecutionLogs"" ADD COLUMN IF NOT EXISTS ""ModuleName"" varchar(200)", log);
+            RunSafe(ctx, @"ALTER TABLE ""ExecutionLogs"" DROP COLUMN IF EXISTS ""StepOrder""", log);
+            RunSafe(ctx, @"ALTER TABLE ""ExecutionLogs"" DROP COLUMN IF EXISTS ""StepName""", log);
             RunSafe(ctx, @"
                 CREATE INDEX IF NOT EXISTS ""IX_ExecutionLogs_ExecutionId""
                 ON ""ExecutionLogs"" (""ExecutionId"")", log);
             RunSafe(ctx, "ALTER TABLE \"StepExecutions\" ADD COLUMN IF NOT EXISTS \"EstimatedCost\" numeric NOT NULL DEFAULT 0", log);
+            RunSafe(ctx, @"DROP INDEX IF EXISTS ""IX_StepExecutions_ExecutionId_StepOrder""", log);
+            RunSafe(ctx, @"ALTER TABLE ""StepExecutions"" DROP COLUMN IF EXISTS ""StepOrder""", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_StepExecutions_ExecutionId"" ON ""StepExecutions"" (""ExecutionId"")", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_StepExecutions_ExecutionId_ProjectModuleId"" ON ""StepExecutions"" (""ExecutionId"", ""ProjectModuleId"")", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"TotalEstimatedCost\" numeric NOT NULL DEFAULT 0", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"ExecutionSummary\" text", log);
             RunSafe(ctx, @"
@@ -84,15 +93,16 @@ namespace Server.Services
                     ""CreatedAt"" timestamp with time zone NOT NULL
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleFiles_AiModuleId"" ON ""ModuleFiles"" (""AiModuleId"")", log);
-
-            // ── Pipeline branching support ──
-            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100) NOT NULL DEFAULT 'main'", log);
-            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""BranchFromStep"" integer", log);
-            // ── Branch interaction pause support ──
-            RunSafe(ctx, @"ALTER TABLE ""ProjectExecutions"" ADD COLUMN IF NOT EXISTS ""PausedBranches"" text", log);
+            // Drop legacy graph fields that are no longer part of the source model
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" DROP COLUMN IF EXISTS ""BranchId""", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" DROP COLUMN IF EXISTS ""BranchFromStep""", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectExecutions"" DROP COLUMN IF EXISTS ""PausedBranches""", log);
 
             RunSafe(ctx, @"DROP INDEX IF EXISTS ""IX_ProjectModules_ProjectId_StepOrder""", log);
-            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectModules_ProjectId_BranchId_StepOrder"" ON ""ProjectModules"" (""ProjectId"", ""BranchId"", ""StepOrder"")", log);
+            RunSafe(ctx, @"DROP INDEX IF EXISTS ""IX_ProjectModules_ProjectId_BranchId_StepOrder""", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" DROP COLUMN IF EXISTS ""StepOrder""", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" DROP COLUMN IF EXISTS ""InputMapping""", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectModules_ProjectId"" ON ""ProjectModules"" (""ProjectId"")", log);
 
             // ── Visual graph: node positions on ProjectModule ──
             RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosX"" double precision NOT NULL DEFAULT 0", log);
@@ -112,6 +122,7 @@ namespace Server.Services
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ProjectId"" ON ""ModuleConnections"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_FromModuleId_FromPort"" ON ""ModuleConnections"" (""FromModuleId"", ""FromPort"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleConnections_ToModuleId_ToPort"" ON ""ModuleConnections"" (""ToModuleId"", ""ToPort"")", log);
+            RunSafe(ctx, @"ALTER TABLE ""ModuleConnections"" ADD COLUMN IF NOT EXISTS ""Format"" text", log);
 
             // ── Orchestrator outputs table ──
             RunSafe(ctx, @"
@@ -128,8 +139,6 @@ namespace Server.Services
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_OrchestratorOutputs_ProjectModuleId"" ON ""OrchestratorOutputs"" (""ProjectModuleId"")", log);
             RunSafe(ctx, @"ALTER TABLE ""OrchestratorOutputs"" ADD COLUMN IF NOT EXISTS ""DataType"" varchar(50) NOT NULL DEFAULT 'text'", log);
-
-            // ── Mandatory rules table (tenant-scoped) ──
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""Rules"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,

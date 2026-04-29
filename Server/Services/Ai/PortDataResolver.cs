@@ -73,7 +73,7 @@ public static class PortDataResolver
                 => new PortData
                 {
                     DataType = "text",
-                    TextContent = output.Content ?? string.Join("\n", output.Items.Select(i => i.Content)),
+                    TextContent = BuildFullText(output),
                     Files = output.Files.Count > 0 ? output.Files : null,
                     FullOutput = output,
                     SourcePortId = port.PortId,
@@ -138,11 +138,37 @@ public static class PortDataResolver
             _ => new PortData
             {
                 DataType = "any",
-                TextContent = output.Content,
+                TextContent = BuildFullText(output),
                 Files = output.Files.Count > 0 ? output.Files : null,
                 FullOutput = output,
                 SourcePortId = port.PortId,
             }
         };
+    }
+
+    /// <summary>
+    /// Flatten a StepOutput to plain text for downstream text ports: top-level
+    /// Content followed by every item as "Label: Content". AI providers force
+    /// the JSON schema (title/content/summary/items/metadata) so returning just
+    /// Content would silently drop the slide-by-slide (or prompt-by-prompt)
+    /// detail the model actually produced.
+    /// </summary>
+    private static string BuildFullText(StepOutput output)
+    {
+        var hasContent = !string.IsNullOrWhiteSpace(output.Content);
+
+        if (output.Items.Count == 0)
+            return output.Content ?? string.Empty;
+
+        var itemsText = string.Join("\n\n", output.Items
+            .Where(i => !string.IsNullOrWhiteSpace(i.Content))
+            .Select(i => string.IsNullOrWhiteSpace(i.Label)
+                ? i.Content
+                : $"{i.Label}: {i.Content}"));
+
+        if (string.IsNullOrWhiteSpace(itemsText))
+            return output.Content ?? string.Empty;
+
+        return hasContent ? $"{output.Content}\n\n{itemsText}" : itemsText;
     }
 }

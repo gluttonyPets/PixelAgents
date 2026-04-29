@@ -2,10 +2,22 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject ApiClient Api
 
-<h2>Modulos IA</h2>
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem;">
+    <h2 style="margin:0;">Módulos IA</h2>
+    <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
+        <i class="bi bi-plus-lg"></i> Nuevo módulo
+    </button>
+</div>
 
-<div class="card">
-    <h3>Nuevo Modulo</h3>
+@if (_showCreateModal)
+{
+    <div class="modal-overlay" @onclick="CloseCreateModal">
+        <div class="modal-content" style="max-width:760px; width:95vw;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 style="margin:0; font-size:1.05rem; flex:1;">Nuevo módulo</h3>
+                <button class="btn-icon" @onclick="CloseCreateModal">&#x2715;</button>
+            </div>
+            <div class="modal-body">
     @if (_error is not null)
     {
         <div class="alert alert-error">@_error</div>
@@ -634,7 +646,10 @@
 
         <button class="btn btn-primary mt-1" @onclick="Create" disabled="@_loading">Crear Modulo</button>
     }
-</div>
+            </div>
+        </div>
+    </div>
+}
 
 @if (_modules.Count > 0)
 {
@@ -646,7 +661,8 @@
                 <h3 class="module-group-title">@group.Label</h3>
                 <span class="badge badge-@(group.Type.ToLower()) module-group-count">@group.Modules.Count</span>
             </div>
-            <table>
+            <div class="table-wrap">
+            <table class="data-table">
                 <thead>
                     <tr>
                         <th>Nombre</th>
@@ -697,7 +713,7 @@
                             </select>
                         }
                     </td>
-                    <td style="display: flex; gap: 0.25rem;">
+                    <td class="cell-actions">
                         <button class="btn btn-sm" @onclick="() => ToggleEditConfig(m)">Configurar</button>
                         @if (IsBuiltInSystemModule(m))
                         {
@@ -1230,12 +1246,20 @@
                     }
                 </tbody>
             </table>
+            </div>
         </div>
     }
 }
-else if (!_loading)
+else
 {
-    <p class="text-muted">No hay modulos creados.</p>
+    <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted, #888);">
+        <div style="font-size:2.5rem; margin-bottom:0.75rem;"><i class="bi bi-boxes"></i></div>
+        <p style="font-size:1rem; margin-bottom:0.5rem;">No tienes módulos creados todavía.</p>
+        <p style="font-size:0.875rem; margin-bottom:1rem;">Crea tu primer módulo para empezar a usarlo en tus proyectos.</p>
+        <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
+            <i class="bi bi-plus-lg"></i> Crear primer módulo
+        </button>
+    </div>
 }
 
 @code {
@@ -1285,7 +1309,22 @@ else if (!_loading)
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];
     private bool _loading;
+    private bool _showCreateModal;
     private string? _error;
+
+    private void CloseCreateModal()
+    {
+        _showCreateModal = false;
+        _error = null;
+        _provider = "";
+        _moduleType = "";
+        _model = "";
+        _name = "";
+        _desc = "";
+        _apiKeyId = "";
+        _createPendingFiles.Clear();
+        ResetConfig();
+    }
 
     // ── Form: basic ──
     private string _provider = "";
@@ -1473,9 +1512,9 @@ else if (!_loading)
         new("o4-mini",          "o4 Mini",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Razonamiento con vision, version compacta.", "200K"),
 
         // ─── OpenAI: Image Generation ───
-        new("gpt-image-1.5",    "GPT Image 1.5",     "OpenAI", ["Image"],       ["image-generation"],                  "Ultimo modelo de generacion de imagenes."),
-        new("gpt-image-1",      "GPT Image 1",       "OpenAI", ["Image"],       ["image-generation"],                  "Generacion de imagenes de alta calidad."),
-        new("gpt-image-1-mini", "GPT Image 1 Mini",  "OpenAI", ["Image"],       ["image-generation"],                  "Generacion de imagenes rapida y economica."),
+        new("gpt-image-1.5",    "GPT Image 1.5",     "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Ultimo modelo de generacion de imagenes. Soporta edicion imagen-a-imagen."),
+        new("gpt-image-1",      "GPT Image 1",       "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion de imagenes de alta calidad. Soporta edicion imagen-a-imagen."),
+        new("gpt-image-1-mini", "GPT Image 1 Mini",  "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion de imagenes rapida y economica. Soporta edicion imagen-a-imagen."),
         new("dall-e-3",         "DALL-E 3",          "OpenAI", ["Image"],       ["image-generation"],                  "Generacion de imagenes con prompts detallados."),
         new("dall-e-2",         "DALL-E 2",          "OpenAI", ["Image"],       ["image-generation","image-editing"],   "Soporta edicion e inpainting."),
 
@@ -1947,6 +1986,7 @@ else if (!_loading)
                 _name = ""; _desc = ""; _model = ""; _apiKeyId = "";
                 ResetConfig();
                 _modules = await Api.GetModulesAsync();
+                _showCreateModal = false;
             }
             else _error = error;
         }

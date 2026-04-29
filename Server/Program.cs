@@ -152,9 +152,9 @@ using (var scope = app.Services.CreateScope())
             CREATE TABLE IF NOT EXISTS ""WhatsAppCorrelations"" (
                 ""Id"" uuid NOT NULL PRIMARY KEY,
                 ""ExecutionId"" uuid NOT NULL,
+                ""ProjectModuleId"" uuid NOT NULL,
                 ""TenantDbName"" varchar(200) NOT NULL,
                 ""RecipientNumber"" varchar(50) NOT NULL,
-                ""StepOrder"" integer NOT NULL,
                 ""CreatedAt"" timestamp with time zone NOT NULL,
                 ""IsResolved"" boolean NOT NULL DEFAULT false
             )");
@@ -166,9 +166,9 @@ using (var scope = app.Services.CreateScope())
             CREATE TABLE IF NOT EXISTS ""TelegramCorrelations"" (
                 ""Id"" uuid NOT NULL PRIMARY KEY,
                 ""ExecutionId"" uuid NOT NULL,
+                ""ProjectModuleId"" uuid NOT NULL,
                 ""TenantDbName"" varchar(200) NOT NULL,
                 ""ChatId"" varchar(50) NOT NULL,
-                ""StepOrder"" integer NOT NULL,
                 ""CreatedAt"" timestamp with time zone NOT NULL,
                 ""IsResolved"" boolean NOT NULL DEFAULT false,
                 ""State"" varchar(50) NOT NULL DEFAULT 'waiting'
@@ -179,11 +179,15 @@ using (var scope = app.Services.CreateScope())
         // Migration: add State column for existing tables
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""State"" varchar(50) NOT NULL DEFAULT 'waiting'");
-        // Migration: add BranchId column for branch-aware interaction
+        // Migration: graph interactions are correlated by module id, never by step order or branch.
         db.Database.ExecuteSqlRaw(@"
-            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100)");
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""ProjectModuleId"" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'");
         db.Database.ExecuteSqlRaw(@"
-            ALTER TABLE ""WhatsAppCorrelations"" ADD COLUMN IF NOT EXISTS ""BranchId"" varchar(100)");
+            ALTER TABLE ""WhatsAppCorrelations"" ADD COLUMN IF NOT EXISTS ""ProjectModuleId"" uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'");
+        db.Database.ExecuteSqlRaw(@"ALTER TABLE ""TelegramCorrelations"" DROP COLUMN IF EXISTS ""StepOrder""");
+        db.Database.ExecuteSqlRaw(@"ALTER TABLE ""TelegramCorrelations"" DROP COLUMN IF EXISTS ""BranchId""");
+        db.Database.ExecuteSqlRaw(@"ALTER TABLE ""WhatsAppCorrelations"" DROP COLUMN IF EXISTS ""StepOrder""");
+        db.Database.ExecuteSqlRaw(@"ALTER TABLE ""WhatsAppCorrelations"" DROP COLUMN IF EXISTS ""BranchId""");
         // Migration: add QueuedMessageData column for interaction queue
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""QueuedMessageData"" text");
@@ -334,7 +338,7 @@ app.MapPost("/api/apikeys", async (
     await db.SaveChangesAsync();
 
     return Results.Created($"/api/apikeys/{apiKey.Id}",
-        new ApiKeyResponse(apiKey.Id, apiKey.Name, apiKey.ProviderType, apiKey.CreatedAt));
+        new ApiKeyResponse(apiKey.Id, apiKey.Name, apiKey.ProviderType, apiKey.CreatedAt, apiKey.UpdatedAt, 0));
 }).RequireAuthorization();
 
 app.MapGet("/api/apikeys", async (
@@ -345,7 +349,9 @@ app.MapGet("/api/apikeys", async (
 
     var keys = await db.ApiKeys
         .OrderByDescending(k => k.CreatedAt)
-        .Select(k => new ApiKeyResponse(k.Id, k.Name, k.ProviderType, k.CreatedAt))
+        .Select(k => new ApiKeyResponse(
+            k.Id, k.Name, k.ProviderType, k.CreatedAt, k.UpdatedAt,
+            k.AiModules.Count))
         .ToListAsync();
 
     return Results.Ok(keys);
@@ -358,10 +364,15 @@ app.MapGet("/api/apikeys/{id}", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    var key = await db.ApiKeys.FindAsync(id);
+    var key = await db.ApiKeys
+        .Where(k => k.Id == id)
+        .Select(k => new ApiKeyResponse(
+            k.Id, k.Name, k.ProviderType, k.CreatedAt, k.UpdatedAt,
+            k.AiModules.Count))
+        .FirstOrDefaultAsync();
     if (key is null) return Results.NotFound();
 
-    return Results.Ok(new ApiKeyResponse(key.Id, key.Name, key.ProviderType, key.CreatedAt));
+    return Results.Ok(key);
 }).RequireAuthorization();
 
 app.MapPut("/api/apikeys/{id}", async (
@@ -380,7 +391,8 @@ app.MapPut("/api/apikeys/{id}", async (
     key.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
-    return Results.Ok(new ApiKeyResponse(key.Id, key.Name, key.ProviderType, key.CreatedAt));
+    var modulesCount = await db.AiModules.CountAsync(m => m.ApiKeyId == key.Id);
+    return Results.Ok(new ApiKeyResponse(key.Id, key.Name, key.ProviderType, key.CreatedAt, key.UpdatedAt, modulesCount));
 }).RequireAuthorization();
 
 app.MapDelete("/api/apikeys/{id}", async (
@@ -846,7 +858,6 @@ app.MapPost("/api/projects", async (
         Id = Guid.NewGuid(),
         ProjectId = project.Id,
         AiModuleId = startAiModule.Id,
-        StepOrder = 0,
         StepName = "Inicio",
         IsActive = true,
         PosX = 60,
@@ -884,7 +895,7 @@ app.MapGet("/api/projects/{id}", async (
     if (db is null) return Results.Unauthorized();
 
     var project = await db.Projects
-        .Include(p => p.ProjectModules.OrderBy(pm => pm.StepOrder))
+        .Include(p => p.ProjectModules)
             .ThenInclude(pm => pm.AiModule)
         .Include(p => p.ProjectModules)
             .ThenInclude(pm => pm.OrchestratorOutputs.OrderBy(o => o.SortOrder))
@@ -919,7 +930,6 @@ app.MapGet("/api/projects/{id}", async (
             Id = Guid.NewGuid(),
             ProjectId = project.Id,
             AiModuleId = startAiModule.Id,
-            StepOrder = 0,
             StepName = "Inicio",
             IsActive = true,
             PosX = 60,
@@ -952,9 +962,9 @@ app.MapGet("/api/projects/{id}", async (
             catch { }
         }
         return new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
-            pm.AiModule.ModuleType, effectiveModel, pm.StepOrder, pm.StepName,
-            pm.InputMapping, pm.Configuration, pm.IsActive,
-            pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY,
+            pm.AiModule.ModuleType, effectiveModel, pm.StepName,
+            pm.Configuration, pm.IsActive,
+            pm.PosX, pm.PosY,
             pm.AiModule.ModuleType == "Orchestrator"
                 ? pm.OrchestratorOutputs.Select(o => new OrchestratorOutputResponse(
                     o.Id, o.OutputKey, o.Label, o.Prompt, o.DataType, o.SortOrder)).ToList()
@@ -963,7 +973,7 @@ app.MapGet("/api/projects/{id}", async (
 
     var connections = await db.ModuleConnections
         .Where(c => c.ProjectId == id)
-        .Select(c => new ModuleConnectionResponse(c.Id, c.FromModuleId, c.FromPort, c.ToModuleId, c.ToPort))
+        .Select(c => new ModuleConnectionResponse(c.Id, c.FromModuleId, c.FromPort, c.ToModuleId, c.ToPort, c.Format))
         .ToListAsync();
 
     return Results.Ok(new ProjectDetailResponse(
@@ -1007,7 +1017,7 @@ app.MapPut("/api/projects/{id}/graph", async (
     return Results.Ok();
 }).RequireAuthorization();
 
-// Save full graph: node positions + connections + recompute StepOrder/InputMapping
+// Save full graph: node positions, connections and module configuration.
 app.MapPut("/api/projects/{projectId}/graph/save", async (
     Guid projectId, SaveGraphRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
@@ -1059,64 +1069,13 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
             FromPort = conn.FromPort,
             ToModuleId = conn.ToModuleId,
             ToPort = conn.ToPort,
+            Format = string.IsNullOrWhiteSpace(conn.Format) ? null : conn.Format,
             CreatedAt = now
         });
         insertedCount++;
     }
     Console.WriteLine($"[SaveGraph] Inserted {insertedCount} connections");
-
-    // 3. Topological sort: derive StepOrder from connections
-    var incomingEdges = moduleIds.ToDictionary(id => id, _ => new List<Guid>());
-    foreach (var conn in req.Connections)
-    {
-        if (moduleIds.Contains(conn.FromModuleId) && moduleIds.Contains(conn.ToModuleId))
-            incomingEdges[conn.ToModuleId].Add(conn.FromModuleId);
-    }
-
-    var outgoingEdges = moduleIds.ToDictionary(id => id, _ => new List<Guid>());
-    foreach (var conn in req.Connections)
-    {
-        if (moduleIds.Contains(conn.FromModuleId) && moduleIds.Contains(conn.ToModuleId))
-            outgoingEdges[conn.FromModuleId].Add(conn.ToModuleId);
-    }
-
-    // Kahn's algorithm
-    var inDegree = moduleIds.ToDictionary(id => id, id => incomingEdges[id].Count);
-    var queue = new Queue<Guid>(moduleIds.Where(id => inDegree[id] == 0));
-    var sorted = new List<Guid>();
-    while (queue.Count > 0)
-    {
-        var current = queue.Dequeue();
-        sorted.Add(current);
-        foreach (var next in outgoingEdges[current])
-        {
-            inDegree[next]--;
-            if (inDegree[next] == 0) queue.Enqueue(next);
-        }
-    }
-    // Append unreachable (cycle or disconnected)
-    foreach (var id in moduleIds)
-        if (!sorted.Contains(id)) sorted.Add(id);
-
-    // 4. Update StepOrder and InputMapping
-    // Temporarily set all to negative to avoid unique constraint violations
-    foreach (var pm in modules)
-    {
-        pm.StepOrder = -(pm.StepOrder + 1000);
-    }
-    await db.SaveChangesAsync();
-
-    for (int i = 0; i < sorted.Count; i++)
-    {
-        var pm = modules.FirstOrDefault(m => m.Id == sorted[i]);
-        if (pm is null) continue;
-        pm.StepOrder = i + 1;
-        pm.UpdatedAt = now;
-
-        // Graph executor uses ModuleConnection directly — no InputMapping needed
-    }
-
-    // 6. Persist scene counts into module Configuration
+    // Persist scene counts into module Configuration
     if (req.SceneCounts is { Count: > 0 })
     {
         foreach (var sc in req.SceneCounts)
@@ -1256,13 +1215,9 @@ app.MapPost("/api/projects/{id}/duplicate", async (
             Id = newId,
             ProjectId = newProject.Id,
             AiModuleId = pm.AiModuleId,
-            StepOrder = pm.StepOrder,
             StepName = pm.StepName,
-            InputMapping = pm.InputMapping,
             Configuration = pm.Configuration,
             IsActive = pm.IsActive,
-            BranchId = pm.BranchId,
-            BranchFromStep = pm.BranchFromStep,
             PosX = pm.PosX,
             PosY = pm.PosY,
             CreatedAt = DateTime.UtcNow,
@@ -1344,23 +1299,16 @@ app.MapPost("/api/projects/{projectId}/modules", async (
             return Results.BadRequest(new { error = "El pipeline ya tiene un modulo de Inicio. Solo puede existir uno." });
     }
 
-    // Always assign next available StepOrder to avoid unique constraint violations
-    var maxOrder = await db.ProjectModules
-        .Where(x => x.ProjectId == projectId && x.BranchId == req.BranchId)
-        .MaxAsync(x => (int?)x.StepOrder) ?? -1;
-    var stepOrder = maxOrder + 1;
-
     var pm = new ProjectModule
     {
         Id = Guid.NewGuid(),
         ProjectId = projectId,
         AiModuleId = req.AiModuleId,
-        StepOrder = stepOrder,
-        BranchId = req.BranchId,
-        BranchFromStep = req.BranchFromStep,
         StepName = req.StepName,
-        InputMapping = req.InputMapping,
-        Configuration = req.Configuration,
+        // Inherit the AiModule's Configuration as the initial pipeline-level
+        // override so per-module defaults (e.g. numberOfImages, n, modelName)
+        // are honored the first time the module is added to a pipeline.
+        Configuration = req.Configuration ?? module.Configuration,
         IsActive = true,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
@@ -1385,9 +1333,8 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     }
     return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
-            module.ModuleType, addEffectiveModel, pm.StepOrder, pm.StepName,
-            pm.InputMapping, pm.Configuration, pm.IsActive,
-            pm.BranchId, pm.BranchFromStep, pm.PosX, pm.PosY));
+            module.ModuleType, addEffectiveModel, pm.StepName,
+            pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/modules/{id}", async (
@@ -1402,9 +1349,7 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
         .FirstOrDefaultAsync(x => x.Id == id && x.ProjectId == projectId);
     if (pm is null) return Results.NotFound();
 
-    pm.StepOrder = req.StepOrder;
     pm.StepName = req.StepName;
-    pm.InputMapping = req.InputMapping;
     pm.Configuration = req.Configuration;
     pm.IsActive = req.IsActive;
     pm.UpdatedAt = DateTime.UtcNow;
@@ -1425,98 +1370,8 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
         catch { }
     }
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
-        pm.AiModule.ModuleType, updateEffectiveModel, pm.StepOrder, pm.StepName,
-        pm.InputMapping, pm.Configuration, pm.IsActive,
-        pm.BranchId, pm.BranchFromStep));
-}).RequireAuthorization();
-
-app.MapDelete("/api/projects/{projectId}/branches/{branchId}", async (
-    Guid projectId, string branchId, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    if (branchId == "main") return Results.BadRequest(new { error = "No se puede eliminar la rama principal" });
-
-    var branchModules = await db.ProjectModules
-        .Where(x => x.ProjectId == projectId && x.BranchId == branchId)
-        .ToListAsync();
-
-    if (branchModules.Count == 0) return Results.NotFound();
-
-    db.ProjectModules.RemoveRange(branchModules);
-    await db.SaveChangesAsync();
-    return Results.Ok();
-}).RequireAuthorization();
-
-app.MapPost("/api/projects/{projectId}/modules/swap", async (
-    Guid projectId, SwapStepOrderRequest req, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var pmA = await db.ProjectModules.FirstOrDefaultAsync(x => x.Id == req.ModuleIdA && x.ProjectId == projectId);
-    var pmB = await db.ProjectModules.FirstOrDefaultAsync(x => x.Id == req.ModuleIdB && x.ProjectId == projectId);
-    if (pmA is null || pmB is null) return Results.NotFound();
-
-    // Swap via temp value to avoid unique constraint violation
-    var now = DateTime.UtcNow;
-    var tempOrder = -1;
-    var orderA = pmA.StepOrder;
-    var orderB = pmB.StepOrder;
-
-    await using var tx = await db.Database.BeginTransactionAsync();
-    // Step 1: Move A to temp
-    await db.Database.ExecuteSqlInterpolatedAsync(
-        $@"UPDATE ""ProjectModules"" SET ""StepOrder"" = {tempOrder}, ""UpdatedAt"" = {now} WHERE ""Id"" = {pmA.Id}");
-    // Step 2: Move B to A's old position
-    await db.Database.ExecuteSqlInterpolatedAsync(
-        $@"UPDATE ""ProjectModules"" SET ""StepOrder"" = {orderA}, ""UpdatedAt"" = {now} WHERE ""Id"" = {pmB.Id}");
-    // Step 3: Move A to B's old position
-    await db.Database.ExecuteSqlInterpolatedAsync(
-        $@"UPDATE ""ProjectModules"" SET ""StepOrder"" = {orderB}, ""UpdatedAt"" = {now} WHERE ""Id"" = {pmA.Id}");
-    await tx.CommitAsync();
-
-    return Results.Ok();
-}).RequireAuthorization();
-
-// Batch reorder modules from visual graph topology
-app.MapPut("/api/projects/{projectId}/modules/reorder", async (
-    Guid projectId, ReorderModulesRequest req, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var modules = await db.ProjectModules
-        .Where(x => x.ProjectId == projectId)
-        .ToListAsync();
-
-    var now = DateTime.UtcNow;
-    foreach (var entry in req.Entries)
-    {
-        var pm = modules.FirstOrDefault(x => x.Id == entry.ModuleId);
-        if (pm is null) continue;
-        pm.StepOrder = entry.StepOrder;
-        pm.InputMapping = entry.InputMapping;
-        pm.UpdatedAt = now;
-    }
-
-    // Also persist the graph layout in the same transaction
-    if (req.GraphLayout is not null)
-    {
-        var project = await db.Projects.FindAsync(projectId);
-        if (project is not null)
-        {
-            project.GraphLayout = req.GraphLayout;
-            project.UpdatedAt = now;
-        }
-    }
-
-    await db.SaveChangesAsync();
-    return Results.Ok();
+        pm.AiModule.ModuleType, updateEffectiveModel, pm.StepName,
+        pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
 }).RequireAuthorization();
 
 app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
@@ -1542,42 +1397,8 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
     if (stepExecutions.Count > 0)
         db.StepExecutions.RemoveRange(stepExecutions);
 
-    var removedOrder = pm.StepOrder;
-    var removedBranch = pm.BranchId;
     db.ProjectModules.Remove(pm);
     await db.SaveChangesAsync();
-
-    // Renumber remaining steps in the SAME branch only
-    var remaining = await db.ProjectModules
-        .Where(x => x.ProjectId == projectId && x.BranchId == removedBranch && x.StepOrder > removedOrder)
-        .OrderBy(x => x.StepOrder)
-        .ToListAsync();
-    foreach (var r in remaining)
-        r.StepOrder--;
-
-    // If we deleted a main-branch step, update BranchFromStep on branches that forked from it or later
-    if (removedBranch == "main")
-    {
-        var branchModules = await db.ProjectModules
-            .Where(x => x.ProjectId == projectId && x.BranchFromStep.HasValue)
-            .ToListAsync();
-        foreach (var bm in branchModules)
-        {
-            if (bm.BranchFromStep == removedOrder)
-            {
-                // Branch forked from deleted step — move fork point up one step
-                bm.BranchFromStep = removedOrder > 1 ? removedOrder - 1 : 1;
-            }
-            else if (bm.BranchFromStep > removedOrder)
-            {
-                // Branch forked from a later step — shift down to match renumbering
-                bm.BranchFromStep--;
-            }
-        }
-    }
-
-    if (remaining.Count > 0 || removedBranch == "main")
-        await db.SaveChangesAsync();
 
     return Results.NoContent();
 }).RequireAuthorization();
@@ -1620,9 +1441,9 @@ app.MapPost("/api/projects/{projectId}/execute", async (
                         .ThenInclude(pm => pm.AiModule)
                 .FirstAsync(e => e.Id == execution.Id);
 
-            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+            var steps = exec.StepExecutions.OrderBy(s => s.CreatedAt).Select(s =>
                 new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType,
                     s.Status, s.InputData, s.OutputData, s.ErrorMessage,
                     s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                     s.Files.Select(f => new ExecutionFileResponse(
@@ -1722,9 +1543,9 @@ app.MapGet("/api/executions/{id}", async (
 
     if (exec is null) return Results.NotFound();
 
-    var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+    var steps = exec.StepExecutions.OrderBy(s => s.CreatedAt).Select(s =>
         new StepExecutionResponse(s.Id, s.ProjectModuleId,
-            s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
+            s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType,
             s.Status, s.InputData, s.OutputData, s.ErrorMessage,
             s.CreatedAt, s.CompletedAt, s.EstimatedCost,
             s.Files.Select(f => new ExecutionFileResponse(
@@ -1748,15 +1569,15 @@ app.MapGet("/api/executions/{executionId}/logs", async (
     var logs = await db.ExecutionLogs
         .Where(l => l.ExecutionId == executionId)
         .OrderBy(l => l.Timestamp)
-        .Select(l => new { l.Level, l.Message, l.StepOrder, l.StepName, l.Timestamp })
+        .Select(l => new { l.Level, l.Message, l.ProjectModuleId, l.ModuleName, l.Timestamp })
         .ToListAsync();
 
     return Results.Ok(logs);
 }).RequireAuthorization();
 
-// Retry execution from a specific step
-app.MapPost("/api/executions/{executionId}/retry-from-step", async (
-    Guid executionId, RetryFromStepRequest req, HttpContext ctx,
+// Retry execution from a specific module and every downstream module.
+app.MapPost("/api/executions/{executionId}/retry-from-module", async (
+    Guid executionId, RetryFromModuleRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
     ExecutionCancellationService cancellation,
     IHubContext<ExecutionHub> hub) =>
@@ -1789,7 +1610,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
             await using var bgDb = bgFactory.Create(tenantDbName);
             var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
-            var execution = await executor.RetryFromStepAsync(executionId, req.StepOrder, req.Comment, bgDb, tenantDbName, ct);
+            var execution = await executor.RetryFromModuleAsync(executionId, req.ProjectModuleId, req.Comment, bgDb, tenantDbName, ct);
 
             var exec = await bgDb.ProjectExecutions
                 .Include(e => e.StepExecutions)
@@ -1799,9 +1620,9 @@ app.MapPost("/api/executions/{executionId}/retry-from-step", async (
                         .ThenInclude(pm => pm.AiModule)
                 .FirstAsync(e => e.Id == execution.Id);
 
-            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+            var steps = exec.StepExecutions.OrderBy(s => s.CreatedAt).Select(s =>
                 new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType,
                     s.Status, s.InputData, s.OutputData, s.ErrorMessage,
                     s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                     s.Files.Select(f => new ExecutionFileResponse(
@@ -1884,9 +1705,9 @@ app.MapPost("/api/executions/{executionId}/orchestrator-review", async (
                         .ThenInclude(pm => pm.AiModule)
                 .FirstAsync(e => e.Id == execution.Id);
 
-            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+            var steps = exec.StepExecutions.OrderBy(s => s.CreatedAt).Select(s =>
                 new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType,
                     s.Status, s.InputData, s.OutputData, s.ErrorMessage,
                     s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                     s.Files.Select(f => new ExecutionFileResponse(
@@ -1960,9 +1781,9 @@ app.MapPost("/api/executions/{executionId}/checkpoint-review", async (
                         .ThenInclude(pm => pm.AiModule)
                 .FirstAsync(e => e.Id == execution.Id);
 
-            var steps = exec.StepExecutions.OrderBy(s => s.StepOrder).Select(s =>
+            var steps = exec.StepExecutions.OrderBy(s => s.CreatedAt).Select(s =>
                 new StepExecutionResponse(s.Id, s.ProjectModuleId,
-                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType, s.StepOrder,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType,
                     s.Status, s.InputData, s.OutputData, s.ErrorMessage,
                     s.CreatedAt, s.CompletedAt, s.EstimatedCost,
                     s.Files.Select(f => new ExecutionFileResponse(
@@ -2361,11 +2182,7 @@ app.MapPost("/api/webhooks/whatsapp", async (
 
     try
     {
-        if (!string.IsNullOrWhiteSpace(correlation.BranchId))
-            await executor.ResumeFromBranchInteractionAsync(
-                correlation.ExecutionId, correlation.BranchId, text, db, correlation.TenantDbName);
-        else
-            await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
+        await executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
         correlation.IsResolved = true;
         await coreDb.SaveChangesAsync();
     }

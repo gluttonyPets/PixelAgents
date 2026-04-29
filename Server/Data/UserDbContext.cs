@@ -72,9 +72,7 @@ namespace Server.Data
             modelBuilder.Entity<ProjectModule>(e =>
             {
                 e.HasKey(x => x.Id);
-                e.Property(x => x.BranchId).IsRequired().HasMaxLength(100).HasDefaultValue("main");
                 e.Property(x => x.StepName).HasMaxLength(200);
-                e.Property(x => x.InputMapping).HasColumnType("text");
                 e.Property(x => x.Configuration).HasColumnType("text");
                 e.Property(x => x.IsActive).HasDefaultValue(true);
                 e.Property(x => x.PosX).HasDefaultValue(0.0);
@@ -90,7 +88,7 @@ namespace Server.Data
                     .HasForeignKey(x => x.AiModuleId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                e.HasIndex(x => new { x.ProjectId, x.BranchId, x.StepOrder }).IsUnique();
+                e.HasIndex(x => x.ProjectId);
             });
 
             // ── ModuleConnection ──
@@ -99,6 +97,7 @@ namespace Server.Data
                 e.HasKey(x => x.Id);
                 e.Property(x => x.FromPort).IsRequired().HasMaxLength(100);
                 e.Property(x => x.ToPort).IsRequired().HasMaxLength(100);
+                e.Property(x => x.Format).HasColumnType("text");
 
                 e.HasOne(x => x.Project)
                     .WithMany()
@@ -133,8 +132,8 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
 
                 e.HasIndex(x => x.ProjectId);
+                e.Property(x => x.PausedAtModuleId);
                 e.Property(x => x.PausedStepData).HasColumnType("text");
-                e.Property(x => x.PausedBranches).HasColumnType("text");
                 e.Property(x => x.UserInput).HasColumnType("text");
             });
 
@@ -157,7 +156,8 @@ namespace Server.Data
                     .HasForeignKey(x => x.ProjectModuleId)
                     .OnDelete(DeleteBehavior.Restrict);
 
-                e.HasIndex(x => new { x.ExecutionId, x.StepOrder });
+                e.HasIndex(x => x.ExecutionId);
+                e.HasIndex(x => new { x.ExecutionId, x.ProjectModuleId });
             });
 
             // ── ProjectSchedule ──
@@ -184,7 +184,7 @@ namespace Server.Data
                 e.HasKey(x => x.Id);
                 e.Property(x => x.Level).IsRequired().HasMaxLength(20);
                 e.Property(x => x.Message).IsRequired().HasColumnType("text");
-                e.Property(x => x.StepName).HasMaxLength(200);
+                e.Property(x => x.ModuleName).HasMaxLength(200);
 
                 e.HasOne(x => x.Execution)
                     .WithMany()

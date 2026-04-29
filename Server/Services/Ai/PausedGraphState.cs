@@ -70,7 +70,7 @@ public class PausedGraphState
                 node.Output = System.Text.Json.JsonSerializer.Deserialize<StepOutput>(outputJson);
                 if (node.Status == NodeStatus.Completed && node.Output is not null)
                 {
-                    graph.PropagateOutputs(node);
+                    graph.CompleteNodeAndPrepareDownstream(node);
                 }
             }
             catch { /* ignore malformed output */ }

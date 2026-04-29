@@ -48,6 +48,10 @@ public class CoordinatorModuleHandler : IModuleHandler
         if (string.IsNullOrWhiteSpace(combinedInput))
             return ModuleResult.Failed("Sin datos de entrada");
 
+        var outgoingFormats = ctx.GetOutgoingFormats();
+        if (outgoingFormats.Count > 0)
+            combinedInput = OutputSchemaHelper.GetOutputFormatInstruction(outgoingFormats) + "\n\n" + combinedInput;
+
         var aiContext = new AiExecutionContext
         {
             ModuleType = "Text",
@@ -66,7 +70,12 @@ public class CoordinatorModuleHandler : IModuleHandler
         if (!result.Success)
             return ModuleResult.Failed(result.Error ?? "Error en coordinador");
 
-        var stepOutput = OutputSchemaHelper.ParseTextOutput(result.TextOutput ?? "", result.Metadata);
+        var stepOutput = new StepOutput
+        {
+            Type = "text",
+            Content = result.TextOutput ?? "",
+            Metadata = result.Metadata ?? new(),
+        };
         return ModuleResult.Completed(stepOutput, result.EstimatedCost);
     }
 }

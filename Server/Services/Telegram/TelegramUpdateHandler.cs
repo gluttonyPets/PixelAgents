@@ -163,17 +163,8 @@ namespace Server.Services.Telegram
                     return;
                 }
 
-                // Default: resume pipeline (branch-aware)
-                Console.WriteLine($"[TG-Update] Resuming execution {correlation.ExecutionId}, branchId={correlation.BranchId ?? "(null)"}, stepOrder={correlation.StepOrder}");
-                if (!string.IsNullOrWhiteSpace(correlation.BranchId))
-                {
-                    await _executor.ResumeFromBranchInteractionAsync(
-                        correlation.ExecutionId, correlation.BranchId, text, db, correlation.TenantDbName);
-                }
-                else
-                {
-                    await _executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
-                }
+                Console.WriteLine($"[TG-Update] Resuming execution {correlation.ExecutionId}, moduleId={correlation.ProjectModuleId}");
+                await _executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
                 correlation.IsResolved = true;
                 await _coreDb.SaveChangesAsync();
 
@@ -219,7 +210,7 @@ namespace Server.Services.Telegram
 
             Console.WriteLine($"[TG-Update] FindValidCorrelation: {candidates.Count} candidate(s) for chatId={chatId}");
             foreach (var c in candidates)
-                Console.WriteLine($"  Candidate {c.Id}: execId={c.ExecutionId}, step={c.StepOrder}, branch={c.BranchId ?? "(null)"}, state={c.State}, created={c.CreatedAt:O}");
+                Console.WriteLine($"  Candidate {c.Id}: execId={c.ExecutionId}, module={c.ProjectModuleId}, state={c.State}, created={c.CreatedAt:O}");
 
             foreach (var candidate in candidates)
             {
@@ -255,20 +246,10 @@ namespace Server.Services.Telegram
 
                 if (execution.Status != "WaitingForInput")
                 {
-                    // For branch correlations, also accept "Running" status if the execution
-                    // has paused branches — the branch may have paused before the main pipeline
-                    // had a chance to update the execution status.
-                    var hasPausedBranches = !string.IsNullOrWhiteSpace(candidate.BranchId)
-                        && execution.Status == "Running"
-                        && !string.IsNullOrWhiteSpace(execution.PausedBranches);
-
-                    if (!hasPausedBranches)
-                    {
-                        Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution status is '{execution.Status}', not WaitingForInput");
-                        candidate.IsResolved = true;
-                        await _coreDb.SaveChangesAsync();
-                        continue;
-                    }
+                    Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution status is '{execution.Status}', not WaitingForInput");
+                    candidate.IsResolved = true;
+                    await _coreDb.SaveChangesAsync();
+                    continue;
                 }
 
                 return candidate;

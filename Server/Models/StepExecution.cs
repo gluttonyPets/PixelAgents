@@ -5,7 +5,6 @@ namespace Server.Models
         public Guid Id { get; set; }
         public Guid ExecutionId { get; set; }
         public Guid ProjectModuleId { get; set; }
-        public int StepOrder { get; set; }
         public string Status { get; set; } = "Pending";
         public string? InputData { get; set; }
         public string? OutputData { get; set; }

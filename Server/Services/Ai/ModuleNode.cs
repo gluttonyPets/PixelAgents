@@ -26,8 +26,19 @@ public class ModuleNode
         ProjectModule = pm;
     }
 
-    /// <summary>True when all required input ports are satisfied.</summary>
-    public bool AllInputsSatisfied => InputPorts.All(p => p.IsSatisfied);
+    public bool CanStartWithoutInputs => ModuleType switch
+    {
+        // Source modules: their handlers produce output without consuming
+        // upstream data, so they must auto-start even without inputs wired.
+        "Start" or "StaticText" or "FileUpload" => true,
+        // Scene can be a pure source when it has no template-variable ports wired.
+        "Scene" => InputPorts.Count == 0,
+        _ => false,
+    };
+
+    /// <summary>True when this node can be marked Ready from its current inputs.</summary>
+    public bool CanBecomeReady => CanStartWithoutInputs
+        || (InputPorts.Count > 0 && InputPorts.All(p => p.IsSatisfied));
 }
 
 /// <summary>An input port on a module node.</summary>
@@ -73,6 +84,9 @@ public class PortConnection
     public string SourcePortId { get; set; } = "";
     public ModuleNode TargetNode { get; set; } = null!;
     public string TargetPortId { get; set; } = "";
+    /// <summary>Optional JSON schema agreed on this edge; used to steer the
+    /// upstream producer and to disaggregate the downstream consumer.</summary>
+    public string? Format { get; set; }
 }
 
 /// <summary>A unit of data flowing between ports.</summary>

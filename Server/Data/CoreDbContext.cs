@@ -18,6 +18,7 @@ namespace Server.Data
             modelBuilder.Entity<WhatsAppCorrelation>(e =>
             {
                 e.HasKey(x => x.Id);
+                e.Property(x => x.ProjectModuleId).IsRequired();
                 e.Property(x => x.TenantDbName).IsRequired().HasMaxLength(200);
                 e.Property(x => x.RecipientNumber).IsRequired().HasMaxLength(50);
                 e.HasIndex(x => new { x.RecipientNumber, x.IsResolved });
@@ -26,6 +27,7 @@ namespace Server.Data
             modelBuilder.Entity<TelegramCorrelation>(e =>
             {
                 e.HasKey(x => x.Id);
+                e.Property(x => x.ProjectModuleId).IsRequired();
                 e.Property(x => x.TenantDbName).IsRequired().HasMaxLength(200);
                 e.Property(x => x.ChatId).IsRequired().HasMaxLength(50);
                 e.Property(x => x.State).IsRequired().HasMaxLength(50).HasDefaultValue("waiting");
