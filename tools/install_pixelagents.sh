@@ -79,7 +79,6 @@ fi
 CONFIG_DIR="$PA_HOME/.config/pixelagents"
 ENV_FILE="$CONFIG_DIR/leantime.env"
 WORKER_SCRIPT="$PA_PROJECT_DIR/automation/leantime_mcp_worker.js"
-LOG_SERVER_SCRIPT="$PA_PROJECT_DIR/automation/log_server.py"
 LOG_DIR="$PA_PROJECT_DIR/automation/logs"
 DEPLOY_SCRIPT="$PA_PROJECT_DIR/tools/deploy_develop.sh"
 LOG_SERVER_SCRIPT="$PA_PROJECT_DIR/tools/log_server.py"
