@@ -224,8 +224,8 @@ async function updateTicketStatus(ticketId, statusId) {
 
   const projectId = Number(ticket.projectId || PROJECT_ID);
   const attempts = [
-    { id: Number(ticketId), values: { status: Number(statusId), projectId } },
     { values: { id: Number(ticketId), status: Number(statusId), projectId } },
+    { id: Number(ticketId), values: { status: Number(statusId), projectId } },
   ];
 
   for (const params of attempts) {
@@ -253,8 +253,8 @@ async function updateTicketFields(ticketId, values, ticket = null) {
   };
 
   const attempts = [
-    { id: Number(ticketId), values: normalizedValues },
     { values: normalizedValues },
+    { id: Number(ticketId), values: normalizedValues },
     normalizedValues,
   ];
 
