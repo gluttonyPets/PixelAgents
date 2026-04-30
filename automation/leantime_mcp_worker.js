@@ -42,6 +42,127 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatTimestamp(ts) {
+  const ms = Number(ts) * 1000;
+  if (!Number.isFinite(ms)) {
+    return "";
+  }
+  return new Date(ms).toISOString().replace("T", " ").replace(/\.\d+Z$/, "Z");
+}
+
+const REPORT_HTML_STYLE = `
+:root { color-scheme: dark light; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: #0d1117; color: #c9d1d9; }
+header { padding: 24px 32px; border-bottom: 1px solid #30363d; background: #161b22; position: sticky; top: 0; z-index: 1; }
+header h1 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
+header .meta { display: flex; flex-wrap: wrap; gap: 16px 24px; font-size: 13px; color: #8b949e; }
+header .meta span strong { color: #c9d1d9; font-weight: 600; }
+header .status { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+header .status.done { background: #1f6feb33; color: #79c0ff; }
+header .status.error { background: #f8514933; color: #ff7b72; }
+header .status.running { background: #d2992233; color: #e3b341; }
+main { padding: 24px 32px 64px; max-width: 1200px; margin: 0 auto; }
+details.event { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+details.event[open] { border-color: #58a6ff66; }
+details.event > summary { list-style: none; padding: 12px 16px; cursor: pointer; display: flex; gap: 12px; align-items: center; user-select: none; }
+details.event > summary::-webkit-details-marker { display: none; }
+details.event > summary::before { content: "▸"; color: #8b949e; font-size: 12px; transition: transform .15s; }
+details.event[open] > summary::before { transform: rotate(90deg); }
+details.event > summary .kind { padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; background: #30363d; color: #c9d1d9; }
+details.event[data-kind="result"] > summary .kind { background: #1f6feb33; color: #79c0ff; }
+details.event[data-kind="error"] > summary .kind { background: #f8514933; color: #ff7b72; }
+details.event[data-kind="system"] > summary .kind { background: #6e768133; color: #8b949e; }
+details.event > summary .title { flex: 1; font-weight: 600; }
+details.event > summary .ts { font-size: 12px; color: #8b949e; font-variant-numeric: tabular-nums; }
+details.event > pre { margin: 0; padding: 12px 16px; border-top: 1px solid #30363d; background: #0d1117; overflow-x: auto; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
+.toolbar button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+.toolbar button:hover { background: #30363d; }
+@media (prefers-color-scheme: light) {
+  body { background: #ffffff; color: #1f2328; }
+  header { background: #f6f8fa; border-color: #d0d7de; }
+  header .meta { color: #57606a; }
+  header .meta span strong { color: #1f2328; }
+  details.event { background: #f6f8fa; border-color: #d0d7de; }
+  details.event > pre { background: #ffffff; border-color: #d0d7de; }
+  .toolbar button { background: #ffffff; color: #1f2328; border-color: #d0d7de; }
+  .toolbar button:hover { background: #f6f8fa; }
+}
+`;
+
+const REPORT_HTML_SCRIPT = `
+document.querySelectorAll(".js-expand-all").forEach((btn) => btn.addEventListener("click", () => {
+  document.querySelectorAll("details.event").forEach((d) => { d.open = true; });
+}));
+document.querySelectorAll(".js-collapse-all").forEach((btn) => btn.addEventListener("click", () => {
+  document.querySelectorAll("details.event").forEach((d) => { d.open = false; });
+}));
+`;
+
+function renderReportHtml(payload) {
+  const status = String(payload.status || "running");
+  const stats = payload.stats || {};
+  const events = Array.isArray(payload.events) ? payload.events : [];
+  const cost = Number(stats.result_cost_usd || 0).toFixed(4);
+  const turns = Number(stats.num_turns || 0);
+  const elapsed = (Number(payload.updated_at || 0) - Number(payload.started_at || 0)).toFixed(1);
+
+  const eventsHtml = events.map((event) => {
+    const kind = String(event.kind || "");
+    const title = escapeHtml(event.title || "");
+    const body = escapeHtml(event.body || "");
+    const ts = formatTimestamp(event.ts);
+    const isOpen = (kind === "result" || kind === "error") ? " open" : "";
+    return `<details class="event" data-kind="${escapeHtml(kind)}"${isOpen}>
+  <summary><span class="kind">${escapeHtml(kind)}</span><span class="title">${title}</span><span class="ts">${escapeHtml(ts)}</span></summary>
+  <pre>${body}</pre>
+</details>`;
+  }).join("\n");
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ticket #${escapeHtml(payload.ticket_id)} · ${escapeHtml(payload.headline || "")}</title>
+<style>${REPORT_HTML_STYLE}</style>
+</head>
+<body>
+<header>
+  <h1>Ticket #${escapeHtml(payload.ticket_id)} · ${escapeHtml(payload.headline || "")}</h1>
+  <div class="meta">
+    <span class="status ${escapeHtml(status)}">${escapeHtml(status)}</span>
+    <span><strong>Eventos:</strong> ${events.length}</span>
+    <span><strong>Turnos:</strong> ${turns}</span>
+    <span><strong>Coste:</strong> $${escapeHtml(cost)}</span>
+    <span><strong>Duración:</strong> ${escapeHtml(elapsed)}s</span>
+    <span><strong>Iniciado:</strong> ${escapeHtml(formatTimestamp(payload.started_at))}</span>
+    <span><strong>Actualizado:</strong> ${escapeHtml(formatTimestamp(payload.updated_at))}</span>
+  </div>
+</header>
+<main>
+  <div class="toolbar">
+    <button type="button" class="js-expand-all">Expandir todo</button>
+    <button type="button" class="js-collapse-all">Colapsar todo</button>
+    <a class="toolbar" href="live.log" style="margin-left:auto;text-decoration:none;color:inherit;"><button type="button">Ver live.log</button></a>
+  </div>
+  ${eventsHtml || "<p style=\"color:#8b949e\">(sin eventos)</p>"}
+</main>
+<script>${REPORT_HTML_SCRIPT}</script>
+</body>
+</html>`;
+}
+
 function readJson(filePath, fallback) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -224,8 +345,8 @@ async function updateTicketStatus(ticketId, statusId) {
 
   const projectId = Number(ticket.projectId || PROJECT_ID);
   const attempts = [
-    { id: Number(ticketId), values: { status: Number(statusId), projectId } },
     { values: { id: Number(ticketId), status: Number(statusId), projectId } },
+    { id: Number(ticketId), values: { status: Number(statusId), projectId } },
   ];
 
   for (const params of attempts) {
@@ -253,8 +374,8 @@ async function updateTicketFields(ticketId, values, ticket = null) {
   };
 
   const attempts = [
-    { id: Number(ticketId), values: normalizedValues },
     { values: normalizedValues },
+    { id: Number(ticketId), values: normalizedValues },
     normalizedValues,
   ];
 
@@ -270,16 +391,33 @@ async function updateTicketFields(ticketId, values, ticket = null) {
 }
 
 async function addTicketComment(ticketId, comment, commentParent = "") {
-  try {
-    return await rpc("leantime.rpc.comments.addComment", {
-      moduleId: Number(ticketId),
-      commentModule: "tickets",
-      comment,
-      commentParent: String(commentParent || ""),
-    });
-  } catch (error) {
-    throw new Error(`Could not add discussion comment for ticket ${ticketId}: ${String(error.message || error)}`);
+  const baseValues = {
+    moduleId: Number(ticketId),
+    commentModule: "tickets",
+    commentParent: String(commentParent || ""),
+  };
+  const attempts = [
+    { values: { ...baseValues, text: comment } },
+    { values: { ...baseValues, comment } },
+    { ...baseValues, text: comment },
+    { ...baseValues, comment },
+  ];
+
+  let lastError = null;
+  for (const params of attempts) {
+    try {
+      const result = await rpc("leantime.rpc.comments.addComment", params);
+      if (result === false || result === null || result === undefined) {
+        lastError = new Error(`addComment returned ${JSON.stringify(result)}`);
+        continue;
+      }
+      return result;
+    } catch (error) {
+      lastError = error;
+    }
   }
+
+  throw new Error(`Could not add discussion comment for ticket ${ticketId}: ${String(lastError && lastError.message || lastError)}`);
 }
 
 async function getTicketComments(ticketId) {
@@ -598,6 +736,7 @@ class TicketLogger {
     this.liveLogPath = path.join(this.ticketDir, "live.log");
     this.eventsPath = path.join(this.ticketDir, "events.json");
     this.reportPath = path.join(this.ticketDir, "report.md");
+    this.reportHtmlPath = path.join(this.ticketDir, "report.html");
     this.startedAt = Date.now();
     this.events = [];
     this.stats = {
@@ -636,7 +775,7 @@ class TicketLogger {
   }
 
   flush() {
-    writeJson(this.eventsPath, {
+    const payload = {
       ticket_id: this.ticketId,
       headline: this.headline,
       status: this.status,
@@ -644,7 +783,8 @@ class TicketLogger {
       updated_at: Date.now() / 1000,
       stats: this.stats,
       events: this.events,
-    });
+    };
+    writeJson(this.eventsPath, payload);
 
     const lines = [
       `# Ticket #${this.ticketId} · ${this.headline}`,
@@ -662,8 +802,13 @@ class TicketLogger {
         "",
       ]),
     ];
-
     fs.writeFileSync(this.reportPath, lines.join("\n"), "utf8");
+
+    try {
+      fs.writeFileSync(this.reportHtmlPath, renderReportHtml(payload), "utf8");
+    } catch (error) {
+      logGlobal(`[WARN] Could not render report.html for ticket ${this.ticketId}: ${String(error && error.message || error)}`);
+    }
   }
 }
 
@@ -678,6 +823,9 @@ function runClaude(prompt, previousSessionId, logger) {
       args.unshift("--resume");
     }
 
+    const ticketId = logger.ticketId;
+    const startedAt = Date.now();
+    logGlobal(`[INFO] Claude started ticket=${ticketId} resume=${previousSessionId ? "yes" : "no"} prompt_chars=${prompt.length} model=${CLAUDE_MODEL || "default"}`);
     logger.log("system", "Claude command", `${CLAUDE_BIN} ${args.join(" ")}`);
 
     const child = spawn(CLAUDE_BIN, args, {
@@ -698,24 +846,48 @@ function runClaude(prompt, previousSessionId, logger) {
       appendLine(logger.liveLogPath, text.trimEnd());
     });
 
-    child.on("error", reject);
+    child.on("error", (error) => {
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      logGlobal(`[ERROR] Claude spawn error ticket=${ticketId} elapsed=${elapsed}s: ${String(error.message || error)}`);
+      reject(error);
+    });
     child.on("close", (code) => {
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
       if (stderr.trim()) {
         logger.log("system", "Claude stderr", stderr.trim());
       }
 
       if (code !== 0) {
+        logGlobal(`[ERROR] Claude exited code=${code} ticket=${ticketId} elapsed=${elapsed}s`);
         return reject(new Error(`claude exited with code ${code}\n${stderr}`));
       }
 
       try {
         const parsed = JSON.parse(stdout);
+        const cost = Number(parsed.total_cost_usd || 0);
+        const turns = Number(parsed.num_turns || 0);
+        const session = parsed.session_id || "none";
+        const status = parsed.is_error ? "error" : "done";
+        logGlobal(`[INFO] Claude finished ticket=${ticketId} status=${status} turns=${turns} cost=$${cost.toFixed(4)} elapsed=${elapsed}s session=${session}`);
         return resolve(parsed);
       } catch (error) {
+        logGlobal(`[ERROR] Claude JSON parse failed ticket=${ticketId} elapsed=${elapsed}s: ${String(error.message || error)}`);
         return reject(new Error(`Could not parse Claude JSON output: ${error.message}\n${stdout}`));
       }
     });
   });
+}
+
+async function tryStep(logger, ticketId, label, fn) {
+  try {
+    await fn();
+  } catch (error) {
+    const message = String(error && error.message || error);
+    if (logger) {
+      logger.log("error", label, message);
+    }
+    logGlobal(`[WARN] ${label} ticket=${ticketId}: ${message}`);
+  }
 }
 
 async function processReadyTask(task, state) {
@@ -729,34 +901,39 @@ async function processReadyTask(task, state) {
   await updateTicketStatus(ticketId, IN_PROGRESS_STATUS_ID);
 
   const logger = new TicketLogger(ticketId, String(task.headline || "(sin titulo)"));
+  let result;
   try {
     const previousSessionId = getTicketSessionIdFromComments(await getTicketComments(ticketId)) || state.ticketSessions[String(ticketId)] || "";
-    const result = await runClaude(buildPrompt(task, "ready", [], previousSessionId), previousSessionId, logger);
+    result = await runClaude(buildPrompt(task, "ready", [], previousSessionId), previousSessionId, logger);
     logger.setResult(result);
 
     state.processedReadyTasks = Array.from(new Set([...state.processedReadyTasks, ticketId])).sort((a, b) => a - b);
     if (result.session_id) {
       state.ticketSessions[String(ticketId)] = result.session_id;
-      await syncTicketSessionMarker(ticketId, result.session_id);
+      await tryStep(logger, ticketId, "syncTicketSessionMarker", () => syncTicketSessionMarker(ticketId, result.session_id));
     }
 
-    const latestSignature = latestCommentSignature(getReviewRelevantComments(await getTicketComments(ticketId)));
-    if (latestSignature) {
-      state.reviewCommentMarkers[String(ticketId)] = latestSignature;
-    }
+    await tryStep(logger, ticketId, "refreshReviewSignature", async () => {
+      const latestSignature = latestCommentSignature(getReviewRelevantComments(await getTicketComments(ticketId)));
+      if (latestSignature) {
+        state.reviewCommentMarkers[String(ticketId)] = latestSignature;
+      }
+    });
 
-    await restoreTicketDescriptionIfChanged(ticketId, originalDescription);
-    await syncTicketSummaryComment(ticketId, result.result || "", result.session_id || previousSessionId);
+    await tryStep(logger, ticketId, "restoreTicketDescriptionIfChanged", () => restoreTicketDescriptionIfChanged(ticketId, originalDescription));
+    await tryStep(logger, ticketId, "syncTicketSummaryComment", () => syncTicketSummaryComment(ticketId, result.result || "", result.session_id || previousSessionId));
 
-    const refreshed = await getTicket(ticketId);
-    const status = refreshed ? Number(refreshed.status || -1) : -1;
-    if (status === READY_STATUS_ID || status === IN_PROGRESS_STATUS_ID) {
-      logGlobal(`[INFO] Ticket ${ticketId} finished without Review status. Moving it to Review.`);
-      await updateTicketStatus(ticketId, resolvedReviewStatusId);
-    }
+    await tryStep(logger, ticketId, "ensureReviewStatus", async () => {
+      const refreshed = await getTicket(ticketId);
+      const status = refreshed ? Number(refreshed.status || -1) : -1;
+      if (status === READY_STATUS_ID || status === IN_PROGRESS_STATUS_ID) {
+        logGlobal(`[INFO] Ticket ${ticketId} finished without Review status. Moving it to Review.`);
+        await updateTicketStatus(ticketId, resolvedReviewStatusId);
+      }
+    });
   } catch (error) {
     logger.log("error", "Claude execution failed", String(error.message || error));
-    logGlobal(`[ERROR] ${String(error.message || error)}`);
+    logGlobal(`[ERROR] processReadyTask ticket=${ticketId}: ${String(error.message || error)}`);
   } finally {
     saveState(state);
   }
@@ -797,34 +974,39 @@ async function processReviewTask(task, state) {
   await updateTicketStatus(ticketId, IN_PROGRESS_STATUS_ID);
 
   const logger = new TicketLogger(ticketId, String(task.headline || "(sin titulo)"));
+  let result;
   try {
-    const result = await runClaude(buildPrompt(task, "review_feedback", pendingComments, previousSessionId), previousSessionId, logger);
+    result = await runClaude(buildPrompt(task, "review_feedback", pendingComments, previousSessionId), previousSessionId, logger);
     logger.setResult(result);
 
     if (result.session_id) {
       state.ticketSessions[String(ticketId)] = result.session_id;
-      await syncTicketSessionMarker(ticketId, result.session_id);
+      await tryStep(logger, ticketId, "syncTicketSessionMarker", () => syncTicketSessionMarker(ticketId, result.session_id));
     }
 
-    await restoreTicketDescriptionIfChanged(ticketId, originalDescription);
-    await syncTicketSummaryComment(ticketId, result.result || "", result.session_id || previousSessionId);
-    await acknowledgeResolvedReviewComments(ticketId, pendingComments);
+    await tryStep(logger, ticketId, "restoreTicketDescriptionIfChanged", () => restoreTicketDescriptionIfChanged(ticketId, originalDescription));
+    await tryStep(logger, ticketId, "syncTicketSummaryComment", () => syncTicketSummaryComment(ticketId, result.result || "", result.session_id || previousSessionId));
+    await tryStep(logger, ticketId, "acknowledgeResolvedReviewComments", () => acknowledgeResolvedReviewComments(ticketId, pendingComments));
 
-    const refreshedComments = getReviewRelevantComments(await getTicketComments(ticketId));
-    const refreshedSignature = latestCommentSignature(refreshedComments);
-    if (refreshedSignature) {
-      state.reviewCommentMarkers[String(ticketId)] = refreshedSignature;
-    }
+    await tryStep(logger, ticketId, "refreshReviewSignature", async () => {
+      const refreshedComments = getReviewRelevantComments(await getTicketComments(ticketId));
+      const refreshedSignature = latestCommentSignature(refreshedComments);
+      if (refreshedSignature) {
+        state.reviewCommentMarkers[String(ticketId)] = refreshedSignature;
+      }
+    });
 
-    const refreshedTicket = await getTicket(ticketId);
-    const status = refreshedTicket ? Number(refreshedTicket.status || -1) : -1;
-    if (status === READY_STATUS_ID || status === IN_PROGRESS_STATUS_ID) {
-      logGlobal(`[INFO] Ticket ${ticketId} finished review feedback without Review status. Moving it to Review.`);
-      await updateTicketStatus(ticketId, resolvedReviewStatusId);
-    }
+    await tryStep(logger, ticketId, "ensureReviewStatus", async () => {
+      const refreshedTicket = await getTicket(ticketId);
+      const status = refreshedTicket ? Number(refreshedTicket.status || -1) : -1;
+      if (status === READY_STATUS_ID || status === IN_PROGRESS_STATUS_ID) {
+        logGlobal(`[INFO] Ticket ${ticketId} finished review feedback without Review status. Moving it to Review.`);
+        await updateTicketStatus(ticketId, resolvedReviewStatusId);
+      }
+    });
   } catch (error) {
     logger.log("error", "Claude execution failed", String(error.message || error));
-    logGlobal(`[ERROR] ${String(error.message || error)}`);
+    logGlobal(`[ERROR] processReviewTask ticket=${ticketId}: ${String(error.message || error)}`);
   } finally {
     saveState(state);
   }
