@@ -751,24 +751,28 @@ async function processReviewTask(task, state) {
   const latestSignature = latestCommentSignature(comments);
   const knownSignature = state.reviewCommentMarkers[String(ticketId)] || "";
   const previousSessionId = getTicketSessionIdFromComments(allComments) || state.ticketSessions[String(ticketId)] || "";
+  const workerOwned = state.processedReadyTasks.includes(ticketId);
 
-  logGlobal(`[INFO] Review scan ticket=${ticketId} comments=${comments.length} known_signature=${knownSignature ? "yes" : "no"} latest_signature=${latestSignature ? "yes" : "no"} previous_session=${previousSessionId ? "yes" : "no"} title=${task.headline || ""}`);
+  logGlobal(`[INFO] Review scan ticket=${ticketId} comments=${comments.length} known_signature=${knownSignature ? "yes" : "no"} latest_signature=${latestSignature ? "yes" : "no"} previous_session=${previousSessionId ? "yes" : "no"} worker_owned=${workerOwned ? "yes" : "no"} title=${task.headline || ""}`);
 
   if (!latestSignature) {
     return;
   }
 
+  let pendingComments;
   if (!knownSignature) {
-    state.reviewCommentMarkers[String(ticketId)] = latestSignature;
-    saveState(state);
+    if (!workerOwned) {
+      state.reviewCommentMarkers[String(ticketId)] = latestSignature;
+      saveState(state);
+      return;
+    }
+    pendingComments = sortComments(comments);
+  } else if (latestSignature === knownSignature) {
     return;
+  } else {
+    pendingComments = commentsAfterSignature(comments, knownSignature);
   }
 
-  if (latestSignature === knownSignature) {
-    return;
-  }
-
-  const pendingComments = commentsAfterSignature(comments, knownSignature);
   logGlobal(`[INFO] Found new Review feedback for ticket ${ticketId}: ${task.headline || ""}`);
 
   await updateTicketStatus(ticketId, IN_PROGRESS_STATUS_ID);
