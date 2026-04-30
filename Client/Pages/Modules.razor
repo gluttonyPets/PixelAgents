@@ -2,21 +2,29 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject ApiClient Api
 
+@* Cabecera de página: muestra el título y el botón que abre el modal de creación.
+   El formulario de creación ya no ocupa espacio permanente en la página; se abre bajo demanda. *@
 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem;">
     <h2 style="margin:0;">Módulos IA</h2>
+    @* Al hacer clic se activa el flag _showCreateModal, lo que renderiza el modal overlay *@
     <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
         <i class="bi bi-plus-lg"></i> Nuevo módulo
     </button>
 </div>
 
+@* Modal de creación: se renderiza solo cuando _showCreateModal es true.
+   El overlay cubre toda la pantalla; hacer clic sobre él cierra el modal (CloseCreateModal).
+   @onclick:stopPropagation evita que el clic dentro del contenido propague al overlay y lo cierre. *@
 @if (_showCreateModal)
 {
     <div class="modal-overlay" @onclick="CloseCreateModal">
         <div class="modal-content" style="max-width:760px; width:95vw;" @onclick:stopPropagation="true">
             <div class="modal-header">
                 <h3 style="margin:0; font-size:1.05rem; flex:1;">Nuevo módulo</h3>
+                @* Botón X en la cabecera del modal: cierre explícito sin guardar *@
                 <button class="btn-icon" @onclick="CloseCreateModal">&#x2715;</button>
             </div>
+            @* modal-body admite scroll interno para formularios largos (ver CSS global .modal-body) *@
             <div class="modal-body">
     @if (_error is not null)
     {
@@ -1252,6 +1260,8 @@
 }
 else
 {
+    @* Estado vacío: se muestra cuando el usuario aún no tiene ningún módulo.
+       El botón "Crear primer módulo" abre el mismo modal que el botón de la cabecera. *@
     <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted, #888);">
         <div style="font-size:2.5rem; margin-bottom:0.75rem;"><i class="bi bi-boxes"></i></div>
         <p style="font-size:1rem; margin-bottom:0.5rem;">No tienes módulos creados todavía.</p>
@@ -1309,9 +1319,13 @@ else
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];
     private bool _loading;
+    // Flag que controla la visibilidad del modal de creación de módulo.
+    // true = modal abierto; false = modal cerrado (por X, clic en overlay o creación exitosa).
     private bool _showCreateModal;
     private string? _error;
 
+    // Cierra el modal de creación y resetea todos los campos del formulario.
+    // Se invoca desde: botón X, clic en el overlay, y tras una creación exitosa.
     private void CloseCreateModal()
     {
         _showCreateModal = false;
@@ -1986,6 +2000,8 @@ else
                 _name = ""; _desc = ""; _model = ""; _apiKeyId = "";
                 ResetConfig();
                 _modules = await Api.GetModulesAsync();
+                // Cierre automático del modal tras creación exitosa: la lista se refresca antes de cerrar
+                // para que el nuevo módulo aparezca inmediatamente al volver a la vista principal.
                 _showCreateModal = false;
             }
             else _error = error;
