@@ -396,6 +396,7 @@ async function addTicketComment(ticketId, comment, commentParent = "") {
     values: { text: String(comment), father },
     module: "ticket",
     entityId: Number(ticketId),
+    entity: {},
   };
 
   let result;
