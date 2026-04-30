@@ -391,33 +391,24 @@ async function updateTicketFields(ticketId, values, ticket = null) {
 }
 
 async function addTicketComment(ticketId, comment, commentParent = "") {
-  const baseValues = {
-    moduleId: Number(ticketId),
-    commentModule: "tickets",
-    commentParent: String(commentParent || ""),
+  const father = String(commentParent || "0");
+  const params = {
+    values: { text: String(comment), father },
+    module: "ticket",
+    entityId: Number(ticketId),
   };
-  const attempts = [
-    { values: { ...baseValues, text: comment } },
-    { values: { ...baseValues, comment } },
-    { ...baseValues, text: comment },
-    { ...baseValues, comment },
-  ];
 
-  let lastError = null;
-  for (const params of attempts) {
-    try {
-      const result = await rpc("leantime.rpc.comments.addComment", params);
-      if (result === false || result === null || result === undefined) {
-        lastError = new Error(`addComment returned ${JSON.stringify(result)}`);
-        continue;
-      }
-      return result;
-    } catch (error) {
-      lastError = error;
-    }
+  let result;
+  try {
+    result = await rpc("leantime.rpc.comments.addComment", params);
+  } catch (error) {
+    throw new Error(`Could not add discussion comment for ticket ${ticketId}: ${String(error && error.message || error)}`);
   }
 
-  throw new Error(`Could not add discussion comment for ticket ${ticketId}: ${String(lastError && lastError.message || lastError)}`);
+  if (result === false || result === null || result === undefined) {
+    throw new Error(`Could not add discussion comment for ticket ${ticketId}: addComment returned ${JSON.stringify(result)}`);
+  }
+  return result;
 }
 
 async function getTicketComments(ticketId) {
