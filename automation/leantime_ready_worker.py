@@ -1889,6 +1889,11 @@ def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) ->
 
     review_markers = state.setdefault("review_comment_markers", {})
     ticket_sessions = state.setdefault("ticket_sessions", {})
+    processed_ready = {
+        int(task_id)
+        for task_id in state.get("processed_ready_tasks", [])
+    }
+    worker_owned = ticket_id in processed_ready
     known_signature = str(review_markers.get(str(ticket_id), "") or "")
     previous_session_id = (
         get_ticket_session_id_from_comments(ticket_id)
@@ -1902,6 +1907,7 @@ def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) ->
         f"known_signature={'yes' if known_signature else 'no'} "
         f"latest_signature={'yes' if latest_signature else 'no'} "
         f"previous_session={'yes' if previous_session_id else 'no'} "
+        f"worker_owned={'yes' if worker_owned else 'no'} "
         f"title={headline}",
         flush=True,
     )
@@ -1910,14 +1916,15 @@ def process_review_feedback_task(task: dict[str, Any], state: dict[str, Any]) ->
         return
 
     if not known_signature:
-        review_markers[str(ticket_id)] = latest_signature
-        save_worker_state(state)
+        if not worker_owned:
+            review_markers[str(ticket_id)] = latest_signature
+            save_worker_state(state)
+            return
+        pending_comments = list(sort_comments(comments))
+    elif latest_signature == known_signature:
         return
-
-    if latest_signature == known_signature:
-        return
-
-    pending_comments = comments_after_signature(comments, known_signature)
+    else:
+        pending_comments = comments_after_signature(comments, known_signature)
 
     print(
         f"[INFO] Found new Review feedback for ticket {ticket_id}: {headline}",
