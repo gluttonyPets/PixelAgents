@@ -40,6 +40,7 @@ LEANTIME_PROJECT_ID=3
 READY_STATUS_ID=1
 IN_PROGRESS_STATUS_ID=2
 REVIEW_STATUS_ID=3
+REVIEW_STATUS_NAME=Review
 
 LEANTIME_MCP_URL=https://tu-leantime/mcp
 LEANTIME_MCP_TOKEN=pat_recomendado
@@ -50,6 +51,7 @@ Notas:
 - `.mcp.json` usa `LEANTIME_MCP_URL` y `LEANTIME_MCP_TOKEN` con transporte HTTP nativo de Claude Code.
 - `LEANTIME_MCP_TOKEN` deberia ser un Personal Access Token. Las API keys clasicas de Leantime son cuentas de servicio y no preservan bien el contexto de "mis tareas" ni la autoria real.
 - `LEANTIME_API_KEY` se mantiene para el polling JSON-RPC del worker, no para las mutaciones de Claude dentro del MCP.
+- Si el tablero usa nombres de estado distintos, ajusta `REVIEW_STATUS_NAME` al nombre exacto que aparece en Leantime. El worker intentara resolver por nombre y, si no puede, caera al `REVIEW_STATUS_ID`.
 - Si alguna instalacion antigua sigue necesitando el bridge `leantime-mcp`, el wrapper legacy se puede seguir usando manualmente, pero ya no es la ruta principal del proyecto.
 
 ## Comandos utiles

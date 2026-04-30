@@ -10,7 +10,8 @@ const LEANTIME_API_KEY = process.env.LEANTIME_API_KEY || "";
 const PROJECT_ID = Number(process.env.LEANTIME_PROJECT_ID || "3");
 const READY_STATUS_ID = Number(process.env.READY_STATUS_ID || "1");
 const IN_PROGRESS_STATUS_ID = Number(process.env.IN_PROGRESS_STATUS_ID || "2");
-const CONFIGURED_REVIEW_STATUS_ID = Number(process.env.REVIEW_STATUS_ID || "5");
+const REVIEW_STATUS_ID_ENV = process.env.REVIEW_STATUS_ID;
+const CONFIGURED_REVIEW_STATUS_ID = Number(REVIEW_STATUS_ID_ENV || "3");
 const REVIEW_STATUS_NAME = String(process.env.REVIEW_STATUS_NAME || "Review");
 const POLL_SECONDS = Number(process.env.POLL_SECONDS || "30");
 const REPO_PATH = process.env.PIXELAGENTS_REPO || "/home/debian/Proyectos/PixelAgents";
@@ -184,24 +185,34 @@ function normalizeStatusEntries(rawStatuses) {
   return entries;
 }
 
+function formatStatusEntries(entries) {
+  if (!entries.length) {
+    return "(sin datos)";
+  }
+
+  return entries
+    .map((entry) => `${entry.id}:${entry.name}`)
+    .join(", ");
+}
+
 async function resolveReviewStatusId() {
   const rawStatuses = await getProjectStatuses();
   const entries = normalizeStatusEntries(rawStatuses);
   if (!entries.length) {
+    logGlobal(`[WARN] Could not resolve Leantime status catalog. Using configured REVIEW_STATUS_ID=${CONFIGURED_REVIEW_STATUS_ID}.`);
     return CONFIGURED_REVIEW_STATUS_ID;
   }
 
   const wanted = REVIEW_STATUS_NAME.trim().toLowerCase();
   const exact = entries.find((entry) => entry.name.trim().toLowerCase() === wanted);
   if (exact) {
+    if (Number.isFinite(CONFIGURED_REVIEW_STATUS_ID) && exact.id !== CONFIGURED_REVIEW_STATUS_ID) {
+      logGlobal(`[WARN] REVIEW_STATUS_ID=${CONFIGURED_REVIEW_STATUS_ID} does not match REVIEW_STATUS_NAME=${JSON.stringify(REVIEW_STATUS_NAME)}. Using exact match id=${exact.id}. Catalog: ${formatStatusEntries(entries)}`);
+    }
     return exact.id;
   }
 
-  const partial = entries.find((entry) => entry.name.trim().toLowerCase().includes(wanted));
-  if (partial) {
-    return partial.id;
-  }
-
+  logGlobal(`[WARN] REVIEW_STATUS_NAME=${JSON.stringify(REVIEW_STATUS_NAME)} not found in Leantime status catalog. Falling back to REVIEW_STATUS_ID=${CONFIGURED_REVIEW_STATUS_ID}. Catalog: ${formatStatusEntries(entries)}`);
   return CONFIGURED_REVIEW_STATUS_ID;
 }
 
