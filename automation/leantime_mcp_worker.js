@@ -320,7 +320,7 @@ async function getTicketComments(ticketId) {
 }
 
 function getCommentBody(comment) {
-  return String(comment.comment || comment.content || comment.description || "").trim();
+  return String(comment.text || comment.comment || comment.content || comment.description || "").trim();
 }
 
 function getCommentId(comment) {
@@ -353,6 +353,17 @@ function extractResolvedCommentId(comment) {
   return match ? match[1] : "";
 }
 
+function getCommentTimestamp(comment) {
+  return String(
+    comment.userModified
+    || comment.rawDate
+    || comment.date
+    || comment.dateModified
+    || comment.dateCreated
+    || ""
+  );
+}
+
 function sortComments(comments) {
   return [...comments].sort((a, b) => {
     const aId = Number(getCommentId(a) || 0);
@@ -360,7 +371,7 @@ function sortComments(comments) {
     if (aId !== bId) {
       return aId - bId;
     }
-    return String(a.dateModified || a.dateCreated || "").localeCompare(String(b.dateModified || b.dateCreated || ""));
+    return getCommentTimestamp(a).localeCompare(getCommentTimestamp(b));
   });
 }
 
@@ -375,7 +386,7 @@ function getReviewRelevantComments(comments) {
 
 function commentSignature(comment) {
   const id = getCommentId(comment);
-  const timestamp = String(comment.dateModified || comment.dateCreated || "");
+  const timestamp = getCommentTimestamp(comment);
   const preview = getCommentBody(comment).replace(/\s+/g, " ").slice(0, 140);
   const parent = String(comment.commentParent || "");
   return `${id}|${timestamp}|${parent}|${preview}`;
@@ -502,9 +513,17 @@ function commentsAfterSignature(comments, signature) {
   return ordered.slice(index + 1);
 }
 
+function getCommentAuthor(comment) {
+  const composed = `${String(comment.firstname || "").trim()} ${String(comment.lastname || "").trim()}`.trim();
+  if (composed) {
+    return composed;
+  }
+  return String(comment.fullName || comment.name || comment.user || comment.author || "desconocido");
+}
+
 function commentText(comment) {
   const id = getCommentId(comment) || "desconocido";
-  const author = String(comment.fullName || comment.name || comment.user || comment.author || "desconocido");
+  const author = getCommentAuthor(comment);
   const body = getCommentBody(comment) || "(sin texto)";
   return `ID comentario: ${id}\nAutor: ${author}\n${body}`;
 }
