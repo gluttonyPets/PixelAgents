@@ -24,25 +24,6 @@
       "Bash(git switch -c hotfix/*)",
       "Bash(git add:*)",
       "Bash(git commit:*)"
-    ],
-    "deny": [
-      "Bash(git push:*)",
-      "Bash(git push --force:*)",
-      "Bash(git push -f:*)",
-      "Bash(git merge:*)",
-      "Bash(git rebase:*)",
-      "Bash(git reset --hard:*)",
-      "Bash(git checkout master)",
-      "Bash(git checkout main)",
-      "Bash(git checkout develop)",
-      "Bash(git switch master)",
-      "Bash(git switch main)",
-      "Bash(git switch develop)",
-      "Bash(git branch -D:*)",
-      "Bash(git push --delete:*)",
-      "Bash(sudo:*)",
-      "Bash(rm -rf:*)",
-      "Bash(rm -rf /*)"
     ]
   }
 }
