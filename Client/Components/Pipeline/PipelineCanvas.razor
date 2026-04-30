@@ -54,7 +54,9 @@
                                                 </div>
                                                 <div class="palette-item-info">
                                                     <div class="palette-item-name">@m.Name</div>
-                                                    <div class="palette-item-type">@m.ProviderType</div>
+                                                    <div class="palette-item-type">
+                                                        <ProviderIcon Provider="@m.ProviderType" Size="12" />&nbsp;@m.ProviderType
+                                                    </div>
                                                 </div>
                                             </div>
                                         }
@@ -74,7 +76,9 @@
                                     </div>
                                     <div class="palette-item-info">
                                         <div class="palette-item-name">@m.Name</div>
-                                        <div class="palette-item-type">@m.ProviderType / @m.ModuleType</div>
+                                        <div class="palette-item-type">
+                                            <ProviderIcon Provider="@m.ProviderType" Size="12" />&nbsp;@m.ProviderType / @m.ModuleType
+                                        </div>
                                     </div>
                                 </div>
                             }

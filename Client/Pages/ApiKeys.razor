@@ -72,12 +72,12 @@ else if (_keys.Count > 0)
             </button>
             @foreach (var p in providers)
             {
-                var (pIcon, pClass) = GetProviderMeta(p);
+                var (_, pClass) = GetProviderMeta(p);
                 var pCount = _keys.Count(k => k.ProviderType == p);
                 var isActive = _filterProvider == p;
                 <button class="filter-pill @(isActive ? "active" : "") @pClass"
                         @onclick="() => _filterProvider = p">
-                    <em class="provider-icon">@pIcon</em>@p <span class="filter-count">@pCount</span>
+                    <ProviderIcon Provider="@p" Size="14" />&nbsp;@p <span class="filter-count">@pCount</span>
                 </button>
             }
         </div>
@@ -108,14 +108,14 @@ else if (_keys.Count > 0)
             <tbody>
                 @foreach (var k in filtered)
                 {
-                    var (icon, badgeClass) = GetProviderMeta(k.ProviderType);
+                    var (_, badgeClass) = GetProviderMeta(k.ProviderType);
                     var isConfirming = _confirmDeleteId == k.Id;
                     var shortId = k.Id.ToString("N")[..8];
 
                     <tr class="@(isConfirming ? "row-confirming" : k.ModulesCount == 0 ? "row-unused" : "")">
                         <td>
                             <span class="badge @badgeClass">
-                                <em class="provider-icon">@icon</em>@k.ProviderType
+                                <ProviderIcon Provider="@k.ProviderType" Size="14" />&nbsp;@k.ProviderType
                             </span>
                         </td>
                         <td><span class="key-name">@k.Name</span></td>
@@ -219,14 +219,14 @@ else
 
     private static (string Icon, string BadgeClass) GetProviderMeta(string provider) => provider switch
     {
-        "OpenAI"     => ("🤖", "badge-openai"),
-        "Anthropic"  => ("⚡", "badge-anthropic"),
-        "Google"     => ("🔷", "badge-google"),
-        "LeonardoAI" => ("🎨", "badge-leonardo"),
-        "xAI"        => ("✦", "badge-xai"),
-        "Pexels"     => ("📷", "badge-pexels"),
-        "Json2Video" => ("🎬", "badge-json2video"),
-        _            => ("🔑", "badge-info")
+        "OpenAI"     => ("", "badge-openai"),
+        "Anthropic"  => ("", "badge-anthropic"),
+        "Google"     => ("", "badge-google"),
+        "LeonardoAI" => ("", "badge-leonardo"),
+        "xAI"        => ("", "badge-xai"),
+        "Pexels"     => ("", "badge-pexels"),
+        "Json2Video" => ("", "badge-json2video"),
+        _            => ("", "badge-info")
     };
 
     private static string RelativeTime(DateTime dt)

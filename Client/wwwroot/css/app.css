@@ -3243,6 +3243,15 @@ a.link:hover { text-decoration: underline; }
     font-style: normal;
 }
 
+/* Iconos SVG oficiales de proveedores */
+.provider-logo {
+    display: inline-block;
+    vertical-align: middle;
+    flex-shrink: 0;
+    position: relative;
+    top: -1px;
+}
+
 .key-name {
     font-size: 0.9rem;
     font-weight: 500;

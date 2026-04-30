@@ -685,7 +685,11 @@
                     {
                 <tr>
                     <td>@m.Name</td>
-                    <td><span class="badge badge-info">@m.ProviderType</span></td>
+                    <td>
+                        <span class="badge @GetModuleProviderBadgeClass(m.ProviderType)">
+                            <ProviderIcon Provider="@m.ProviderType" Size="13" />&nbsp;@m.ProviderType
+                        </span>
+                    </td>
                     <td>
                         @if (m.ProviderType == "System")
                         {
@@ -1310,6 +1314,18 @@ else
             groups.Add(new ModuleGroup("other", "Otros", "?", others));
         return groups;
     }
+
+    private static string GetModuleProviderBadgeClass(string provider) => provider switch
+    {
+        "OpenAI"     => "badge-openai",
+        "Anthropic"  => "badge-anthropic",
+        "Google"     => "badge-google",
+        "LeonardoAI" => "badge-leonardo",
+        "xAI"        => "badge-xai",
+        "Pexels"     => "badge-pexels",
+        "Json2Video" => "badge-json2video",
+        _            => "badge-info"
+    };
 
     // ── Data lists ──
     private static bool IsBuiltInSystemModule(AiModuleResponse module) =>
