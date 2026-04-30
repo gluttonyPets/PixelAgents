@@ -20,6 +20,9 @@ const CLAUDE_BIN = process.env.CLAUDE_BIN || "claude";
 const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "";
 const CLAUDE_MAX_TURNS = Number(process.env.CLAUDE_MAX_TURNS || "80");
 const CLAUDE_NOTE_PREFIX = "[CLAUDE_AUTOMATION]";
+const CLAUDE_SESSION_MARKER_PREFIX = "[CLAUDE_SESSION]";
+const CLAUDE_RESOLVED_MARKER_PREFIX = "[CLAUDE_RESOLVED]";
+const CLAUDE_SUMMARY_MARKER_PREFIX = "[CLAUDE_SUMMARY]";
 let resolvedReviewStatusId = CONFIGURED_REVIEW_STATUS_ID;
 
 function resolveHome() {
@@ -225,6 +228,49 @@ async function updateTicketStatus(ticketId, statusId) {
   throw new Error(`Could not move ticket ${ticketId} to status ${statusId}.`);
 }
 
+async function updateTicketFields(ticketId, values, ticket = null) {
+  const existingTicket = ticket || await getTicket(ticketId);
+  if (!existingTicket) {
+    throw new Error(`Could not read ticket ${ticketId} before updating fields.`);
+  }
+
+  const projectId = Number(existingTicket.projectId || PROJECT_ID);
+  const normalizedValues = {
+    ...values,
+    id: Number(ticketId),
+    projectId,
+  };
+
+  const attempts = [
+    { id: Number(ticketId), values: normalizedValues },
+    { values: normalizedValues },
+    normalizedValues,
+  ];
+
+  for (const params of attempts) {
+    try {
+      return await rpc("leantime.rpc.tickets.updateTicket", params);
+    } catch (error) {
+      logGlobal(`[WARN] updateTicketFields failed for ticket ${ticketId}: ${String(error.message || error)}`);
+    }
+  }
+
+  throw new Error(`Could not update ticket ${ticketId}.`);
+}
+
+async function addTicketComment(ticketId, comment, commentParent = "") {
+  try {
+    return await rpc("leantime.rpc.comments.addComment", {
+      moduleId: Number(ticketId),
+      commentModule: "tickets",
+      comment,
+      commentParent: String(commentParent || ""),
+    });
+  } catch (error) {
+    throw new Error(`Could not add discussion comment for ticket ${ticketId}: ${String(error.message || error)}`);
+  }
+}
+
 async function getTicketComments(ticketId) {
   const attempts = [
     ["leantime.rpc.comments.getComments", { module: "ticket", entityId: Number(ticketId) }],
@@ -274,6 +320,28 @@ function isAutomationComment(comment) {
   return getCommentBody(comment).startsWith(CLAUDE_NOTE_PREFIX);
 }
 
+function isSessionMarkerComment(comment) {
+  return getCommentBody(comment).startsWith(CLAUDE_SESSION_MARKER_PREFIX);
+}
+
+function isResolvedMarkerComment(comment) {
+  return getCommentBody(comment).startsWith(CLAUDE_RESOLVED_MARKER_PREFIX);
+}
+
+function isSummaryMarkerComment(comment) {
+  return getCommentBody(comment).startsWith(CLAUDE_SUMMARY_MARKER_PREFIX);
+}
+
+function extractSessionIdFromMarkerComment(comment) {
+  const match = getCommentBody(comment).match(/session_id=([A-Za-z0-9._:-]+)/);
+  return match ? match[1] : "";
+}
+
+function extractResolvedCommentId(comment) {
+  const match = getCommentBody(comment).match(/comment_id=([A-Za-z0-9._:-]+)/);
+  return match ? match[1] : "";
+}
+
 function sortComments(comments) {
   return [...comments].sort((a, b) => {
     const aId = Number(getCommentId(a) || 0);
@@ -285,12 +353,122 @@ function sortComments(comments) {
   });
 }
 
+function getReviewRelevantComments(comments) {
+  return comments.filter((comment) =>
+    !isAutomationComment(comment)
+    && !isSessionMarkerComment(comment)
+    && !isResolvedMarkerComment(comment)
+    && !isSummaryMarkerComment(comment)
+  );
+}
+
 function commentSignature(comment) {
   const id = getCommentId(comment);
   const timestamp = String(comment.dateModified || comment.dateCreated || "");
   const preview = getCommentBody(comment).replace(/\s+/g, " ").slice(0, 140);
   const parent = String(comment.commentParent || "");
   return `${id}|${timestamp}|${parent}|${preview}`;
+}
+
+function getTicketSessionIdFromComments(comments) {
+  const markerComments = comments.filter((comment) => isSessionMarkerComment(comment));
+  if (!markerComments.length) {
+    return "";
+  }
+
+  const latestMarker = sortComments(markerComments)[markerComments.length - 1];
+  return extractSessionIdFromMarkerComment(latestMarker);
+}
+
+async function syncTicketSessionMarker(ticketId, sessionId) {
+  if (!sessionId) {
+    return;
+  }
+
+  const comments = await getTicketComments(ticketId);
+  if (getTicketSessionIdFromComments(comments) === sessionId) {
+    return;
+  }
+
+  await addTicketComment(
+    ticketId,
+    `${CLAUDE_SESSION_MARKER_PREFIX} session_id=${sessionId}\nEtiqueta tecnica para reanudar o reconstruir el contexto de Claude.`,
+  );
+}
+
+async function syncTicketSummaryComment(ticketId, finalResult, sessionId = "") {
+  const summary = String(finalResult || "").trim();
+  if (!summary) {
+    return;
+  }
+
+  const comments = await getTicketComments(ticketId);
+  for (const comment of comments) {
+    const body = getCommentBody(comment);
+    if (body.startsWith(CLAUDE_SUMMARY_MARKER_PREFIX) && body.includes(summary)) {
+      return;
+    }
+  }
+
+  const marker = `${CLAUDE_SUMMARY_MARKER_PREFIX}${sessionId ? ` session_id=${sessionId}` : ""}\n${summary}`;
+  await addTicketComment(ticketId, marker);
+}
+
+async function restoreTicketDescriptionIfChanged(ticketId, originalDescription) {
+  const currentTicket = await getTicket(ticketId);
+  if (!currentTicket) {
+    return;
+  }
+
+  const currentDescription = String(currentTicket.description || "");
+  const expectedDescription = String(originalDescription || "");
+  if (currentDescription === expectedDescription) {
+    return;
+  }
+
+  logGlobal(`[WARN] Restoring immutable description for ticket ${ticketId}.`);
+  await updateTicketFields(ticketId, { description: expectedDescription }, currentTicket);
+}
+
+function hasResolutionReply(comment, allComments) {
+  const targetCommentId = getCommentId(comment);
+  if (!targetCommentId) {
+    return false;
+  }
+
+  for (const candidate of allComments) {
+    if (!isResolvedMarkerComment(candidate)) {
+      continue;
+    }
+
+    const candidateParent = String(candidate.commentParent || "");
+    const resolvedCommentId = extractResolvedCommentId(candidate);
+    if (candidateParent === targetCommentId || resolvedCommentId === targetCommentId) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function acknowledgeResolvedReviewComments(ticketId, resolvedComments) {
+  if (!resolvedComments.length) {
+    return;
+  }
+
+  const allComments = await getTicketComments(ticketId);
+  for (const comment of resolvedComments) {
+    const commentId = getCommentId(comment);
+    if (!commentId || hasResolutionReply(comment, allComments)) {
+      continue;
+    }
+
+    await addTicketComment(
+      ticketId,
+      `${CLAUDE_RESOLVED_MARKER_PREFIX} comment_id=${commentId}\nCorregido y devuelto a Review. Si ves algo mas en este punto, anade otro comentario en este hilo.`,
+      commentId,
+    );
+  }
 }
 
 function latestCommentSignature(comments) {
@@ -512,6 +690,7 @@ function runClaude(prompt, previousSessionId, logger) {
 
 async function processReadyTask(task, state) {
   const ticketId = Number(task.id);
+  const originalDescription = String(task.description || "");
   if (state.processedReadyTasks.includes(ticketId)) {
     return;
   }
@@ -521,13 +700,23 @@ async function processReadyTask(task, state) {
 
   const logger = new TicketLogger(ticketId, String(task.headline || "(sin titulo)"));
   try {
-    const result = await runClaude(buildPrompt(task, "ready", [], state.ticketSessions[String(ticketId)] || ""), state.ticketSessions[String(ticketId)] || "", logger);
+    const previousSessionId = getTicketSessionIdFromComments(await getTicketComments(ticketId)) || state.ticketSessions[String(ticketId)] || "";
+    const result = await runClaude(buildPrompt(task, "ready", [], previousSessionId), previousSessionId, logger);
     logger.setResult(result);
 
     state.processedReadyTasks = Array.from(new Set([...state.processedReadyTasks, ticketId])).sort((a, b) => a - b);
     if (result.session_id) {
       state.ticketSessions[String(ticketId)] = result.session_id;
+      await syncTicketSessionMarker(ticketId, result.session_id);
     }
+
+    const latestSignature = latestCommentSignature(getReviewRelevantComments(await getTicketComments(ticketId)));
+    if (latestSignature) {
+      state.reviewCommentMarkers[String(ticketId)] = latestSignature;
+    }
+
+    await restoreTicketDescriptionIfChanged(ticketId, originalDescription);
+    await syncTicketSummaryComment(ticketId, result.result || "", result.session_id || previousSessionId);
 
     const refreshed = await getTicket(ticketId);
     const status = refreshed ? Number(refreshed.status || -1) : -1;
@@ -545,11 +734,12 @@ async function processReadyTask(task, state) {
 
 async function processReviewTask(task, state) {
   const ticketId = Number(task.id);
+  const originalDescription = String(task.description || "");
   const allComments = await getTicketComments(ticketId);
-  const comments = allComments.filter((comment) => !isAutomationComment(comment));
+  const comments = getReviewRelevantComments(allComments);
   const latestSignature = latestCommentSignature(comments);
   const knownSignature = state.reviewCommentMarkers[String(ticketId)] || "";
-  const previousSessionId = state.ticketSessions[String(ticketId)] || "";
+  const previousSessionId = getTicketSessionIdFromComments(allComments) || state.ticketSessions[String(ticketId)] || "";
 
   logGlobal(`[INFO] Review scan ticket=${ticketId} comments=${comments.length} known_signature=${knownSignature ? "yes" : "no"} latest_signature=${latestSignature ? "yes" : "no"} previous_session=${previousSessionId ? "yes" : "no"} title=${task.headline || ""}`);
 
@@ -579,12 +769,24 @@ async function processReviewTask(task, state) {
 
     if (result.session_id) {
       state.ticketSessions[String(ticketId)] = result.session_id;
+      await syncTicketSessionMarker(ticketId, result.session_id);
     }
 
-    const refreshedComments = (await getTicketComments(ticketId)).filter((comment) => !isAutomationComment(comment));
+    await restoreTicketDescriptionIfChanged(ticketId, originalDescription);
+    await syncTicketSummaryComment(ticketId, result.result || "", result.session_id || previousSessionId);
+    await acknowledgeResolvedReviewComments(ticketId, pendingComments);
+
+    const refreshedComments = getReviewRelevantComments(await getTicketComments(ticketId));
     const refreshedSignature = latestCommentSignature(refreshedComments);
     if (refreshedSignature) {
       state.reviewCommentMarkers[String(ticketId)] = refreshedSignature;
+    }
+
+    const refreshedTicket = await getTicket(ticketId);
+    const status = refreshedTicket ? Number(refreshedTicket.status || -1) : -1;
+    if (status === READY_STATUS_ID || status === IN_PROGRESS_STATUS_ID) {
+      logGlobal(`[INFO] Ticket ${ticketId} finished review feedback without Review status. Moving it to Review.`);
+      await updateTicketStatus(ticketId, resolvedReviewStatusId);
     }
   } catch (error) {
     logger.log("error", "Claude execution failed", String(error.message || error));

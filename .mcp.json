@@ -1,10 +1,11 @@
 {
   "mcpServers": {
     "leantime": {
-      "command": "bash",
-      "args": [
-        "./tools/run_leantime_mcp.sh"
-      ]
+      "type": "http",
+      "url": "${LEANTIME_MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${LEANTIME_MCP_TOKEN}"
+      }
     }
   }
 }

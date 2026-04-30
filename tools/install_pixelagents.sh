@@ -107,10 +107,9 @@ install -d -o "$PA_USER" -g "$PA_USER" -m 0755 "$LOG_DIR"
 [ -x "/usr/bin/env" ] || echo "[install][WARN] no existe /usr/bin/env."
 [ -x "$PA_HOME/.local/bin/claude" ] || command -v claude >/dev/null 2>&1 || echo "[install][WARN] no se encontró Claude CLI en PATH ni en $PA_HOME/.local/bin/claude."
 [ -f "$PA_PROJECT_DIR/.mcp.json" ] || echo "[install][WARN] no existe $PA_PROJECT_DIR/.mcp.json."
-[ -f "$PA_PROJECT_DIR/tools/run_leantime_mcp.sh" ] || echo "[install][WARN] no existe $PA_PROJECT_DIR/tools/run_leantime_mcp.sh."
+[ -f "$PA_PROJECT_DIR/tools/run_leantime_mcp.sh" ] || echo "[install][WARN] no existe $PA_PROJECT_DIR/tools/run_leantime_mcp.sh (solo necesario para setups legacy con bridge stdio)."
 [ -n "${LEANTIME_MCP_URL:-}" ] || echo "[install][WARN] LEANTIME_MCP_URL no está definido en $ENV_FILE."
-[ -n "${LEANTIME_MCP_TOKEN:-}" ] || echo "[install][WARN] LEANTIME_MCP_TOKEN no está definido en $ENV_FILE (o usa LEANTIME_API_KEY como fallback)."
-[ -x "$PA_HOME/.npm-global/bin/leantime-mcp" ] || command -v leantime-mcp >/dev/null 2>&1 || echo "[install][WARN] no se encontró leantime-mcp en PATH. Instálalo con: npm install -g leantime-mcp"
+[ -n "${LEANTIME_MCP_TOKEN:-}" ] || echo "[install][WARN] LEANTIME_MCP_TOKEN no está definido en $ENV_FILE. Para Claude + MCP remoto HTTP usa preferiblemente un PAT de Leantime."
 [ -x "$DEPLOY_SCRIPT" ] || echo "[install][WARN] no existe $DEPLOY_SCRIPT, ¿faltan tools/?"
 
 # Marca el repo como safe para git incluso ejecutándose como root
