@@ -88,6 +88,7 @@ else
 fi
 
 # --- Push ------------------------------------------------------------------
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 log "Subiendo rama al remoto (sin --force):"
 git push -u origin "HEAD:${BRANCH}"
 
