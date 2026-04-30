@@ -16,10 +16,7 @@ if [ -z "$LEANTIME_MCP_TOKEN" ]; then
   exit 1
 fi
 
-args=("$LEANTIME_MCP_URL" "--token" "$LEANTIME_MCP_TOKEN")
-
-if [ -n "$LEANTIME_MCP_AUTH_METHOD" ]; then
-  args+=("--auth-method" "$LEANTIME_MCP_AUTH_METHOD")
-fi
-
-exec "$LEANTIME_MCP_COMMAND" "${args[@]}"
+exec node "$LEANTIME_MCP_DIST" \
+  "$LEANTIME_MCP_URL" \
+  --token "$LEANTIME_MCP_TOKEN" \
+  --auth-method "$LEANTIME_MCP_AUTH_METHOD"

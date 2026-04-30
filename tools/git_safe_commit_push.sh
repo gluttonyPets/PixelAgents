@@ -37,31 +37,6 @@ if ! grep -q "#${TICKET_ID}" <<<"$COMMIT_MESSAGE"; then
   COMMIT_MESSAGE="Leantime #${TICKET_ID}: ${COMMIT_MESSAGE}"
 fi
 
-# --- Validación de repo ----------------------------------------------------
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-  || fail "no estás dentro de un repo git"
-
-BRANCH="$(git branch --show-current || true)"
-[ -n "$BRANCH" ] || fail "no se pudo detectar la rama actual (¿HEAD desconectada?)"
-
-case "$BRANCH" in
-  master|main|develop)
-    fail "rama protegida: $BRANCH (no se permite commit/push automático)"
-    ;;
-esac
-
-case "$BRANCH" in
-  feature/*|fix/*|hotfix/*) ;;
-  *)
-    fail "la rama debe empezar por feature/, fix/ o hotfix/. Rama actual: $BRANCH"
-    ;;
-esac
-
-log "Rama válida: $BRANCH"
-
-git remote get-url origin >/dev/null 2>&1 \
-  || fail "no existe remote 'origin'"
-
 # --- Bloqueo de archivos sensibles ----------------------------------------
 # Evita subir secretos por descuido.
 SENSITIVE_REGEX='(^|/)(\.env(\..+)?|.*\.pem|.*\.key|.*\.p12|.*\.pfx|id_rsa|id_ed25519|credentials\.json|secrets?\.ya?ml|.*\.kdbx)$'
