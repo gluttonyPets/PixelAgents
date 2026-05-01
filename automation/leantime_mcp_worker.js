@@ -24,6 +24,9 @@ const CLAUDE_NOTE_PREFIX = "[CLAUDE_AUTOMATION]";
 const CLAUDE_SESSION_MARKER_PREFIX = "[CLAUDE_SESSION]";
 const CLAUDE_RESOLVED_MARKER_PREFIX = "[CLAUDE_RESOLVED]";
 const CLAUDE_SUMMARY_MARKER_PREFIX = "[CLAUDE_SUMMARY]";
+const CLAUDE_STARTED_MARKER_PREFIX = "[CLAUDE_STARTED]";
+const CLAUDE_FINISHED_MARKER_PREFIX = "[CLAUDE_FINISHED]";
+const AGENT_TAG_PREFIXES = ["session=", "branch=", "trigger="];
 let resolvedReviewStatusId = CONFIGURED_REVIEW_STATUS_ID;
 
 function resolveHome() {
@@ -473,6 +476,11 @@ function isSummaryMarkerComment(comment) {
   return getCommentBody(comment).startsWith(CLAUDE_SUMMARY_MARKER_PREFIX);
 }
 
+function isLifecycleMarkerComment(comment) {
+  const body = getCommentBody(comment);
+  return body.startsWith(CLAUDE_STARTED_MARKER_PREFIX) || body.startsWith(CLAUDE_FINISHED_MARKER_PREFIX);
+}
+
 function extractSessionIdFromMarkerComment(comment) {
   const match = getCommentBody(comment).match(/session_id=([A-Za-z0-9._:-]+)/);
   return match ? match[1] : "";
@@ -511,6 +519,7 @@ function getReviewRelevantComments(comments) {
     && !isSessionMarkerComment(comment)
     && !isResolvedMarkerComment(comment)
     && !isSummaryMarkerComment(comment)
+    && !isLifecycleMarkerComment(comment)
   );
 }
 
@@ -699,19 +708,23 @@ function buildPrompt(task, trigger, reviewComments, previousSessionId) {
     "- La descripción original de la tarea es inmutable: no la edites, no la sustituyas y no escribas resúmenes ahí.",
     "- Todo resumen de progreso, rama, commit, validación o corrección debe ir en Discusión.",
     `- Todos los comentarios automáticos que escribas en Discusión deben empezar por ${CLAUDE_NOTE_PREFIX}.`,
+    "- NO modifiques el status del ticket bajo ningún concepto. El worker controla el status: lo deja en Review automáticamente al terminar correctamente, y en In Progress si Claude falla. No invoques tools para cambiar status, ni te apoyes en el estado actual del ticket: trabaja siempre como si estuviera en In Progress.",
+    "- NO modifiques las etiquetas (tags) del ticket. El worker añade automáticamente session=<id> y branch=<rama> al terminar.",
     reviewBlock,
     sessionBlock,
     "",
     "Objetivos obligatorios:",
-    "- Al empezar, mueve la tarea a In Progress si todavía no lo está.",
     "- Si el trabajo no es trivial, crea subtareas reales en Leantime.",
-    "- Mantén el estado real del trabajo sincronizado con Leantime.",
-    "- Si el trabajo acaba correctamente, deja la tarea en Review.",
+    "- Mantén el estado real del trabajo sincronizado con Leantime mediante comentarios en Discusión (no por status ni por tags).",
     "- Si la corrección viene de un comentario concreto, responde en ese hilo y marca claramente que ya quedó resuelto.",
-    "- No marques Done sin aprobación humana.",
-    "- No hagas merge a develop ni master.",
+    "- No marques Done. No hagas merge a develop ni master.",
     "",
-    "Devuelve también un breve resumen final en tu resultado.",
+    "Resumen final (obligatorio en tu resultado):",
+    "Devuelve un resumen MUY breve (3-6 líneas) que incluya, en líneas separadas y con esos prefijos exactos para que el worker pueda parsearlos:",
+    "  Rama: `<nombre-de-rama>`",
+    "  Último commit: `<sha-corto>` <mensaje>",
+    "  Resumen: <una o dos frases con lo hecho>",
+    "No repitas la rama, el commit ni el session_id en otros formatos: el worker los pondrá en tags. No incluyas listas largas de archivos ni explicaciones extensas.",
   ].join("\n").trim();
 }
 
@@ -804,6 +817,99 @@ class TicketLogger {
   }
 }
 
+async function addStartedMarker(ticketId, trigger, previousSessionId) {
+  const lines = [
+    `${CLAUDE_STARTED_MARKER_PREFIX} ts=${nowIso()} trigger=${trigger}${previousSessionId ? ` resumes_session=${previousSessionId}` : ""}`,
+    "Marca tecnica: instante en que el worker lanza Claude para esta tarea.",
+  ];
+  await addTicketComment(ticketId, lines.join("\n"));
+}
+
+async function addFinishedMarker(ticketId, claudeResult, startedAtMs, sessionId) {
+  const elapsedSeconds = ((Date.now() - startedAtMs) / 1000).toFixed(1);
+  const status = claudeResult && claudeResult.is_error ? "error" : "done";
+  const turns = Number((claudeResult || {}).num_turns || 0);
+  const cost = Number((claudeResult || {}).total_cost_usd || 0).toFixed(4);
+  const lines = [
+    `${CLAUDE_FINISHED_MARKER_PREFIX} ts=${nowIso()} duration=${elapsedSeconds}s status=${status} turns=${turns} cost=$${cost}${sessionId ? ` session_id=${sessionId}` : ""}`,
+    "Marca tecnica: instante en que Claude termina y los datos de la ejecucion.",
+  ];
+  await addTicketComment(ticketId, lines.join("\n"));
+}
+
+function parseBranchFromResult(text) {
+  const body = String(text || "");
+  const patterns = [
+    /(?:^|\n)[\s*_+\-]*Rama[\s*_]*:[\s*_]*[`'"]?([^`'"\n*]+?)[`'"]?[\s*_]*$/m,
+    /\bbranch[:=]\s*[`'"]?([^`'"\s]+)/i,
+    /git\s+push\s+(?:-u\s+)?\S+\s+([\w./-]+)/i,
+  ];
+  for (const re of patterns) {
+    const match = body.match(re);
+    if (match && match[1]) {
+      const candidate = match[1].trim();
+      if (/^(feature|fix|hotfix|bugfix|chore|docs|claude)\//.test(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return "";
+}
+
+function existingTagsArray(ticket) {
+  if (!ticket) {
+    return [];
+  }
+  const raw = ticket.tags;
+  if (Array.isArray(raw)) {
+    return raw.map((tag) => String(tag).trim()).filter(Boolean);
+  }
+  if (raw == null || raw === "") {
+    return [];
+  }
+  return String(raw).split(",").map((tag) => tag.trim()).filter(Boolean);
+}
+
+async function setTicketAgentTags(ticketId, { sessionId = "", branch = "", trigger = "" } = {}) {
+  const ticket = await getTicket(ticketId);
+  if (!ticket) {
+    throw new Error(`Could not read ticket ${ticketId} before updating tags.`);
+  }
+
+  const previousTags = existingTagsArray(ticket);
+  const preserved = previousTags.filter((tag) => !AGENT_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix)));
+
+  const agentTags = [];
+  if (sessionId) {
+    agentTags.push(`session=${sessionId}`);
+  }
+  if (branch) {
+    agentTags.push(`branch=${branch}`);
+  }
+  if (trigger) {
+    agentTags.push(`trigger=${trigger}`);
+  }
+
+  const merged = [...preserved, ...agentTags];
+  const tagsString = merged.join(", ");
+
+  if (tagsString === previousTags.join(", ")) {
+    return;
+  }
+
+  await updateTicketFields(ticketId, { tags: tagsString }, ticket);
+}
+
+async function forceTicketStatus(ticketId, statusId, label) {
+  const ticket = await getTicket(ticketId);
+  const current = ticket ? Number(ticket.status || -1) : -1;
+  if (current === Number(statusId)) {
+    return;
+  }
+  logGlobal(`[INFO] Forcing ticket ${ticketId} status: ${current} -> ${statusId} (${label}).`);
+  await updateTicketStatus(ticketId, statusId);
+}
+
 function runClaude(prompt, previousSessionId, logger) {
   return new Promise((resolve, reject) => {
     const args = ["-p", prompt, "--output-format", "json", "--max-turns", String(CLAUDE_MAX_TURNS), "--dangerously-skip-permissions"];
@@ -893,42 +999,51 @@ async function processReadyTask(task, state) {
   await updateTicketStatus(ticketId, IN_PROGRESS_STATUS_ID);
 
   const logger = new TicketLogger(ticketId, String(task.headline || "(sin titulo)"));
+  const startedAtMs = Date.now();
+  const previousSessionId = getTicketSessionIdFromComments(await getTicketComments(ticketId)) || state.ticketSessions[String(ticketId)] || "";
+
+  await tryStep(logger, ticketId, "addStartedMarker", () => addStartedMarker(ticketId, "ready", previousSessionId));
+
   let result;
+  let claudeOk = false;
   try {
-    const previousSessionId = getTicketSessionIdFromComments(await getTicketComments(ticketId)) || state.ticketSessions[String(ticketId)] || "";
     result = await runClaude(buildPrompt(task, "ready", [], previousSessionId), previousSessionId, logger);
     logger.setResult(result);
+    claudeOk = !result.is_error;
 
     state.processedReadyTasks = Array.from(new Set([...state.processedReadyTasks, ticketId])).sort((a, b) => a - b);
     if (result.session_id) {
       state.ticketSessions[String(ticketId)] = result.session_id;
       await tryStep(logger, ticketId, "syncTicketSessionMarker", () => syncTicketSessionMarker(ticketId, result.session_id));
     }
-
-    await tryStep(logger, ticketId, "refreshReviewSignature", async () => {
-      const latestSignature = latestCommentSignature(getReviewRelevantComments(await getTicketComments(ticketId)));
-      if (latestSignature) {
-        state.reviewCommentMarkers[String(ticketId)] = latestSignature;
-      }
-    });
-
-    await tryStep(logger, ticketId, "restoreTicketDescriptionIfChanged", () => restoreTicketDescriptionIfChanged(ticketId, originalDescription));
-    await tryStep(logger, ticketId, "syncTicketSummaryComment", () => syncTicketSummaryComment(ticketId, result.result || "", result.session_id || previousSessionId));
-
-    await tryStep(logger, ticketId, "ensureReviewStatus", async () => {
-      const refreshed = await getTicket(ticketId);
-      const status = refreshed ? Number(refreshed.status || -1) : -1;
-      if (status === READY_STATUS_ID || status === IN_PROGRESS_STATUS_ID) {
-        logGlobal(`[INFO] Ticket ${ticketId} finished without Review status. Moving it to Review.`);
-        await updateTicketStatus(ticketId, resolvedReviewStatusId);
-      }
-    });
   } catch (error) {
     logger.log("error", "Claude execution failed", String(error.message || error));
     logGlobal(`[ERROR] processReadyTask ticket=${ticketId}: ${String(error.message || error)}`);
-  } finally {
-    saveState(state);
   }
+
+  const sessionId = (result && result.session_id) || previousSessionId || "";
+
+  await tryStep(logger, ticketId, "addFinishedMarker", () => addFinishedMarker(ticketId, result || {}, startedAtMs, sessionId));
+
+  await tryStep(logger, ticketId, "refreshReviewSignature", async () => {
+    const latestSignature = latestCommentSignature(getReviewRelevantComments(await getTicketComments(ticketId)));
+    if (latestSignature) {
+      state.reviewCommentMarkers[String(ticketId)] = latestSignature;
+    }
+  });
+
+  await tryStep(logger, ticketId, "restoreTicketDescriptionIfChanged", () => restoreTicketDescriptionIfChanged(ticketId, originalDescription));
+
+  if (claudeOk && result) {
+    await tryStep(logger, ticketId, "syncTicketSummaryComment", () => syncTicketSummaryComment(ticketId, result.result || "", sessionId));
+    const branch = parseBranchFromResult(result.result);
+    await tryStep(logger, ticketId, "setTicketAgentTags", () => setTicketAgentTags(ticketId, { sessionId, branch, trigger: "ready" }));
+    await tryStep(logger, ticketId, "ensureReviewStatus", () => forceTicketStatus(ticketId, resolvedReviewStatusId, "ready->Review"));
+  } else {
+    await tryStep(logger, ticketId, "ensureInProgressOnError", () => forceTicketStatus(ticketId, IN_PROGRESS_STATUS_ID, "claude-error->In Progress"));
+  }
+
+  saveState(state);
 }
 
 async function processReviewTask(task, state) {
@@ -966,42 +1081,54 @@ async function processReviewTask(task, state) {
   await updateTicketStatus(ticketId, IN_PROGRESS_STATUS_ID);
 
   const logger = new TicketLogger(ticketId, String(task.headline || "(sin titulo)"));
+  const startedAtMs = Date.now();
+
+  await tryStep(logger, ticketId, "addStartedMarker", () => addStartedMarker(ticketId, "review_feedback", previousSessionId));
+
   let result;
+  let claudeOk = false;
   try {
     result = await runClaude(buildPrompt(task, "review_feedback", pendingComments, previousSessionId), previousSessionId, logger);
     logger.setResult(result);
+    claudeOk = !result.is_error;
 
     if (result.session_id) {
       state.ticketSessions[String(ticketId)] = result.session_id;
       await tryStep(logger, ticketId, "syncTicketSessionMarker", () => syncTicketSessionMarker(ticketId, result.session_id));
     }
-
-    await tryStep(logger, ticketId, "restoreTicketDescriptionIfChanged", () => restoreTicketDescriptionIfChanged(ticketId, originalDescription));
-    await tryStep(logger, ticketId, "syncTicketSummaryComment", () => syncTicketSummaryComment(ticketId, result.result || "", result.session_id || previousSessionId));
-    await tryStep(logger, ticketId, "acknowledgeResolvedReviewComments", () => acknowledgeResolvedReviewComments(ticketId, pendingComments));
-
-    await tryStep(logger, ticketId, "refreshReviewSignature", async () => {
-      const refreshedComments = getReviewRelevantComments(await getTicketComments(ticketId));
-      const refreshedSignature = latestCommentSignature(refreshedComments);
-      if (refreshedSignature) {
-        state.reviewCommentMarkers[String(ticketId)] = refreshedSignature;
-      }
-    });
-
-    await tryStep(logger, ticketId, "ensureReviewStatus", async () => {
-      const refreshedTicket = await getTicket(ticketId);
-      const status = refreshedTicket ? Number(refreshedTicket.status || -1) : -1;
-      if (status === READY_STATUS_ID || status === IN_PROGRESS_STATUS_ID) {
-        logGlobal(`[INFO] Ticket ${ticketId} finished review feedback without Review status. Moving it to Review.`);
-        await updateTicketStatus(ticketId, resolvedReviewStatusId);
-      }
-    });
   } catch (error) {
     logger.log("error", "Claude execution failed", String(error.message || error));
     logGlobal(`[ERROR] processReviewTask ticket=${ticketId}: ${String(error.message || error)}`);
-  } finally {
-    saveState(state);
   }
+
+  const sessionId = (result && result.session_id) || previousSessionId || "";
+
+  await tryStep(logger, ticketId, "addFinishedMarker", () => addFinishedMarker(ticketId, result || {}, startedAtMs, sessionId));
+
+  await tryStep(logger, ticketId, "restoreTicketDescriptionIfChanged", () => restoreTicketDescriptionIfChanged(ticketId, originalDescription));
+
+  if (claudeOk && result) {
+    await tryStep(logger, ticketId, "syncTicketSummaryComment", () => syncTicketSummaryComment(ticketId, result.result || "", sessionId));
+    await tryStep(logger, ticketId, "acknowledgeResolvedReviewComments", () => acknowledgeResolvedReviewComments(ticketId, pendingComments));
+    const branch = parseBranchFromResult(result.result);
+    await tryStep(logger, ticketId, "setTicketAgentTags", () => setTicketAgentTags(ticketId, { sessionId, branch, trigger: "review_feedback" }));
+  }
+
+  await tryStep(logger, ticketId, "refreshReviewSignature", async () => {
+    const refreshedComments = getReviewRelevantComments(await getTicketComments(ticketId));
+    const refreshedSignature = latestCommentSignature(refreshedComments);
+    if (refreshedSignature) {
+      state.reviewCommentMarkers[String(ticketId)] = refreshedSignature;
+    }
+  });
+
+  if (claudeOk) {
+    await tryStep(logger, ticketId, "ensureReviewStatus", () => forceTicketStatus(ticketId, resolvedReviewStatusId, "review-feedback->Review"));
+  } else {
+    await tryStep(logger, ticketId, "ensureInProgressOnError", () => forceTicketStatus(ticketId, IN_PROGRESS_STATUS_ID, "claude-error->In Progress"));
+  }
+
+  saveState(state);
 }
 
 async function main() {
