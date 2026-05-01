@@ -241,7 +241,9 @@ public static class ModulePortRegistry
                 break;
 
             case "Interaction":
-                ports.Add(new("input_message", "Mensaje", PortDataType.Text, isInput: true));
+                // input_message acepta PortDataType.Any para soportar tanto texto como imagen
+                // (fix: tipos incompatibles Imagen -> Texto al conectar modulo Image con Interaction)
+                ports.Add(new("input_message", "Mensaje", PortDataType.Any, isInput: true));
                 ports.Add(new("output_response", "Respuesta", PortDataType.Text, isInput: false));
                 break;
 
