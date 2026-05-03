@@ -541,6 +541,17 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (node.ModuleType == "Publish")
             return await ExecutePublishNodeAsync(ctx);
 
+        if (node.ModuleType == "Start")
+        {
+            var summaryMsg = string.IsNullOrWhiteSpace(previousSummaryContext)
+                ? "(sin resumen de ejecuciones anteriores)"
+                : previousSummaryContext;
+            await _logger.LogAsync(project.Id, execution.Id, "debug",
+                $"[Start] Resumen enviado al pipeline:\n{summaryMsg}",
+                node.ModuleId,
+                node.ProjectModule.StepName ?? node.AiModule.Name);
+        }
+
         return await handler.ExecuteAsync(ctx);
     }
 
