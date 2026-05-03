@@ -1155,6 +1155,11 @@ else
                                 </div>
                             </div>
 
+                            <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas en ejecuciones programadas">
+                                <input type="checkbox" @bind="_schedUseHistory" />
+                                <span>No repetir tematicas anteriores</span>
+                            </label>
+
                             <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.3rem;">
                                 <button class="btn btn-primary" @onclick="SaveSchedule" disabled="@_schedSaving">
                                     @(_schedSaving ? "Guardando..." : (_schedule is null ? "Crear programacion" : "Actualizar"))
@@ -1506,6 +1511,7 @@ else
     private string _schedCron = "";
     private string _schedTimeZone = "Europe/Madrid";
     private string _schedUserInput = "";
+    private bool _schedUseHistory = true;
     private string? _schedError;
     private bool _schedSuccess;
     private bool _schedSaving;
@@ -1789,6 +1795,7 @@ else
                 _schedCron = _schedule.CronExpression;
                 _schedTimeZone = _schedule.TimeZone;
                 _schedUserInput = _schedule.UserInput ?? "";
+                _schedUseHistory = _schedule.UseHistory;
                 // Try to detect preset from cron
                 DetectPresetFromCron(_schedule.CronExpression);
             }
@@ -2039,7 +2046,7 @@ else
             if (_schedule is null)
             {
                 var (ok, result, error) = await Api.CreateScheduleAsync(ProjectId,
-                    new CreateScheduleRequest(cron, _schedTimeZone, input));
+                    new CreateScheduleRequest(cron, _schedTimeZone, input, _schedUseHistory));
                 if (ok)
                 {
                     _schedule = result;
@@ -2051,7 +2058,7 @@ else
             else
             {
                 var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
-                    new UpdateScheduleRequest(cron, _schedTimeZone, input, _schedule.IsEnabled));
+                    new UpdateScheduleRequest(cron, _schedTimeZone, input, _schedule.IsEnabled, _schedUseHistory));
                 if (ok)
                 {
                     _schedule = result;
@@ -2079,7 +2086,7 @@ else
             var newEnabled = !_schedule.IsEnabled;
 
             var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
-                new UpdateScheduleRequest(cron, tz, input, newEnabled));
+                new UpdateScheduleRequest(cron, tz, input, newEnabled, _schedule.UseHistory));
             if (ok)
             {
                 _schedule = result;

@@ -93,7 +93,7 @@ namespace Server.Services.Scheduler
                     var executor = execScope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
                     await using var execDb = factory.Create(dbName);
 
-                    await executor.ExecuteAsync(schedule.ProjectId, schedule.UserInput, execDb, dbName, ct);
+                    await executor.ExecuteAsync(schedule.ProjectId, schedule.UserInput, execDb, dbName, ct, schedule.UseHistory);
 
                     // Update schedule times
                     schedule.LastRunAt = now;

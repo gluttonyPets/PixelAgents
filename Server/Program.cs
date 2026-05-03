@@ -1991,7 +1991,7 @@ app.MapGet("/api/projects/{projectId:guid}/schedule", async (
 
     return Results.Ok(new ScheduleResponse(
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
-        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt));
 }).RequireAuthorization();
@@ -2023,6 +2023,7 @@ app.MapPost("/api/projects/{projectId:guid}/schedule", async (
         CronExpression = req.CronExpression,
         TimeZone = req.TimeZone,
         UserInput = req.UserInput,
+        UseHistory = req.UseHistory,
         NextRunAt = nextRun,
         CreatedAt = now,
         UpdatedAt = now
@@ -2033,7 +2034,7 @@ app.MapPost("/api/projects/{projectId:guid}/schedule", async (
 
     return Results.Ok(new ScheduleResponse(
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
-        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt));
 }).RequireAuthorization();
@@ -2054,6 +2055,7 @@ app.MapPut("/api/projects/{projectId:guid}/schedule", async (
     schedule.TimeZone = req.TimeZone;
     schedule.UserInput = req.UserInput;
     schedule.IsEnabled = req.IsEnabled;
+    schedule.UseHistory = req.UseHistory;
     schedule.NextRunAt = req.IsEnabled
         ? Server.Services.Scheduler.SchedulerBackgroundService.ComputeNextRun(req.CronExpression, req.TimeZone, now)
         : null;
@@ -2063,7 +2065,7 @@ app.MapPut("/api/projects/{projectId:guid}/schedule", async (
 
     return Results.Ok(new ScheduleResponse(
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
-        schedule.CronExpression, schedule.TimeZone, schedule.UserInput,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt));
 }).RequireAuthorization();

@@ -15,6 +15,9 @@ namespace Server.Models
         /// <summary>Optional input text sent to the pipeline on each scheduled run</summary>
         public string? UserInput { get; set; }
 
+        /// <summary>When true, a summary of previous executions is included to avoid repeating topics</summary>
+        public bool UseHistory { get; set; } = true;
+
         public DateTime? LastRunAt { get; set; }
         public DateTime? NextRunAt { get; set; }
         public DateTime CreatedAt { get; set; }

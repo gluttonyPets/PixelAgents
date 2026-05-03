@@ -98,10 +98,10 @@ namespace Server.Models
         string FileName, string ContentType, long FileSize, DateTime CreatedAt);
 
     // ── Schedule ──
-    public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput);
-    public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled);
+    public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true);
+    public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true);
     public record ScheduleResponse(
         Guid Id, Guid ProjectId, bool IsEnabled, string CronExpression, string TimeZone,
-        string? UserInput, DateTime? LastRunAt, DateTime? NextRunAt,
+        string? UserInput, bool UseHistory, DateTime? LastRunAt, DateTime? NextRunAt,
         DateTime CreatedAt, DateTime UpdatedAt);
 }
