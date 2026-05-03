@@ -168,6 +168,7 @@ namespace Server.Data
                 e.Property(x => x.TimeZone).IsRequired().HasMaxLength(100).HasDefaultValue("UTC");
                 e.Property(x => x.UserInput).HasColumnType("text");
                 e.Property(x => x.IsEnabled).HasDefaultValue(true);
+                e.Property(x => x.UseHistory).HasDefaultValue(true);
 
                 e.HasOne(x => x.Project)
                     .WithMany()

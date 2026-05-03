@@ -104,6 +104,22 @@ public class GraphPipelineExecutor : IPipelineExecutor
             ? await BuildPreviousSummaryContextAsync(db, projectId, executionId, ct)
             : null;
 
+        if (previousSummaryContext is not null)
+        {
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"[No repetir tematicas] Resumen de ejecuciones anteriores enviado al modelo:\n{previousSummaryContext}");
+        }
+        else if (!useHistory)
+        {
+            await _logger.LogAsync(projectId, executionId, "info",
+                "[No repetir tematicas] Desactivado: se omite el historial de ejecuciones anteriores.");
+        }
+        else
+        {
+            await _logger.LogAsync(projectId, executionId, "info",
+                "[No repetir tematicas] Activado pero no hay ejecuciones anteriores completadas con resumen.");
+        }
+
         await _logger.LogAsync(projectId, executionId, "info",
             $"Iniciando grafo con {graph.Nodes.Count} modulo(s)");
 

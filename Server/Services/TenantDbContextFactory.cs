@@ -82,6 +82,7 @@ namespace Server.Services
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_ProjectId"" ON ""ProjectSchedules"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_IsEnabled_NextRunAt"" ON ""ProjectSchedules"" (""IsEnabled"", ""NextRunAt"")", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""UseHistory"" boolean NOT NULL DEFAULT true", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ModuleFiles"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
