@@ -79,20 +79,6 @@ Reglas de contenido (OBLIGATORIAS):
         public static string GetTextContentRules() => TextContentRules;
 
         /// <summary>
-        /// Instruccion para el provider de imagen cuando se piden N imagenes
-        /// desde un prompt compuesto (p.ej. un carrousel de N slides): cada
-        /// imagen debe representar UNA parte del prompt en orden, no repetir
-        /// todas las partes en cada variante.
-        /// </summary>
-        public static string GetMultiImageDisaggregationRule(int n) =>
-            $"IMPORTANTE: Vas a generar {n} imagenes a partir de este prompt. " +
-            $"El prompt describe {n} partes, slides o secciones distintas. " +
-            "Genera UNA imagen por cada parte, en orden: la imagen 1 representa " +
-            "la primera parte del prompt, la imagen 2 la segunda, etc. NO dibujes " +
-            "todas las partes en cada imagen. Cada imagen debe ser visualmente " +
-            "independiente y autocontenida, mostrando solo su parte correspondiente.";
-
-        /// <summary>
         /// Instruccion que obliga al modelo de texto a producir su salida como
         /// un unico objeto JSON que cumpla los contratos declarados en las
         /// aristas salientes del grafo. Cuando hay varios contratos distintos
