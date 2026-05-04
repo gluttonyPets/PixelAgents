@@ -284,17 +284,12 @@ public class ImageModuleHandler : IModuleHandler
             }
         }
 
-        // Fallback: ad-hoc keys (e.g. "slide 1") — accept the first non-empty
-        // string property so the contract syntax stays flexible.
-        foreach (var p in element.EnumerateObject())
-        {
-            if (p.Value.ValueKind == JsonValueKind.String)
-            {
-                var s = p.Value.GetString();
-                if (!string.IsNullOrWhiteSpace(s)) return s;
-            }
-        }
-        return null;
+        // Fallback: serialize the whole object as JSON so the image provider receives
+        // every field (titulo, mensaje_clave, bullets, etc.). Picking the first string
+        // property silently dropped most of the slide and produced one-word prompts
+        // like "portada".
+        var json = element.GetRawText();
+        return string.IsNullOrWhiteSpace(json) ? null : json;
     }
 
     /// <summary>
