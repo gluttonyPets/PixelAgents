@@ -20,6 +20,7 @@ namespace Server.Data
         public DbSet<ModuleConnection> ModuleConnections => Set<ModuleConnection>();
         public DbSet<OrchestratorOutput> OrchestratorOutputs => Set<OrchestratorOutput>();
         public DbSet<Rule> Rules => Set<Rule>();
+        public DbSet<PlannedPrompt> PlannedPrompts => Set<PlannedPrompt>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -169,6 +170,7 @@ namespace Server.Data
                 e.Property(x => x.UserInput).HasColumnType("text");
                 e.Property(x => x.IsEnabled).HasDefaultValue(true);
                 e.Property(x => x.UseHistory).HasDefaultValue(true);
+                e.Property(x => x.UsePromptQueue).HasDefaultValue(false);
 
                 e.HasOne(x => x.Project)
                     .WithMany()
@@ -177,6 +179,23 @@ namespace Server.Data
 
                 e.HasIndex(x => x.ProjectId);
                 e.HasIndex(x => new { x.IsEnabled, x.NextRunAt });
+            });
+
+            // ── PlannedPrompt ──
+            modelBuilder.Entity<PlannedPrompt>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Content).IsRequired().HasColumnType("text");
+                e.Property(x => x.Status).IsRequired().HasMaxLength(20).HasDefaultValue(PlannedPromptStatus.Pending);
+                e.Property(x => x.OrderIndex).HasDefaultValue(0);
+
+                e.HasOne(x => x.Project)
+                    .WithMany()
+                    .HasForeignKey(x => x.ProjectId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => x.ProjectId);
+                e.HasIndex(x => new { x.ProjectId, x.Status, x.OrderIndex });
             });
 
             // ── ExecutionLog ──

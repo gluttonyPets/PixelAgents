@@ -98,6 +98,7 @@ builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
 builder.Services.AddTransient<IPipelineExecutor, GraphPipelineExecutor>();
+builder.Services.AddScoped<IPromptPlannerService, PromptPlannerService>();
 builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
 builder.Services.AddSignalR();
@@ -1991,7 +1992,7 @@ app.MapGet("/api/projects/{projectId:guid}/schedule", async (
 
     return Results.Ok(new ScheduleResponse(
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
-        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt));
 }).RequireAuthorization();
@@ -2024,6 +2025,7 @@ app.MapPost("/api/projects/{projectId:guid}/schedule", async (
         TimeZone = req.TimeZone,
         UserInput = req.UserInput,
         UseHistory = req.UseHistory,
+        UsePromptQueue = req.UsePromptQueue,
         NextRunAt = nextRun,
         CreatedAt = now,
         UpdatedAt = now
@@ -2034,7 +2036,7 @@ app.MapPost("/api/projects/{projectId:guid}/schedule", async (
 
     return Results.Ok(new ScheduleResponse(
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
-        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt));
 }).RequireAuthorization();
@@ -2056,6 +2058,7 @@ app.MapPut("/api/projects/{projectId:guid}/schedule", async (
     schedule.UserInput = req.UserInput;
     schedule.IsEnabled = req.IsEnabled;
     schedule.UseHistory = req.UseHistory;
+    schedule.UsePromptQueue = req.UsePromptQueue;
     schedule.NextRunAt = req.IsEnabled
         ? Server.Services.Scheduler.SchedulerBackgroundService.ComputeNextRun(req.CronExpression, req.TimeZone, now)
         : null;
@@ -2065,7 +2068,7 @@ app.MapPut("/api/projects/{projectId:guid}/schedule", async (
 
     return Results.Ok(new ScheduleResponse(
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
-        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory,
+        schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt));
 }).RequireAuthorization();
@@ -2083,6 +2086,194 @@ app.MapDelete("/api/projects/{projectId:guid}/schedule", async (
     await db.SaveChangesAsync();
 
     return Results.Ok(new { message = "Programacion eliminada" });
+}).RequireAuthorization();
+
+// ==================== Planned Prompts Endpoints ====================
+
+static PlannedPromptResponse ToPlannedPromptResponse(PlannedPrompt p) =>
+    new(p.Id, p.ProjectId, p.OrderIndex, p.Content, p.Status,
+        p.CreatedAt, p.UpdatedAt, p.UsedAt, p.ExecutionId);
+
+app.MapGet("/api/projects/{projectId:guid}/planned-prompts", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    var items = await db.PlannedPrompts
+        .Where(p => p.ProjectId == projectId)
+        .OrderBy(p => p.OrderIndex)
+        .ThenBy(p => p.CreatedAt)
+        .ToListAsync();
+
+    return Results.Ok(items.Select(ToPlannedPromptResponse).ToList());
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{projectId:guid}/planned-prompts/generate", async (
+    Guid projectId, GeneratePlannedPromptsRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IPromptPlannerService planner, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    var result = await planner.GenerateAsync(db, projectId, req.GeneratorAiModuleId, req.Count, req.Instructions, ct);
+    if (!result.Success)
+        return Results.BadRequest(new { error = result.Error });
+
+    var now = DateTime.UtcNow;
+
+    if (req.ReplaceExisting)
+    {
+        var pending = await db.PlannedPrompts
+            .Where(p => p.ProjectId == projectId && p.Status == PlannedPromptStatus.Pending)
+            .ToListAsync(ct);
+        db.PlannedPrompts.RemoveRange(pending);
+    }
+
+    var maxOrder = await db.PlannedPrompts
+        .Where(p => p.ProjectId == projectId)
+        .Select(p => (int?)p.OrderIndex)
+        .MaxAsync(ct) ?? -1;
+
+    var created = new List<PlannedPrompt>();
+    var idx = maxOrder + 1;
+    foreach (var content in result.Prompts)
+    {
+        var entity = new PlannedPrompt
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = projectId,
+            OrderIndex = idx++,
+            Content = content,
+            Status = PlannedPromptStatus.Pending,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        db.PlannedPrompts.Add(entity);
+        created.Add(entity);
+    }
+
+    await db.SaveChangesAsync(ct);
+
+    return Results.Ok(created.Select(ToPlannedPromptResponse).ToList());
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{projectId:guid}/planned-prompts", async (
+    Guid projectId, CreatePlannedPromptRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    if (string.IsNullOrWhiteSpace(req.Content))
+        return Results.BadRequest(new { error = "Content vacio" });
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    var maxOrder = await db.PlannedPrompts
+        .Where(p => p.ProjectId == projectId)
+        .Select(p => (int?)p.OrderIndex)
+        .MaxAsync() ?? -1;
+
+    var now = DateTime.UtcNow;
+    var entity = new PlannedPrompt
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = projectId,
+        OrderIndex = maxOrder + 1,
+        Content = req.Content.Trim(),
+        Status = PlannedPromptStatus.Pending,
+        CreatedAt = now,
+        UpdatedAt = now,
+    };
+
+    db.PlannedPrompts.Add(entity);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(ToPlannedPromptResponse(entity));
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}", async (
+    Guid projectId, Guid promptId, UpdatePlannedPromptRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var prompt = await db.PlannedPrompts
+        .FirstOrDefaultAsync(p => p.Id == promptId && p.ProjectId == projectId);
+    if (prompt is null) return Results.NotFound();
+
+    if (prompt.Status != PlannedPromptStatus.Pending)
+        return Results.BadRequest(new { error = "Solo se pueden editar prompts pendientes" });
+
+    if (string.IsNullOrWhiteSpace(req.Content))
+        return Results.BadRequest(new { error = "Content vacio" });
+
+    prompt.Content = req.Content.Trim();
+    prompt.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    return Results.Ok(ToPlannedPromptResponse(prompt));
+}).RequireAuthorization();
+
+app.MapDelete("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}", async (
+    Guid projectId, Guid promptId,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var prompt = await db.PlannedPrompts
+        .FirstOrDefaultAsync(p => p.Id == promptId && p.ProjectId == projectId);
+    if (prompt is null) return Results.NotFound();
+
+    db.PlannedPrompts.Remove(prompt);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { message = "Prompt eliminado" });
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{projectId:guid}/planned-prompts/reorder", async (
+    Guid projectId, ReorderPlannedPromptsRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var prompts = await db.PlannedPrompts
+        .Where(p => p.ProjectId == projectId)
+        .ToListAsync();
+
+    var now = DateTime.UtcNow;
+    var dict = prompts.ToDictionary(p => p.Id);
+
+    for (var i = 0; i < req.OrderedIds.Count; i++)
+    {
+        if (dict.TryGetValue(req.OrderedIds[i], out var p))
+        {
+            p.OrderIndex = i;
+            p.UpdatedAt = now;
+        }
+    }
+
+    await db.SaveChangesAsync();
+
+    var updated = prompts
+        .OrderBy(p => p.OrderIndex)
+        .ThenBy(p => p.CreatedAt)
+        .Select(ToPlannedPromptResponse)
+        .ToList();
+
+    return Results.Ok(updated);
 }).RequireAuthorization();
 
 // ==================== WhatsApp Config Endpoints ====================

@@ -120,28 +120,118 @@ else
                         {
                             <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
                         }
-                        <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
-                        <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas">
-                            <input type="checkbox" @bind="_useHistory" />
-                            <span>No repetir tematicas anteriores</span>
-                        </label>
-                        <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
-                            <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
+                        <div style="display: flex; gap: 0.3rem; margin-bottom: 0.4rem;">
+                            <button class="btn btn-sm @(_executionMode == "simple" ? "btn-primary" : "")"
+                                    style="flex: 1; font-size: 0.7rem; padding: 0.25rem;"
+                                    @onclick='() => SetExecutionMode("simple")'>Sencilla</button>
+                            <button class="btn btn-sm @(_executionMode == "planner" ? "btn-primary" : "")"
+                                    style="flex: 1; font-size: 0.7rem; padding: 0.25rem;"
+                                    @onclick='() => SetExecutionMode("planner")'>Planificador</button>
+                        </div>
+                        @if (_executionMode == "simple")
+                        {
+                            <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
+                            <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas">
+                                <input type="checkbox" @bind="_useHistory" />
+                                <span>No repetir tematicas anteriores</span>
+                            </label>
+                            <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
+                                <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
+                                    @if (_executing)
+                                    {
+                                        <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
+                                        <span>Ejecutando...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Ejecutar</span>
+                                    }
+                                </button>
                                 @if (_executing)
                                 {
-                                    <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
-                                    <span>Ejecutando...</span>
+                                    <button class="btn btn-danger btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelExecution">Cancelar</button>
                                 }
-                                else
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="planner-panel" style="display: flex; flex-direction: column; gap: 0.3rem;">
+                                @if (_plannerError is not null)
                                 {
-                                    <span>Ejecutar</span>
+                                    <div class="alert alert-error" style="font-size: 0.7rem; padding: 0.3rem;">@_plannerError</div>
                                 }
-                            </button>
-                            @if (_executing)
-                            {
-                                <button class="btn btn-danger btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelExecution">Cancelar</button>
-                            }
-                        </div>
+                                <label style="font-size: 0.7rem;">Modelo generador
+                                    <select @bind="_plannerModuleId" style="width: 100%; font-size: 0.7rem;">
+                                        <option value="">-- elige modelo Text --</option>
+                                        @foreach (var m in _modules.Where(x => x.ModuleType == "Text" && x.IsEnabled))
+                                        {
+                                            <option value="@m.Id">@m.Name (@m.ModelName)</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label style="font-size: 0.7rem;">Cantidad
+                                    <input type="number" min="1" max="50" @bind="_plannerCount" style="width: 100%; font-size: 0.7rem;" />
+                                </label>
+                                <label style="font-size: 0.7rem;">Instrucciones / necesidades
+                                    <textarea @bind="_plannerInstructions" rows="3" style="width: 100%; font-size: 0.7rem;" placeholder="Describe que debe generar el planificador..."></textarea>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem;">
+                                    <input type="checkbox" @bind="_plannerReplace" />
+                                    <span>Reemplazar pendientes existentes</span>
+                                </label>
+                                <button class="btn btn-primary btn-sm" style="font-size: 0.7rem;" @onclick="GeneratePlannedPrompts" disabled="@_plannerBusy">
+                                    @if (_plannerBusy)
+                                    {
+                                        <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
+                                        <span>Generando...</span>
+                                    }
+                                    else
+                                    {
+                                        <span>Generar prompts</span>
+                                    }
+                                </button>
+
+                                <div style="border-top: 1px solid var(--border-color); margin-top: 0.3rem; padding-top: 0.3rem;">
+                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3rem;">
+                                        <strong style="font-size: 0.75rem;">Cola de prompts (@_plannedPrompts.Count)</strong>
+                                        <button class="btn btn-xs" style="font-size: 0.65rem;" @onclick="AddManualPrompt">+ Añadir</button>
+                                    </div>
+                                    @if (_plannedPrompts.Count == 0)
+                                    {
+                                        <div class="text-muted" style="font-size: 0.7rem;">No hay prompts en cola.</div>
+                                    }
+                                    else
+                                    {
+                                        <div style="max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem;">
+                                            @for (int i = 0; i < _plannedPrompts.Count; i++)
+                                            {
+                                                var idx = i;
+                                                var p = _plannedPrompts[idx];
+                                                <div style="display: flex; flex-direction: column; gap: 0.15rem; padding: 0.3rem; background: var(--bg-secondary, #f5f5f5); border-radius: 4px; border-left: 3px solid @(p.Status == "Used" ? "#4caf50" : p.Status == "Skipped" ? "#aaa" : "#2196f3");">
+                                                    <div style="display: flex; align-items: center; gap: 0.3rem;">
+                                                        <span style="font-size: 0.65rem; font-weight: bold;">#@(idx + 1)</span>
+                                                        <span class="badge" style="font-size: 0.6rem;">@p.Status</span>
+                                                        <button class="btn btn-xs" style="font-size: 0.6rem; margin-left: auto;" disabled="@(idx == 0)" @onclick="() => MovePrompt(idx, -1)">&uarr;</button>
+                                                        <button class="btn btn-xs" style="font-size: 0.6rem;" disabled="@(idx == _plannedPrompts.Count - 1)" @onclick="() => MovePrompt(idx, 1)">&darr;</button>
+                                                        <button class="btn btn-xs btn-danger" style="font-size: 0.6rem;" @onclick="() => DeletePrompt(p.Id)">&#x2715;</button>
+                                                    </div>
+                                                    @if (p.Status == "Pending")
+                                                    {
+                                                        <textarea rows="2" style="font-size: 0.7rem; width: 100%;"
+                                                                  value="@p.Content"
+                                                                  @onchange="@(e => OnPromptContentChanged(p.Id, e.Value?.ToString() ?? string.Empty))"></textarea>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div style="font-size: 0.7rem; white-space: pre-wrap;">@p.Content</div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        }
                         @if (_executing || _result is not null)
                         {
                             <div class="execute-inline-status">
@@ -1159,6 +1249,10 @@ else
                                 <input type="checkbox" @bind="_schedUseHistory" />
                                 <span>No repetir tematicas anteriores</span>
                             </label>
+                            <label class="execute-history-toggle" title="Usar el siguiente prompt pendiente de la cola del planificador en cada ejecucion programada">
+                                <input type="checkbox" @bind="_schedUsePromptQueue" />
+                                <span>Usar cola de prompts del planificador en cada ejecucion programada</span>
+                            </label>
 
                             <div style="display: flex; gap: 0.5rem; align-items: center; margin-top: 0.3rem;">
                                 <button class="btn btn-primary" @onclick="SaveSchedule" disabled="@_schedSaving">
@@ -1441,6 +1535,16 @@ else
     private bool _useHistory = true;
     private string? _execError;
 
+    // Planner execution mode
+    private string _executionMode = "simple"; // "simple" | "planner"
+    private List<PlannedPromptResponse> _plannedPrompts = new();
+    private string? _plannerModuleId;
+    private int _plannerCount = 5;
+    private string? _plannerInstructions;
+    private bool _plannerReplace;
+    private bool _plannerBusy;
+    private string? _plannerError;
+
     // Retry from module
     private Guid? _retryModuleId;
     private string _retryComment = "";
@@ -1512,6 +1616,7 @@ else
     private string _schedTimeZone = "Europe/Madrid";
     private string _schedUserInput = "";
     private bool _schedUseHistory = true;
+    private bool _schedUsePromptQueue;
     private string? _schedError;
     private bool _schedSuccess;
     private bool _schedSaving;
@@ -1796,6 +1901,7 @@ else
                 _schedTimeZone = _schedule.TimeZone;
                 _schedUserInput = _schedule.UserInput ?? "";
                 _schedUseHistory = _schedule.UseHistory;
+                _schedUsePromptQueue = _schedule.UsePromptQueue;
                 // Try to detect preset from cron
                 DetectPresetFromCron(_schedule.CronExpression);
             }
@@ -2046,7 +2152,7 @@ else
             if (_schedule is null)
             {
                 var (ok, result, error) = await Api.CreateScheduleAsync(ProjectId,
-                    new CreateScheduleRequest(cron, _schedTimeZone, input, _schedUseHistory));
+                    new CreateScheduleRequest(cron, _schedTimeZone, input, _schedUseHistory, _schedUsePromptQueue));
                 if (ok)
                 {
                     _schedule = result;
@@ -2058,7 +2164,7 @@ else
             else
             {
                 var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
-                    new UpdateScheduleRequest(cron, _schedTimeZone, input, _schedule.IsEnabled, _schedUseHistory));
+                    new UpdateScheduleRequest(cron, _schedTimeZone, input, _schedule.IsEnabled, _schedUseHistory, _schedUsePromptQueue));
                 if (ok)
                 {
                     _schedule = result;
@@ -2086,7 +2192,7 @@ else
             var newEnabled = !_schedule.IsEnabled;
 
             var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
-                new UpdateScheduleRequest(cron, tz, input, newEnabled, _schedule.UseHistory));
+                new UpdateScheduleRequest(cron, tz, input, newEnabled, _schedule.UseHistory, _schedule.UsePromptQueue));
             if (ok)
             {
                 _schedule = result;
@@ -3134,6 +3240,88 @@ else
         "Cancelled" => "badge-warning",
         _ => "badge-info"
     };
+
+    // ── Planner execution mode ─────────────────────────────────────────────
+
+    private async Task SetExecutionMode(string mode)
+    {
+        _executionMode = mode;
+        if (mode == "planner" && _project is not null)
+        {
+            _plannedPrompts = await Api.GetPlannedPromptsAsync(_project.Id);
+        }
+        StateHasChanged();
+    }
+
+    private async Task GeneratePlannedPrompts()
+    {
+        _plannerError = null;
+        if (_project is null) return;
+        if (string.IsNullOrWhiteSpace(_plannerModuleId) || !Guid.TryParse(_plannerModuleId, out var modId))
+        {
+            _plannerError = "Elige un modelo generador";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_plannerInstructions))
+        {
+            _plannerError = "Escribe las instrucciones";
+            return;
+        }
+        if (_plannerCount < 1 || _plannerCount > 50)
+        {
+            _plannerError = "Cantidad debe estar entre 1 y 50";
+            return;
+        }
+
+        _plannerBusy = true;
+        try
+        {
+            var (ok, _, error) = await Api.GeneratePlannedPromptsAsync(
+                _project.Id,
+                new GeneratePlannedPromptsRequest(modId, _plannerCount, _plannerInstructions!, _plannerReplace));
+            if (!ok) { _plannerError = error ?? "Error al generar"; return; }
+            _plannedPrompts = await Api.GetPlannedPromptsAsync(_project.Id);
+        }
+        finally { _plannerBusy = false; }
+    }
+
+    private async Task AddManualPrompt()
+    {
+        if (_project is null) return;
+        var (ok, item, _) = await Api.CreatePlannedPromptAsync(_project.Id, "Nuevo prompt");
+        if (ok && item is not null) _plannedPrompts.Add(item);
+    }
+
+    private async Task DeletePrompt(Guid promptId)
+    {
+        if (_project is null) return;
+        var (ok, _) = await Api.DeletePlannedPromptAsync(_project.Id, promptId);
+        if (ok) _plannedPrompts = _plannedPrompts.Where(p => p.Id != promptId).ToList();
+    }
+
+    private async Task OnPromptContentChanged(Guid promptId, string newContent)
+    {
+        if (_project is null) return;
+        var (ok, item, _) = await Api.UpdatePlannedPromptAsync(_project.Id, promptId, newContent);
+        if (ok && item is not null)
+        {
+            var idx = _plannedPrompts.FindIndex(p => p.Id == promptId);
+            if (idx >= 0) _plannedPrompts[idx] = item;
+        }
+    }
+
+    private async Task MovePrompt(int index, int delta)
+    {
+        if (_project is null) return;
+        var newIndex = index + delta;
+        if (newIndex < 0 || newIndex >= _plannedPrompts.Count) return;
+        var item = _plannedPrompts[index];
+        _plannedPrompts.RemoveAt(index);
+        _plannedPrompts.Insert(newIndex, item);
+        var ids = _plannedPrompts.Select(p => p.Id).ToList();
+        var (ok, list, _) = await Api.ReorderPlannedPromptsAsync(_project.Id, ids);
+        if (ok && list is not null) _plannedPrompts = list;
+    }
 
     public async ValueTask DisposeAsync()
     {

@@ -88,20 +88,52 @@ namespace Server.Services.Scheduler
             {
                 try
                 {
+                    // Decide UserInput: prompt queue takes priority when enabled
+                    string? effectiveInput = schedule.UserInput;
+                    PlannedPrompt? consumedPrompt = null;
+
+                    if (schedule.UsePromptQueue)
+                    {
+                        consumedPrompt = await db.PlannedPrompts
+                            .Where(p => p.ProjectId == schedule.ProjectId && p.Status == PlannedPromptStatus.Pending)
+                            .OrderBy(p => p.OrderIndex)
+                            .ThenBy(p => p.CreatedAt)
+                            .FirstOrDefaultAsync(ct);
+
+                        if (consumedPrompt is not null)
+                        {
+                            effectiveInput = consumedPrompt.Content;
+                        }
+                        else
+                        {
+                            _log.LogInformation(
+                                "Schedule {Id}: prompt queue empty for project {ProjectId}, falling back to static UserInput",
+                                schedule.Id, schedule.ProjectId);
+                        }
+                    }
+
                     // Execute pipeline
                     using var execScope = _sp.CreateScope();
                     var executor = execScope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
                     await using var execDb = factory.Create(dbName);
 
-                    await executor.ExecuteAsync(schedule.ProjectId, schedule.UserInput, execDb, dbName, ct, schedule.UseHistory);
+                    await executor.ExecuteAsync(schedule.ProjectId, effectiveInput, execDb, dbName, ct, schedule.UseHistory);
+
+                    if (consumedPrompt is not null)
+                    {
+                        consumedPrompt.Status = PlannedPromptStatus.Used;
+                        consumedPrompt.UsedAt = now;
+                        consumedPrompt.UpdatedAt = now;
+                    }
 
                     // Update schedule times
                     schedule.LastRunAt = now;
                     schedule.NextRunAt = ComputeNextRun(schedule.CronExpression, schedule.TimeZone, now);
                     schedule.UpdatedAt = now;
 
-                    _log.LogInformation("Schedule {Id} executed for project {ProjectId}",
-                        schedule.Id, schedule.ProjectId);
+                    _log.LogInformation("Schedule {Id} executed for project {ProjectId}{Queue}",
+                        schedule.Id, schedule.ProjectId,
+                        consumedPrompt is null ? "" : $" (consumed prompt {consumedPrompt.Id})");
                 }
                 catch (Exception ex)
                 {

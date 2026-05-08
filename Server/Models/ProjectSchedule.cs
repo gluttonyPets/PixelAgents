@@ -18,6 +18,10 @@ namespace Server.Models
         /// <summary>When true, a summary of previous executions is included to avoid repeating topics</summary>
         public bool UseHistory { get; set; } = true;
 
+        /// <summary>When true, the scheduler consumes the next pending PlannedPrompt
+        /// from the project queue and uses it as UserInput for that run.</summary>
+        public bool UsePromptQueue { get; set; } = false;
+
         public DateTime? LastRunAt { get; set; }
         public DateTime? NextRunAt { get; set; }
         public DateTime CreatedAt { get; set; }

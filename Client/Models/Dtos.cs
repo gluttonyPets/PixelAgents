@@ -116,12 +116,22 @@ public record ModuleFileResponse(
     string FileName, string ContentType, long FileSize, DateTime CreatedAt);
 
 // ── Schedule ──
-public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true);
-public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true);
+public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false);
+public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true, bool UsePromptQueue = false);
 public record ScheduleResponse(
     Guid Id, Guid ProjectId, bool IsEnabled, string CronExpression, string TimeZone,
-    string? UserInput, bool UseHistory, DateTime? LastRunAt, DateTime? NextRunAt,
+    string? UserInput, bool UseHistory, bool UsePromptQueue,
+    DateTime? LastRunAt, DateTime? NextRunAt,
     DateTime CreatedAt, DateTime UpdatedAt);
+
+// ── Planned Prompts ──
+public record GeneratePlannedPromptsRequest(Guid GeneratorAiModuleId, int Count, string Instructions, bool ReplaceExisting = false);
+public record CreatePlannedPromptRequest(string Content);
+public record UpdatePlannedPromptRequest(string Content);
+public record ReorderPlannedPromptsRequest(List<Guid> OrderedIds);
+public record PlannedPromptResponse(
+    Guid Id, Guid ProjectId, int OrderIndex, string Content, string Status,
+    DateTime CreatedAt, DateTime UpdatedAt, DateTime? UsedAt, Guid? ExecutionId);
 
 // ── Structured Output ──
 public class StepOutputDto

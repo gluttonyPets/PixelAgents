@@ -549,6 +549,65 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Planned Prompts ──
+
+    public async Task<List<PlannedPromptResponse>> GetPlannedPromptsAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/planned-prompts");
+        if (!resp.IsSuccessStatusCode) return new();
+        return await resp.Content.ReadFromJsonAsync<List<PlannedPromptResponse>>() ?? new();
+    }
+
+    public async Task<(bool Ok, List<PlannedPromptResponse>? Result, string? Error)> GeneratePlannedPromptsAsync(
+        Guid projectId, GeneratePlannedPromptsRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/planned-prompts/generate", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<List<PlannedPromptResponse>>();
+        return (true, result, null);
+    }
+
+    public async Task<(bool Ok, PlannedPromptResponse? Result, string? Error)> CreatePlannedPromptAsync(
+        Guid projectId, string content)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/planned-prompts",
+            new CreatePlannedPromptRequest(content));
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<PlannedPromptResponse>();
+        return (true, result, null);
+    }
+
+    public async Task<(bool Ok, PlannedPromptResponse? Result, string? Error)> UpdatePlannedPromptAsync(
+        Guid projectId, Guid promptId, string content)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/planned-prompts/{promptId}",
+            new UpdatePlannedPromptRequest(content));
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<PlannedPromptResponse>();
+        return (true, result, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> DeletePlannedPromptAsync(Guid projectId, Guid promptId)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/planned-prompts/{promptId}");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task<(bool Ok, List<PlannedPromptResponse>? Result, string? Error)> ReorderPlannedPromptsAsync(
+        Guid projectId, List<Guid> orderedIds)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/planned-prompts/reorder",
+            new ReorderPlannedPromptsRequest(orderedIds));
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<List<PlannedPromptResponse>>();
+        return (true, result, null);
+    }
+
     private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp)
     {
         try
