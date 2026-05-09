@@ -2284,6 +2284,119 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/reorder", async (
     return Results.Ok(updated);
 }).RequireAuthorization();
 
+app.MapPost("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}/execute", async (
+    Guid projectId, Guid promptId,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    ExecutionCancellationService cancellation, IHubContext<ExecutionHub> hub) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var prompt = await db.PlannedPrompts
+        .FirstOrDefaultAsync(p => p.Id == promptId && p.ProjectId == projectId);
+    if (prompt is null) return Results.NotFound();
+
+    if (prompt.Status != PlannedPromptStatus.Pending)
+        return Results.BadRequest(new { error = "Solo se pueden ejecutar prompts pendientes" });
+
+    var user = await um.GetUserAsync(ctx.User);
+    var claims = await um.GetClaimsAsync(user!);
+    var tenantDbName = claims.First(c => c.Type == "db_name").Value;
+
+    var content = prompt.Content;
+    var token = cancellation.Register(projectId);
+    var now = DateTime.UtcNow;
+
+    prompt.Status = PlannedPromptStatus.Used;
+    prompt.UsedAt = now;
+    prompt.UpdatedAt = now;
+    await db.SaveChangesAsync();
+
+    var snapshot = ToPlannedPromptResponse(prompt);
+
+    _ = Task.Run(async () =>
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var bgFactory = scope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
+            await using var bgDb = bgFactory.Create(tenantDbName);
+            var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
+
+            var execution = await executor.ExecuteAsync(projectId, content, bgDb, tenantDbName, token, useHistory: true);
+
+            var trackedPrompt = await bgDb.PlannedPrompts.FirstOrDefaultAsync(p => p.Id == promptId);
+            if (trackedPrompt is not null)
+            {
+                trackedPrompt.ExecutionId = execution.Id;
+                trackedPrompt.UpdatedAt = DateTime.UtcNow;
+                await bgDb.SaveChangesAsync();
+            }
+
+            var exec = await bgDb.ProjectExecutions
+                .Include(e => e.StepExecutions)
+                    .ThenInclude(s => s.Files)
+                .Include(e => e.StepExecutions)
+                    .ThenInclude(s => s.ProjectModule)
+                        .ThenInclude(pm => pm.AiModule)
+                .FirstAsync(e => e.Id == execution.Id);
+
+            var steps = exec.StepExecutions.OrderBy(s => s.CreatedAt).Select(s =>
+                new StepExecutionResponse(s.Id, s.ProjectModuleId,
+                    s.ProjectModule.AiModule.Name, s.ProjectModule.AiModule.ModuleType,
+                    s.Status, s.InputData, s.OutputData, s.ErrorMessage,
+                    s.CreatedAt, s.CompletedAt, s.EstimatedCost,
+                    s.Files.Select(f => new ExecutionFileResponse(
+                        f.Id, f.FileName, f.ContentType, f.FilePath,
+                        f.Direction, f.FileSize, f.CreatedAt)).ToList()
+                )).ToList();
+
+            var detail = new ExecutionDetailResponse(
+                exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+
+            if (exec.Status == "WaitingForReview")
+                await hub.Clients.Group(projectId.ToString()).SendAsync("OrchestratorWaitingForReview", detail);
+            else if (exec.Status == "WaitingForCheckpoint")
+                await hub.Clients.Group(projectId.ToString()).SendAsync("CheckpointWaitingForReview", detail);
+            else
+                await hub.Clients.Group(projectId.ToString()).SendAsync("ExecutionCompleted", detail);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Pipeline] Planned-prompt execution failed for project {projectId}: {ex}");
+
+            try
+            {
+                using var errScope = app.Services.CreateScope();
+                var errFactory = errScope.ServiceProvider.GetRequiredService<ITenantDbContextFactory>();
+                await using var errDb = errFactory.Create(tenantDbName);
+
+                var stuckExec = await errDb.ProjectExecutions
+                    .FirstOrDefaultAsync(e => e.ProjectId == projectId && e.Status == "Running");
+                if (stuckExec is not null)
+                {
+                    stuckExec.Status = "Failed";
+                    stuckExec.CompletedAt = DateTime.UtcNow;
+                    await errDb.SaveChangesAsync();
+                }
+            }
+            catch (Exception dbEx)
+            {
+                Console.WriteLine($"[Pipeline] Failed to persist error state: {dbEx.Message}");
+            }
+
+            await hub.Clients.Group(projectId.ToString()).SendAsync("ExecutionFailed", ex.Message);
+        }
+        finally
+        {
+            cancellation.Remove(projectId);
+        }
+    });
+
+    return Results.Accepted(value: snapshot);
+}).RequireAuthorization();
+
 // ==================== WhatsApp Config Endpoints ====================
 
 app.MapGet("/api/projects/{projectId:guid}/whatsapp-config", async (

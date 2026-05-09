@@ -211,7 +211,23 @@ else
                                                     <div style="display: flex; align-items: center; gap: 0.3rem;">
                                                         <span style="font-size: 0.65rem; font-weight: bold;">#@(idx + 1)</span>
                                                         <span class="badge" style="font-size: 0.6rem;">@p.Status</span>
-                                                        <button class="btn btn-xs" style="font-size: 0.6rem; margin-left: auto;" disabled="@(idx == 0)" @onclick="() => MovePrompt(idx, -1)">&uarr;</button>
+                                                        @if (p.Status == "Pending")
+                                                        {
+                                                            <button class="btn btn-success btn-xs" style="font-size: 0.6rem; margin-left: auto;"
+                                                                    title="Ejecutar este prompt ahora"
+                                                                    disabled="@(_executingPromptId == p.Id || _executing)"
+                                                                    @onclick="() => ExecutePlannedPrompt(p.Id)">
+                                                                @if (_executingPromptId == p.Id)
+                                                                {
+                                                                    <span class="spinner" style="width: 0.55rem; height: 0.55rem;"></span>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <span>&#9654; Ejecutar</span>
+                                                                }
+                                                            </button>
+                                                        }
+                                                        <button class="btn btn-xs" style="font-size: 0.6rem; @(p.Status == "Pending" ? "" : "margin-left: auto;")" disabled="@(idx == 0)" @onclick="() => MovePrompt(idx, -1)">&uarr;</button>
                                                         <button class="btn btn-xs" style="font-size: 0.6rem;" disabled="@(idx == _plannedPrompts.Count - 1)" @onclick="() => MovePrompt(idx, 1)">&darr;</button>
                                                         <button class="btn btn-xs btn-danger" style="font-size: 0.6rem;" @onclick="() => DeletePrompt(p.Id)">&#x2715;</button>
                                                     </div>
@@ -1545,6 +1561,7 @@ else
     private bool _plannerReplace;
     private bool _plannerBusy;
     private string? _plannerError;
+    private Guid? _executingPromptId;
 
     // Retry from module
     private Guid? _retryModuleId;
@@ -3310,6 +3327,31 @@ else
         {
             var idx = _plannedPrompts.FindIndex(p => p.Id == promptId);
             if (idx >= 0) _plannedPrompts[idx] = item;
+        }
+    }
+
+    private async Task ExecutePlannedPrompt(Guid promptId)
+    {
+        if (_project is null) return;
+        _plannerError = null;
+        _executingPromptId = promptId;
+        try
+        {
+            var (ok, item, error) = await Api.ExecutePlannedPromptAsync(_project.Id, promptId);
+            if (!ok)
+            {
+                _plannerError = error ?? "Error al ejecutar el prompt";
+                return;
+            }
+            if (item is not null)
+            {
+                var idx = _plannedPrompts.FindIndex(p => p.Id == promptId);
+                if (idx >= 0) _plannedPrompts[idx] = item;
+            }
+        }
+        finally
+        {
+            _executingPromptId = null;
         }
     }
 

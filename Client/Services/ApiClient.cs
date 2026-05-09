@@ -615,6 +615,16 @@ public class ApiClient
         return (true, result, null);
     }
 
+    public async Task<(bool Ok, PlannedPromptResponse? Result, string? Error)> ExecutePlannedPromptAsync(
+        Guid projectId, Guid promptId)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/planned-prompts/{promptId}/execute");
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<PlannedPromptResponse>();
+        return (true, result, null);
+    }
+
     private static async Task<string?> ReadErrorAsync(HttpResponseMessage resp)
     {
         try
