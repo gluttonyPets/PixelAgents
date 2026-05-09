@@ -2094,6 +2094,14 @@ static PlannedPromptResponse ToPlannedPromptResponse(PlannedPrompt p) =>
     new(p.Id, p.ProjectId, p.OrderIndex, p.Content, p.Status,
         p.CreatedAt, p.UpdatedAt, p.UsedAt, p.ExecutionId);
 
+app.MapGet("/api/planner/models", (IPromptPlannerService planner) =>
+{
+    var models = planner.GetAvailableModels()
+        .Select(m => new { provider = m.Provider, modelName = m.ModelName, displayName = m.DisplayName })
+        .ToList();
+    return Results.Ok(models);
+}).RequireAuthorization();
+
 app.MapGet("/api/projects/{projectId:guid}/planned-prompts", async (
     Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
@@ -2123,7 +2131,7 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/generate", async (
     var project = await db.Projects.FindAsync(projectId);
     if (project is null) return Results.NotFound();
 
-    var result = await planner.GenerateAsync(db, projectId, req.GeneratorAiModuleId, req.Count, req.Instructions, ct);
+    var result = await planner.GenerateAsync(db, projectId, req.ModelName, req.Count, req.Instructions, ct);
     if (!result.Success)
         return Results.BadRequest(new { error = result.Error });
 

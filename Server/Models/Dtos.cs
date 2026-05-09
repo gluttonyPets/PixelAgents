@@ -107,7 +107,7 @@ namespace Server.Models
         DateTime CreatedAt, DateTime UpdatedAt);
 
     // ── Planned Prompts ──
-    public record GeneratePlannedPromptsRequest(Guid GeneratorAiModuleId, int Count, string Instructions, bool ReplaceExisting = false);
+    public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);
     public record CreatePlannedPromptRequest(string Content);
     public record UpdatePlannedPromptRequest(string Content);
     public record ReorderPlannedPromptsRequest(List<Guid> OrderedIds);

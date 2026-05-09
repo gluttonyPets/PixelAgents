@@ -10,16 +10,31 @@ namespace Server.Services.Ai
         Task<PromptPlannerResult> GenerateAsync(
             UserDbContext db,
             Guid projectId,
-            Guid generatorAiModuleId,
+            string modelName,
             int count,
             string instructions,
             CancellationToken ct = default);
+
+        IReadOnlyList<PromptPlannerModelOption> GetAvailableModels();
     }
 
     public record PromptPlannerResult(bool Success, List<string> Prompts, string? Error);
 
+    public record PromptPlannerModelOption(string Provider, string ModelName, string DisplayName);
+
     public class PromptPlannerService : IPromptPlannerService
     {
+        private const string PlannerProvider = "OpenAI";
+
+        private static readonly IReadOnlyList<PromptPlannerModelOption> _availableModels = new List<PromptPlannerModelOption>
+        {
+            new(PlannerProvider, "gpt-4o", "GPT-4o"),
+            new(PlannerProvider, "gpt-4o-mini", "GPT-4o mini"),
+            new(PlannerProvider, "gpt-4-turbo", "GPT-4 Turbo"),
+            new(PlannerProvider, "gpt-4", "GPT-4"),
+            new(PlannerProvider, "gpt-3.5-turbo", "GPT-3.5 Turbo"),
+        };
+
         private readonly IAiProviderRegistry _registry;
         private readonly ILogger<PromptPlannerService> _log;
 
@@ -29,10 +44,12 @@ namespace Server.Services.Ai
             _log = log;
         }
 
+        public IReadOnlyList<PromptPlannerModelOption> GetAvailableModels() => _availableModels;
+
         public async Task<PromptPlannerResult> GenerateAsync(
             UserDbContext db,
             Guid projectId,
-            Guid generatorAiModuleId,
+            string modelName,
             int count,
             string instructions,
             CancellationToken ct = default)
@@ -43,38 +60,41 @@ namespace Server.Services.Ai
             if (string.IsNullOrWhiteSpace(instructions))
                 return new PromptPlannerResult(false, new(), "Faltan instrucciones para el planificador");
 
+            if (string.IsNullOrWhiteSpace(modelName))
+                return new PromptPlannerResult(false, new(), "Falta indicar el modelo");
+
+            var modelOption = _availableModels.FirstOrDefault(m =>
+                string.Equals(m.ModelName, modelName, StringComparison.OrdinalIgnoreCase));
+            if (modelOption is null)
+                return new PromptPlannerResult(false, new(), $"Modelo '{modelName}' no soportado por el planificador");
+
             var project = await db.Projects.FindAsync(new object?[] { projectId }, ct);
             if (project is null)
                 return new PromptPlannerResult(false, new(), "Proyecto no encontrado");
 
-            var aiModule = await db.AiModules
-                .Include(m => m.ApiKey)
-                .FirstOrDefaultAsync(m => m.Id == generatorAiModuleId, ct);
+            var apiKeyEntity = await db.ApiKeys
+                .Where(k => k.ProviderType == modelOption.Provider)
+                .OrderBy(k => k.CreatedAt)
+                .FirstOrDefaultAsync(ct);
 
-            if (aiModule is null)
-                return new PromptPlannerResult(false, new(), "Modelo generador no encontrado");
+            if (apiKeyEntity is null || string.IsNullOrEmpty(apiKeyEntity.EncryptedKey))
+                return new PromptPlannerResult(false, new(),
+                    $"No hay API Key de {modelOption.Provider} configurada. Anade una en Configuracion > API Keys.");
 
-            if (!string.Equals(aiModule.ModuleType, "Text", StringComparison.OrdinalIgnoreCase))
-                return new PromptPlannerResult(false, new(), "El modelo generador debe ser de tipo Text");
-
-            var apiKey = aiModule.ApiKey?.EncryptedKey;
-            if (string.IsNullOrEmpty(apiKey))
-                return new PromptPlannerResult(false, new(), "El modelo generador no tiene API Key configurada");
-
-            var provider = _registry.GetProvider(aiModule.ProviderType);
+            var provider = _registry.GetProvider(modelOption.Provider);
             if (provider is null)
-                return new PromptPlannerResult(false, new(), $"Proveedor '{aiModule.ProviderType}' no disponible");
+                return new PromptPlannerResult(false, new(), $"Proveedor '{modelOption.Provider}' no disponible");
 
             var systemPrompt = BuildPlannerPrompt(count, instructions, project.Context);
 
             var aiContext = new AiExecutionContext
             {
-                ModuleType = aiModule.ModuleType,
-                ModelName = aiModule.ModelName,
-                ApiKey = apiKey,
+                ModuleType = "Text",
+                ModelName = modelOption.ModelName,
+                ApiKey = apiKeyEntity.EncryptedKey,
                 Input = systemPrompt,
                 ProjectContext = project.Context,
-                Configuration = ParseConfig(aiModule.Configuration),
+                Configuration = new(),
             };
 
             try
@@ -120,20 +140,6 @@ Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adicio
 La lista debe contener exactamente {count} prompts ordenados.";
         }
 
-        private static Dictionary<string, object> ParseConfig(string? config)
-        {
-            if (string.IsNullOrWhiteSpace(config)) return new();
-            try
-            {
-                var dict = JsonSerializer.Deserialize<Dictionary<string, object>>(config);
-                return dict ?? new();
-            }
-            catch
-            {
-                return new();
-            }
-        }
-
         private static List<string> ParsePromptList(string raw, int expected)
         {
             var json = ExtractJsonObject(raw);
@@ -168,7 +174,6 @@ La lista debe contener exactamente {count} prompts ordenados.";
         {
             if (string.IsNullOrWhiteSpace(raw)) return null;
 
-            // Strip markdown fences if present
             var cleaned = raw.Trim();
             if (cleaned.StartsWith("```"))
             {

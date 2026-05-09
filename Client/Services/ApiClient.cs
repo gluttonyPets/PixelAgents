@@ -551,6 +551,13 @@ public class ApiClient
 
     // ── Planned Prompts ──
 
+    public async Task<List<PlannerModelOption>> GetPlannerModelsAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/planner/models");
+        if (!resp.IsSuccessStatusCode) return new();
+        return await resp.Content.ReadFromJsonAsync<List<PlannerModelOption>>() ?? new();
+    }
+
     public async Task<List<PlannedPromptResponse>> GetPlannedPromptsAsync(Guid projectId)
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/planned-prompts");

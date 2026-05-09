@@ -161,11 +161,11 @@ else
                                     <div class="alert alert-error" style="font-size: 0.7rem; padding: 0.3rem;">@_plannerError</div>
                                 }
                                 <label style="font-size: 0.7rem;">Modelo generador
-                                    <select @bind="_plannerModuleId" style="width: 100%; font-size: 0.7rem;">
-                                        <option value="">-- elige modelo Text --</option>
-                                        @foreach (var m in _modules.Where(x => x.ModuleType == "Text" && x.IsEnabled))
+                                    <select @bind="_plannerModelName" style="width: 100%; font-size: 0.7rem;">
+                                        <option value="">-- elige modelo --</option>
+                                        @foreach (var m in _plannerModels)
                                         {
-                                            <option value="@m.Id">@m.Name (@m.ModelName)</option>
+                                            <option value="@m.ModelName">@m.DisplayName (@m.Provider)</option>
                                         }
                                     </select>
                                 </label>
@@ -1538,7 +1538,8 @@ else
     // Planner execution mode
     private string _executionMode = "simple"; // "simple" | "planner"
     private List<PlannedPromptResponse> _plannedPrompts = new();
-    private string? _plannerModuleId;
+    private List<PlannerModelOption> _plannerModels = new();
+    private string? _plannerModelName;
     private int _plannerCount = 5;
     private string? _plannerInstructions;
     private bool _plannerReplace;
@@ -3248,6 +3249,8 @@ else
         _executionMode = mode;
         if (mode == "planner" && _project is not null)
         {
+            if (_plannerModels.Count == 0)
+                _plannerModels = await Api.GetPlannerModelsAsync();
             _plannedPrompts = await Api.GetPlannedPromptsAsync(_project.Id);
         }
         StateHasChanged();
@@ -3257,7 +3260,7 @@ else
     {
         _plannerError = null;
         if (_project is null) return;
-        if (string.IsNullOrWhiteSpace(_plannerModuleId) || !Guid.TryParse(_plannerModuleId, out var modId))
+        if (string.IsNullOrWhiteSpace(_plannerModelName))
         {
             _plannerError = "Elige un modelo generador";
             return;
@@ -3278,7 +3281,7 @@ else
         {
             var (ok, _, error) = await Api.GeneratePlannedPromptsAsync(
                 _project.Id,
-                new GeneratePlannedPromptsRequest(modId, _plannerCount, _plannerInstructions!, _plannerReplace));
+                new GeneratePlannedPromptsRequest(_plannerModelName!, _plannerCount, _plannerInstructions!, _plannerReplace));
             if (!ok) { _plannerError = error ?? "Error al generar"; return; }
             _plannedPrompts = await Api.GetPlannedPromptsAsync(_project.Id);
         }
