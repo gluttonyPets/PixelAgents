@@ -83,6 +83,23 @@ namespace Server.Services
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_ProjectId"" ON ""ProjectSchedules"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_IsEnabled_NextRunAt"" ON ""ProjectSchedules"" (""IsEnabled"", ""NextRunAt"")", log);
             RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""UseHistory"" boolean NOT NULL DEFAULT true", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""UsePromptQueue"" boolean NOT NULL DEFAULT false", log);
+
+            // ── Planned Prompts queue (planificador de ejecuciones) ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""PlannedPrompts"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
+                    ""OrderIndex"" integer NOT NULL DEFAULT 0,
+                    ""Content"" text NOT NULL,
+                    ""Status"" varchar(20) NOT NULL DEFAULT 'Pending',
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL,
+                    ""UsedAt"" timestamp with time zone,
+                    ""ExecutionId"" uuid
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PlannedPrompts_ProjectId"" ON ""PlannedPrompts"" (""ProjectId"")", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PlannedPrompts_ProjectId_Status_OrderIndex"" ON ""PlannedPrompts"" (""ProjectId"", ""Status"", ""OrderIndex"")", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ModuleFiles"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
