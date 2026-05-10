@@ -16,6 +16,15 @@ namespace Server.Services.Telegram
         private readonly IPipelineExecutor _executor;
         private readonly TelegramService _telegram;
 
+        // Buttons offered to the user every time we are waiting for input on an Interaction module.
+        private static readonly List<(string Label, string CallbackData)> ControlOptions =
+        [
+            ("Continuar", "continue"),
+            ("Abortar", "abort"),
+            ("Reiniciar", "restart"),
+            ("Editar", "edit"),
+        ];
+
         public TelegramUpdateHandler(
             CoreDbContext coreDb,
             ITenantDbContextFactory factory,
@@ -26,6 +35,13 @@ namespace Server.Services.Telegram
             _factory = factory;
             _executor = executor;
             _telegram = telegram;
+        }
+
+        private class EditFlowState
+        {
+            public string OutputKind { get; set; } = "text"; // "image" or "text"
+            public Guid? SelectedAiModuleId { get; set; }
+            public string? SelectedAiModuleName { get; set; }
         }
 
         public async Task ProcessUpdateAsync(JsonElement json)
@@ -87,15 +103,18 @@ namespace Server.Services.Telegram
                     var clarification = text.Trim().ToLowerInvariant() == "ok" ? null : text.Trim();
 
                     var execForRestart = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
-                    var originalInput = "";
+                    var originalInput = execForRestart?.UserInput ?? "";
                     Guid? projectIdForRestart = execForRestart?.ProjectId;
 
-                    if (execForRestart?.PausedStepData is not null)
+                    // Fallback: if UserInput on the execution is empty, try to recover it
+                    // from the paused state JSON (PausedGraphState serializes as camelCase).
+                    if (string.IsNullOrWhiteSpace(originalInput) && execForRestart?.PausedStepData is not null)
                     {
                         try
                         {
                             var pauseDoc = JsonDocument.Parse(execForRestart.PausedStepData);
-                            if (pauseDoc.RootElement.TryGetProperty("UserInput", out var uiProp))
+                            if (pauseDoc.RootElement.TryGetProperty("userInput", out var uiProp)
+                                || pauseDoc.RootElement.TryGetProperty("UserInput", out uiProp))
                                 originalInput = uiProp.GetString() ?? "";
                         }
                         catch { }
@@ -125,6 +144,108 @@ namespace Server.Services.Telegram
 
                     correlation.IsResolved = true;
                     await _coreDb.SaveChangesAsync();
+                    return;
+                }
+
+                // State: edit_select_model — user is choosing which AiModule to use for the edit
+                if (correlation.State == "edit_select_model")
+                {
+                    var editState = ParseEditState(correlation.EditStateData) ?? new EditFlowState();
+                    Guid moduleId;
+                    if (text.StartsWith("edit_model:", StringComparison.OrdinalIgnoreCase)
+                        && Guid.TryParse(text["edit_model:".Length..], out moduleId))
+                    {
+                        var module = await db.AiModules
+                            .Include(m => m.ApiKey)
+                            .FirstOrDefaultAsync(m => m.Id == moduleId);
+                        if (module is null)
+                        {
+                            var tg = await GetTgConfigAsync();
+                            if (tg is not null)
+                                try { await _telegram.SendTextMessageAsync(tg, "⚠️ Modulo no encontrado. Cancelando edicion."); } catch { }
+                            await ResetToWaitingAsync(correlation, await GetTgConfigAsync(), sendButtons: true);
+                            return;
+                        }
+
+                        editState.SelectedAiModuleId = module.Id;
+                        editState.SelectedAiModuleName = module.Name;
+                        correlation.State = "edit_awaiting_prompt";
+                        correlation.EditStateData = JsonSerializer.Serialize(editState);
+                        await _coreDb.SaveChangesAsync();
+
+                        var tgConfig = await GetTgConfigAsync();
+                        if (tgConfig is not null)
+                        {
+                            try
+                            {
+                                await _telegram.SendTextMessageAsync(tgConfig,
+                                    $"✏️ Modelo seleccionado: {module.Name}\n¿Que quieres editar? Envia tu instruccion.");
+                            }
+                            catch { /* non-critical */ }
+                        }
+                        return;
+                    }
+
+                    // User sent something else — re-prompt with model buttons
+                    await SendEditModelChoicesAsync(correlation, db, await GetTgConfigAsync(), editState.OutputKind);
+                    return;
+                }
+
+                // State: edit_awaiting_prompt — user is sending the edit instruction
+                if (correlation.State == "edit_awaiting_prompt")
+                {
+                    var editState = ParseEditState(correlation.EditStateData);
+                    var tgConfig = await GetTgConfigAsync();
+                    if (editState?.SelectedAiModuleId is null)
+                    {
+                        if (tgConfig is not null)
+                            try { await _telegram.SendTextMessageAsync(tgConfig, "⚠️ Estado de edicion perdido. Cancelando."); } catch { }
+                        await ResetToWaitingAsync(correlation, tgConfig, sendButtons: true);
+                        return;
+                    }
+
+                    var editPrompt = text.Trim();
+                    EditOutputResult result;
+                    try
+                    {
+                        result = await _executor.EditPausedOutputAsync(
+                            correlation.ExecutionId,
+                            editState.SelectedAiModuleId.Value,
+                            editPrompt,
+                            db,
+                            correlation.TenantDbName);
+                    }
+                    catch (Exception ex)
+                    {
+                        result = new EditOutputResult { Success = false, Error = ex.Message };
+                    }
+
+                    if (tgConfig is not null)
+                    {
+                        if (!result.Success)
+                        {
+                            try { await _telegram.SendTextMessageAsync(tgConfig, $"⚠️ Error en edicion: {result.Error}"); }
+                            catch { /* non-critical */ }
+                        }
+                        else
+                        {
+                            try
+                            {
+                                if (!string.IsNullOrWhiteSpace(result.TextResponse))
+                                    await _telegram.SendTextMessageAsync(tgConfig, result.TextResponse);
+                                foreach (var f in result.Files)
+                                {
+                                    if (f.ContentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase))
+                                        await _telegram.SendVideoAsync(tgConfig, f.Data, f.FileName);
+                                    else
+                                        await _telegram.SendPhotoAsync(tgConfig, f.Data, f.FileName);
+                                }
+                            }
+                            catch { /* non-critical */ }
+                        }
+                    }
+
+                    await ResetToWaitingAsync(correlation, tgConfig, sendButtons: true);
                     return;
                 }
 
@@ -161,6 +282,30 @@ namespace Server.Services.Telegram
                         catch { /* non-critical */ }
                     }
                     return;
+                }
+
+                if (text == "edit" || text.Contains("Editar"))
+                {
+                    var tgConfig = await GetTgConfigAsync();
+                    var info = await _executor.GetPausedOutputInfoAsync(correlation.ExecutionId, db);
+                    if (info is null)
+                    {
+                        if (tgConfig is not null)
+                            try { await _telegram.SendTextMessageAsync(tgConfig, "⚠️ No hay output pausado para editar."); } catch { }
+                        return;
+                    }
+
+                    var editState = new EditFlowState { OutputKind = info.OutputKind };
+                    correlation.State = "edit_select_model";
+                    correlation.EditStateData = JsonSerializer.Serialize(editState);
+                    await _coreDb.SaveChangesAsync();
+                    await SendEditModelChoicesAsync(correlation, db, tgConfig, info.OutputKind);
+                    return;
+                }
+
+                if (text == "continue" || text.Contains("Continuar"))
+                {
+                    // "Continuar" with no extra text — keep the original behaviour: forward "continue" as the response.
                 }
 
                 Console.WriteLine($"[TG-Update] Resuming execution {correlation.ExecutionId}, moduleId={correlation.ProjectModuleId}");
@@ -226,8 +371,8 @@ namespace Server.Services.Telegram
                     }
                 }
 
-                // For "awaiting_restart" state, the execution may not be in WaitingForInput — that's OK
-                if (candidate.State == "awaiting_restart")
+                // For these out-of-band states, the execution may not be in WaitingForInput — that's OK
+                if (candidate.State is "awaiting_restart" or "edit_select_model" or "edit_awaiting_prompt")
                     return candidate;
 
                 // Verify the execution is actually still waiting for input
@@ -256,6 +401,75 @@ namespace Server.Services.Telegram
             }
 
             return null;
+        }
+
+        private static EditFlowState? ParseEditState(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return null;
+            try { return JsonSerializer.Deserialize<EditFlowState>(json); }
+            catch { return null; }
+        }
+
+        private async Task SendEditModelChoicesAsync(
+            TelegramCorrelation correlation,
+            UserDbContext db,
+            TelegramConfig? tgConfig,
+            string outputKind)
+        {
+            if (tgConfig is null) return;
+
+            var moduleType = string.Equals(outputKind, "image", StringComparison.OrdinalIgnoreCase) ? "Image" : "Text";
+            var modules = await db.AiModules
+                .Include(m => m.ApiKey)
+                .Where(m => m.IsEnabled
+                    && m.ModuleType == moduleType
+                    && m.ApiKeyId != null)
+                .OrderBy(m => m.Name)
+                .ToListAsync();
+
+            if (modules.Count == 0)
+            {
+                try
+                {
+                    await _telegram.SendTextMessageAsync(tgConfig,
+                        $"⚠️ No hay modelos de tipo {moduleType} configurados con API Key.");
+                }
+                catch { /* non-critical */ }
+                await ResetToWaitingAsync(correlation, tgConfig, sendButtons: true);
+                return;
+            }
+
+            var buttons = modules
+                .Select(m => ($"{m.Name} ({m.ProviderType}/{m.ModelName})", $"edit_model:{m.Id}"))
+                .ToList();
+
+            try
+            {
+                await _telegram.SendTextMessageWithOptionsAsync(tgConfig,
+                    $"🎨 Elige un modelo de {moduleType.ToLowerInvariant()} para editar:",
+                    buttons);
+            }
+            catch { /* non-critical */ }
+        }
+
+        private async Task ResetToWaitingAsync(
+            TelegramCorrelation correlation,
+            TelegramConfig? tgConfig,
+            bool sendButtons)
+        {
+            correlation.State = "waiting";
+            correlation.EditStateData = null;
+            await _coreDb.SaveChangesAsync();
+
+            if (sendButtons && tgConfig is not null)
+            {
+                try
+                {
+                    await _telegram.SendTextMessageWithOptionsAsync(tgConfig,
+                        "¿Que quieres hacer ahora?", ControlOptions);
+                }
+                catch { /* non-critical */ }
+            }
         }
     }
 }

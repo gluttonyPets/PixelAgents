@@ -11,6 +11,8 @@ namespace Server.Models
         public bool IsResolved { get; set; }
         /// <summary>
         /// Tracks the correlation state: "waiting" (default), "awaiting_restart" (waiting for restart clarification text),
+        /// "edit_select_model" (waiting for the user to pick a model for an edit),
+        /// "edit_awaiting_prompt" (waiting for the user's edit prompt text),
         /// "queued" (message not yet sent — waiting for a prior interaction to resolve first).
         /// </summary>
         public string State { get; set; } = "waiting";
@@ -21,5 +23,12 @@ namespace Server.Models
         /// Null when the message has already been sent.
         /// </summary>
         public string? QueuedMessageData { get; set; }
+
+        /// <summary>
+        /// JSON-serialized intermediate state for the out-of-band "Edit" loop (State starts with "edit_").
+        /// Stores the detected output type (image/text) and the AiModule selected by the user.
+        /// Cleared when the edit cycle finishes and the correlation goes back to "waiting".
+        /// </summary>
+        public string? EditStateData { get; set; }
     }
 }

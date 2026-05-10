@@ -26,6 +26,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
     private readonly WhatsAppService _whatsApp;
     private readonly BufferService _buffer;
     private readonly IConfiguration _configuration;
+    private readonly IAiProviderRegistry _registry;
     private readonly string _mediaRoot;
     private IExecutionLogger _logger;
 
@@ -40,7 +41,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
         WhatsAppService whatsApp,
         BufferService buffer,
         IConfiguration configuration,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        IAiProviderRegistry registry)
     {
         _handlers = handlers.ToDictionary(h => h.ModuleType, StringComparer.OrdinalIgnoreCase);
         _baseLogger = logger;
@@ -51,6 +53,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         _whatsApp = whatsApp;
         _buffer = buffer;
         _configuration = configuration;
+        _registry = registry;
         _mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
     }
 
@@ -409,6 +412,159 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         if (queued.Count > 0)
             await _coreDb.SaveChangesAsync();
+    }
+
+    public async Task<PausedOutputInfo?> GetPausedOutputInfoAsync(
+        Guid executionId,
+        UserDbContext db,
+        CancellationToken ct = default)
+    {
+        var execution = await db.ProjectExecutions.FirstOrDefaultAsync(e => e.Id == executionId, ct);
+        if (execution is null || string.IsNullOrWhiteSpace(execution.PausedStepData))
+            return null;
+
+        PausedGraphState? state;
+        try { state = JsonSerializer.Deserialize<PausedGraphState>(execution.PausedStepData, JsonOptions); }
+        catch { return null; }
+        if (state is null) return null;
+
+        if (!state.CompletedOutputs.TryGetValue(state.PausedModuleId.ToString(), out var outputJson))
+            return null;
+
+        StepOutput? output;
+        try { output = JsonSerializer.Deserialize<StepOutput>(outputJson, JsonOptions); }
+        catch { return null; }
+        if (output is null) return null;
+
+        var imageCount = output.Files.Count(f =>
+            !string.IsNullOrEmpty(f.ContentType) && f.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase));
+
+        return new PausedOutputInfo
+        {
+            OutputKind = imageCount > 0 ? "image" : "text",
+            TextContent = output.Content,
+            ImageFileCount = imageCount,
+        };
+    }
+
+    public async Task<EditOutputResult> EditPausedOutputAsync(
+        Guid executionId,
+        Guid aiModuleId,
+        string editPrompt,
+        UserDbContext db,
+        string tenantDbName,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(editPrompt))
+            return new EditOutputResult { Success = false, Error = "Prompt de edicion vacio" };
+
+        var execution = await db.ProjectExecutions.FirstOrDefaultAsync(e => e.Id == executionId, ct);
+        if (execution is null)
+            return new EditOutputResult { Success = false, Error = "Ejecucion no encontrada" };
+        if (string.IsNullOrWhiteSpace(execution.PausedStepData))
+            return new EditOutputResult { Success = false, Error = "La ejecucion no esta pausada" };
+
+        PausedGraphState? state;
+        try { state = JsonSerializer.Deserialize<PausedGraphState>(execution.PausedStepData, JsonOptions); }
+        catch { return new EditOutputResult { Success = false, Error = "Estado pausado invalido" }; }
+        if (state is null)
+            return new EditOutputResult { Success = false, Error = "Estado pausado invalido" };
+
+        if (!state.CompletedOutputs.TryGetValue(state.PausedModuleId.ToString(), out var outputJson))
+            return new EditOutputResult { Success = false, Error = "Sin output pausado para editar" };
+
+        StepOutput? pausedOutput;
+        try { pausedOutput = JsonSerializer.Deserialize<StepOutput>(outputJson, JsonOptions); }
+        catch { return new EditOutputResult { Success = false, Error = "Output pausado corrupto" }; }
+        if (pausedOutput is null)
+            return new EditOutputResult { Success = false, Error = "Output pausado vacio" };
+
+        var aiModule = await db.AiModules
+            .Include(m => m.ApiKey)
+            .FirstOrDefaultAsync(m => m.Id == aiModuleId, ct);
+        if (aiModule is null)
+            return new EditOutputResult { Success = false, Error = "Modulo IA no encontrado" };
+        var apiKey = aiModule.ApiKey?.EncryptedKey;
+        if (string.IsNullOrWhiteSpace(apiKey))
+            return new EditOutputResult { Success = false, Error = "API Key no configurada para el modulo seleccionado" };
+
+        var imageFiles = pausedOutput.Files
+            .Where(f => !string.IsNullOrEmpty(f.ContentType) && f.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var isImageEdit = string.Equals(aiModule.ModuleType, "Image", StringComparison.OrdinalIgnoreCase) && imageFiles.Count > 0;
+
+        var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
+        var filePaths = await LoadExecutionFilePathsAsync(executionId, db, ct);
+
+        var inputBytes = new List<byte[]>();
+        if (isImageEdit)
+        {
+            foreach (var img in imageFiles)
+            {
+                var path = ResolveMediaPath(img, workspacePath, filePaths);
+                if (path is not null && File.Exists(path))
+                    inputBytes.Add(await File.ReadAllBytesAsync(path, ct));
+            }
+            if (inputBytes.Count == 0)
+                return new EditOutputResult { Success = false, Error = "No se encontraron las imagenes originales en disco" };
+        }
+
+        var provider = _registry.GetProvider(aiModule.ProviderType);
+        if (provider is null)
+            return new EditOutputResult { Success = false, Error = $"Proveedor '{aiModule.ProviderType}' no disponible" };
+
+        var promptForModel = isImageEdit
+            ? editPrompt
+            : $"Texto original:\n{pausedOutput.Content ?? ""}\n\nInstrucciones de edicion:\n{editPrompt}";
+
+        var aiContext = new AiExecutionContext
+        {
+            ModuleType = aiModule.ModuleType,
+            ModelName = aiModule.ModelName,
+            ApiKey = apiKey,
+            Input = promptForModel,
+            Configuration = MergeConfiguration(aiModule.Configuration, null),
+            InputFiles = isImageEdit ? inputBytes : null,
+        };
+
+        AiResult result;
+        try { result = await provider.ExecuteAsync(aiContext); }
+        catch (Exception ex) { return new EditOutputResult { Success = false, Error = $"Error ejecutando modelo: {ex.Message}" }; }
+
+        if (!result.Success)
+            return new EditOutputResult { Success = false, Error = result.Error ?? "El modelo devolvio un error" };
+
+        var editResult = new EditOutputResult { Success = true };
+        if (isImageEdit)
+        {
+            var contentType = string.IsNullOrEmpty(result.ContentType) ? "image/png" : result.ContentType;
+            var ext = contentType switch
+            {
+                "image/png" => ".png",
+                "image/webp" => ".webp",
+                _ => ".jpg",
+            };
+            var produced = new List<byte[]>();
+            if (result.FileOutput is { Length: > 0 }) produced.Add(result.FileOutput);
+            if (result.AdditionalFiles is { Count: > 0 }) produced.AddRange(result.AdditionalFiles.Where(b => b.Length > 0));
+            for (var i = 0; i < produced.Count; i++)
+            {
+                editResult.Files.Add(new EditOutputFile
+                {
+                    Data = produced[i],
+                    FileName = produced.Count > 1 ? $"edit_{i + 1}{ext}" : $"edit{ext}",
+                    ContentType = contentType,
+                });
+            }
+            if (editResult.Files.Count == 0)
+                return new EditOutputResult { Success = false, Error = "El modelo no devolvio imagenes" };
+        }
+        else
+        {
+            editResult.TextResponse = result.TextOutput ?? "";
+        }
+
+        return editResult;
     }
 
     private async Task RunGraphAsync(
@@ -1629,6 +1785,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             ("Continuar", "continue"),
             ("Abortar", "abort"),
             ("Reiniciar", "restart"),
+            ("Editar", "edit"),
         ];
 
     private static string BuildExecutionSummary(ExecutionGraph graph, string? userInput)

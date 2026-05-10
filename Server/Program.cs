@@ -192,6 +192,9 @@ using (var scope = app.Services.CreateScope())
         // Migration: add QueuedMessageData column for interaction queue
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""QueuedMessageData"" text");
+        // Migration: add EditStateData column for the out-of-band Edit flow
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""EditStateData"" text");
     }
     catch { }
 }
