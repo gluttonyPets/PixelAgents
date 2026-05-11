@@ -41,8 +41,7 @@ namespace Server.Services.Telegram
         {
             public string OutputKind { get; set; } = "text"; // "image" or "text"
             public string? ProviderType { get; set; }
-            public Guid? SelectedAiModuleId { get; set; }
-            public string? SelectedAiModuleName { get; set; }
+            public string? SelectedModelName { get; set; }
         }
 
         public async Task ProcessUpdateAsync(JsonElement json)
@@ -174,29 +173,25 @@ namespace Server.Services.Telegram
                     return;
                 }
 
-                // State: edit_select_model — user is choosing which AiModule to use for the edit
+                // State: edit_select_model — user is choosing which model from the catalog to use
                 if (correlation.State == "edit_select_model")
                 {
                     var editState = ParseEditState(correlation.EditStateData) ?? new EditFlowState();
-                    Guid moduleId;
-                    if (text.StartsWith("edit_model:", StringComparison.OrdinalIgnoreCase)
-                        && Guid.TryParse(text["edit_model:".Length..], out moduleId))
+                    if (text.StartsWith("edit_model:", StringComparison.OrdinalIgnoreCase))
                     {
-                        var module = await db.AiModules
-                            .Include(m => m.ApiKey)
-                            .FirstOrDefaultAsync(m => m.Id == moduleId);
-                        if (module is null)
+                        var modelId = text["edit_model:".Length..].Trim();
+                        var moduleType = string.Equals(editState.OutputKind, "image", StringComparison.OrdinalIgnoreCase) ? "Image" : "Text";
+                        var providerType = editState.ProviderType ?? "";
+                        var catalogModel = ModelCatalog.GetByProviderAndModuleType(providerType, moduleType)
+                            .FirstOrDefault(m => string.Equals(m.Id, modelId, StringComparison.OrdinalIgnoreCase));
+
+                        if (catalogModel is null)
                         {
-                            var tg = await GetTgConfigAsync();
-                            if (tg is not null)
-                                try { await _telegram.SendTextMessageAsync(tg, "⚠️ Modulo no encontrado. Cancelando edicion."); } catch { }
-                            await ResetToWaitingAsync(correlation, await GetTgConfigAsync(), sendButtons: true);
+                            await SendEditModelChoicesAsync(correlation, db, await GetTgConfigAsync(), editState.OutputKind, editState.ProviderType);
                             return;
                         }
 
-                        editState.SelectedAiModuleId = module.Id;
-                        editState.SelectedAiModuleName = module.Name;
-                        editState.ProviderType ??= module.ProviderType;
+                        editState.SelectedModelName = catalogModel.Id;
                         correlation.State = "edit_awaiting_prompt";
                         correlation.EditStateData = JsonSerializer.Serialize(editState);
                         await _coreDb.SaveChangesAsync();
@@ -207,7 +202,7 @@ namespace Server.Services.Telegram
                             try
                             {
                                 await _telegram.SendTextMessageAsync(tgConfig,
-                                    $"✏️ Modelo seleccionado: {module.Name}\n¿Que quieres editar? Envia tu instruccion.");
+                                    $"✏️ Modelo seleccionado: {catalogModel.DisplayName}\n¿Que quieres editar? Envia tu instruccion.");
                             }
                             catch { /* non-critical */ }
                         }
@@ -224,7 +219,9 @@ namespace Server.Services.Telegram
                 {
                     var editState = ParseEditState(correlation.EditStateData);
                     var tgConfig = await GetTgConfigAsync();
-                    if (editState?.SelectedAiModuleId is null)
+                    if (editState is null
+                        || string.IsNullOrWhiteSpace(editState.ProviderType)
+                        || string.IsNullOrWhiteSpace(editState.SelectedModelName))
                     {
                         if (tgConfig is not null)
                             try { await _telegram.SendTextMessageAsync(tgConfig, "⚠️ Estado de edicion perdido. Cancelando."); } catch { }
@@ -238,7 +235,8 @@ namespace Server.Services.Telegram
                     {
                         result = await _executor.EditPausedOutputAsync(
                             correlation.ExecutionId,
-                            editState.SelectedAiModuleId.Value,
+                            editState.ProviderType,
+                            editState.SelectedModelName,
                             editPrompt,
                             db,
                             correlation.TenantDbName);
@@ -447,21 +445,28 @@ namespace Server.Services.Telegram
             if (tgConfig is null) return;
 
             var moduleType = string.Equals(outputKind, "image", StringComparison.OrdinalIgnoreCase) ? "Image" : "Text";
-            var providers = await db.AiModules
-                .Where(m => m.IsEnabled
-                    && m.ModuleType == moduleType
-                    && m.ApiKeyId != null)
-                .Select(m => m.ProviderType)
+
+            // Providers with at least one model of this type in the catalog
+            var catalogProviders = ModelCatalog.GetProvidersForModuleType(moduleType)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            // Providers for which the tenant has an API Key configured
+            var tenantProviders = await db.ApiKeys
+                .Select(k => k.ProviderType)
                 .Distinct()
-                .OrderBy(p => p)
                 .ToListAsync();
+
+            var providers = tenantProviders
+                .Where(p => catalogProviders.Contains(p))
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             if (providers.Count == 0)
             {
                 try
                 {
                     await _telegram.SendTextMessageAsync(tgConfig,
-                        $"⚠️ No hay proveedores con modelos de tipo {moduleType} configurados.");
+                        $"⚠️ No tienes API Keys configuradas para proveedores con modelos de tipo {moduleType}.");
                 }
                 catch { /* non-critical */ }
                 await ResetToWaitingAsync(correlation, tgConfig, sendButtons: true);
@@ -500,32 +505,40 @@ namespace Server.Services.Telegram
             }
 
             var moduleType = string.Equals(outputKind, "image", StringComparison.OrdinalIgnoreCase) ? "Image" : "Text";
-            var modules = await db.AiModules
-                .Include(m => m.ApiKey)
-                .Where(m => m.IsEnabled
-                    && m.ModuleType == moduleType
-                    && m.ApiKeyId != null
-                    && m.ProviderType == providerType)
-                .OrderBy(m => m.Name)
-                .ToListAsync();
 
-            if (modules.Count == 0)
+            // Verify the tenant still has an API Key for this provider
+            var hasApiKey = await db.ApiKeys.AnyAsync(k => k.ProviderType == providerType);
+            if (!hasApiKey)
             {
                 try
                 {
                     await _telegram.SendTextMessageAsync(tgConfig,
-                        $"⚠️ El proveedor {providerType} no tiene modelos de tipo {moduleType} con API Key.");
+                        $"⚠️ Ya no tienes API Key para {providerType}.");
                 }
                 catch { /* non-critical */ }
-                // Go back to provider selection
                 correlation.State = "edit_select_provider";
                 await _coreDb.SaveChangesAsync();
                 await SendEditProviderChoicesAsync(correlation, db, tgConfig, outputKind);
                 return;
             }
 
-            var buttons = modules
-                .Select(m => ($"{m.Name} ({m.ModelName})", $"edit_model:{m.Id}"))
+            var models = ModelCatalog.GetByProviderAndModuleType(providerType, moduleType).ToList();
+            if (models.Count == 0)
+            {
+                try
+                {
+                    await _telegram.SendTextMessageAsync(tgConfig,
+                        $"⚠️ {providerType} no tiene modelos de tipo {moduleType} en el catalogo.");
+                }
+                catch { /* non-critical */ }
+                correlation.State = "edit_select_provider";
+                await _coreDb.SaveChangesAsync();
+                await SendEditProviderChoicesAsync(correlation, db, tgConfig, outputKind);
+                return;
+            }
+
+            var buttons = models
+                .Select(m => (m.DisplayName, $"edit_model:{m.Id}"))
                 .ToList();
 
             try

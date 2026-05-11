@@ -23,10 +23,11 @@ namespace Server.Services.Ai
 
         /// <summary>
         /// Runs an out-of-band edit on the paused interaction's output (image or text)
-        /// using the AiModule selected by the user. Does not advance the pipeline; the
-        /// original interaction stays paused until the user explicitly continues.
+        /// using the given provider + model. The tenant must have an API Key for the
+        /// provider configured. Does not advance the pipeline; the original interaction
+        /// stays paused until the user explicitly continues.
         /// </summary>
-        Task<EditOutputResult> EditPausedOutputAsync(Guid executionId, Guid aiModuleId, string editPrompt, UserDbContext db, string tenantDbName, CancellationToken ct = default);
+        Task<EditOutputResult> EditPausedOutputAsync(Guid executionId, string providerType, string modelName, string editPrompt, UserDbContext db, string tenantDbName, CancellationToken ct = default);
     }
 
     public class PausedOutputInfo

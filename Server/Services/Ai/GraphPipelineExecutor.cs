@@ -449,7 +449,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     public async Task<EditOutputResult> EditPausedOutputAsync(
         Guid executionId,
-        Guid aiModuleId,
+        string providerType,
+        string modelName,
         string editPrompt,
         UserDbContext db,
         string tenantDbName,
@@ -457,6 +458,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
     {
         if (string.IsNullOrWhiteSpace(editPrompt))
             return new EditOutputResult { Success = false, Error = "Prompt de edicion vacio" };
+        if (string.IsNullOrWhiteSpace(providerType))
+            return new EditOutputResult { Success = false, Error = "Proveedor no especificado" };
+        if (string.IsNullOrWhiteSpace(modelName))
+            return new EditOutputResult { Success = false, Error = "Modelo no especificado" };
 
         var execution = await db.ProjectExecutions.FirstOrDefaultAsync(e => e.Id == executionId, ct);
         if (execution is null)
@@ -479,19 +484,25 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (pausedOutput is null)
             return new EditOutputResult { Success = false, Error = "Output pausado vacio" };
 
-        var aiModule = await db.AiModules
-            .Include(m => m.ApiKey)
-            .FirstOrDefaultAsync(m => m.Id == aiModuleId, ct);
-        if (aiModule is null)
-            return new EditOutputResult { Success = false, Error = "Modulo IA no encontrado" };
-        var apiKey = aiModule.ApiKey?.EncryptedKey;
-        if (string.IsNullOrWhiteSpace(apiKey))
-            return new EditOutputResult { Success = false, Error = "API Key no configurada para el modulo seleccionado" };
+        // Look up the catalog entry to know which ModuleType this model supports
+        // (Image vs Text). The provider name in the catalog is canonical so we
+        // rely on it for the registry lookup too.
+        var catalogModel = ModelCatalog.AllModels.FirstOrDefault(m =>
+            string.Equals(m.Provider, providerType, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(m.Id, modelName, StringComparison.OrdinalIgnoreCase));
+        if (catalogModel is null)
+            return new EditOutputResult { Success = false, Error = $"Modelo '{modelName}' no encontrado en el catalogo de {providerType}" };
+
+        var apiKeyRow = await db.ApiKeys.FirstOrDefaultAsync(k => k.ProviderType == providerType, ct);
+        if (apiKeyRow is null || string.IsNullOrWhiteSpace(apiKeyRow.EncryptedKey))
+            return new EditOutputResult { Success = false, Error = $"No hay API Key configurada para {providerType}" };
+        var apiKey = apiKeyRow.EncryptedKey;
 
         var imageFiles = pausedOutput.Files
             .Where(f => !string.IsNullOrEmpty(f.ContentType) && f.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
             .ToList();
-        var isImageEdit = string.Equals(aiModule.ModuleType, "Image", StringComparison.OrdinalIgnoreCase) && imageFiles.Count > 0;
+        var moduleType = catalogModel.Types.Contains("Image", StringComparer.OrdinalIgnoreCase) ? "Image" : "Text";
+        var isImageEdit = string.Equals(moduleType, "Image", StringComparison.OrdinalIgnoreCase) && imageFiles.Count > 0;
 
         var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
         var filePaths = await LoadExecutionFilePathsAsync(executionId, db, ct);
@@ -509,9 +520,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 return new EditOutputResult { Success = false, Error = "No se encontraron las imagenes originales en disco" };
         }
 
-        var provider = _registry.GetProvider(aiModule.ProviderType);
+        var provider = _registry.GetProvider(providerType);
         if (provider is null)
-            return new EditOutputResult { Success = false, Error = $"Proveedor '{aiModule.ProviderType}' no disponible" };
+            return new EditOutputResult { Success = false, Error = $"Proveedor '{providerType}' no disponible" };
 
         var promptForModel = isImageEdit
             ? editPrompt
@@ -519,11 +530,11 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         var aiContext = new AiExecutionContext
         {
-            ModuleType = aiModule.ModuleType,
-            ModelName = aiModule.ModelName,
+            ModuleType = moduleType,
+            ModelName = modelName,
             ApiKey = apiKey,
             Input = promptForModel,
-            Configuration = MergeConfiguration(aiModule.Configuration, null),
+            Configuration = new Dictionary<string, object>(),
             InputFiles = isImageEdit ? inputBytes : null,
         };
 
