@@ -145,6 +145,7 @@ public class SchedulerUseHistoryIntegrationTests
             TimeZone: "UTC",
             UserInput: null,
             UseHistory: false,
+            UsePromptQueue: false,
             LastRunAt: null,
             NextRunAt: null,
             CreatedAt: DateTime.UtcNow,

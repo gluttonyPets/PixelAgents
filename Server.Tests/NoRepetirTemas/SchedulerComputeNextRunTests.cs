@@ -105,4 +105,64 @@ public class SchedulerComputeNextRunTests
         Assert.NotNull(result);
         Assert.Equal(new DateTime(2026, 5, 3, 11, 0, 0, DateTimeKind.Utc), result!.Value);
     }
+
+    [Fact]
+    public void ComputeNextRun_DosVecesAlDia_DevuelveLaPrimeraHora()
+    {
+        // Regresion: pipeline programado "0 15,18 * * *" en Europa/Madrid (UTC+2 en mayo).
+        // Antes de las 15:00 Madrid (13:00 UTC), la proxima debe ser hoy 15:00 Madrid.
+        var utcNow = new DateTime(2026, 5, 11, 12, 30, 0, DateTimeKind.Utc);
+        var cron = "0 15,18 * * *";
+        var tz = "Europe/Madrid";
+
+        var result = SchedulerBackgroundService.ComputeNextRun(cron, tz, utcNow);
+
+        Assert.NotNull(result);
+        Assert.Equal(new DateTime(2026, 5, 11, 13, 0, 0, DateTimeKind.Utc), result!.Value);
+    }
+
+    [Fact]
+    public void ComputeNextRun_DosVecesAlDia_TrasPrimera_DevuelveLaSegunda()
+    {
+        // Justo tras 15:00 Madrid (13:00:05 UTC), la siguiente debe ser hoy 18:00 Madrid (16:00 UTC).
+        var utcNow = new DateTime(2026, 5, 11, 13, 0, 5, DateTimeKind.Utc);
+        var cron = "0 15,18 * * *";
+        var tz = "Europe/Madrid";
+
+        var result = SchedulerBackgroundService.ComputeNextRun(cron, tz, utcNow);
+
+        Assert.NotNull(result);
+        Assert.Equal(new DateTime(2026, 5, 11, 16, 0, 0, DateTimeKind.Utc), result!.Value);
+    }
+
+    [Fact]
+    public void ComputeNextRun_DosVecesAlDia_TrasSegunda_DevuelveMananaPrimera()
+    {
+        // Justo tras 18:00 Madrid (16:00:05 UTC), la siguiente debe ser manana 15:00 Madrid (13:00 UTC).
+        var utcNow = new DateTime(2026, 5, 11, 16, 0, 5, DateTimeKind.Utc);
+        var cron = "0 15,18 * * *";
+        var tz = "Europe/Madrid";
+
+        var result = SchedulerBackgroundService.ComputeNextRun(cron, tz, utcNow);
+
+        Assert.NotNull(result);
+        Assert.Equal(new DateTime(2026, 5, 12, 13, 0, 0, DateTimeKind.Utc), result!.Value);
+    }
+
+    [Fact]
+    public void ComputeNextRun_AvanzaDesdePrevio_NoSaltaSlotsConsecutivos()
+    {
+        // Esceneario: el scheduler ejecutó el slot de las 15:00 Madrid (13:00 UTC),
+        // pero la ejecución se prolongó hasta superar las 18:00 Madrid (16:00 UTC).
+        // Avanzando desde el slot previo (13:00 UTC) no debe saltarse el slot
+        // de las 18:00 Madrid, debe devolver justo el siguiente: 16:00 UTC.
+        var previousSlot = new DateTime(2026, 5, 11, 13, 0, 0, DateTimeKind.Utc);
+        var cron = "0 15,18 * * *";
+        var tz = "Europe/Madrid";
+
+        var result = SchedulerBackgroundService.ComputeNextRun(cron, tz, previousSlot);
+
+        Assert.NotNull(result);
+        Assert.Equal(new DateTime(2026, 5, 11, 16, 0, 0, DateTimeKind.Utc), result!.Value);
+    }
 }

@@ -82,10 +82,52 @@ namespace Server.Services.Scheduler
 
             if (dueSchedules.Count == 0) return;
 
-            _log.LogInformation("Tenant {Tenant}: {Count} schedule(s) due", dbName, dueSchedules.Count);
+            _log.LogInformation("Tenant {Tenant}: {Count} schedule(s) due at {Now:O}",
+                dbName, dueSchedules.Count, now);
 
             foreach (var schedule in dueSchedules)
             {
+                // Claim the schedule by advancing NextRunAt before running the
+                // pipeline. This prevents the same trigger from being picked up
+                // again by:
+                //   - The next tick if the pipeline runs long enough that the
+                //     "now" captured at the start of this tick is stale.
+                //   - A second scheduler instance during a rolling deploy.
+                // It also guarantees that the next occurrence (e.g. 18:00 when
+                // 15:00 just fired) is never skipped because we don't depend on
+                // a single "now" value reaching the next slot.
+                var previousNextRunAt = schedule.NextRunAt;
+                // Advance from the previous slot so consecutive slots (e.g. 15:00
+                // and 18:00) are never skipped when "now" already passed both. If
+                // the previous slot is more than 1 hour stale (server downtime,
+                // schedule re-enabled after being paused) skip ahead to "now" so
+                // we don't backfill an unbounded number of past occurrences.
+                var advanceFrom = previousNextRunAt is { } prev && now - prev <= TimeSpan.FromHours(1)
+                    ? prev
+                    : now;
+                var nextRun = ComputeNextRun(schedule.CronExpression, schedule.TimeZone, advanceFrom);
+                schedule.LastRunAt = now;
+                schedule.NextRunAt = nextRun;
+                schedule.UpdatedAt = now;
+
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                }
+                catch (Exception saveEx)
+                {
+                    _log.LogError(saveEx,
+                        "Failed to persist NextRunAt for schedule {Id} (project {ProjectId}); skipping this run",
+                        schedule.Id, schedule.ProjectId);
+                    continue;
+                }
+
+                _log.LogInformation(
+                    "Schedule {Id} (project {ProjectId}) claimed. cron='{Cron}' tz='{Tz}' prevNextRunAt={Prev:O} newNextRunAt={Next:O}",
+                    schedule.Id, schedule.ProjectId,
+                    schedule.CronExpression, schedule.TimeZone,
+                    previousNextRunAt, nextRun);
+
                 try
                 {
                     // Decide UserInput: prompt queue takes priority when enabled
@@ -122,14 +164,10 @@ namespace Server.Services.Scheduler
                     if (consumedPrompt is not null)
                     {
                         consumedPrompt.Status = PlannedPromptStatus.Used;
-                        consumedPrompt.UsedAt = now;
-                        consumedPrompt.UpdatedAt = now;
+                        consumedPrompt.UsedAt = DateTime.UtcNow;
+                        consumedPrompt.UpdatedAt = DateTime.UtcNow;
+                        await db.SaveChangesAsync(ct);
                     }
-
-                    // Update schedule times
-                    schedule.LastRunAt = now;
-                    schedule.NextRunAt = ComputeNextRun(schedule.CronExpression, schedule.TimeZone, now);
-                    schedule.UpdatedAt = now;
 
                     _log.LogInformation("Schedule {Id} executed for project {ProjectId}{Queue}",
                         schedule.Id, schedule.ProjectId,
@@ -139,14 +177,9 @@ namespace Server.Services.Scheduler
                 {
                     _log.LogError(ex, "Failed to execute schedule {Id} for project {ProjectId}",
                         schedule.Id, schedule.ProjectId);
-
-                    // Still advance NextRunAt so we don't get stuck retrying
-                    schedule.NextRunAt = ComputeNextRun(schedule.CronExpression, schedule.TimeZone, now);
-                    schedule.UpdatedAt = now;
+                    // NextRunAt was already advanced above, so we don't get stuck.
                 }
             }
-
-            await db.SaveChangesAsync(ct);
         }
 
         public static DateTime? ComputeNextRun(string cronExpression, string timeZone, DateTime utcNow)

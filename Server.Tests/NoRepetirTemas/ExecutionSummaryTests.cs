@@ -108,7 +108,7 @@ public class ExecutionSummaryTests
     public void BuildExecutionSummary_NodoConArchivos_MuestraConteoArchivos()
     {
         // Arrange: nodo sin texto pero con archivos (ej: imagen generada)
-        var nodes = new[]
+        var nodes = new (string, string, string?, int)[]
         {
             ("Generador de imagen", "Image", null, 3),
         };
@@ -124,7 +124,7 @@ public class ExecutionSummaryTests
     public void BuildExecutionSummary_NodoSinContenidoNiArchivos_SeOmite()
     {
         // Arrange: nodo sin output
-        var nodes = new[]
+        var nodes = new (string, string, string?, int)[]
         {
             ("Nodo vacio", "Text", null, 0),
         };

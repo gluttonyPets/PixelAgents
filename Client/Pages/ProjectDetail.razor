@@ -1256,8 +1256,15 @@ else
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label>Input automatico <span class="text-sm text-muted">(opcional)</span></label>
-                                    <input type="text" @bind="_schedUserInput" placeholder="Ej: Genera un post sobre tendencias de hoy" />
+                                    <label>
+                                        Input automatico
+                                        <span class="text-sm text-muted">
+                                            @(_schedUsePromptQueue ? "(deshabilitado: usando cola de prompts)" : "(opcional)")
+                                        </span>
+                                    </label>
+                                    <input type="text" @bind="_schedUserInput"
+                                           placeholder="Ej: Genera un post sobre tendencias de hoy"
+                                           disabled="@_schedUsePromptQueue" />
                                 </div>
                             </div>
 
