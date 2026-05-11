@@ -558,13 +558,112 @@ public class GraphPipelineExecutor : IPipelineExecutor
             }
             if (editResult.Files.Count == 0)
                 return new EditOutputResult { Success = false, Error = "El modelo no devolvio imagenes" };
+
+            // Persist edited images so the next edit iterates over the latest version
+            // instead of the original output captured when the pipeline paused.
+            await PersistEditedImagesIntoPausedStateAsync(
+                execution, state, pausedOutput, editResult.Files, db, ct);
         }
         else
         {
             editResult.TextResponse = result.TextOutput ?? "";
+
+            // Persist edited text so the next edit iterates over the latest version.
+            await PersistEditedTextIntoPausedStateAsync(
+                execution, state, pausedOutput, editResult.TextResponse, db, ct);
         }
 
         return editResult;
+    }
+
+    private async Task PersistEditedImagesIntoPausedStateAsync(
+        ProjectExecution execution,
+        PausedGraphState state,
+        StepOutput pausedOutput,
+        List<EditOutputFile> editedFiles,
+        UserDbContext db,
+        CancellationToken ct)
+    {
+        var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
+        var pausedStep = await db.StepExecutions
+            .FirstOrDefaultAsync(s => s.ExecutionId == execution.Id && s.ProjectModuleId == state.PausedModuleId, ct);
+        if (pausedStep is null) return;
+
+        var stepDirName = $"module_{state.PausedModuleId:N}_edits";
+        var stepDir = Path.Combine(workspacePath, stepDirName);
+        Directory.CreateDirectory(stepDir);
+
+        var newOutputFiles = new List<OutputFile>();
+        foreach (var ef in editedFiles)
+        {
+            var storedName = GetUniqueFileName(stepDir, ef.FileName);
+            var diskPath = Path.Combine(stepDir, storedName);
+            await File.WriteAllBytesAsync(diskPath, ef.Data, ct);
+
+            var execFile = new ExecutionFile
+            {
+                Id = Guid.NewGuid(),
+                StepExecutionId = pausedStep.Id,
+                FileName = storedName,
+                ContentType = ef.ContentType,
+                FilePath = Path.Combine(stepDirName, storedName),
+                Direction = "Output",
+                FileSize = ef.Data.LongLength,
+                CreatedAt = DateTime.UtcNow,
+            };
+            db.ExecutionFiles.Add(execFile);
+
+            newOutputFiles.Add(new OutputFile
+            {
+                FileId = execFile.Id,
+                FileName = storedName,
+                ContentType = ef.ContentType,
+                FileSize = ef.Data.LongLength,
+            });
+        }
+
+        // Replace the paused output's image files so subsequent edits and the resume
+        // flow see the latest edited version. Non-image files (if any) are preserved.
+        var preserved = pausedOutput.Files
+            .Where(f => string.IsNullOrEmpty(f.ContentType) || !f.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        pausedOutput.Files = preserved.Concat(newOutputFiles).ToList();
+        pausedOutput.Metadata["lastEdit"] = DateTime.UtcNow.ToString("O");
+
+        await UpdatePausedOutputAsync(execution, state, pausedOutput, pausedStep, db, ct);
+    }
+
+    private async Task PersistEditedTextIntoPausedStateAsync(
+        ProjectExecution execution,
+        PausedGraphState state,
+        StepOutput pausedOutput,
+        string editedText,
+        UserDbContext db,
+        CancellationToken ct)
+    {
+        var pausedStep = await db.StepExecutions
+            .FirstOrDefaultAsync(s => s.ExecutionId == execution.Id && s.ProjectModuleId == state.PausedModuleId, ct);
+        if (pausedStep is null) return;
+
+        pausedOutput.Content = editedText;
+        pausedOutput.Metadata["lastEdit"] = DateTime.UtcNow.ToString("O");
+
+        await UpdatePausedOutputAsync(execution, state, pausedOutput, pausedStep, db, ct);
+    }
+
+    private static async Task UpdatePausedOutputAsync(
+        ProjectExecution execution,
+        PausedGraphState state,
+        StepOutput pausedOutput,
+        StepExecution pausedStep,
+        UserDbContext db,
+        CancellationToken ct)
+    {
+        var serializedOutput = JsonSerializer.Serialize(pausedOutput, JsonOptions);
+        state.CompletedOutputs[state.PausedModuleId.ToString()] = serializedOutput;
+        execution.PausedStepData = JsonSerializer.Serialize(state, JsonOptions);
+        pausedStep.OutputData = serializedOutput;
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task RunGraphAsync(

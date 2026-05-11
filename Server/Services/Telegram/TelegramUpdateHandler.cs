@@ -40,6 +40,7 @@ namespace Server.Services.Telegram
         private class EditFlowState
         {
             public string OutputKind { get; set; } = "text"; // "image" or "text"
+            public string? ProviderType { get; set; }
             public Guid? SelectedAiModuleId { get; set; }
             public string? SelectedAiModuleName { get; set; }
         }
@@ -147,6 +148,32 @@ namespace Server.Services.Telegram
                     return;
                 }
 
+                // State: edit_select_provider — user is choosing which provider to use for the edit
+                if (correlation.State == "edit_select_provider")
+                {
+                    var editState = ParseEditState(correlation.EditStateData) ?? new EditFlowState();
+                    if (text.StartsWith("edit_provider:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var providerType = text["edit_provider:".Length..].Trim();
+                        if (string.IsNullOrWhiteSpace(providerType))
+                        {
+                            await SendEditProviderChoicesAsync(correlation, db, await GetTgConfigAsync(), editState.OutputKind);
+                            return;
+                        }
+
+                        editState.ProviderType = providerType;
+                        correlation.State = "edit_select_model";
+                        correlation.EditStateData = JsonSerializer.Serialize(editState);
+                        await _coreDb.SaveChangesAsync();
+                        await SendEditModelChoicesAsync(correlation, db, await GetTgConfigAsync(), editState.OutputKind, providerType);
+                        return;
+                    }
+
+                    // User sent something else — re-prompt with provider buttons
+                    await SendEditProviderChoicesAsync(correlation, db, await GetTgConfigAsync(), editState.OutputKind);
+                    return;
+                }
+
                 // State: edit_select_model — user is choosing which AiModule to use for the edit
                 if (correlation.State == "edit_select_model")
                 {
@@ -169,6 +196,7 @@ namespace Server.Services.Telegram
 
                         editState.SelectedAiModuleId = module.Id;
                         editState.SelectedAiModuleName = module.Name;
+                        editState.ProviderType ??= module.ProviderType;
                         correlation.State = "edit_awaiting_prompt";
                         correlation.EditStateData = JsonSerializer.Serialize(editState);
                         await _coreDb.SaveChangesAsync();
@@ -186,8 +214,8 @@ namespace Server.Services.Telegram
                         return;
                     }
 
-                    // User sent something else — re-prompt with model buttons
-                    await SendEditModelChoicesAsync(correlation, db, await GetTgConfigAsync(), editState.OutputKind);
+                    // User sent something else — re-prompt with model buttons for the previously chosen provider
+                    await SendEditModelChoicesAsync(correlation, db, await GetTgConfigAsync(), editState.OutputKind, editState.ProviderType);
                     return;
                 }
 
@@ -296,10 +324,10 @@ namespace Server.Services.Telegram
                     }
 
                     var editState = new EditFlowState { OutputKind = info.OutputKind };
-                    correlation.State = "edit_select_model";
+                    correlation.State = "edit_select_provider";
                     correlation.EditStateData = JsonSerializer.Serialize(editState);
                     await _coreDb.SaveChangesAsync();
-                    await SendEditModelChoicesAsync(correlation, db, tgConfig, info.OutputKind);
+                    await SendEditProviderChoicesAsync(correlation, db, tgConfig, info.OutputKind);
                     return;
                 }
 
@@ -372,7 +400,7 @@ namespace Server.Services.Telegram
                 }
 
                 // For these out-of-band states, the execution may not be in WaitingForInput — that's OK
-                if (candidate.State is "awaiting_restart" or "edit_select_model" or "edit_awaiting_prompt")
+                if (candidate.State is "awaiting_restart" or "edit_select_provider" or "edit_select_model" or "edit_awaiting_prompt")
                     return candidate;
 
                 // Verify the execution is actually still waiting for input
@@ -410,7 +438,7 @@ namespace Server.Services.Telegram
             catch { return null; }
         }
 
-        private async Task SendEditModelChoicesAsync(
+        private async Task SendEditProviderChoicesAsync(
             TelegramCorrelation correlation,
             UserDbContext db,
             TelegramConfig? tgConfig,
@@ -419,11 +447,65 @@ namespace Server.Services.Telegram
             if (tgConfig is null) return;
 
             var moduleType = string.Equals(outputKind, "image", StringComparison.OrdinalIgnoreCase) ? "Image" : "Text";
+            var providers = await db.AiModules
+                .Where(m => m.IsEnabled
+                    && m.ModuleType == moduleType
+                    && m.ApiKeyId != null)
+                .Select(m => m.ProviderType)
+                .Distinct()
+                .OrderBy(p => p)
+                .ToListAsync();
+
+            if (providers.Count == 0)
+            {
+                try
+                {
+                    await _telegram.SendTextMessageAsync(tgConfig,
+                        $"⚠️ No hay proveedores con modelos de tipo {moduleType} configurados.");
+                }
+                catch { /* non-critical */ }
+                await ResetToWaitingAsync(correlation, tgConfig, sendButtons: true);
+                return;
+            }
+
+            var buttons = providers
+                .Select(p => (p, $"edit_provider:{p}"))
+                .ToList();
+
+            try
+            {
+                await _telegram.SendTextMessageWithOptionsAsync(tgConfig,
+                    $"🔌 Elige el proveedor para editar ({moduleType.ToLowerInvariant()}):",
+                    buttons);
+            }
+            catch { /* non-critical */ }
+        }
+
+        private async Task SendEditModelChoicesAsync(
+            TelegramCorrelation correlation,
+            UserDbContext db,
+            TelegramConfig? tgConfig,
+            string outputKind,
+            string? providerType)
+        {
+            if (tgConfig is null) return;
+
+            if (string.IsNullOrWhiteSpace(providerType))
+            {
+                // Provider was lost — go back to provider selection
+                correlation.State = "edit_select_provider";
+                await _coreDb.SaveChangesAsync();
+                await SendEditProviderChoicesAsync(correlation, db, tgConfig, outputKind);
+                return;
+            }
+
+            var moduleType = string.Equals(outputKind, "image", StringComparison.OrdinalIgnoreCase) ? "Image" : "Text";
             var modules = await db.AiModules
                 .Include(m => m.ApiKey)
                 .Where(m => m.IsEnabled
                     && m.ModuleType == moduleType
-                    && m.ApiKeyId != null)
+                    && m.ApiKeyId != null
+                    && m.ProviderType == providerType)
                 .OrderBy(m => m.Name)
                 .ToListAsync();
 
@@ -432,21 +514,24 @@ namespace Server.Services.Telegram
                 try
                 {
                     await _telegram.SendTextMessageAsync(tgConfig,
-                        $"⚠️ No hay modelos de tipo {moduleType} configurados con API Key.");
+                        $"⚠️ El proveedor {providerType} no tiene modelos de tipo {moduleType} con API Key.");
                 }
                 catch { /* non-critical */ }
-                await ResetToWaitingAsync(correlation, tgConfig, sendButtons: true);
+                // Go back to provider selection
+                correlation.State = "edit_select_provider";
+                await _coreDb.SaveChangesAsync();
+                await SendEditProviderChoicesAsync(correlation, db, tgConfig, outputKind);
                 return;
             }
 
             var buttons = modules
-                .Select(m => ($"{m.Name} ({m.ProviderType}/{m.ModelName})", $"edit_model:{m.Id}"))
+                .Select(m => ($"{m.Name} ({m.ModelName})", $"edit_model:{m.Id}"))
                 .ToList();
 
             try
             {
                 await _telegram.SendTextMessageWithOptionsAsync(tgConfig,
-                    $"🎨 Elige un modelo de {moduleType.ToLowerInvariant()} para editar:",
+                    $"🎨 Elige un modelo de {providerType} para editar:",
                     buttons);
             }
             catch { /* non-critical */ }
