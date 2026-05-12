@@ -802,6 +802,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             }).ToList(),
             MediaRoot = _mediaRoot,
             ExecutionFilePaths = new Dictionary<Guid, string>(filePaths),
+            Logger = _logger,
         };
 
         if (node.ModuleType == "Publish")

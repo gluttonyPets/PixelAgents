@@ -37,7 +37,8 @@ public class ImageModuleHandler : IModuleHandler
             return ModuleResult.Failed("API Key no configurada");
 
         var inputFiles = new List<byte[]>();
-        foreach (var fi in ctx.GetInputFiles("input_prompt"))
+        var inputFileInfos = ctx.GetInputFiles("input_prompt");
+        foreach (var fi in inputFileInfos)
         {
             var bytes = await ctx.ReadOutputFileBytesAsync(fi);
             if (bytes is not null)
@@ -59,9 +60,31 @@ public class ImageModuleHandler : IModuleHandler
 
         StepPayloadBuilder.RecordSentPayload(ctx, aiContext, module.ProviderType);
 
+        // Trazabilidad: deja constancia de que la imagen viaja al proveedor.
+        // Sin esto solo se ve "inputFilesCount" en el JSON de la UI y es facil
+        // dudar si los bytes realmente se enviaron.
+        var totalBytes = inputFiles.Sum(b => (long)b.Length);
+        if (inputFiles.Count == 0)
+        {
+            await ctx.LogInfoAsync(
+                $"[Image] {module.ProviderType}/{module.ModelName}: sin archivos de entrada (solo prompt, {prompt.Length} chars).");
+        }
+        else
+        {
+            var perFile = string.Join(", ", inputFileInfos
+                .Take(inputFiles.Count)
+                .Select((f, i) => $"{f.FileName} ({f.ContentType}, {FormatBytes(inputFiles[i].Length)})"));
+            await ctx.LogInfoAsync(
+                $"[Image] {module.ProviderType}/{module.ModelName}: enviando {inputFiles.Count} archivo(s) " +
+                $"[{perFile}], total {FormatBytes(totalBytes)}, prompt {prompt.Length} chars.");
+        }
+
         var result = await provider.ExecuteAsync(aiContext);
         if (!result.Success)
+        {
+            await ctx.LogInfoAsync($"[Image] {module.ProviderType} devolvio error: {result.Error}");
             return ModuleResult.Failed(result.Error ?? "Error en generacion de imagen");
+        }
 
         var allImages = new List<byte[]>();
         if (result.FileOutput is { Length: > 0 })
@@ -71,6 +94,11 @@ public class ImageModuleHandler : IModuleHandler
 
         if (allImages.Count == 0)
             return ModuleResult.Failed("El proveedor no devolvio imagenes");
+
+        var totalOutBytes = allImages.Sum(b => (long)b.Length);
+        await ctx.LogInfoAsync(
+            $"[Image] {module.ProviderType}/{module.ModelName}: respuesta recibida, " +
+            $"{allImages.Count} imagen(es) ({FormatBytes(totalOutBytes)}).");
 
         var contentType = string.IsNullOrEmpty(result.ContentType) ? "image/png" : result.ContentType;
         var revisedPrompt = result.Metadata?.GetValueOrDefault("revisedPrompt")?.ToString();
@@ -107,5 +135,12 @@ public class ImageModuleHandler : IModuleHandler
         output.Metadata["count"] = allImages.Count;
 
         return ModuleResult.Completed(output, result.EstimatedCost, producedFiles);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F2} MB";
     }
 }

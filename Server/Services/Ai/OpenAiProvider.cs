@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
 using OpenAI.Images;
 using Server.Models;
@@ -8,6 +9,11 @@ namespace Server.Services.Ai
 {
     public class OpenAiProvider : IAiProvider
     {
+        private readonly ILogger<OpenAiProvider>? _log;
+
+        public OpenAiProvider() { }
+        public OpenAiProvider(ILogger<OpenAiProvider> log) { _log = log; }
+
         public string ProviderType => "OpenAI";
         public IEnumerable<string> SupportedModuleTypes => new[] { "Text", "Image", "Video" };
 
@@ -230,6 +236,9 @@ namespace Server.Services.Ai
                 if (context.InputFiles is { Count: > 0 } && isGptImage && sizeStr == "auto")
                 {
                     var bestSize = DetectBestGptImageSize(context.InputFiles[0]);
+                    _log?.LogInformation(
+                        "OpenAI image POST /v1/images/edits model={Model} size={Size} (auto->{Detected}) image_bytes={Bytes} prompt_chars={Chars} n={N}",
+                        context.ModelName, sizeStr, bestSize, context.InputFiles[0].Length, prompt.Length, batchN);
                     var (editBytes, editPrompt) = await CallImageEditRawAsync(
                         context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration, bestSize, batchN);
                     images.AddRange(editBytes);
@@ -237,6 +246,9 @@ namespace Server.Services.Ai
                 }
                 else if (context.InputFiles is { Count: > 0 } && isGptImage)
                 {
+                    _log?.LogInformation(
+                        "OpenAI image POST /v1/images/edits model={Model} size={Size} image_bytes={Bytes} prompt_chars={Chars} n={N}",
+                        context.ModelName, sizeStr, context.InputFiles[0].Length, prompt.Length, batchN);
                     using var imageStream = new MemoryStream(context.InputFiles[0]);
                     var editOptions = new ImageEditOptions { Size = options.Size };
                     if (batchN > 1)
@@ -260,6 +272,9 @@ namespace Server.Services.Ai
                 }
                 else
                 {
+                    _log?.LogInformation(
+                        "OpenAI image POST /v1/images/generations model={Model} size={Size} prompt_chars={Chars} n={N} (text-to-image, sin archivos)",
+                        context.ModelName, sizeStr, prompt.Length, batchN);
                     if (batchN > 1)
                     {
                         var result = await client.GenerateImagesAsync(prompt, batchN, options);

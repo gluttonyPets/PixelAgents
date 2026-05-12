@@ -1,4 +1,5 @@
 using Server.Data;
+using Server.Hubs;
 using Server.Models;
 
 namespace Server.Services.Ai.Handlers;
@@ -71,6 +72,27 @@ public class ModuleExecutionContext
 
     /// <summary>Execution file id -> path relative to the execution workspace.</summary>
     public Dictionary<Guid, string> ExecutionFilePaths { get; init; } = [];
+
+    /// <summary>Optional sink for execution-scoped logs (UI feed + DB).</summary>
+    public IExecutionLogger? Logger { get; init; }
+
+    /// <summary>Emit an info-level execution log tied to this module's step.</summary>
+    public Task LogInfoAsync(string message) => LogAsync("info", message);
+
+    /// <summary>Emit a debug-level execution log tied to this module's step.</summary>
+    public Task LogDebugAsync(string message) => LogAsync("debug", message);
+
+    private Task LogAsync(string level, string message)
+    {
+        if (Logger is null) return Task.CompletedTask;
+        return Logger.LogAsync(
+            Project.Id,
+            Execution.Id,
+            level,
+            message,
+            Node.ModuleId,
+            Node.ProjectModule.StepName ?? Node.AiModule.Name);
+    }
 
     /// <summary>Build the public URL for a file produced during this execution.</summary>
     public string? GetPublicFileUrl(OutputFile file)
