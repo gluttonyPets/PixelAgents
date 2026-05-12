@@ -16,9 +16,14 @@ public class ImageModuleHandler : IModuleHandler
 
     public async Task<ModuleResult> ExecuteAsync(ModuleExecutionContext ctx)
     {
-        var prompt = ctx.GetInputText("input_prompt");
-        if (string.IsNullOrWhiteSpace(prompt))
-            prompt = ctx.GetConfig("imagePrompt", "");
+        // Combine the node's own imagePrompt with every upstream text so a
+        // FileUpload + Text module fan-in doesn't silently drop either side.
+        var configPrompt = ctx.GetConfig("imagePrompt", "");
+        var upstreamPrompt = ctx.GetInputText("input_prompt");
+        var promptParts = new List<string>(2);
+        if (!string.IsNullOrWhiteSpace(configPrompt)) promptParts.Add(configPrompt);
+        if (!string.IsNullOrWhiteSpace(upstreamPrompt)) promptParts.Add(upstreamPrompt);
+        var prompt = string.Join("\n\n", promptParts);
         if (string.IsNullOrWhiteSpace(prompt) && string.IsNullOrWhiteSpace(ctx.GetConfig("systemPrompt", "")))
             return ModuleResult.Failed("Sin prompt de entrada");
 

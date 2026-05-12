@@ -120,7 +120,10 @@ public static class PortDataResolver
                 {
                     DataType = node.ModuleType == "FileUpload" ? "any" : "file",
                     Files = output.Files,
-                    TextContent = output.Content,
+                    // FileUpload's Content is a UI label ("N archivo(s) cargados"),
+                    // not user content — don't propagate it as TextContent or it
+                    // pollutes downstream prompts when fan-in with a Text module.
+                    TextContent = node.ModuleType == "FileUpload" ? null : output.Content,
                     FullOutput = output,
                     SourcePortId = port.PortId,
                 },
