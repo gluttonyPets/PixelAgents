@@ -16,7 +16,6 @@ public class StartModuleHandler : IModuleHandler
         {
             Type = "text",
             Content = userInput,
-            Items = [new OutputItem { Content = userInput, Label = "Prompt" }],
         };
 
         return Task.FromResult(ModuleResult.Completed(output));
