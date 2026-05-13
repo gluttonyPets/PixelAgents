@@ -59,9 +59,11 @@ namespace Server.Services.Instagram
             var dueAt = DateTime.UtcNow.AddMinutes(2).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
             // Build assets block if media provided.
-            // Buffer's schema: assets is [AssetInput!] (flat list); AssetInput has `url`,
-            // not nested `images`/`videos` fields. Mixing kinds inside a single object
-            // returns: Field "images" is not defined by type "AssetInput".
+            // Buffer's schema: assets is [AssetInput!] (flat list). Each AssetInput
+            // wraps exactly one of `image`, `video`, `document`, `link`, and the URL
+            // lives one level below, e.g. { image: { url: "..." } }.
+            // Sending `{ url: ... }` directly returns:
+            //   Field "url" is not defined by type "AssetInput".
             var assetsBlock = "";
             if (media is not null && media.Count > 0)
             {
@@ -82,7 +84,8 @@ namespace Server.Services.Instagram
                 var entries = ordered.Select(m =>
                 {
                     var escapedUrl = m.Url.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                    return $"{{ url: \"{escapedUrl}\" }}";
+                    var wrapper = m.Kind == MediaKind.Video ? "video" : "image";
+                    return $"{{ {wrapper}: {{ url: \"{escapedUrl}\" }} }}";
                 });
                 assetsBlock = $", assets: [{string.Join(", ", entries)}]";
             }
