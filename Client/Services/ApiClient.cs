@@ -59,6 +59,13 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    public async Task<(bool Ok, string? Error)> UpdateApiKeyAsync(Guid id, UpdateApiKeyRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/apikeys/{id}", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     public async Task DeleteApiKeyAsync(Guid id)
     {
         await SendAsync(HttpMethod.Delete, $"/api/apikeys/{id}");
