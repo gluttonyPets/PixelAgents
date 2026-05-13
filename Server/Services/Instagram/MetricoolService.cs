@@ -58,32 +58,33 @@ namespace Server.Services.Instagram
 
             var dueAt = DateTime.UtcNow.AddMinutes(2).ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
 
-            // Build assets block if media provided, separating images from videos
+            // Build assets block if media provided.
+            // Buffer's schema: assets is [AssetInput!] (flat list); AssetInput has `url`,
+            // not nested `images`/`videos` fields. Mixing kinds inside a single object
+            // returns: Field "images" is not defined by type "AssetInput".
             var assetsBlock = "";
             if (media is not null && media.Count > 0)
             {
-                var images = media.Where(m => m.Kind == MediaKind.Image).ToList();
-                var videos = media.Where(m => m.Kind == MediaKind.Video).ToList();
-                var parts = new List<string>();
-
-                if (images.Count > 0)
+                // TikTok only accepts one video per post; keep the first video and drop the rest
+                // so we don't send an invalid payload. Images can be sent as a carousel.
+                var ordered = new List<ClassifiedMedia>();
+                var videoAdded = false;
+                foreach (var m in media)
                 {
-                    var imageEntries = images.Select(m =>
+                    if (m.Kind == MediaKind.Video)
                     {
-                        var escapedUrl = m.Url.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                        return $"{{ url: \"{escapedUrl}\" }}";
-                    });
-                    parts.Add($"images: [{string.Join(", ", imageEntries)}]");
+                        if (videoAdded) continue;
+                        videoAdded = true;
+                    }
+                    ordered.Add(m);
                 }
 
-                if (videos.Count > 0)
+                var entries = ordered.Select(m =>
                 {
-                    var escapedUrl = videos[0].Url.Replace("\\", "\\\\").Replace("\"", "\\\"");
-                    parts.Add($"videos: [{{ url: \"{escapedUrl}\" }}]");
-                }
-
-                if (parts.Count > 0)
-                    assetsBlock = $", assets: {{ {string.Join(", ", parts)} }}";
+                    var escapedUrl = m.Url.Replace("\\", "\\\\").Replace("\"", "\\\"");
+                    return $"{{ url: \"{escapedUrl}\" }}";
+                });
+                assetsBlock = $", assets: [{string.Join(", ", entries)}]";
             }
 
             // Build platform-specific metadata block
