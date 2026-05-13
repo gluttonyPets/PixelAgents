@@ -120,12 +120,10 @@ else
                         {
                             <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
                         }
-                        <div style="display: flex; gap: 0.3rem; margin-bottom: 0.4rem;">
-                            <button class="btn btn-sm @(_executionMode == "simple" ? "btn-primary" : "")"
-                                    style="flex: 1; font-size: 0.7rem; padding: 0.25rem;"
+                        <div class="execution-mode-toggle">
+                            <button class="execution-mode-btn @(_executionMode == "simple" ? "is-active" : "")"
                                     @onclick='() => SetExecutionMode("simple")'>Sencilla</button>
-                            <button class="btn btn-sm @(_executionMode == "planner" ? "btn-primary" : "")"
-                                    style="flex: 1; font-size: 0.7rem; padding: 0.25rem;"
+                            <button class="execution-mode-btn @(_executionMode == "planner" ? "is-active" : "")"
                                     @onclick='() => SetExecutionMode("planner")'>Planificador</button>
                         </div>
                         @if (_executionMode == "simple")
@@ -155,13 +153,14 @@ else
                         }
                         else
                         {
-                            <div class="planner-panel" style="display: flex; flex-direction: column; gap: 0.3rem;">
+                            <div class="planner-panel">
                                 @if (_plannerError is not null)
                                 {
-                                    <div class="alert alert-error" style="font-size: 0.7rem; padding: 0.3rem;">@_plannerError</div>
+                                    <div class="alert alert-error planner-alert">@_plannerError</div>
                                 }
-                                <label style="font-size: 0.7rem;">Modelo generador
-                                    <select @bind="_plannerModelName" style="width: 100%; font-size: 0.7rem;">
+                                <label class="planner-field">
+                                    <span class="planner-field-label">Modelo generador</span>
+                                    <select @bind="_plannerModelName" class="planner-input">
                                         <option value="">-- elige modelo --</option>
                                         @foreach (var m in _plannerModels)
                                         {
@@ -169,17 +168,19 @@ else
                                         }
                                     </select>
                                 </label>
-                                <label style="font-size: 0.7rem;">Cantidad
-                                    <input type="number" min="1" max="50" @bind="_plannerCount" style="width: 100%; font-size: 0.7rem;" />
+                                <label class="planner-field">
+                                    <span class="planner-field-label">Cantidad</span>
+                                    <input type="number" min="1" max="50" @bind="_plannerCount" class="planner-input" />
                                 </label>
-                                <label style="font-size: 0.7rem;">Instrucciones / necesidades
-                                    <textarea @bind="_plannerInstructions" rows="3" style="width: 100%; font-size: 0.7rem;" placeholder="Describe que debe generar el planificador..."></textarea>
+                                <label class="planner-field">
+                                    <span class="planner-field-label">Instrucciones / necesidades</span>
+                                    <textarea @bind="_plannerInstructions" rows="3" class="planner-input planner-textarea" placeholder="Describe que debe generar el planificador..."></textarea>
                                 </label>
-                                <label style="display: flex; align-items: center; gap: 0.3rem; font-size: 0.7rem;">
+                                <label class="planner-checkbox">
                                     <input type="checkbox" @bind="_plannerReplace" />
                                     <span>Reemplazar pendientes existentes</span>
                                 </label>
-                                <button class="btn btn-primary btn-sm" style="font-size: 0.7rem;" @onclick="GeneratePlannedPrompts" disabled="@_plannerBusy">
+                                <button class="btn btn-primary btn-sm planner-generate-btn" @onclick="GeneratePlannedPrompts" disabled="@_plannerBusy">
                                     @if (_plannerBusy)
                                     {
                                         <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
@@ -191,29 +192,30 @@ else
                                     }
                                 </button>
 
-                                <div style="border-top: 1px solid var(--border-color); margin-top: 0.3rem; padding-top: 0.3rem;">
-                                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.3rem;">
-                                        <strong style="font-size: 0.75rem;">Cola de prompts (@_plannedPrompts.Count)</strong>
-                                        <button class="btn btn-xs" style="font-size: 0.65rem;" @onclick="AddManualPrompt">+ Añadir</button>
+                                <div class="planner-queue">
+                                    <div class="planner-queue-header">
+                                        <strong class="planner-queue-title">Cola de prompts (@_plannedPrompts.Count)</strong>
+                                        <button class="btn btn-ghost btn-xs" @onclick="AddManualPrompt">+ Añadir</button>
                                     </div>
                                     @if (_plannedPrompts.Count == 0)
                                     {
-                                        <div class="text-muted" style="font-size: 0.7rem;">No hay prompts en cola.</div>
+                                        <div class="planner-queue-empty">No hay prompts en cola.</div>
                                     }
                                     else
                                     {
-                                        <div style="max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.25rem;">
+                                        <div class="planner-queue-list">
                                             @for (int i = 0; i < _plannedPrompts.Count; i++)
                                             {
                                                 var idx = i;
                                                 var p = _plannedPrompts[idx];
-                                                <div style="display: flex; flex-direction: column; gap: 0.15rem; padding: 0.3rem; background: var(--bg-secondary, #f5f5f5); border-radius: 4px; border-left: 3px solid @(p.Status == "Used" ? "#4caf50" : p.Status == "Skipped" ? "#aaa" : "#2196f3");">
-                                                    <div style="display: flex; align-items: center; gap: 0.3rem;">
-                                                        <span style="font-size: 0.65rem; font-weight: bold;">#@(idx + 1)</span>
-                                                        <span class="badge" style="font-size: 0.6rem;">@p.Status</span>
+                                                var statusClass = p.Status == "Used" ? "is-used" : p.Status == "Skipped" ? "is-skipped" : "is-pending";
+                                                <div class="planner-prompt-card @statusClass">
+                                                    <div class="planner-prompt-toolbar">
+                                                        <span class="planner-prompt-index">#@(idx + 1)</span>
+                                                        <span class="planner-prompt-status">@p.Status</span>
                                                         @if (p.Status == "Pending")
                                                         {
-                                                            <button class="btn btn-success btn-xs" style="font-size: 0.6rem; margin-left: auto;"
+                                                            <button class="btn btn-success btn-xs planner-prompt-run"
                                                                     title="Ejecutar este prompt ahora"
                                                                     disabled="@(_executingPromptId == p.Id || _executing)"
                                                                     @onclick="() => ExecutePlannedPrompt(p.Id)">
@@ -227,19 +229,21 @@ else
                                                                 }
                                                             </button>
                                                         }
-                                                        <button class="btn btn-xs" style="font-size: 0.6rem; @(p.Status == "Pending" ? "" : "margin-left: auto;")" disabled="@(idx == 0)" @onclick="() => MovePrompt(idx, -1)">&uarr;</button>
-                                                        <button class="btn btn-xs" style="font-size: 0.6rem;" disabled="@(idx == _plannedPrompts.Count - 1)" @onclick="() => MovePrompt(idx, 1)">&darr;</button>
-                                                        <button class="btn btn-xs btn-danger" style="font-size: 0.6rem;" @onclick="() => DeletePrompt(p.Id)">&#x2715;</button>
+                                                        <div class="planner-prompt-actions @(p.Status == "Pending" ? "" : "is-pushed")">
+                                                            <button class="btn btn-ghost btn-xs" disabled="@(idx == 0)" @onclick="() => MovePrompt(idx, -1)" title="Subir">&uarr;</button>
+                                                            <button class="btn btn-ghost btn-xs" disabled="@(idx == _plannedPrompts.Count - 1)" @onclick="() => MovePrompt(idx, 1)" title="Bajar">&darr;</button>
+                                                            <button class="btn btn-ghost btn-xs btn-danger-ghost" @onclick="() => DeletePrompt(p.Id)" title="Eliminar">&#x2715;</button>
+                                                        </div>
                                                     </div>
                                                     @if (p.Status == "Pending")
                                                     {
-                                                        <textarea rows="2" style="font-size: 0.7rem; width: 100%;"
+                                                        <textarea rows="2" class="planner-prompt-editor"
                                                                   value="@p.Content"
                                                                   @onchange="@(e => OnPromptContentChanged(p.Id, e.Value?.ToString() ?? string.Empty))"></textarea>
                                                     }
                                                     else
                                                     {
-                                                        <div style="font-size: 0.7rem; white-space: pre-wrap;">@p.Content</div>
+                                                        <div class="planner-prompt-content">@p.Content</div>
                                                     }
                                                 </div>
                                             }
@@ -3341,13 +3345,21 @@ else
     {
         if (_project is null) return;
         _plannerError = null;
+        _execError = null;
+        _result = null;
+        _logEntries.Clear();
+        _realtimeStepStatuses.Clear();
+        _executing = true;
         _executingPromptId = promptId;
+        _activeTab = "pipeline";
+        StateHasChanged();
         try
         {
             var (ok, item, error) = await Api.ExecutePlannedPromptAsync(_project.Id, promptId);
             if (!ok)
             {
                 _plannerError = error ?? "Error al ejecutar el prompt";
+                _executing = false;
                 return;
             }
             if (item is not null)
@@ -3355,6 +3367,12 @@ else
                 var idx = _plannedPrompts.FindIndex(p => p.Id == promptId);
                 if (idx >= 0) _plannedPrompts[idx] = item;
             }
+            StartPolling();
+        }
+        catch (Exception ex)
+        {
+            _plannerError = $"Error de conexion: {ex.Message}";
+            _executing = false;
         }
         finally
         {
