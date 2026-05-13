@@ -10,7 +10,7 @@
 }
 else if (_files.Count == 0)
 {
-    <p class="text-muted">No hay archivos subidos. Sube archivos desde la configuracion de un modulo IA.</p>
+    <p class="text-muted">No hay archivos subidos. Sube archivos desde un modulo de un proyecto.</p>
 }
 else
 {
@@ -21,7 +21,8 @@ else
                 <th>Archivo</th>
                 <th>Tipo</th>
                 <th>Tamano</th>
-                <th>Modulo asignado</th>
+                <th>Proyecto</th>
+                <th>Modulo</th>
                 <th>Fecha</th>
                 <th></th>
             </tr>
@@ -36,7 +37,10 @@ else
                     <td><span class="badge badge-info">@GetFileTypeLabel(f.ContentType)</span></td>
                     <td>@FormatFileSize(f.FileSize)</td>
                     <td>
-                        <a href="/modules" class="link">@f.ModuleName</a>
+                        <a href="@($"/projects/{f.ProjectId}")" class="link">@f.ProjectName</a>
+                    </td>
+                    <td>
+                        @(string.IsNullOrWhiteSpace(f.StepName) ? f.ModuleName : $"{f.StepName} ({f.ModuleName})")
                     </td>
                     <td>@f.CreatedAt.ToString("dd MMM yyyy HH:mm")</td>
                     <td class="cell-actions">

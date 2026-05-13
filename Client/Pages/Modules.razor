@@ -627,28 +627,14 @@
             }
         </fieldset>
 
-        @if (_moduleType is "Text" or "Image" or "Orchestrator" or "FileUpload")
+        @if (_moduleType == "FileUpload")
         {
             <div class="form-group">
-                <label>Archivos adjuntos <span class="text-sm text-muted">(@(_moduleType == "Image" ? "imagenes de referencia para edicion" : _moduleType == "FileUpload" ? "archivos que se proporcionaran como recurso al pipeline" : "imagenes, documentos, etc."))</span></label>
-
-                @if (_createPendingFiles.Count > 0)
-                {
-                    <div class="file-list">
-                        @foreach (var f in _createPendingFiles)
-                        {
-                            <div class="file-item">
-                                <span class="file-name" title="@f.Name">@f.Name</span>
-                                <span class="text-sm text-muted">@FormatFileSize(f.Size)</span>
-                                <button class="btn btn-danger btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem;"
-                                        @onclick="() => _createPendingFiles.Remove(f)">x</button>
-                            </div>
-                        }
-                    </div>
-                }
-
-                <InputFile OnChange="OnCreateFilesSelected" multiple
-                           accept="@(_moduleType == "Image" ? "image/*" : _moduleType == "FileUpload" ? "*/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
+                <p class="text-sm text-muted">
+                    Los archivos no se cargan en el catalogo. Cada instancia del modulo
+                    dentro de un proyecto guarda sus propios archivos: subelos desde el
+                    editor del proyecto.
+                </p>
             </div>
         }
 
@@ -1208,42 +1194,8 @@
                                     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
                                 }
 
-                                @* ── File attachments ── *@
-                                @if (m.ModuleType is "Text" or "Image" or "FileUpload")
-                                {
-                                    <hr style="margin: 0.75rem 0; border-color: var(--border);" />
-                                    <div class="form-group">
-                                        <label>Archivos adjuntos <span class="text-sm text-muted">(@(m.ModuleType == "Image" ? "imagenes de referencia para edicion" : m.ModuleType == "FileUpload" ? "archivos recurso del modulo" : "imagenes, documentos, etc."))</span></label>
-
-                                        @if (_editModuleFiles.Count > 0)
-                                        {
-                                            <div class="file-list">
-                                                @foreach (var f in _editModuleFiles)
-                                                {
-                                                    <div class="file-item">
-                                                        <span class="file-name" title="@f.FileName">@f.FileName</span>
-                                                        <span class="text-sm text-muted">@FormatFileSize(f.FileSize)</span>
-                                                        <button class="btn btn-danger btn-sm" style="padding: 0.1rem 0.4rem; font-size: 0.7rem;"
-                                                                @onclick="() => DeleteModuleFile(f.Id, m.Id)">x</button>
-                                                    </div>
-                                                }
-                                            </div>
-                                        }
-
-                                        <InputFile OnChange="OnModuleFilesSelected" multiple
-                                                   accept="@(m.ModuleType == "Image" ? "image/*" : m.ModuleType == "FileUpload" ? "*/*" : "image/*,.pdf,.txt,.csv,.json,.md,.docx,.xlsx")" />
-
-                                        @if (_fileUploadError is not null)
-                                        {
-                                            <div class="alert alert-error" style="margin-top: 0.3rem;">@_fileUploadError</div>
-                                        }
-
-                                        @if (_uploadingFiles)
-                                        {
-                                            <p class="text-muted" style="margin-top: 0.3rem;">Subiendo archivos...</p>
-                                        }
-                                    </div>
-                                }
+                                @* Los archivos viven en cada instancia ProjectModule del proyecto,
+                                   no en el catalogo. Se gestionan desde el editor de cada proyecto. *@
 
                                 @if (m.ModuleType is "Text" or "Image" or "Audio" or "Video" or "Design" or "VideoSearch")
                                 {
@@ -2003,15 +1955,9 @@ else
             var (ok, error, moduleId) = await Api.CreateModuleAsync(req);
             if (ok)
             {
-                if (moduleId.HasValue && _createPendingFiles.Count > 0)
-                {
-                    using var content = new MultipartFormDataContent();
-                    foreach (var file in _createPendingFiles)
-                    {
-                        content.Add(CreateBrowserFileContent(file), "files", file.Name);
-                    }
-                    await Api.UploadModuleFilesAsync(moduleId.Value, content);
-                }
+                // Los archivos del modulo se cargan en cada ProjectModule del proyecto,
+                // no aqui en el catalogo. Si el usuario marca archivos en la pantalla
+                // de creacion (caso legacy) los descartamos en silencio.
                 _createPendingFiles.Clear();
                 _name = ""; _desc = ""; _model = ""; _apiKeyId = "";
                 ResetConfig();
@@ -2154,10 +2100,10 @@ else
             catch { }
         }
 
-        // Load module files
+        // Ya no se cargan archivos en el catalogo: viven en cada ProjectModule.
         _editModuleFiles = [];
         _fileUploadError = null;
-        try { _editModuleFiles = await Api.GetModuleFilesAsync(module.Id); } catch { }
+        await Task.CompletedTask;
     }
 
     private async Task OnModuleFilesSelected(InputFileChangeEventArgs e)

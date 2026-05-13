@@ -1435,7 +1435,7 @@
                     {
                         _selectedModuleId = newModule.Id;
                         if (newModule.ModuleType == "FileUpload")
-                            _ = LoadFileUploadFiles(newModule.AiModuleId);
+                            _ = LoadFileUploadFiles(newModule.Id);
                     }
                 }
                 _pendingAutoSelectModuleType = null;
@@ -2093,7 +2093,7 @@
             {
                 _ = InvokeAsync(async () =>
                 {
-                    await LoadFileUploadFiles(mod.AiModuleId);
+                    await LoadFileUploadFiles(mod.Id);
                     StateHasChanged();
                 });
             }
@@ -2301,9 +2301,9 @@
 
     // ── FileUpload inspector helpers ──
 
-    private async Task LoadFileUploadFiles(Guid aiModuleId)
+    private async Task LoadFileUploadFiles(Guid projectModuleId)
     {
-        try { _fileUploadFiles = await Api.GetModuleFilesAsync(aiModuleId); }
+        try { _fileUploadFiles = await Api.GetModuleFilesAsync(projectModuleId); }
         catch { _fileUploadFiles = []; }
     }
 
@@ -2323,8 +2323,8 @@
             {
                 content.Add(CreateBrowserFileContent(file), "files", file.Name);
             }
-            await Api.UploadModuleFilesAsync(sel.AiModuleId, content);
-            await LoadFileUploadFiles(sel.AiModuleId);
+            await Api.UploadModuleFilesAsync(sel.Id, content);
+            await LoadFileUploadFiles(sel.Id);
         }
         catch (Exception ex)
         {
@@ -2345,7 +2345,7 @@
         try
         {
             await Api.DeleteModuleFileAsync(fileId);
-            await LoadFileUploadFiles(sel.AiModuleId);
+            await LoadFileUploadFiles(sel.Id);
             StateHasChanged();
         }
         catch { }

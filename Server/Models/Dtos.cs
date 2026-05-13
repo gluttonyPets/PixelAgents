@@ -93,9 +93,12 @@ namespace Server.Models
     public record BufferConfigDto(string ApiKey, string ChannelId);
 
     // ── Module Files ──
+    // Los archivos pertenecen a la INSTANCIA (ProjectModule), no al catalogo.
+    // ProjectName/StepName permiten que la biblioteca muestre a que proyecto
+    // y paso concreto pertenece cada archivo subido.
     public record ModuleFileResponse(
-        Guid Id, Guid AiModuleId, string ModuleName,
-        string FileName, string ContentType, long FileSize, DateTime CreatedAt);
+        Guid Id, Guid ProjectModuleId, string ModuleName, Guid ProjectId, string ProjectName,
+        string? StepName, string FileName, string ContentType, long FileSize, DateTime CreatedAt);
 
     // ── Schedule ──
     public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false);

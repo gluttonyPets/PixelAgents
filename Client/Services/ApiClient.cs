@@ -178,9 +178,9 @@ public class ApiClient
 
     // ── Module Files ──
 
-    public async Task<List<ModuleFileResponse>> UploadModuleFilesAsync(Guid moduleId, MultipartFormDataContent content)
+    public async Task<List<ModuleFileResponse>> UploadModuleFilesAsync(Guid projectModuleId, MultipartFormDataContent content)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/modules/{moduleId}/files");
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/api/project-modules/{projectModuleId}/files");
         request.SetBrowserRequestCredentials(BrowserRequestCredentials.Include);
         request.Content = content;
         var resp = await _http.SendAsync(request);
@@ -189,9 +189,9 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
     }
 
-    public async Task<List<ModuleFileResponse>> GetModuleFilesAsync(Guid moduleId)
+    public async Task<List<ModuleFileResponse>> GetModuleFilesAsync(Guid projectModuleId)
     {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/modules/{moduleId}/files");
+        var resp = await SendAsync(HttpMethod.Get, $"/api/project-modules/{projectModuleId}/files");
         if (!resp.IsSuccessStatusCode) return [];
         return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
     }

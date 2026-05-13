@@ -680,15 +680,18 @@ app.MapDelete("/api/modules/{id}", async (
 
 // ==================== Module File Endpoints ====================
 
-app.MapPost("/api/modules/{moduleId}/files", async (
-    Guid moduleId, HttpContext ctx,
+app.MapPost("/api/project-modules/{projectModuleId}/files", async (
+    Guid projectModuleId, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    var module = await db.AiModules.FindAsync(moduleId);
-    if (module is null) return Results.NotFound();
+    var pm = await db.ProjectModules
+        .Include(p => p.AiModule)
+        .Include(p => p.Project)
+        .FirstOrDefaultAsync(p => p.Id == projectModuleId);
+    if (pm is null) return Results.NotFound();
 
     var form = await ctx.Request.ReadFormAsync();
     var files = form.Files;
@@ -701,7 +704,7 @@ app.MapPost("/api/modules/{moduleId}/files", async (
 
     var claims = await um.GetClaimsAsync((await um.GetUserAsync(ctx.User))!);
     var tenantDbName = claims.First(c => c.Type == "db_name").Value;
-    var storageDir = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia", tenantDbName, "module-files", moduleId.ToString());
+    var storageDir = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia", tenantDbName, "module-files", projectModuleId.ToString());
     Directory.CreateDirectory(storageDir);
 
     var result = new List<ModuleFileResponse>();
@@ -729,16 +732,17 @@ app.MapPost("/api/modules/{moduleId}/files", async (
         var moduleFile = new ModuleFile
         {
             Id = id,
-            AiModuleId = moduleId,
+            ProjectModuleId = projectModuleId,
             FileName = originalName,
             ContentType = contentType,
-            FilePath = Path.Combine(tenantDbName, "module-files", moduleId.ToString(), storedName),
+            FilePath = Path.Combine(tenantDbName, "module-files", projectModuleId.ToString(), storedName),
             FileSize = file.Length,
             CreatedAt = DateTime.UtcNow
         };
 
         db.ModuleFiles.Add(moduleFile);
-        result.Add(new ModuleFileResponse(moduleFile.Id, moduleFile.AiModuleId, module.Name,
+        result.Add(new ModuleFileResponse(moduleFile.Id, moduleFile.ProjectModuleId, pm.AiModule.Name,
+            pm.ProjectId, pm.Project.Name, pm.StepName,
             moduleFile.FileName, moduleFile.ContentType, moduleFile.FileSize, moduleFile.CreatedAt));
     }
 
@@ -746,17 +750,18 @@ app.MapPost("/api/modules/{moduleId}/files", async (
     return Results.Ok(result);
 }).RequireAuthorization().DisableAntiforgery();
 
-app.MapGet("/api/modules/{moduleId}/files", async (
-    Guid moduleId, HttpContext ctx,
+app.MapGet("/api/project-modules/{projectModuleId}/files", async (
+    Guid projectModuleId, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
     var files = await db.ModuleFiles
-        .Where(f => f.AiModuleId == moduleId)
+        .Where(f => f.ProjectModuleId == projectModuleId)
         .OrderByDescending(f => f.CreatedAt)
-        .Select(f => new ModuleFileResponse(f.Id, f.AiModuleId, f.AiModule.Name,
+        .Select(f => new ModuleFileResponse(f.Id, f.ProjectModuleId, f.ProjectModule.AiModule.Name,
+            f.ProjectModule.ProjectId, f.ProjectModule.Project.Name, f.ProjectModule.StepName,
             f.FileName, f.ContentType, f.FileSize, f.CreatedAt))
         .ToListAsync();
 
@@ -771,9 +776,11 @@ app.MapGet("/api/module-files", async (
     if (db is null) return Results.Unauthorized();
 
     var files = await db.ModuleFiles
-        .Include(f => f.AiModule)
+        .Include(f => f.ProjectModule).ThenInclude(p => p.AiModule)
+        .Include(f => f.ProjectModule).ThenInclude(p => p.Project)
         .OrderByDescending(f => f.CreatedAt)
-        .Select(f => new ModuleFileResponse(f.Id, f.AiModuleId, f.AiModule.Name,
+        .Select(f => new ModuleFileResponse(f.Id, f.ProjectModuleId, f.ProjectModule.AiModule.Name,
+            f.ProjectModule.ProjectId, f.ProjectModule.Project.Name, f.ProjectModule.StepName,
             f.FileName, f.ContentType, f.FileSize, f.CreatedAt))
         .ToListAsync();
 

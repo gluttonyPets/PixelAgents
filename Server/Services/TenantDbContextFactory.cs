@@ -100,17 +100,31 @@ namespace Server.Services
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PlannedPrompts_ProjectId"" ON ""PlannedPrompts"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PlannedPrompts_ProjectId_Status_OrderIndex"" ON ""PlannedPrompts"" (""ProjectId"", ""Status"", ""OrderIndex"")", log);
+            // ModuleFiles: paso de AiModuleId (catalogo) a ProjectModuleId (instancia).
+            // Si la tabla todavia tiene la columna vieja, se elimina y se recrea con
+            // el nuevo esquema. Los archivos existentes se descartan a proposito —
+            // estaban compartidos entre instancias por el bug original.
+            RunSafe(ctx, @"
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'ModuleFiles' AND column_name = 'AiModuleId'
+                    ) THEN
+                        DROP TABLE ""ModuleFiles"" CASCADE;
+                    END IF;
+                END $$", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ModuleFiles"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
-                    ""AiModuleId"" uuid NOT NULL REFERENCES ""AiModules""(""Id"") ON DELETE CASCADE,
+                    ""ProjectModuleId"" uuid NOT NULL REFERENCES ""ProjectModules""(""Id"") ON DELETE CASCADE,
                     ""FileName"" varchar(500) NOT NULL,
                     ""ContentType"" varchar(100) NOT NULL,
                     ""FilePath"" varchar(1000) NOT NULL,
                     ""FileSize"" bigint NOT NULL DEFAULT 0,
                     ""CreatedAt"" timestamp with time zone NOT NULL
                 )", log);
-            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleFiles_AiModuleId"" ON ""ModuleFiles"" (""AiModuleId"")", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModuleFiles_ProjectModuleId"" ON ""ModuleFiles"" (""ProjectModuleId"")", log);
             // Drop legacy graph fields that are no longer part of the source model
             RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" DROP COLUMN IF EXISTS ""BranchId""", log);
             RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" DROP COLUMN IF EXISTS ""BranchFromStep""", log);

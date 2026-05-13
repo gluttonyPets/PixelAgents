@@ -19,5 +19,6 @@ namespace Server.Models
         public ICollection<ModuleConnection> OutgoingConnections { get; set; } = new List<ModuleConnection>();
         public ICollection<ModuleConnection> IncomingConnections { get; set; } = new List<ModuleConnection>();
         public ICollection<OrchestratorOutput> OrchestratorOutputs { get; set; } = new List<OrchestratorOutput>();
+        public ICollection<ModuleFile> Files { get; set; } = new List<ModuleFile>();
     }
 }

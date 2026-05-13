@@ -792,7 +792,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             CancellationToken = ct,
             InputsByPort = node.InputPorts.ToDictionary(p => p.PortId, p => p.ReceivedData.ToList()),
             Config = MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration),
-            ModuleFiles = node.AiModule.Files.Select(f => new ModuleFileInfo
+            ModuleFiles = node.ProjectModule.Files.Select(f => new ModuleFileInfo
             {
                 Id = f.Id,
                 FileName = f.FileName,
@@ -1586,8 +1586,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 .ThenInclude(pm => pm.AiModule)
                     .ThenInclude(m => m.ApiKey)
             .Include(p => p.ProjectModules)
-                .ThenInclude(pm => pm.AiModule)
-                    .ThenInclude(m => m.Files)
+                .ThenInclude(pm => pm.Files)
             .Include(p => p.ProjectModules)
                 .ThenInclude(pm => pm.OrchestratorOutputs)
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);

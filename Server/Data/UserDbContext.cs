@@ -268,12 +268,12 @@ namespace Server.Data
                 e.Property(x => x.ContentType).IsRequired().HasMaxLength(100);
                 e.Property(x => x.FilePath).IsRequired().HasMaxLength(1000);
 
-                e.HasOne(x => x.AiModule)
+                e.HasOne(x => x.ProjectModule)
                     .WithMany(m => m.Files)
-                    .HasForeignKey(x => x.AiModuleId)
+                    .HasForeignKey(x => x.ProjectModuleId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                e.HasIndex(x => x.AiModuleId);
+                e.HasIndex(x => x.ProjectModuleId);
             });
         }
     }
