@@ -15,6 +15,19 @@ namespace Server.Models
         public string? MandatoryRules { get; set; }
         public Dictionary<string, object> Configuration { get; set; } = new();
         public List<byte[]>? InputFiles { get; set; }
+        /// <summary>
+        /// Optional per-file metadata aligned by index with <see cref="InputFiles"/>.
+        /// Providers that care about MIME type (e.g. Anthropic routing PDFs through
+        /// document content blocks instead of image blocks) read from this list.
+        /// </summary>
+        public List<InputFileMeta>? InputFileMetas { get; set; }
+    }
+
+    public class InputFileMeta
+    {
+        public string FileName { get; set; } = "";
+        public string ContentType { get; set; } = "";
+        public long FileSize { get; set; }
     }
 
     public class AiResult

@@ -32,6 +32,34 @@ public class TextModuleHandler : IModuleHandler
         if (string.IsNullOrEmpty(apiKey))
             return ModuleResult.Failed("API Key no configurada");
 
+        // Fan-in: a text module may have N FileUpload (or other file-producing)
+        // modules wired into its input port. Read every produced file and forward
+        // bytes + MIME so the provider can decide between image vs document blocks.
+        var inputFiles = new List<byte[]>();
+        var inputFileMetas = new List<InputFileMeta>();
+        var inputFileInfos = ctx.GetInputFiles("input_prompt");
+        foreach (var fi in inputFileInfos)
+        {
+            var bytes = await ctx.ReadOutputFileBytesAsync(fi);
+            if (bytes is null) continue;
+            inputFiles.Add(bytes);
+            inputFileMetas.Add(new InputFileMeta
+            {
+                FileName = fi.FileName ?? "",
+                ContentType = fi.ContentType ?? "",
+                FileSize = bytes.Length,
+            });
+        }
+
+        if (inputFiles.Count > 0)
+        {
+            var totalBytes = inputFiles.Sum(b => (long)b.Length);
+            var perFile = string.Join(", ", inputFileMetas.Select(m => $"{m.FileName} ({m.ContentType}, {m.FileSize} B)"));
+            await ctx.LogInfoAsync(
+                $"[Text] {module.ProviderType}/{module.ModelName}: adjuntando {inputFiles.Count} archivo(s) " +
+                $"[{perFile}], total {totalBytes} B, prompt {prompt.Length} chars.");
+        }
+
         var aiContext = new AiExecutionContext
         {
             ModuleType = module.ModuleType,
@@ -42,6 +70,8 @@ public class TextModuleHandler : IModuleHandler
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
             MandatoryRules = ctx.MandatoryRules,
             Configuration = ctx.Config,
+            InputFiles = inputFiles.Count > 0 ? inputFiles : null,
+            InputFileMetas = inputFileMetas.Count > 0 ? inputFileMetas : null,
         };
 
         StepPayloadBuilder.RecordSentPayload(ctx, aiContext, module.ProviderType);
