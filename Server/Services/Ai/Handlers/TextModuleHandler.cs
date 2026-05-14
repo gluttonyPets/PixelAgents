@@ -35,6 +35,8 @@ public class TextModuleHandler : IModuleHandler
         // Fan-in: a text module may have N FileUpload (or other file-producing)
         // modules wired into its input port. Read every produced file and forward
         // bytes + MIME so the provider can decide between image vs document blocks.
+        // Spreadsheets (.xls/.xlsx) are converted to plain text up-front because
+        // no major LLM (Claude/OpenAI/Gemini) accepts binary Excel as an attachment.
         var inputFiles = new List<byte[]>();
         var inputFileMetas = new List<InputFileMeta>();
         var inputFileInfos = ctx.GetInputFiles("input_prompt");
@@ -42,11 +44,36 @@ public class TextModuleHandler : IModuleHandler
         {
             var bytes = await ctx.ReadOutputFileBytesAsync(fi);
             if (bytes is null) continue;
+
+            var fileName = fi.FileName ?? "";
+            var contentType = fi.ContentType ?? "";
+
+            if (SpreadsheetConverter.IsSpreadsheet(fileName, contentType, bytes))
+            {
+                try
+                {
+                    var text = SpreadsheetConverter.ConvertToText(bytes, fileName);
+                    var textBytes = System.Text.Encoding.UTF8.GetBytes(text);
+                    await ctx.LogInfoAsync(
+                        $"[Text] Convertido spreadsheet '{fileName}' " +
+                        $"({contentType}, {bytes.Length} B) a texto plano ({textBytes.Length} B).");
+                    bytes = textBytes;
+                    contentType = "text/plain";
+                    fileName = Path.ChangeExtension(string.IsNullOrEmpty(fileName) ? "spreadsheet" : fileName, ".txt");
+                }
+                catch (Exception ex)
+                {
+                    await ctx.LogInfoAsync(
+                        $"[Text] No se pudo convertir spreadsheet '{fileName}': {ex.Message}. " +
+                        $"Se reenvian los bytes originales; el modelo probablemente no podra leerlos.");
+                }
+            }
+
             inputFiles.Add(bytes);
             inputFileMetas.Add(new InputFileMeta
             {
-                FileName = fi.FileName ?? "",
-                ContentType = fi.ContentType ?? "",
+                FileName = fileName,
+                ContentType = contentType,
                 FileSize = bytes.Length,
             });
         }
