@@ -58,6 +58,8 @@ public class ImageModuleHandler : IModuleHandler
             InputFiles = inputFiles,
         };
 
+        // Record a pre-transform snapshot; providers that build the exact API body
+        // will overwrite this below via result.SentPayload.
         StepPayloadBuilder.RecordSentPayload(ctx, aiContext, module.ProviderType);
 
         // Trazabilidad: deja constancia de que la imagen viaja al proveedor.
@@ -80,6 +82,11 @@ public class ImageModuleHandler : IModuleHandler
         }
 
         var result = await provider.ExecuteAsync(aiContext);
+
+        // Overwrite the pre-transform snapshot with the exact payload the provider sent.
+        if (!string.IsNullOrEmpty(result.SentPayload) && ctx.Node.StepExecution is not null)
+            ctx.Node.StepExecution.InputData = result.SentPayload;
+
         if (!result.Success)
         {
             await ctx.LogInfoAsync($"[Image] {module.ProviderType} devolvio error: {result.Error}");

@@ -42,6 +42,10 @@ namespace Server.Models
         public decimal EstimatedCost { get; set; }
         /// <summary>Extra files beyond the primary FileOutput (e.g. images 2..N when n>1).</summary>
         public List<byte[]>? AdditionalFiles { get; set; }
+        /// <summary>JSON string representing the exact request body sent to the AI provider.
+        /// When set by a provider, the handler overwrites StepExecution.InputData with this
+        /// so the UI shows what was actually dispatched rather than a pre-transform snapshot.</summary>
+        public string? SentPayload { get; set; }
 
         public static AiResult Ok(string text, Dictionary<string, object>? metadata = null) => new()
         {

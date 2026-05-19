@@ -228,6 +228,9 @@ namespace Server.Services.Ai
             var batchN = isDallE3 ? 1 : Math.Max(1, requestedN);
             var dalle3LoopTotal = isDallE3 ? Math.Max(1, requestedN) : 1;
 
+            // Build the exact API payload for the audit log before hitting the network.
+            var actualPayload = BuildImageApiPayload(context, prompt, batchN, sizeStr, options);
+
             var images = new List<byte[]>();
             string revisedPrompt = "";
 
@@ -307,7 +310,37 @@ namespace Server.Services.Ai
             var perImageCost = PricingCatalog.EstimateImageCost(context.ModelName, context.Configuration);
             var imgResult = AiResult.OkFiles(images, "image/png", metadata);
             imgResult.EstimatedCost = perImageCost * images.Count;
+            imgResult.SentPayload = actualPayload;
             return imgResult;
+        }
+
+        private static string BuildImageApiPayload(
+            AiExecutionContext context, string prompt, int n, string sizeStr, ImageGenerationOptions options)
+        {
+            var isEdit = context.InputFiles is { Count: > 0 }
+                && context.ModelName.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase);
+
+            var endpoint = isEdit ? "POST /v1/images/edits" : "POST /v1/images/generations";
+
+            var parts = new System.Text.StringBuilder();
+            parts.Append('{');
+            parts.Append($"\"endpoint\":{System.Text.Json.JsonSerializer.Serialize(endpoint)},");
+            parts.Append($"\"model\":{System.Text.Json.JsonSerializer.Serialize(context.ModelName)},");
+            parts.Append($"\"prompt\":{System.Text.Json.JsonSerializer.Serialize(prompt)},");
+            parts.Append($"\"n\":{n}");
+
+            var resolvedSize = options.Size?.ToString() ?? sizeStr;
+            if (!string.IsNullOrEmpty(resolvedSize) && resolvedSize != "auto")
+                parts.Append($",\"size\":{System.Text.Json.JsonSerializer.Serialize(resolvedSize)}");
+
+            if (options.Quality is not null)
+                parts.Append($",\"quality\":{System.Text.Json.JsonSerializer.Serialize(options.Quality.ToString())}");
+
+            if (isEdit && context.InputFiles is { Count: > 0 })
+                parts.Append($",\"image\":\"{context.InputFiles.Count} archivo(s), {context.InputFiles.Sum(b => (long)b.Length)} bytes\"");
+
+            parts.Append('}');
+            return parts.ToString();
         }
 
         private static int ReadImageCount(IDictionary<string, object> config)
