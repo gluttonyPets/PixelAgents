@@ -104,8 +104,13 @@ namespace Server.Services.Ai
                 prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n{context.ProjectContext}\n\n{baseInput}";
 
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
+            string? truncationWarning = null;
             if (prompt.Length > maxLen)
+            {
+                var originalLength = prompt.Length;
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
+                truncationWarning = InputAdapter.BuildTruncationWarning(context.ModelName, originalLength, maxLen);
+            }
 
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
@@ -232,6 +237,7 @@ namespace Server.Services.Ai
                         ["count"] = imageBytesList.Count,
                     });
                     imgResult.EstimatedCost = PricingCatalog.EstimateImageCost(context.ModelName) * imageBytesList.Count;
+                    imgResult.TruncationWarning = truncationWarning;
                     return imgResult;
                 }
 

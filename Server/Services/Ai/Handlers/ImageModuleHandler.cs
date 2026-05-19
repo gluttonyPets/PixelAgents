@@ -87,6 +87,9 @@ public class ImageModuleHandler : IModuleHandler
         if (!string.IsNullOrEmpty(result.SentPayload) && ctx.Node.StepExecution is not null)
             ctx.Node.StepExecution.InputData = result.SentPayload;
 
+        if (!string.IsNullOrEmpty(result.TruncationWarning))
+            await ctx.LogWarningAsync(result.TruncationWarning);
+
         if (!result.Success)
         {
             await ctx.LogInfoAsync($"[Image] {module.ProviderType} devolvio error: {result.Error}");

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Collections.Generic;
 
 namespace Server.Services.Ai
 {
@@ -71,6 +72,51 @@ namespace Server.Services.Ai
                 truncated = truncated[..lastSpace];
 
             return truncated.TrimEnd();
+        }
+
+        // Models with higher image prompt limits than the defaults above, ordered by capacity.
+        // These are the models we suggest when a prompt is truncated.
+        private static readonly (string ModelId, string DisplayName, int Limit)[] ImageModelsByCapacity =
+        [
+            ("dall-e-3",         "DALL-E 3 (OpenAI)",                         4_000),
+            ("gpt-image-1-mini", "GPT Image 1 Mini (OpenAI)",                 4_000),
+            ("gpt-image-1",      "GPT Image 1 (OpenAI)",                      4_000),
+            ("gpt-image-1.5",    "GPT Image 1.5 (OpenAI)",                    4_000),
+            ("leonardo-phoenix",       "Leonardo Phoenix (LeonardoAI)",       1_500),
+            ("leonardo-phoenix-0.9",   "Leonardo Phoenix 0.9 (LeonardoAI)",   1_500),
+            ("leonardo-flux-dev",      "Leonardo Flux Dev (LeonardoAI)",      1_500),
+            ("leonardo-flux-schnell",  "Leonardo Flux Schnell (LeonardoAI)",  1_500),
+            ("gemini-2.5-flash-image",         "Gemini 2.5 Flash Image (Google)", 4_000),
+            ("gemini-3.1-flash-image-preview", "Gemini 3.1 Flash Image Preview (Google)", 4_000),
+            ("gemini-3-pro-image-preview",     "Gemini 3 Pro Image Preview (Google)", 4_000),
+            ("grok-imagine-image",     "Grok Imagine (xAI)",     4_000),
+            ("grok-imagine-image-pro", "Grok Imagine Pro (xAI)", 4_000),
+        ];
+
+        /// <summary>
+        /// Builds a human-readable warning for the execution log when a prompt was
+        /// truncated, including the models with higher prompt limits.
+        /// </summary>
+        public static string BuildTruncationWarning(string modelName, int originalLength, int maxLength)
+        {
+            var currentLimit = GetMaxPromptLength(modelName);
+            var suggestions = new List<string>();
+
+            foreach (var (id, display, limit) in ImageModelsByCapacity)
+            {
+                if (limit > currentLimit
+                    && !string.Equals(id, modelName, StringComparison.OrdinalIgnoreCase))
+                {
+                    suggestions.Add(display);
+                }
+            }
+
+            var suggestionText = suggestions.Count > 0
+                ? $" Considera cambiar a un modelo con mayor capacidad: {string.Join(", ", suggestions)}."
+                : " No hay modelos de imagen con mayor límite de prompt disponibles en el catálogo.";
+
+            return $"[AVISO] El prompt fue recortado de {originalLength:N0} a {maxLength:N0} caracteres "
+                 + $"porque el modelo '{modelName}' tiene un límite de {currentLimit:N0} caracteres.{suggestionText}";
         }
     }
 }

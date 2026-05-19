@@ -46,6 +46,9 @@ namespace Server.Models
         /// When set by a provider, the handler overwrites StepExecution.InputData with this
         /// so the UI shows what was actually dispatched rather than a pre-transform snapshot.</summary>
         public string? SentPayload { get; set; }
+        /// <summary>Human-readable warning set by a provider when the prompt was truncated
+        /// to fit the model's limit. Includes the suggested alternative model(s).</summary>
+        public string? TruncationWarning { get; set; }
 
         public static AiResult Ok(string text, Dictionary<string, object>? metadata = null) => new()
         {

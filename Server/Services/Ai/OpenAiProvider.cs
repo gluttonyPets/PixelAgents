@@ -219,8 +219,13 @@ namespace Server.Services.Ai
 
             // Truncar al máximo del modelo como red de seguridad
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
+            string? truncationWarning = null;
             if (prompt.Length > maxLen)
+            {
+                var originalLength = prompt.Length;
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
+                truncationWarning = InputAdapter.BuildTruncationWarning(context.ModelName, originalLength, maxLen);
+            }
 
             // Number of images to generate. dall-e-3 only supports n=1; others up to 10.
             var requestedN = ReadImageCount(context.Configuration);
@@ -311,6 +316,7 @@ namespace Server.Services.Ai
             var imgResult = AiResult.OkFiles(images, "image/png", metadata);
             imgResult.EstimatedCost = perImageCost * images.Count;
             imgResult.SentPayload = actualPayload;
+            imgResult.TruncationWarning = truncationWarning;
             return imgResult;
         }
 

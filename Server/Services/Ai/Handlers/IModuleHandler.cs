@@ -82,6 +82,9 @@ public class ModuleExecutionContext
     /// <summary>Emit a debug-level execution log tied to this module's step.</summary>
     public Task LogDebugAsync(string message) => LogAsync("debug", message);
 
+    /// <summary>Emit a warning-level execution log tied to this module's step.</summary>
+    public Task LogWarningAsync(string message) => LogAsync("warning", message);
+
     private Task LogAsync(string level, string message)
     {
         if (Logger is null) return Task.CompletedTask;

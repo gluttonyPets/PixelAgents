@@ -156,8 +156,13 @@ namespace Server.Services.Ai
             prompt = $"{InputAdapter.GetVisualMediaRule()}\n\nGenerate an image based on this description: {prompt}";
 
             var maxLen = InputAdapter.GetMaxPromptLength(imageModel);
+            string? truncationWarning = null;
             if (prompt.Length > maxLen)
+            {
+                var originalLength = prompt.Length;
                 prompt = InputAdapter.TruncateAtWord(prompt, maxLen);
+                truncationWarning = InputAdapter.BuildTruncationWarning(imageModel, originalLength, maxLen);
+            }
 
             var requestedN = ReadImageCount(context.Configuration);
 
@@ -279,6 +284,7 @@ namespace Server.Services.Ai
                 ["count"] = collected.Count,
             });
             result.EstimatedCost = PricingCatalog.EstimateImageCost(imageModel) * collected.Count;
+            result.TruncationWarning = truncationWarning;
             return result;
         }
 
