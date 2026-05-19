@@ -145,6 +145,10 @@
             }
             else if (_moduleType == "Image" && _provider == "OpenAI")
             {
+                <div class="form-group">
+                    <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                    <textarea @bind="_systemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Tamano</label>
@@ -173,6 +177,10 @@
             }
             else if (_moduleType == "Image" && _provider == "LeonardoAI")
             {
+                <div class="form-group">
+                    <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                    <textarea @bind="_systemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Ancho</label>
@@ -208,6 +216,10 @@
             }
             else if (_moduleType == "Image" && _provider == "Google")
             {
+                <div class="form-group">
+                    <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                    <textarea @bind="_systemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Relacion de aspecto</label>
@@ -227,6 +239,10 @@
             }
             else if (_moduleType == "Image" && _provider == "xAI")
             {
+                <div class="form-group">
+                    <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                    <textarea @bind="_systemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
@@ -756,6 +772,10 @@
                                 }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
                                 {
+                                    <div class="form-group">
+                                        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                                        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                                    </div>
                                     <div class="form-row">
                                         <div class="form-group">
                                             <label>Tamano</label>
@@ -777,6 +797,10 @@
                                 }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "Google")
                                 {
+                                    <div class="form-group">
+                                        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                                        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                                    </div>
                                     <div class="form-row">
                                         <div class="form-group">
                                             <label>Relacion de aspecto</label>
@@ -796,6 +820,10 @@
                                 }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
                                 {
+                                    <div class="form-group">
+                                        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                                        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                                    </div>
                                     <div class="form-row">
                                         <div class="form-group">
                                             <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
@@ -805,6 +833,10 @@
                                 }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
                                 {
+                                    <div class="form-group">
+                                        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                                        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                                    </div>
                                     <div class="form-row">
                                         <div class="form-group">
                                             <label>Ancho</label>
@@ -1794,6 +1826,8 @@ else
         }
         else if (_moduleType == "Image" && _provider == "Google")
         {
+            if (!string.IsNullOrWhiteSpace(_systemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
             if (_geminiAspectRatio != "1:1")
                 parts.Add($"\"aspectRatio\":\"{_geminiAspectRatio}\"");
             if (_geminiImageCount != 1)
@@ -1801,11 +1835,15 @@ else
         }
         else if (_moduleType == "Image" && _provider == "xAI")
         {
+            if (!string.IsNullOrWhiteSpace(_systemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
             if (_grokImageCount != 1)
                 parts.Add($"\"n\":{_grokImageCount}");
         }
         else if (_moduleType == "Image" && _provider == "LeonardoAI")
         {
+            if (!string.IsNullOrWhiteSpace(_systemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
             if (_leoWidth != 1024)
                 parts.Add($"\"width\":{_leoWidth}");
             if (_leoHeight != 1024)
@@ -1815,6 +1853,8 @@ else
         }
         else if (_moduleType == "Image")
         {
+            if (!string.IsNullOrWhiteSpace(_systemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
             if (_imageSize != "1024x1024")
                 parts.Add($"\"size\":\"{_imageSize}\"");
             if (_imageQuality != "standard")
@@ -2200,6 +2240,8 @@ else
         }
         else if (moduleType == "Image" && providerType == "Google")
         {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
             if (_editGeminiAspectRatio != "1:1")
                 parts.Add($"\"aspectRatio\":\"{_editGeminiAspectRatio}\"");
             if (_editGeminiImageCount != 1)
@@ -2207,11 +2249,15 @@ else
         }
         else if (moduleType == "Image" && providerType == "xAI")
         {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
             if (_editGrokImageCount != 1)
                 parts.Add($"\"n\":{_editGrokImageCount}");
         }
         else if (moduleType == "Image" && providerType == "LeonardoAI")
         {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
             if (_editLeoWidth != 1024)
                 parts.Add($"\"width\":{_editLeoWidth}");
             if (_editLeoHeight != 1024)
@@ -2221,6 +2267,8 @@ else
         }
         else if (moduleType == "Image")
         {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
             if (_editImageSize != "1024x1024")
                 parts.Add($"\"size\":\"{_editImageSize}\"");
             if (_editImageQuality != "standard")

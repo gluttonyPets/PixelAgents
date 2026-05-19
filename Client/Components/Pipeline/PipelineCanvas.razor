@@ -302,6 +302,12 @@
                         <div class="inspector-section">
                             <div class="inspector-section-title">Generacion</div>
                             <div class="inspector-field">
+                                <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                                <textarea rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."
+                                          value="@GetModuleConfig(sel.Id, "systemPrompt", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "systemPrompt", e.Value?.ToString() ?? ""))"></textarea>
+                            </div>
+                            <div class="inspector-field">
                                 <label>Prompt <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
                                 <textarea rows="3" placeholder="Describe la imagen que quieres generar..."
                                           value="@GetModuleConfig(sel.Id, "imagePrompt", "")"
