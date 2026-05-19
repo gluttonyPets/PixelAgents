@@ -63,11 +63,49 @@ public static class StepPayloadBuilder
         return JsonSerializer.Serialize(payload, JsonOptions);
     }
 
-    /// <summary>Shortcut: build and persist on the node's StepExecution entity.</summary>
+    /// <summary>Shortcut: normalize text fields, then build and persist on the node's StepExecution entity.</summary>
     public static void RecordSentPayload(ModuleExecutionContext ctx, AiExecutionContext aiCtx, string providerType)
     {
         if (ctx.Node.StepExecution is null) return;
+        NormalizeContext(aiCtx);
         ctx.Node.StepExecution.InputData = Serialize(aiCtx, providerType);
+    }
+
+    /// <summary>
+    /// Strips redundant whitespace from every text field that will be sent to an AI provider.
+    /// Collapses repeated blank lines and trims edges — reduces token count without altering content.
+    /// Mutates the context in-place so providers also receive the cleaned strings.
+    /// </summary>
+    public static void NormalizeContext(AiExecutionContext aiCtx)
+    {
+        aiCtx.Input                     = NormalizeText(aiCtx.Input) ?? aiCtx.Input;
+        aiCtx.MandatoryRules            = NormalizeText(aiCtx.MandatoryRules);
+        aiCtx.ProjectContext            = NormalizeText(aiCtx.ProjectContext);
+        aiCtx.PreviousExecutionsSummary = NormalizeText(aiCtx.PreviousExecutionsSummary);
+
+        if (aiCtx.Configuration.TryGetValue("systemPrompt", out var sp) && sp is string spStr)
+            aiCtx.Configuration["systemPrompt"] = NormalizeText(spStr) ?? spStr;
+    }
+
+    private static string? NormalizeText(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+
+        // Normalise line endings
+        text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        // Remove trailing whitespace from every line
+        var lines = text.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+            lines[i] = lines[i].TrimEnd();
+
+        text = string.Join('\n', lines);
+
+        // Collapse 3+ consecutive blank lines to a maximum of 2
+        while (text.Contains("\n\n\n"))
+            text = text.Replace("\n\n\n", "\n\n");
+
+        return text.Trim();
     }
 
     private static object? Simplify(object? value) => value switch
