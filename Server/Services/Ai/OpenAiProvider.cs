@@ -217,6 +217,8 @@ namespace Server.Services.Ai
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{baseInput}";
 
+            prompt = InputAdapter.SanitizePlainText(prompt);
+
             // Truncar al máximo del modelo como red de seguridad
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
             string? truncationWarning = null;

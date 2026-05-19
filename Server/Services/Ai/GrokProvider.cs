@@ -154,6 +154,8 @@ namespace Server.Services.Ai
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 prompt = $"{InputAdapter.GetVisualMediaRule()}\n\n[Contexto: {context.ProjectContext}]\n\n{baseInput}";
 
+            prompt = InputAdapter.SanitizePlainText(prompt);
+
             var maxLen = InputAdapter.GetMaxPromptLength(modelName);
             string? truncationWarning = null;
             if (prompt.Length > maxLen)
