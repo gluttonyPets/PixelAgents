@@ -748,6 +748,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
             {
                 result = await completedTask;
             }
+            catch (TransientProviderException)
+            {
+                throw; // propagate so the scheduler can reschedule
+            }
             catch (OperationCanceledException)
             {
                 completedNode.Status = NodeStatus.Failed;

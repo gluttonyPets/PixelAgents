@@ -29,10 +29,26 @@ namespace Server.Services.Ai
                     _ => AiResult.Fail($"ModuleType '{context.ModuleType}' no soportado por OpenAI")
                 };
             }
+            catch (Exception ex) when (IsTransient(ex))
+            {
+                throw new TransientProviderException($"Error OpenAI transitorio: {ex.Message}", ex);
+            }
             catch (Exception ex)
             {
                 return AiResult.Fail($"Error OpenAI: {ex.Message}");
             }
+        }
+
+        // Network timeouts, SDK retry exhaustion and 5xx errors are transient —
+        // the caller should retry later rather than treat the run as permanently failed.
+        private static bool IsTransient(Exception ex)
+        {
+            var msg = ex.Message;
+            return msg.Contains("Retry failed after", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("configured timeout", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+                || (ex is HttpRequestException httpEx &&
+                    (httpEx.StatusCode is null || (int)httpEx.StatusCode >= 500));
         }
 
         private async Task<AiResult> GenerateTextAsync(AiExecutionContext context)

@@ -173,6 +173,21 @@ namespace Server.Services.Scheduler
                         schedule.Id, schedule.ProjectId,
                         consumedPrompt is null ? "" : $" (consumed prompt {consumedPrompt.Id})");
                 }
+                catch (TransientProviderException ex)
+                {
+                    var retryAt = now.AddMinutes(30);
+                    _log.LogWarning(ex,
+                        "Schedule {Id} (project {ProjectId}): transient provider failure, rescheduling in 30 min at {RetryAt:O}",
+                        schedule.Id, schedule.ProjectId, retryAt);
+                    schedule.NextRunAt = retryAt;
+                    schedule.UpdatedAt = now;
+                    try { await db.SaveChangesAsync(ct); }
+                    catch (Exception saveEx)
+                    {
+                        _log.LogError(saveEx,
+                            "Failed to persist retry NextRunAt for schedule {Id}", schedule.Id);
+                    }
+                }
                 catch (Exception ex)
                 {
                     _log.LogError(ex, "Failed to execute schedule {Id} for project {ProjectId}",
