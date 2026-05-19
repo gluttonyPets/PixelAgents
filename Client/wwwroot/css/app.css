@@ -3039,18 +3039,20 @@ a.link:hover { text-decoration: underline; }
     border-top: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    min-height: 100px;
+    min-height: 120px;
     max-height: 40%;
     overflow: hidden;
 }
 
 .inspector-log-header {
-    padding: 0.4rem 0.8rem;
-    font-weight: 600;
-    font-size: 0.75rem;
+    padding: 0.35rem 0.8rem;
+    font-weight: 700;
+    font-size: 0.68rem;
     text-transform: uppercase;
+    letter-spacing: 0.06em;
     color: var(--text-muted);
     border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.015);
     display: flex;
     align-items: center;
     gap: 0.4rem;
@@ -3060,195 +3062,244 @@ a.link:hover { text-decoration: underline; }
 .inspector-log-entries {
     flex: 1;
     overflow-y: auto;
-    padding: 0.3rem;
-    font-size: 0.68rem;
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    padding: 0.25rem 0;
+    font-size: 0.69rem;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
 
 .inspector-log-entry {
-    padding: 0.15rem 0.3rem;
-    border-radius: 3px;
-    margin-bottom: 1px;
+    padding: 0.14rem 0.6rem 0.14rem 0.8rem;
+    border-radius: 0;
+    margin-bottom: 0;
     display: flex;
-    gap: 0.3rem;
+    gap: 0.4rem;
     align-items: baseline;
-    line-height: 1.3;
+    line-height: 1.45;
     word-break: break-word;
+    border-left: 2px solid transparent;
+    transition: background 0.1s;
 }
+.inspector-log-entry:hover { background: rgba(255,255,255,0.03); }
 
 .inspector-log-time {
-    color: var(--text-muted);
+    color: #555e6e;
     flex-shrink: 0;
-    font-size: 0.62rem;
+    font-size: 0.6rem;
+    font-variant-numeric: tabular-nums;
 }
 
 .inspector-log-step {
     color: var(--accent);
     font-weight: 600;
     flex-shrink: 0;
+    opacity: 0.85;
+    font-size: 0.62rem;
+    background: rgba(108,99,255,0.1);
+    padding: 0 0.3rem;
+    border-radius: 2px;
 }
 
-.inspector-log-info { color: var(--text); }
-.inspector-log-warning { color: var(--warning); }
-.inspector-log-error { color: var(--danger); background: rgba(244, 67, 54, 0.06); }
-.inspector-log-success { color: var(--success); }
+.inspector-log-info  { color: var(--text); border-left-color: transparent; }
+.inspector-log-debug { color: #666e80; border-left-color: transparent; }
+.inspector-log-warning {
+    color: var(--warning);
+    border-left-color: var(--warning);
+    background: rgba(255, 152, 0, 0.05);
+}
+.inspector-log-error {
+    color: #ff6b6b;
+    border-left-color: var(--danger);
+    background: rgba(244, 67, 54, 0.07);
+}
+.inspector-log-success {
+    color: #69d96d;
+    border-left-color: var(--success);
+    background: rgba(76, 175, 80, 0.05);
+}
 
 /* ── Step header ── */
 .inspector-log-step-header {
-    padding: 0.3rem 0.3rem 0.1rem;
-    margin-top: 0.35rem;
-    border-top: 1px solid var(--border);
+    padding: 0.35rem 0.6rem 0.25rem;
+    margin-top: 0.5rem;
+    background: rgba(108, 99, 255, 0.07);
+    border-top: 1px solid rgba(108, 99, 255, 0.2);
+    border-bottom: 1px solid rgba(108, 99, 255, 0.12);
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.4rem;
     font-weight: 600;
 }
 .inspector-log-step-header:first-child { margin-top: 0; border-top: none; }
 .inspector-log-step-badge {
     background: var(--accent);
     color: #fff;
-    font-size: 0.58rem;
-    padding: 0.05rem 0.35rem;
+    font-size: 0.57rem;
+    padding: 0.06rem 0.4rem;
     border-radius: 3px;
     font-weight: 700;
     flex-shrink: 0;
+    letter-spacing: 0.02em;
 }
 .inspector-log-step-name {
-    font-size: 0.7rem;
-    color: var(--text);
+    font-size: 0.72rem;
+    color: #c5bfff;
+    font-weight: 600;
 }
 
 /* ── Input / Output chips ── */
 .inspector-log-io {
-    padding: 0.12rem 0.3rem 0.12rem 0.5rem;
+    padding: 0.15rem 0.6rem 0.15rem 0.8rem;
     display: flex;
-    gap: 0.3rem;
+    gap: 0.4rem;
     align-items: baseline;
-    font-size: 0.62rem;
-    line-height: 1.35;
+    font-size: 0.64rem;
+    line-height: 1.4;
+    border-left: 2px solid transparent;
 }
+.inspector-log-io-in  { border-left-color: rgba(108,99,255,0.4); background: rgba(108,99,255,0.04); }
+.inspector-log-io-out { border-left-color: rgba(76,175,80,0.4);  background: rgba(76,175,80,0.04);  }
 .inspector-log-io-label {
-    font-size: 0.52rem;
-    font-weight: 700;
-    padding: 0.05rem 0.25rem;
-    border-radius: 2px;
+    font-size: 0.53rem;
+    font-weight: 800;
+    padding: 0.04rem 0.28rem;
+    border-radius: 3px;
     flex-shrink: 0;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.05em;
 }
 .inspector-log-io-in .inspector-log-io-label {
-    background: rgba(108, 99, 255, 0.12);
-    color: var(--accent);
+    background: rgba(108, 99, 255, 0.18);
+    color: #a79fff;
 }
 .inspector-log-io-out .inspector-log-io-label {
-    background: rgba(76, 175, 80, 0.12);
-    color: var(--success);
+    background: rgba(76, 175, 80, 0.18);
+    color: #7ed981;
 }
 .inspector-log-io-text {
-    color: var(--text-muted);
+    color: #9ba3b0;
     word-break: break-word;
-    max-height: 3.6em;
+    max-height: 4.5em;
     overflow: hidden;
-    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
 }
 
 /* ── Execution detail: step cards ── */
 .exec-step-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 6px;
-    margin-bottom: 0.4rem;
+    border-radius: 8px;
+    margin-bottom: 0.45rem;
     overflow: hidden;
-    transition: border-color 0.15s;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
 }
-.exec-step-card:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.exec-step-card:hover {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    box-shadow: 0 2px 8px rgba(108,99,255,0.1);
+}
 .exec-step-failed { border-left: 3px solid var(--danger); }
-.exec-step-running { border-left: 3px solid var(--accent); }
+.exec-step-running { border-left: 3px solid var(--accent); animation: pulse-border 1.5s ease-in-out infinite; }
+
+@keyframes pulse-border {
+    0%, 100% { border-left-color: var(--accent); }
+    50% { border-left-color: rgba(108,99,255,0.4); }
+}
 
 .exec-step-header {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 0.6rem;
+    gap: 0.45rem;
+    padding: 0.45rem 0.65rem;
     cursor: pointer;
     user-select: none;
 }
-.exec-step-header:hover { background: rgba(255,255,255,0.02); }
+.exec-step-header:hover { background: rgba(255,255,255,0.025); }
 
 .exec-step-badge {
-    background: var(--accent);
+    background: linear-gradient(135deg, var(--accent), #5a52e0);
     color: #fff;
     font-size: 0.6rem;
-    font-weight: 700;
-    min-width: 1.3rem;
-    height: 1.3rem;
-    border-radius: 4px;
+    font-weight: 800;
+    min-width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 5px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(108,99,255,0.4);
 }
-.exec-step-name { font-weight: 600; font-size: 0.82rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.exec-step-name { font-weight: 600; font-size: 0.84rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .exec-step-chevron {
-    font-size: 0.55rem;
+    font-size: 0.52rem;
     color: var(--text-muted);
-    transition: transform 0.15s;
+    transition: transform 0.18s ease;
     flex-shrink: 0;
 }
-.exec-step-chevron.expanded { transform: rotate(90deg); }
+.exec-step-chevron.expanded { transform: rotate(90deg); color: var(--accent); }
 
 .exec-step-preview {
     font-size: 0.7rem;
-    color: var(--text-muted);
-    padding: 0 0.6rem 0.35rem 2.5rem;
-    line-height: 1.3;
+    color: #7a8291;
+    padding: 0 0.65rem 0.4rem 2.65rem;
+    line-height: 1.35;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .exec-step-detail {
-    padding: 0.2rem 0.6rem 0.5rem 0.6rem;
+    padding: 0.4rem 0.7rem 0.6rem;
     border-top: 1px solid var(--border);
+    background: rgba(0,0,0,0.12);
 }
 
 /* ── I/O sections inside step detail ── */
-.exec-io-section { margin-top: 0.35rem; }
+.exec-io-section { margin-top: 0.5rem; }
 .exec-io-title {
-    font-size: 0.6rem;
-    font-weight: 700;
+    font-size: 0.59rem;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 0.15rem;
+    letter-spacing: 0.07em;
+    margin-bottom: 0.2rem;
     display: flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.35rem;
+    padding: 0.1rem 0;
 }
 .exec-io-title::before {
     content: '';
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     flex-shrink: 0;
 }
-.exec-io-in { color: var(--accent); }
-.exec-io-in::before { background: var(--accent); }
-.exec-io-out { color: var(--success); }
-.exec-io-out::before { background: var(--success); }
+.exec-io-in  { color: #9b93ff; }
+.exec-io-in::before  { background: var(--accent); box-shadow: 0 0 4px rgba(108,99,255,0.6); }
+.exec-io-out { color: #7ed981; }
+.exec-io-out::before { background: var(--success); box-shadow: 0 0 4px rgba(76,175,80,0.6); }
 
 .exec-io-block {
-    font-size: 0.7rem;
-    line-height: 1.4;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 0.3rem 0.5rem;
-    max-height: 160px;
+    font-size: 0.71rem;
+    line-height: 1.55;
+    background: #0d1018;
+    border: 1px solid #252a38;
+    border-radius: 6px;
+    padding: 0.45rem 0.65rem;
+    max-height: 220px;
     overflow-y: auto;
     white-space: pre-wrap;
     word-break: break-word;
-    color: var(--text);
+    color: #c9d1e0;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    scrollbar-width: thin;
+    scrollbar-color: #2e3140 transparent;
 }
+.exec-io-block::-webkit-scrollbar { width: 5px; }
+.exec-io-block::-webkit-scrollbar-track { background: transparent; }
+.exec-io-block::-webkit-scrollbar-thumb { background: #2e3140; border-radius: 3px; }
 
 .inspector-section {
     margin-bottom: 0.8rem;
