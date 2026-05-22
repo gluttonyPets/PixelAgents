@@ -986,6 +986,17 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     private static PublishCaptionSource FindPublishCaptionSource(ModuleNode publishNode)
     {
+        // Dedicated caption port takes priority and accepts any upstream (including Interaction).
+        var captionPort = publishNode.InputPorts.FirstOrDefault(p => p.PortId == "input_caption");
+        if (captionPort is not null && captionPort.ReceivedData.Count > 0)
+        {
+            var captionText = captionPort.ReceivedData
+                .Select(d => d.TextContent ?? ExtractPublishText(d.FullOutput))
+                .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t) && !IsControlResponse(t));
+            if (!string.IsNullOrWhiteSpace(captionText))
+                return new PublishCaptionSource(captionText, captionText, null);
+        }
+
         foreach (var candidate in GetUpstreamCandidates(publishNode))
         {
             if (candidate.ModuleType == "Interaction" || candidate.Output is null)
@@ -997,6 +1008,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         }
 
         var directText = publishNode.InputPorts
+            .Where(p => p.PortId != "input_caption")
             .SelectMany(p => p.ReceivedData)
             .Select(d => d.TextContent ?? ExtractPublishText(d.FullOutput))
             .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t) && !IsControlResponse(t));
@@ -1006,7 +1018,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     private static PublishMediaSource FindPublishMediaSource(ModuleNode publishNode)
     {
-        var direct = CollectMediaFromPortData(publishNode.InputPorts.SelectMany(p => p.ReceivedData), out var directOutput);
+        var direct = CollectMediaFromPortData(
+            publishNode.InputPorts.Where(p => p.PortId != "input_caption").SelectMany(p => p.ReceivedData),
+            out var directOutput);
         if (direct.Count > 0)
             return new PublishMediaSource(direct, directOutput, null, "input_content");
 

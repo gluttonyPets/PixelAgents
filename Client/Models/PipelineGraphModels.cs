@@ -265,6 +265,7 @@ public static class ModulePortRegistry
 
             case "Publish":
                 ports.Add(new("input_content", "Contenido", PortDataType.Any, isInput: true, isRequired: true));
+                ports.Add(new("input_caption", "Descripción", PortDataType.Text, isInput: true, isRequired: false));
                 ports.Add(new("output_result", "Resultado", PortDataType.Text, isInput: false));
                 break;
 
