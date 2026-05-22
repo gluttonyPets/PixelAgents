@@ -45,13 +45,9 @@ public static class PortDataType
 
     public static bool AreCompatible(string output, string input)
     {
-        if (input == Any || output == Any) return true;
-        if (input == output) return true;
-        if (input == Video && output == VideoList) return true;
-        if (input == VideoList && output == Video) return true;
-        if (input == File) return true; // file accepts anything
-        if (input == Scene && output == Scene) return true;
-        return false;
+        // Any module can receive any input type: if it's an image it sends the image,
+        // if it's text it sends the text, and a port can receive both simultaneously.
+        return true;
     }
 }
 
