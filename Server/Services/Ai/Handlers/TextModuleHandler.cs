@@ -16,13 +16,7 @@ public class TextModuleHandler : IModuleHandler
     public async Task<ModuleResult> ExecuteAsync(ModuleExecutionContext ctx)
     {
         var prompt = ctx.GetInputText("input_prompt");
-        if (string.IsNullOrWhiteSpace(prompt))
-            return ModuleResult.Failed("Sin prompt de entrada");
-
-        var outgoingFormats = ctx.GetOutgoingFormats();
-        if (outgoingFormats.Count > 0)
-            prompt = OutputSchemaHelper.GetOutputFormatInstruction(outgoingFormats) + "\n\n" + prompt;
-
+        
         var module = ctx.Node.AiModule;
         var provider = _registry.GetProvider(module.ProviderType);
         if (provider is null)
@@ -77,6 +71,14 @@ public class TextModuleHandler : IModuleHandler
                 FileSize = bytes.Length,
             });
         }
+
+        // Validate that we have either text input or file input (or both)
+        if (string.IsNullOrWhiteSpace(prompt) && inputFiles.Count == 0)
+            return ModuleResult.Failed("Sin prompt de entrada");
+
+        var outgoingFormats = ctx.GetOutgoingFormats();
+        if (outgoingFormats.Count > 0 && !string.IsNullOrWhiteSpace(prompt))
+            prompt = OutputSchemaHelper.GetOutputFormatInstruction(outgoingFormats) + "\n\n" + prompt;
 
         if (inputFiles.Count > 0)
         {
