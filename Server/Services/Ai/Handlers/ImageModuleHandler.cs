@@ -56,6 +56,7 @@ public class ImageModuleHandler : IModuleHandler
             MandatoryRules = ctx.MandatoryRules,
             Configuration = ctx.Config,
             InputFiles = inputFiles,
+            CancellationToken = ctx.CancellationToken,
         };
 
         // Record a pre-transform snapshot; providers that build the exact API body

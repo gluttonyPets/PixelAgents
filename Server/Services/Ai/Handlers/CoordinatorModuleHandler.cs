@@ -62,6 +62,7 @@ public class CoordinatorModuleHandler : IModuleHandler
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
             MandatoryRules = ctx.MandatoryRules,
             Configuration = ctx.Config,
+            CancellationToken = ctx.CancellationToken,
         };
 
         StepPayloadBuilder.RecordSentPayload(ctx, aiContext, module.ProviderType);

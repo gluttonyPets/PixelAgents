@@ -50,6 +50,7 @@ public class VideoEditModuleHandler : IModuleHandler
             Input = input,
             ProjectContext = ctx.Project.Context,
             Configuration = ctx.Config,
+            CancellationToken = ctx.CancellationToken,
         };
 
         var result = await provider.ExecuteAsync(aiContext);

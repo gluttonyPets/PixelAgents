@@ -32,6 +32,7 @@ public class VideoSearchModuleHandler : IModuleHandler
             ApiKey = apiKey,
             Input = query,
             Configuration = ctx.Config,
+            CancellationToken = ctx.CancellationToken,
         };
 
         var result = await provider.ExecuteAsync(aiContext);

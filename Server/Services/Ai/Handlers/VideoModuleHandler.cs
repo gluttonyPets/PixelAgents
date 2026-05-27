@@ -44,6 +44,7 @@ public class VideoModuleHandler : IModuleHandler
             ProjectContext = ctx.Project.Context,
             Configuration = ctx.Config,
             InputFiles = inputFiles,
+            CancellationToken = ctx.CancellationToken,
         };
 
         var result = await provider.ExecuteAsync(aiContext);

@@ -10,6 +10,8 @@ namespace Server.Services.Ai
     public class GeminiProvider : IAiProvider
     {
         private const string VeoBaseUrl = "https://generativelanguage.googleapis.com/v1beta";
+        private static readonly TimeSpan TextTimeout = TimeSpan.FromMinutes(3);
+        private static readonly TimeSpan ImageTimeout = TimeSpan.FromMinutes(3);
 
         public string ProviderType => "Google";
         public IEnumerable<string> SupportedModuleTypes => new[] { "Text", "Image", "Video" };
@@ -26,10 +28,37 @@ namespace Server.Services.Ai
                     _ => AiResult.Fail($"ModuleType '{context.ModuleType}' no soportado por Google Gemini")
                 };
             }
+            catch (OperationCanceledException)
+            {
+                return AiResult.Fail("Operación cancelada por el usuario");
+            }
             catch (Exception ex)
             {
                 return AiResult.Fail($"Error Google Gemini: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Executes an async task with timeout and cancellation support.
+        /// </summary>
+        private static async Task<T> ExecuteWithTimeoutAsync<T>(
+            Task<T> task,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            
+            var completedTask = await Task.WhenAny(task, Task.Delay(Timeout.Infinite, linkedCts.Token));
+            
+            if (completedTask != task)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    throw new OperationCanceledException("Operación cancelada por el usuario", cancellationToken);
+                throw new TimeoutException($"La operación excedió el tiempo límite de {timeout.TotalMinutes:F1} minutos");
+            }
+            
+            return await task;
         }
 
         public async Task<(bool Valid, string? Error)> ValidateKeyAsync(string apiKey)
@@ -101,18 +130,26 @@ namespace Server.Services.Ai
                         }
                     });
                 }
-                response = await client.Models.GenerateContentAsync(
-                    model: context.ModelName,
-                    contents: new Content { Parts = parts, Role = "user" },
-                    config: config
+                response = await ExecuteWithTimeoutAsync(
+                    client.Models.GenerateContentAsync(
+                        model: context.ModelName,
+                        contents: new Content { Parts = parts, Role = "user" },
+                        config: config
+                    ),
+                    TextTimeout,
+                    context.CancellationToken
                 );
             }
             else
             {
-                response = await client.Models.GenerateContentAsync(
-                    model: context.ModelName,
-                    contents: context.Input,
-                    config: config
+                response = await ExecuteWithTimeoutAsync(
+                    client.Models.GenerateContentAsync(
+                        model: context.ModelName,
+                        contents: context.Input,
+                        config: config
+                    ),
+                    TextTimeout,
+                    context.CancellationToken
                 );
             }
 
@@ -215,25 +252,33 @@ namespace Server.Services.Ai
                                 }
                             });
                         }
-                        response = await client.Models.GenerateContentAsync(
-                            model: imageModel,
-                            contents: new Content { Parts = inputParts, Role = "user" },
-                            config: config
+                        response = await ExecuteWithTimeoutAsync(
+                            client.Models.GenerateContentAsync(
+                                model: imageModel,
+                                contents: new Content { Parts = inputParts, Role = "user" },
+                                config: config
+                            ),
+                            ImageTimeout,
+                            context.CancellationToken
                         );
                     }
                     else
                     {
-                        response = await client.Models.GenerateContentAsync(
-                            model: imageModel,
-                            contents: promptForThis,
-                            config: config
+                        response = await ExecuteWithTimeoutAsync(
+                            client.Models.GenerateContentAsync(
+                                model: imageModel,
+                                contents: promptForThis,
+                                config: config
+                            ),
+                            ImageTimeout,
+                            context.CancellationToken
                         );
                     }
 
                     if (response.Candidates is null || response.Candidates.Count == 0)
                     {
                         lastFailure = "Google Gemini no devolvio respuesta para la imagen";
-                        if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
+                        if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1), context.CancellationToken); continue; }
                         break;
                     }
 
@@ -241,7 +286,7 @@ namespace Server.Services.Ai
                     if (parts is null)
                     {
                         lastFailure = "Google Gemini no devolvio partes en la respuesta";
-                        if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
+                        if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1), context.CancellationToken); continue; }
                         break;
                     }
 
@@ -264,7 +309,7 @@ namespace Server.Services.Ai
                         ? "Google Gemini no devolvio imagen tras varios intentos"
                         : $"Google Gemini no genero imagen: {textReason}";
 
-                    if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1)); continue; }
+                    if (attempt < maxRetries) { await Task.Delay(1000 * (attempt + 1), context.CancellationToken); continue; }
                 }
 
                 if (thisImage is not null)
@@ -381,8 +426,8 @@ namespace Server.Services.Ai
             request.Headers.Add("x-goog-api-key", context.ApiKey);
             request.Content = content;
 
-            var submitResp = await http.SendAsync(request);
-            var submitJson = await submitResp.Content.ReadAsStringAsync();
+            var submitResp = await http.SendAsync(request, context.CancellationToken);
+            var submitJson = await submitResp.Content.ReadAsStringAsync(context.CancellationToken);
 
             if (!submitResp.IsSuccessStatusCode)
             {
@@ -402,16 +447,16 @@ namespace Server.Services.Ai
 
             for (var attempt = 0; attempt < maxAttempts; attempt++)
             {
-                await Task.Delay(pollIntervalMs);
+                await Task.Delay(pollIntervalMs, context.CancellationToken);
 
                 using var pollRequest = new HttpRequestMessage(HttpMethod.Get, $"{VeoBaseUrl}/{operationName}");
                 pollRequest.Headers.Add("x-goog-api-key", context.ApiKey);
 
-                var pollResp = await http.SendAsync(pollRequest);
+                var pollResp = await http.SendAsync(pollRequest, context.CancellationToken);
                 if (!pollResp.IsSuccessStatusCode)
                     continue;
 
-                var pollJson = await pollResp.Content.ReadAsStringAsync();
+                var pollJson = await pollResp.Content.ReadAsStringAsync(context.CancellationToken);
                 var pollDoc = JsonDocument.Parse(pollJson);
 
                 if (!pollDoc.RootElement.TryGetProperty("done", out var doneEl) || !doneEl.GetBoolean())
@@ -441,11 +486,11 @@ namespace Server.Services.Ai
                 using var dlRequest = new HttpRequestMessage(HttpMethod.Get, videoUri);
                 dlRequest.Headers.Add("x-goog-api-key", context.ApiKey);
 
-                var dlResp = await http.SendAsync(dlRequest);
+                var dlResp = await http.SendAsync(dlRequest, context.CancellationToken);
                 if (!dlResp.IsSuccessStatusCode)
                     return AiResult.Fail($"Google Veo: error descargando video (HTTP {(int)dlResp.StatusCode})");
 
-                var videoBytes = await dlResp.Content.ReadAsByteArrayAsync();
+                var videoBytes = await dlResp.Content.ReadAsByteArrayAsync(context.CancellationToken);
 
                 var vidResult = AiResult.OkFile(videoBytes, "video/mp4", new Dictionary<string, object>
                 {

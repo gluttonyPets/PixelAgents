@@ -101,6 +101,7 @@ public class TextModuleHandler : IModuleHandler
             Configuration = ctx.Config,
             InputFiles = inputFiles.Count > 0 ? inputFiles : null,
             InputFileMetas = inputFileMetas.Count > 0 ? inputFileMetas : null,
+            CancellationToken = ctx.CancellationToken,
         };
 
         StepPayloadBuilder.RecordSentPayload(ctx, aiContext, module.ProviderType);
