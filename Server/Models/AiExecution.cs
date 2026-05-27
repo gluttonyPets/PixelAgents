@@ -21,6 +21,11 @@ namespace Server.Models
         /// document content blocks instead of image blocks) read from this list.
         /// </summary>
         public List<InputFileMeta>? InputFileMetas { get; set; }
+        /// <summary>
+        /// Cancellation token to abort the AI operation when the user cancels
+        /// execution or when a timeout is reached.
+        /// </summary>
+        public CancellationToken CancellationToken { get; set; } = default;
     }
 
     public class InputFileMeta

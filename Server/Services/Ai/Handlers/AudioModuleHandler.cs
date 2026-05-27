@@ -32,6 +32,7 @@ public class AudioModuleHandler : IModuleHandler
             ApiKey = apiKey,
             Input = text,
             Configuration = ctx.Config,
+            CancellationToken = ctx.CancellationToken,
         };
 
         var result = await provider.ExecuteAsync(aiContext);

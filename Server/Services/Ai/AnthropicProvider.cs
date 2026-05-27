@@ -8,6 +8,8 @@ namespace Server.Services.Ai
 {
     public class AnthropicProvider : IAiProvider
     {
+        private static readonly TimeSpan TextTimeout = TimeSpan.FromMinutes(3);
+
         public string ProviderType => "Anthropic";
         public IEnumerable<string> SupportedModuleTypes => new[] { "Text" };
 
@@ -21,10 +23,37 @@ namespace Server.Services.Ai
                     _ => AiResult.Fail($"ModuleType '{context.ModuleType}' no soportado por Anthropic")
                 };
             }
+            catch (OperationCanceledException)
+            {
+                return AiResult.Fail("Operación cancelada por el usuario");
+            }
             catch (Exception ex)
             {
                 return AiResult.Fail($"Error Anthropic: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Executes an async task with timeout and cancellation support.
+        /// </summary>
+        private static async Task<T> ExecuteWithTimeoutAsync<T>(
+            Task<T> task,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+        {
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            
+            var completedTask = await Task.WhenAny(task, Task.Delay(Timeout.Infinite, linkedCts.Token));
+            
+            if (completedTask != task)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    throw new OperationCanceledException("Operación cancelada por el usuario", cancellationToken);
+                throw new TimeoutException($"La operación excedió el tiempo límite de {timeout.TotalMinutes:F1} minutos");
+            }
+            
+            return await task;
         }
 
         public async Task<(bool Valid, string? Error)> ValidateKeyAsync(string apiKey)
@@ -88,7 +117,11 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
                 parameters.MaxTokens = Convert.ToInt32(maxTok);
 
-            var response = await client.Messages.GetClaudeMessageAsync(parameters);
+            var response = await ExecuteWithTimeoutAsync(
+                client.Messages.GetClaudeMessageAsync(parameters),
+                TextTimeout,
+                context.CancellationToken
+            );
 
             var text = response.Message.ToString();
 
@@ -215,8 +248,8 @@ namespace Server.Services.Ai
 
             var json = JsonSerializer.Serialize(payload);
             using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var resp = await http.PostAsync("https://api.anthropic.com/v1/messages", content);
-            var body = await resp.Content.ReadAsStringAsync();
+            using var resp = await http.PostAsync("https://api.anthropic.com/v1/messages", content, context.CancellationToken);
+            var body = await resp.Content.ReadAsStringAsync(context.CancellationToken);
 
             if (!resp.IsSuccessStatusCode)
                 return AiResult.Fail($"Anthropic HTTP {(int)resp.StatusCode}: {Truncate(body, 800)}");

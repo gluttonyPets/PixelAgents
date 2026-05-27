@@ -63,6 +63,7 @@ public class OrchestratorModuleHandler : IModuleHandler
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
             MandatoryRules = ctx.MandatoryRules,
             Configuration = config,
+            CancellationToken = ctx.CancellationToken,
         };
 
         StepPayloadBuilder.RecordSentPayload(ctx, aiContext, effectiveProvider);

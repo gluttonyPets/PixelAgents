@@ -39,6 +39,7 @@ public class TranscriptionModuleHandler : IModuleHandler
             Input = "",
             Configuration = ctx.Config,
             InputFiles = inputFiles,
+            CancellationToken = ctx.CancellationToken,
         };
 
         var result = await provider.ExecuteAsync(aiContext);
