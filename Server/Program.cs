@@ -262,6 +262,46 @@ static string? ResolveFilePath(string mediaRoot, string workspacePath, string fi
     return null;
 }
 
+/// <summary>
+/// Copies the configuration from an AiModule but excludes the systemPrompt field.
+/// This ensures that systemPrompt is always read from the current AiModule configuration
+/// rather than being frozen at the time the module is added to a pipeline.
+/// Other fields (like numberOfImages, temperature, modelName) are copied to allow
+/// per-pipeline customization.
+/// </summary>
+static string? CopyConfigurationExcludingSystemPrompt(string? sourceConfig)
+{
+    if (string.IsNullOrWhiteSpace(sourceConfig)) return null;
+    
+    try
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(sourceConfig);
+        var root = doc.RootElement;
+        
+        if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
+            return sourceConfig;
+        
+        var filtered = new Dictionary<string, System.Text.Json.JsonElement>();
+        foreach (var prop in root.EnumerateObject())
+        {
+            // Exclude systemPrompt - it should always come from AiModule
+            if (!prop.Name.Equals("systemPrompt", StringComparison.OrdinalIgnoreCase))
+            {
+                filtered[prop.Name] = prop.Value.Clone();
+            }
+        }
+        
+        if (filtered.Count == 0) return null;
+        
+        return System.Text.Json.JsonSerializer.Serialize(filtered);
+    }
+    catch
+    {
+        // If parsing fails, return original config
+        return sourceConfig;
+    }
+}
+
 // ==================== Auth Endpoints ====================
 
 app.MapPost("/api/auth/register", async (RegisterRequest req, IAccountService svc) =>
@@ -1227,7 +1267,9 @@ app.MapPost("/api/projects/{id}/duplicate", async (
             ProjectId = newProject.Id,
             AiModuleId = pm.AiModuleId,
             StepName = pm.StepName,
-            Configuration = pm.Configuration,
+            // When cloning, also exclude systemPrompt to ensure the cloned project
+            // gets the latest systemPrompt from the AiModule rather than a frozen copy.
+            Configuration = CopyConfigurationExcludingSystemPrompt(pm.Configuration),
             IsActive = pm.IsActive,
             PosX = pm.PosX,
             PosY = pm.PosY,
@@ -1319,7 +1361,8 @@ app.MapPost("/api/projects/{projectId}/modules", async (
         // Inherit the AiModule's Configuration as the initial pipeline-level
         // override so per-module defaults (e.g. numberOfImages, n, modelName)
         // are honored the first time the module is added to a pipeline.
-        Configuration = req.Configuration ?? module.Configuration,
+        // IMPORTANT: systemPrompt is excluded to allow dynamic updates from AiModule.
+        Configuration = req.Configuration ?? CopyConfigurationExcludingSystemPrompt(module.Configuration),
         IsActive = true,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
