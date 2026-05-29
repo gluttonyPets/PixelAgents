@@ -28,15 +28,25 @@ namespace Server.Services.Telegram
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // Only run polling if no webhook base URL is configured
+            // Only run polling if no HTTPS webhook URL is configured
+            // Telegram webhooks require HTTPS, so HTTP URLs cannot use webhooks
             var webhookBaseUrl = _config["Telegram:WebhookBaseUrl"] ?? _config["BaseUrl"] ?? "";
-            if (!string.IsNullOrWhiteSpace(webhookBaseUrl))
+            var isHttps = webhookBaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+            
+            if (!string.IsNullOrWhiteSpace(webhookBaseUrl) && isHttps)
             {
-                _logger.LogInformation("[TG-Polling] WebhookBaseUrl is set ({Url}), polling disabled. Using webhook mode.", webhookBaseUrl);
+                _logger.LogInformation("[TG-Polling] HTTPS WebhookBaseUrl is set ({Url}), polling disabled. Using webhook mode.", webhookBaseUrl);
                 return;
             }
 
-            _logger.LogInformation("[TG-Polling] No WebhookBaseUrl configured. Starting long polling mode for Telegram.");
+            if (!string.IsNullOrWhiteSpace(webhookBaseUrl) && !isHttps)
+            {
+                _logger.LogWarning("[TG-Polling] HTTP URL detected ({Url}). Telegram requires HTTPS for webhooks. Using polling mode instead.", webhookBaseUrl);
+            }
+            else
+            {
+                _logger.LogInformation("[TG-Polling] No WebhookBaseUrl configured. Starting long polling mode for Telegram.");
+            }
 
             // Wait a bit for app startup to complete
             await Task.Delay(3000, stoppingToken);
