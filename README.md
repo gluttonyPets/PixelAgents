@@ -222,14 +222,30 @@ dotnet run --project .\Client\Client.csproj
 
 ### Configuracion local frecuente
 
+#### Archivo .env
+
+Para producción con Docker Compose, se recomienda usar un archivo `.env` en la
+raíz del proyecto. Copia `.env.example` a `.env` y configura las variables:
+
+```bash
+cp .env.example .env
+```
+
 Variables y claves relevantes:
 
+- `PUBLIC_IP`: **CRÍTICO** - IP pública o dominio del servidor. Necesario para
+  que Buffer y otros servicios externos puedan acceder a archivos generados.
+  Obtén tu IP con `curl ifconfig.me`.
+- `APP_PORT`: puerto de la aplicación en el host (por defecto 8080).
+- `POSTGRES_PASSWORD`: contraseña de PostgreSQL.
 - `ConnectionStrings__Core`: base global.
 - `ConnectionStrings__TenantTemplate`: plantilla para bases tenant; debe incluir
   `{db}`.
 - `AllowedOrigin`: origen permitido por CORS en produccion.
-- `BaseUrl` o `Telegram:WebhookBaseUrl`: URL publica para webhooks y enlaces
-  publicos cuando aplique.
+- `BaseUrl`: URL pública completa (ej: `http://123.45.67.89:8080`). Se construye
+  automáticamente desde `PUBLIC_IP` y `APP_PORT`. **Esencial para publicación
+  en redes sociales con Buffer**.
+- `Telegram:WebhookBaseUrl`: URL publica para webhooks de Telegram.
 - `WhatsApp:WebhookVerifyToken`: token de verificacion para webhook de WhatsApp.
 
 Las API keys de proveedores no se configuran como variables globales en el flujo
@@ -604,6 +620,10 @@ publicacion cuando aplica.
 El archivo `Server/Services/Instagram/MetricoolService.cs` contiene clases
 `BufferService`, `BufferConfig`, `BufferChannel` y resultados de publicacion. El
 servicio publica contenido en canales configurados para Instagram/TikTok.
+
+**IMPORTANTE**: Para que Buffer pueda descargar las imágenes y videos generados,
+debes configurar la variable `PUBLIC_IP` con tu IP pública o dominio accesible
+desde internet. Ver `docs/BUFFER_SETUP.md` para instrucciones detalladas.
 
 ### WhatsApp
 

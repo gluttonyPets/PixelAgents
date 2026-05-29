@@ -30,11 +30,16 @@ services:
       # Database (matches appsettings.Production.json placeholders)
       ConnectionStrings__Core: "Host=postgres;Port=5432;Database=pixelagents_core;Username=postgres;Password=${POSTGRES_PASSWORD:-changeme_secure_password}"
       ConnectionStrings__TenantTemplate: "Host=postgres;Port=5432;Database={db};Username=postgres;Password=${POSTGRES_PASSWORD:-changeme_secure_password}"
-      # CORS - set to your public IP
+      # CORS - set to your public IP or domain
       AllowedOrigin: "http://${PUBLIC_IP:-localhost}:${APP_PORT:-8080}"
+      # Public URL for file access (CRITICAL for Buffer/social media publishing)
+      # This URL must be accessible from the internet for Buffer to download images
+      BaseUrl: "http://${PUBLIC_IP:-localhost}:${APP_PORT:-8080}"
       # Telegram polling mode (no WebhookBaseUrl = polling automatically)
-      # If you later get a domain with HTTPS, uncomment:
+      # If you later get a domain with HTTPS, uncomment and update:
       # Telegram__WebhookBaseUrl: "https://yourdomain.com"
+      # BaseUrl: "https://yourdomain.com"
+      # AllowedOrigin: "https://yourdomain.com"
 
   dozzle:
     image: amir20/dozzle:latest

@@ -1212,9 +1212,14 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (isLocal)
         {
             await _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "warning",
-                $"La URL base del servidor ({(string.IsNullOrEmpty(serverBaseUrl) ? "(vacia)" : serverBaseUrl)}) " +
-                "no es accesible desde internet. Buffer no podra descargar las imagenes. " +
-                "Configura BaseUrl o AllowedOrigin con tu IP/dominio publico.",
+                $"⚠️ URL BASE NO ACCESIBLE DESDE INTERNET ⚠️\n" +
+                $"URL actual: {(string.IsNullOrEmpty(serverBaseUrl) ? "(vacía)" : serverBaseUrl)}\n\n" +
+                "Buffer no podrá descargar las imágenes y la publicación fallará.\n\n" +
+                "SOLUCIÓN:\n" +
+                "1. Obtén tu IP pública: curl ifconfig.me\n" +
+                "2. Edita .env y configura: PUBLIC_IP=tu-ip-aqui\n" +
+                "3. Reinicia: docker compose down && docker compose up -d\n\n" +
+                "Ver documentación completa: docs/BUFFER_SETUP.md",
                 node.ModuleId, stepName);
         }
     }
