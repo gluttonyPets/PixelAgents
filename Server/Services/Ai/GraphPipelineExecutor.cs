@@ -25,6 +25,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
     private readonly TelegramService _telegram;
     private readonly WhatsAppService _whatsApp;
     private readonly BufferService _buffer;
+    private readonly BufferImagePoolService _bufferPool;
     private readonly IConfiguration _configuration;
     private readonly IAiProviderRegistry _registry;
     private readonly string _mediaRoot;
@@ -40,6 +41,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         TelegramService telegram,
         WhatsAppService whatsApp,
         BufferService buffer,
+        BufferImagePoolService bufferPool,
         IConfiguration configuration,
         IWebHostEnvironment env,
         IAiProviderRegistry registry)
@@ -52,6 +54,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         _telegram = telegram;
         _whatsApp = whatsApp;
         _buffer = buffer;
+        _bufferPool = bufferPool;
         _configuration = configuration;
         _registry = registry;
         _mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
@@ -873,7 +876,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
             .Replace("{module_name}", stepName);
 
         var mediaSource = FindPublishMediaSource(node);
-        var classifiedMedia = BuildClassifiedMedia(ctx, mediaSource.Files, mediaSource.Output);
+        // Use Buffer image pool for permanent, accessible URLs
+        var classifiedMedia = BuildClassifiedMedia(ctx, mediaSource.Files, mediaSource.Output, useBufferPool: true);
         var hasImages = classifiedMedia.Any(m => m.Kind == MediaKind.Image);
         var hasVideos = classifiedMedia.Any(m => m.Kind == MediaKind.Video);
 
@@ -1136,7 +1140,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
     private List<ClassifiedMedia> BuildClassifiedMedia(
         ModuleExecutionContext ctx,
         List<OutputFile> files,
-        StepOutput? sourceOutput)
+        StepOutput? sourceOutput,
+        bool useBufferPool = false)
     {
         var classified = new List<ClassifiedMedia>();
         var externalVideoUrl = GetMetadataString(sourceOutput, "videoUrl");
@@ -1147,9 +1152,53 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 ? MediaKind.Video
                 : MediaKind.Image;
 
-            var publicUrl = kind == MediaKind.Video && !string.IsNullOrWhiteSpace(externalVideoUrl)
-                ? externalVideoUrl
-                : ctx.GetPublicFileUrl(file);
+            string? publicUrl;
+
+            // For Buffer publishing, use permanent pool URLs for images
+            if (useBufferPool && kind == MediaKind.Image)
+            {
+                try
+                {
+                    // Read the image file
+                    var filePath = ctx.ResolveOutputFilePath(file);
+                    if (!File.Exists(filePath))
+                    {
+                        _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "warning",
+                            $"[BufferPool] File not found for pooling: {file.FileName}",
+                            ctx.Node.ModuleId, ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name).Wait();
+                        continue;
+                    }
+
+                    var imageData = File.ReadAllBytes(filePath);
+                    var (slot, url) = _bufferPool.AllocateSlot(
+                        imageData,
+                        file.FileName,
+                        file.ContentType,
+                        ctx.PublicBaseUrl);
+
+                    publicUrl = url;
+
+                    _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "info",
+                        $"[BufferPool] Image allocated to slot {slot}: {file.FileName} → {url}",
+                        ctx.Node.ModuleId, ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name).Wait();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "error",
+                        $"[BufferPool] Error allocating image to pool: {ex.Message}. Falling back to standard URL.",
+                        ctx.Node.ModuleId, ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name).Wait();
+                    
+                    // Fallback to standard URL
+                    publicUrl = ctx.GetPublicFileUrl(file);
+                }
+            }
+            else
+            {
+                // For videos or non-Buffer publishing, use standard URLs
+                publicUrl = kind == MediaKind.Video && !string.IsNullOrWhiteSpace(externalVideoUrl)
+                    ? externalVideoUrl
+                    : ctx.GetPublicFileUrl(file);
+            }
 
             if (string.IsNullOrWhiteSpace(publicUrl))
                 continue;

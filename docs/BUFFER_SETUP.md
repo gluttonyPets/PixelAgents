@@ -1,14 +1,42 @@
 # Configuración de Buffer para Publicación en Redes Sociales
 
-## Problema
+## Solución Implementada: Pool de URLs Permanentes
 
-Cuando intentas publicar en Instagram o TikTok usando Buffer, la publicación falla con errores como:
+PixelAgents ahora utiliza un **pool de 10 URLs permanentes** para las imágenes de Buffer:
+
+- **URLs fijas**: `http://TU_IP:8080/api/public/buffer-image/0` hasta `/9`
+- **Sistema circular FIFO**: Las 10 imágenes más recientes siempre están disponibles
+- **Sin autenticación**: Buffer puede acceder libremente a estas URLs
+- **Persistencia**: Las imágenes permanecen disponibles incluso después de reiniciar el servidor
+
+### ¿Cómo funciona?
+
+1. Cuando un pipeline genera una imagen para publicar en Buffer
+2. La imagen se copia al siguiente slot disponible (0-9, rotan circularmente)
+3. Buffer recibe la URL permanente (ej: `http://51.75.26.236:8080/api/public/buffer-image/3`)
+4. Buffer puede descargar la imagen cuando la necesite (inmediatamente o más tarde)
+5. La imagen permanece disponible hasta que sea reemplazada por una nueva (después de 10 publicaciones)
+
+### Verificar el estado del pool
+
+Puedes ver qué imágenes están actualmente en el pool:
+
+```bash
+curl -X GET "http://TU_IP:8080/api/buffer-pool/status" \
+  -H "Cookie: tu-cookie-de-sesion"
+```
+
+O desde el navegador (autenticado): `http://TU_IP:8080/api/buffer-pool/status`
+
+## Problema Original (Ya Resuelto)
+
+Antes de esta implementación, cuando intentabas publicar en Instagram o TikTok usando Buffer, la publicación fallaba con errores como:
 
 ```
 "An unknown error has occurred, please get in touch if this persists."
 ```
 
-Esto ocurre porque **Buffer no puede acceder a las imágenes desde internet**.
+Esto ocurría porque **Buffer no podía acceder a las imágenes desde internet** debido a URLs dinámicas que expiraban o no eran accesibles.
 
 ## Causa del Problema
 

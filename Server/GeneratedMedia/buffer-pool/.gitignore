@@ -1,0 +1,12 @@
+# Ignore all image files in the Buffer pool
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.bmp
+*.mp4
+*.mov
+
+# Keep the directory structure
+!.gitignore

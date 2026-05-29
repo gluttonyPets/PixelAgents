@@ -93,6 +93,7 @@ builder.Services.AddTransient<IModuleHandler, PublishModuleHandler>();
 builder.Services.AddHttpClient<Server.Services.WhatsApp.WhatsAppService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
+builder.Services.AddSingleton<Server.Services.Instagram.BufferImagePoolService>();
 builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
@@ -2029,6 +2030,46 @@ app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async
         return Results.File(bytes, file.ContentType, file.FileName);
     }
 });
+
+// ==================== Buffer Image Pool (Permanent URLs) ====================
+
+// Public endpoint for Buffer to access images via permanent URLs
+app.MapGet("/api/public/buffer-image/{slot:int}", async (
+    int slot, Server.Services.Instagram.BufferImagePoolService poolService) =>
+{
+    var (data, contentType, fileName) = poolService.GetSlotImage(slot);
+    
+    if (data is null)
+        return Results.NotFound();
+    
+    return Results.File(data, contentType ?? "image/jpeg", fileName);
+});
+
+// Diagnostic endpoint to view pool status (authenticated)
+app.MapGet("/api/buffer-pool/status", async (
+    HttpContext ctx, UserManager<ApplicationUser> um,
+    Server.Services.Instagram.BufferImagePoolService poolService) =>
+{
+    var user = await um.GetUserAsync(ctx.User);
+    if (user is null) return Results.Unauthorized();
+    
+    var slots = poolService.GetAllSlots();
+    return Results.Ok(new
+    {
+        totalSlots = 10,
+        occupiedSlots = slots.Count,
+        slots = slots.Select(s => new
+        {
+            s.Slot,
+            s.FileName,
+            s.OriginalFileName,
+            s.ContentType,
+            s.FileSize,
+            s.CreatedAt,
+            url = $"{builder.Configuration["BaseUrl"]?.TrimEnd('/') ?? ""}/api/public/buffer-image/{s.Slot}"
+        })
+    });
+}).RequireAuthorization();
 
 // ==================== Schedule Endpoints ====================
 
