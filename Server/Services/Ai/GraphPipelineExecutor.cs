@@ -877,7 +877,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         var mediaSource = FindPublishMediaSource(node);
         // Use Buffer image pool for permanent, accessible URLs
-        var classifiedMedia = BuildClassifiedMedia(ctx, mediaSource.Files, mediaSource.Output, useBufferPool: true);
+        var classifiedMedia = await BuildClassifiedMediaAsync(ctx, mediaSource.Files, mediaSource.Output, useBufferPool: true);
         var hasImages = classifiedMedia.Any(m => m.Kind == MediaKind.Image);
         var hasVideos = classifiedMedia.Any(m => m.Kind == MediaKind.Video);
 
@@ -905,6 +905,17 @@ public class GraphPipelineExecutor : IPipelineExecutor
             $"Media: {classifiedMedia.Count} ({classifiedMedia.Count(m => m.Kind == MediaKind.Image)} img, {classifiedMedia.Count(m => m.Kind == MediaKind.Video)} vid) | " +
             $"PublishType: {publishType}",
             node.ModuleId, stepName);
+
+        // Log the actual URLs being sent to Buffer
+        if (classifiedMedia.Any())
+        {
+            var urls = string.Join(", ", classifiedMedia.Select(m => m.Url));
+            Console.WriteLine($"[BufferPublish] Sending {classifiedMedia.Count} media URLs to Buffer:");
+            Console.WriteLine($"[BufferPublish] URLs: {urls}");
+            await _logger.LogAsync(projectId, executionId, "info",
+                $"URLs enviadas a Buffer: {urls}",
+                node.ModuleId, stepName);
+        }
 
         BufferPublishResult bufferResult;
         try
@@ -1137,7 +1148,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             ? file.FileId.ToString()
             : $"{file.ContentType}:{file.FileName}";
 
-    private List<ClassifiedMedia> BuildClassifiedMedia(
+    private async Task<List<ClassifiedMedia>> BuildClassifiedMediaAsync(
         ModuleExecutionContext ctx,
         List<OutputFile> files,
         StepOutput? sourceOutput,
@@ -1163,9 +1174,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
                     var filePath = ctx.ResolveOutputFilePath(file);
                     if (!File.Exists(filePath))
                     {
-                        _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "warning",
-                            $"[BufferPool] File not found for pooling: {file.FileName}",
-                            ctx.Node.ModuleId, ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name).Wait();
+                        Console.WriteLine($"[BufferPool] WARNING: File not found for pooling: {file.FileName} at {filePath}");
                         continue;
                     }
 
@@ -1178,15 +1187,17 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
                     publicUrl = url;
 
-                    _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "info",
+                    Console.WriteLine($"[BufferPool] ✓ Image allocated to slot {slot}: {file.FileName} → {url}");
+                    await _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "info",
                         $"[BufferPool] Image allocated to slot {slot}: {file.FileName} → {url}",
-                        ctx.Node.ModuleId, ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name).Wait();
+                        ctx.Node.ModuleId, ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "error",
+                    Console.WriteLine($"[BufferPool] ERROR: Failed to allocate image to pool: {ex.Message}");
+                    await _logger.LogAsync(ctx.Project.Id, ctx.Execution.Id, "error",
                         $"[BufferPool] Error allocating image to pool: {ex.Message}. Falling back to standard URL.",
-                        ctx.Node.ModuleId, ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name).Wait();
+                        ctx.Node.ModuleId, ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name);
                     
                     // Fallback to standard URL
                     publicUrl = ctx.GetPublicFileUrl(file);

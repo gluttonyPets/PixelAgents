@@ -26,6 +26,8 @@ namespace Server.Services.Instagram
             // Ensure the pool directory exists
             Directory.CreateDirectory(_poolDirectory);
             
+            Console.WriteLine($"[BufferPool] ✓ Service initialized with {PoolSize} slots");
+            Console.WriteLine($"[BufferPool] ✓ Pool directory: {_poolDirectory}");
             _logger.LogInformation("[BufferPool] Initialized with {PoolSize} slots at {Directory}", PoolSize, _poolDirectory);
             
             // Load existing slots on startup
@@ -55,7 +57,9 @@ namespace Server.Services.Instagram
                 var filePath = Path.Combine(_poolDirectory, slotFileName);
 
                 // Write the image to disk
+                Console.WriteLine($"[BufferPool] Writing {imageData.Length} bytes to {filePath}");
                 File.WriteAllBytes(filePath, imageData);
+                Console.WriteLine($"[BufferPool] ✓ File written successfully");
 
                 // Update slot metadata
                 _slots[slot] = new ImageSlotInfo
@@ -72,6 +76,7 @@ namespace Server.Services.Instagram
                 // Build the public URL
                 var url = $"{publicBaseUrl.TrimEnd('/')}/api/public/buffer-image/{slot}";
 
+                Console.WriteLine($"[BufferPool] ✓ Allocated slot {slot}: {fileName} → {url}");
                 _logger.LogInformation(
                     "[BufferPool] Allocated slot {Slot} for {FileName} ({Size} bytes) - URL: {Url}",
                     slot, fileName, imageData.Length, url);
