@@ -199,6 +199,31 @@ Si tienes un dominio y quieres usar HTTPS:
    ```
 4. Actualiza los comentarios en `docker-compose.yml` para usar HTTPS
 
+## Efecto Secundario: Telegram Webhook
+
+**⚠️ IMPORTANTE:** Si también usas Telegram para interacciones, después de cambiar `PUBLIC_IP` necesitas actualizar el webhook de Telegram.
+
+### Síntomas
+
+- El servidor envía mensajes a Telegram correctamente
+- Cuando presionas botones en Telegram, el servidor NO recibe la respuesta
+- El pipeline se queda en "WaitingForInput"
+
+### Solución
+
+Usa el script de diagnóstico:
+
+```bash
+cd /ruta/a/PixelAgents
+./tools/fix_telegram_webhook.sh TU_BOT_TOKEN
+```
+
+O manualmente desde la interfaz de PixelAgents:
+
+1. Ve a tu proyecto → Integraciones → Telegram
+2. Simplemente **guarda la configuración de nuevo** (sin cambiar nada)
+3. Esto re-registrará el webhook con la nueva URL pública
+
 ## Soporte Adicional
 
 Si después de seguir estos pasos Buffer sigue fallando:
