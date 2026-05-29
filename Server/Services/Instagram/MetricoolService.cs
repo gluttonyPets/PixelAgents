@@ -85,9 +85,16 @@ namespace Server.Services.Instagram
                 {
                     var escapedUrl = m.Url.Replace("\\", "\\\\").Replace("\"", "\\\"");
                     var wrapper = m.Kind == MediaKind.Video ? "video" : "image";
+                    
+                    // Log exactly what URL is being sent to Buffer
+                    Console.WriteLine($"[Buffer] Adding {wrapper} to assets: {m.Url}");
+                    
                     return $"{{ {wrapper}: {{ url: \"{escapedUrl}\" }} }}";
                 });
                 assetsBlock = $", assets: [{string.Join(", ", entries)}]";
+                
+                // Log the complete assets block
+                Console.WriteLine($"[Buffer] Complete assets block: {assetsBlock}");
             }
 
             // Build platform-specific metadata block
@@ -141,6 +148,13 @@ namespace Server.Services.Instagram
             var requestBody = JsonSerializer.Serialize(body);
             request.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
 
+            // Log the complete request being sent to Buffer
+            Console.WriteLine("═══════════════════════════════════════════════════════════");
+            Console.WriteLine("[Buffer] SENDING REQUEST TO BUFFER API:");
+            Console.WriteLine("═══════════════════════════════════════════════════════════");
+            Console.WriteLine(requestBody);
+            Console.WriteLine("═══════════════════════════════════════════════════════════");
+
             var baseResult = new BufferPublishResult
             {
                 RequestBody = requestBody,
@@ -167,6 +181,13 @@ namespace Server.Services.Instagram
 
             baseResult.ResponseBody = json;
             baseResult.StatusCode = (int)response.StatusCode;
+
+            // Log Buffer API response
+            Console.WriteLine("═══════════════════════════════════════════════════════════");
+            Console.WriteLine($"[Buffer] RESPONSE FROM BUFFER API (Status: {response.StatusCode}):");
+            Console.WriteLine("═══════════════════════════════════════════════════════════");
+            Console.WriteLine(json);
+            Console.WriteLine("═══════════════════════════════════════════════════════════");
 
             if (!response.IsSuccessStatusCode)
             {
