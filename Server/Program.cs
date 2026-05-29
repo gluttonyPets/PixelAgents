@@ -2035,14 +2035,17 @@ app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async
 
 // Public endpoint for Buffer to access images via permanent URLs
 app.MapGet("/api/public/buffer-image/{slot:int}", async (
-    int slot, Server.Services.Instagram.BufferImagePoolService poolService) =>
+    int slot, Server.Services.Instagram.BufferImagePoolService poolService, HttpContext httpContext) =>
 {
     var (data, contentType, fileName) = poolService.GetSlotImage(slot);
     
     if (data is null)
         return Results.NotFound();
     
-    return Results.File(data, contentType ?? "image/jpeg", fileName);
+    // Return image inline (display in browser) instead of forcing download
+    // This is required by Buffer - they need a static image URL, not a download
+    httpContext.Response.Headers.ContentDisposition = "inline";
+    return Results.File(data, contentType ?? "image/jpeg");
 });
 
 // Diagnostic endpoint to view pool status (authenticated)
