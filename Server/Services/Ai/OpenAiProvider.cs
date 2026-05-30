@@ -53,6 +53,11 @@ namespace Server.Services.Ai
 
         private async Task<AiResult> GenerateTextAsync(AiExecutionContext context)
         {
+            // Timeout de 5 minutos para evitar bloqueos indefinidos
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, timeoutCts.Token);
+            var ct = linkedCts.Token;
+
             var client = new ChatClient(model: context.ModelName, apiKey: context.ApiKey);
 
             var messages = new List<ChatMessage>();
@@ -92,7 +97,7 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
                 options.MaxOutputTokenCount = Convert.ToInt32(maxTok);
 
-            var completion = await client.CompleteChatAsync(messages, options);
+            var completion = await client.CompleteChatAsync(messages, options, ct);
 
             var text = completion.Value.Content[0].Text;
 
@@ -139,6 +144,11 @@ namespace Server.Services.Ai
 
         private async Task<AiResult> GenerateImageAsync(AiExecutionContext context)
         {
+            // Timeout de 5 minutos para evitar bloqueos indefinidos
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, timeoutCts.Token);
+            var ct = linkedCts.Token;
+
             var client = new ImageClient(model: context.ModelName, apiKey: context.ApiKey);
 
             var options = new ImageGenerationOptions();
@@ -266,7 +276,7 @@ namespace Server.Services.Ai
                         "OpenAI image POST /v1/images/edits model={Model} size={Size} (auto->{Detected}) image_bytes={Bytes} prompt_chars={Chars} n={N}",
                         context.ModelName, sizeStr, bestSize, context.InputFiles[0].Length, prompt.Length, batchN);
                     var (editBytes, editPrompt) = await CallImageEditRawAsync(
-                        context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration, bestSize, batchN);
+                        context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration, bestSize, batchN, ct);
                     images.AddRange(editBytes);
                     if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = editPrompt;
                 }
@@ -280,7 +290,7 @@ namespace Server.Services.Ai
                     if (batchN > 1)
                     {
                         var editResult = await client.GenerateImageEditsAsync(
-                            imageStream, "input.png", prompt, batchN, editOptions);
+                            imageStream, "input.png", prompt, batchN, editOptions, ct);
                         foreach (var gi in editResult.Value)
                         {
                             images.Add(await ExtractImageBytesAsync(gi));
@@ -290,7 +300,7 @@ namespace Server.Services.Ai
                     else
                     {
                         var editResult = await client.GenerateImageEditAsync(
-                            imageStream, "input.png", prompt, editOptions);
+                            imageStream, "input.png", prompt, editOptions, ct);
                         var gi = editResult.Value;
                         images.Add(await ExtractImageBytesAsync(gi));
                         if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = gi.RevisedPrompt ?? "";
@@ -303,7 +313,7 @@ namespace Server.Services.Ai
                         context.ModelName, sizeStr, prompt.Length, batchN);
                     if (batchN > 1)
                     {
-                        var result = await client.GenerateImagesAsync(prompt, batchN, options);
+                        var result = await client.GenerateImagesAsync(prompt, batchN, options, ct);
                         foreach (var gi in result.Value)
                         {
                             images.Add(await ExtractImageBytesAsync(gi));
@@ -312,7 +322,7 @@ namespace Server.Services.Ai
                     }
                     else
                     {
-                        var result = await client.GenerateImageAsync(prompt, options);
+                        var result = await client.GenerateImageAsync(prompt, options, ct);
                         var gi = result.Value;
                         images.Add(await ExtractImageBytesAsync(gi));
                         if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = gi.RevisedPrompt ?? "";
@@ -504,6 +514,7 @@ namespace Server.Services.Ai
         /// </summary>
         private async Task<AiResult> GenerateVideoAsync(AiExecutionContext context)
         {
+            var ct = context.CancellationToken;
             var modelName = context.ModelName;
 
             // Read configuration
@@ -537,8 +548,8 @@ namespace Server.Services.Ai
                 form.Add(imageContent, "input_reference", "input.png");
             }
 
-            var submitResp = await http.PostAsync("https://api.openai.com/v1/videos", form);
-            var submitJson = await submitResp.Content.ReadAsStringAsync();
+            var submitResp = await http.PostAsync("https://api.openai.com/v1/videos", form, ct);
+            var submitJson = await submitResp.Content.ReadAsStringAsync(ct);
 
             if (!submitResp.IsSuccessStatusCode)
                 return AiResult.Fail($"OpenAI Sora HTTP {(int)submitResp.StatusCode}: {submitJson}");
@@ -555,16 +566,16 @@ namespace Server.Services.Ai
 
             for (var attempt = 0; attempt < maxAttempts; attempt++)
             {
-                await Task.Delay(pollIntervalMs);
+                await Task.Delay(pollIntervalMs, ct);
 
                 using var pollRequest = new HttpRequestMessage(HttpMethod.Get, $"https://api.openai.com/v1/videos/{videoId}");
                 pollRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
 
-                var pollResp = await http.SendAsync(pollRequest);
+                var pollResp = await http.SendAsync(pollRequest, ct);
                 if (!pollResp.IsSuccessStatusCode)
                     continue;
 
-                var pollJson = await pollResp.Content.ReadAsStringAsync();
+                var pollJson = await pollResp.Content.ReadAsStringAsync(ct);
                 var pollDoc = JsonDocument.Parse(pollJson);
 
                 var status = pollDoc.RootElement.TryGetProperty("status", out var statusEl)
@@ -586,11 +597,11 @@ namespace Server.Services.Ai
                 using var dlRequest = new HttpRequestMessage(HttpMethod.Get, $"https://api.openai.com/v1/videos/{videoId}/content");
                 dlRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
 
-                var dlResp = await http.SendAsync(dlRequest);
+                var dlResp = await http.SendAsync(dlRequest, ct);
                 if (!dlResp.IsSuccessStatusCode)
                     return AiResult.Fail($"OpenAI Sora: error descargando video (HTTP {(int)dlResp.StatusCode})");
 
-                var videoBytes = await dlResp.Content.ReadAsByteArrayAsync();
+                var videoBytes = await dlResp.Content.ReadAsByteArrayAsync(ct);
 
                 var durationSec = int.TryParse(seconds, out var ds) ? ds : 8;
                 var vidResult = AiResult.OkFile(videoBytes, "video/mp4", new Dictionary<string, object>
@@ -612,9 +623,9 @@ namespace Server.Services.Ai
         /// </summary>
         private static async Task<(List<byte[]> Images, string RevisedPrompt)> CallImageEditRawAsync(
             string apiKey, string model, byte[] inputImage, string prompt,
-            IDictionary<string, object> config, string sizeOverride = "auto", int n = 1)
+            IDictionary<string, object> config, string sizeOverride = "auto", int n = 1, CancellationToken ct = default)
         {
-            using var http = new HttpClient();
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
             using var form = new MultipartFormDataContent();
@@ -631,8 +642,8 @@ namespace Server.Services.Ai
             imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
             form.Add(imageContent, "image[]", "input.png");
 
-            var response = await http.PostAsync("https://api.openai.com/v1/images/edits", form);
-            var json = await response.Content.ReadAsStringAsync();
+            var response = await http.PostAsync("https://api.openai.com/v1/images/edits", form, ct);
+            var json = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"OpenAI image edit failed ({response.StatusCode}): {json}");
@@ -651,7 +662,7 @@ namespace Server.Services.Ai
                 if (item.TryGetProperty("url", out var urlProp))
                 {
                     var url = urlProp.GetString()!;
-                    images.Add(await http.GetByteArrayAsync(url));
+                    images.Add(await http.GetByteArrayAsync(url, ct));
                 }
                 else if (item.TryGetProperty("b64_json", out var b64Prop))
                 {

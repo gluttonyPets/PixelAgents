@@ -826,7 +826,33 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 node.ProjectModule.StepName ?? node.AiModule.Name);
         }
 
-        return await handler.ExecuteAsync(ctx);
+        // Timeout de 10 minutos por módulo para evitar bloqueos indefinidos
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+        ctx.CancellationToken = linkedCts.Token;
+
+        try
+        {
+            var handlerTask = handler.ExecuteAsync(ctx);
+            var completedTask = await Task.WhenAny(handlerTask, Task.Delay(Timeout.Infinite, linkedCts.Token));
+            
+            if (completedTask != handlerTask)
+            {
+                if (ct.IsCancellationRequested)
+                    return ModuleResult.Failed("Ejecución cancelada por el usuario");
+                return ModuleResult.Failed($"El módulo excedió el tiempo límite de 10 minutos");
+            }
+
+            return await handlerTask;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return ModuleResult.Failed("Ejecución cancelada por el usuario");
+        }
+        catch (OperationCanceledException)
+        {
+            return ModuleResult.Failed($"El módulo excedió el tiempo límite de 10 minutos");
+        }
     }
 
     private async Task<ModuleResult> ExecutePublishNodeAsync(ModuleExecutionContext ctx)
