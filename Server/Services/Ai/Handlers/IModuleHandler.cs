@@ -53,7 +53,8 @@ public class ModuleExecutionContext
     public string? PreviousSummaryContext { get; init; }
     /// <summary>Pre-joined mandatory rules from the tenant Rules table.</summary>
     public string? MandatoryRules { get; init; }
-    public CancellationToken CancellationToken { get; init; }
+    // Changed from 'init' to 'set' to allow timeout/cancellation token updates in GraphPipelineExecutor
+    public CancellationToken CancellationToken { get; set; }
 
     /// <summary>Pre-resolved input data grouped by port ID.</summary>
     public Dictionary<string, List<PortData>> InputsByPort { get; init; } = [];

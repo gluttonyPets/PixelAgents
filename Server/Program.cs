@@ -2035,7 +2035,7 @@ app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async
 
 // Public endpoint for Buffer to access images via permanent URLs
 // Supports both GET and HEAD methods (HEAD is required by Buffer's URL validator)
-app.MapMethods("/api/public/buffer-image/{slot:int}", new[] { "GET", "HEAD" }, async (
+app.MapMethods("/api/public/buffer-image/{slot:int}", new[] { "GET", "HEAD" }, (
     int slot, Server.Services.Instagram.BufferImagePoolService poolService, HttpContext httpContext) =>
 {
     var (data, contentType, fileName) = poolService.GetSlotImage(slot);
