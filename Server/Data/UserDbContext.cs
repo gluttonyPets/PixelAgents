@@ -65,6 +65,7 @@ namespace Server.Data
                 e.Property(x => x.TelegramConfig).HasColumnType("text");
                 e.Property(x => x.InstagramConfig).HasColumnType("text");
                 e.Property(x => x.TikTokConfig).HasColumnType("text");
+                e.Property(x => x.PinterestConfig).HasColumnType("text");
                 e.Property(x => x.GraphLayout).HasColumnType("text");
 
             });

@@ -38,6 +38,7 @@ namespace Server.Services
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"TelegramConfig\" text", log);
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"InstagramConfig\" text", log);
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"TikTokConfig\" text", log);
+            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"PinterestConfig\" text", log);
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"GraphLayout\" text", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtModuleId\" uuid", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" DROP COLUMN IF EXISTS \"PausedAtStepOrder\"", log);

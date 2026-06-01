@@ -2824,6 +2824,59 @@ app.MapPut("/api/projects/{projectId:guid}/tiktok-config", async (
     return Results.Ok(new { message = "Configuracion TikTok guardada" });
 }).RequireAuthorization();
 
+// ==================== Pinterest (Buffer) Config Endpoints ====================
+
+app.MapGet("/api/projects/{projectId:guid}/pinterest-config", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(project.PinterestConfig))
+        return Results.Ok(new BufferConfigDto("", ""));
+
+    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.PinterestConfig);
+    return Results.Ok(config);
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/pinterest-config", async (
+    Guid projectId, BufferConfigDto dto, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    project.PinterestConfig = System.Text.Json.JsonSerializer.Serialize(dto);
+    project.UpdatedAt = DateTime.UtcNow;
+
+    // Ensure the Pinterest Publish sentinel module exists
+    var hasPinterestPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "pinterest");
+    if (!hasPinterestPublish)
+    {
+        db.AiModules.Add(new AiModule
+        {
+            Id = Guid.NewGuid(),
+            Name = "Pinterest Publish",
+            Description = "Publica contenido en Pinterest (imagenes) via Buffer.",
+            ProviderType = "System",
+            ModuleType = "Publish",
+            ModelName = "pinterest",
+            IsEnabled = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { message = "Configuracion Pinterest guardada" });
+}).RequireAuthorization();
+
 // ==================== Telegram Webhook Endpoint ====================
 
 app.MapPost("/api/webhooks/telegram", async (

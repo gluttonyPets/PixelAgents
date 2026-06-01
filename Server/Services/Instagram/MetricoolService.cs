@@ -101,9 +101,11 @@ namespace Server.Services.Instagram
             string metadataBlock;
             if (platform == "tiktok")
             {
-                // Buffer's TikTokPostMetadataInput schema does not expose privacy/interaction fields.
-                // TikTok posts are published with default settings (public, comments enabled, etc.)
                 metadataBlock = "metadata: { tiktok: {} }";
+            }
+            else if (platform == "pinterest")
+            {
+                metadataBlock = "metadata: { pinterest: {} }";
             }
             else
             {

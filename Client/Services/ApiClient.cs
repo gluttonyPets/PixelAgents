@@ -522,6 +522,22 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Pinterest (Buffer) Config ──
+
+    public async Task<BufferConfigDto?> GetPinterestConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/pinterest-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<BufferConfigDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SavePinterestConfigAsync(Guid projectId, BufferConfigDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/pinterest-config", dto);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Schedule ──
 
     public async Task<ScheduleResponse?> GetScheduleAsync(Guid projectId)
