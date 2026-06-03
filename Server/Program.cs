@@ -1248,6 +1248,7 @@ app.MapPost("/api/projects/{id}/duplicate", async (
         WhatsAppConfig = source.WhatsAppConfig,
         TelegramConfig = source.TelegramConfig,
         InstagramConfig = source.InstagramConfig,
+        TikTokConfig = source.TikTokConfig,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
     };
@@ -1317,6 +1318,25 @@ app.MapPost("/api/projects/{id}/duplicate", async (
                 UpdatedAt = DateTime.UtcNow
             });
         }
+    }
+
+    // Copy schedule if the source project has one
+    var sourceSchedule = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == id);
+    if (sourceSchedule is not null)
+    {
+        db.ProjectSchedules.Add(new ProjectSchedule
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = newProject.Id,
+            IsEnabled = sourceSchedule.IsEnabled,
+            CronExpression = sourceSchedule.CronExpression,
+            TimeZone = sourceSchedule.TimeZone,
+            UserInput = sourceSchedule.UserInput,
+            UseHistory = sourceSchedule.UseHistory,
+            UsePromptQueue = sourceSchedule.UsePromptQueue,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        });
     }
 
     await db.SaveChangesAsync();
