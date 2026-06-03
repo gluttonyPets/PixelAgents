@@ -1124,6 +1124,42 @@ else
                                 @(_tkSaving ? "Guardando..." : "Guardar")
                             </button>
                         </div>
+
+                        <div class="settings-block" style="margin-top: 1rem;">
+                            <div class="settings-block-header">
+                                <strong>Pinterest (via Buffer)</strong>
+                                <span class="text-sm text-muted">Pins e imagenes en Pinterest</span>
+                                @if (!string.IsNullOrWhiteSpace(_ptApiKey))
+                                {
+                                    <span class="badge badge-success">Configurado</span>
+                                }
+                            </div>
+                            @if (_ptError is not null)
+                            {
+                                <div class="alert alert-error">@_ptError</div>
+                            }
+                            @if (_ptSuccess)
+                            {
+                                <div class="alert alert-success">Guardado correctamente</div>
+                            }
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" @bind="_ptApiKey" placeholder="Token de Buffer API" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Channel ID (Pinterest)</label>
+                                    <input type="text" @bind="_ptChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
+                                </div>
+                            </div>
+                            <p class="text-sm text-muted">
+                                Usa la misma API Key de Buffer. El <strong>Channel ID</strong> debe ser el de tu canal Pinterest conectado en Buffer.<br/>
+                                Soporta imagenes (PNG, JPG, WebP). Publica como Pin en tu tablero.
+                            </p>
+                            <button class="btn btn-primary btn-sm" @onclick="SavePinterestConfig" disabled="@_ptSaving">
+                                @(_ptSaving ? "Guardando..." : "Guardar")
+                            </button>
+                        </div>
                     }
 
                     <!-- SCHEDULE TAB -->
@@ -1618,6 +1654,13 @@ else
     private bool _tkSuccess;
     private bool _tkSaving;
 
+    // Pinterest config (Buffer)
+    private string _ptApiKey = "";
+    private string _ptChannelId = "";
+    private string? _ptError;
+    private bool _ptSuccess;
+    private bool _ptSaving;
+
     // Buffer API debug modal
     private bool _showBufferDebug;
     private string? _bufferDebugRequest;
@@ -1922,6 +1965,14 @@ else
                 _tkChannelId = tkConfig.ChannelId;
             }
 
+            // Load Pinterest config (Buffer)
+            var ptConfig = await Api.GetPinterestConfigAsync(ProjectId);
+            if (ptConfig is not null)
+            {
+                _ptApiKey = ptConfig.ApiKey;
+                _ptChannelId = ptConfig.ChannelId;
+            }
+
             // Load Schedule
             _schedule = await Api.GetScheduleAsync(ProjectId);
             if (_schedule is not null)
@@ -2103,6 +2154,27 @@ else
         }
         catch (Exception ex) { _tkError = ex.Message; }
         _tkSaving = false;
+    }
+
+    private async Task SavePinterestConfig()
+    {
+        _ptError = null;
+        _ptSuccess = false;
+        _ptSaving = true;
+        try
+        {
+            var dto = new BufferConfigDto(_ptApiKey, _ptChannelId);
+            var (ok, error) = await Api.SavePinterestConfigAsync(ProjectId, dto);
+            if (ok)
+            {
+                _ptSuccess = true;
+                _modules = await Api.GetModulesAsync();
+            }
+            else
+                _ptError = error;
+        }
+        catch (Exception ex) { _ptError = ex.Message; }
+        _ptSaving = false;
     }
 
     private string BuildCronFromPreset()

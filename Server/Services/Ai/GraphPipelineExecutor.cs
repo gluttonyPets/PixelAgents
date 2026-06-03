@@ -862,11 +862,24 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var projectId = ctx.Project.Id;
         var executionId = ctx.Execution.Id;
 
-        var publishPlatform = node.AiModule.ModelName.Equals("tiktok", StringComparison.OrdinalIgnoreCase)
-            ? "tiktok"
-            : "instagram";
-        var platformLabel = publishPlatform == "tiktok" ? "TikTok" : "Instagram";
-        var configJson = publishPlatform == "tiktok" ? ctx.Project.TikTokConfig : ctx.Project.InstagramConfig;
+        var publishPlatform = node.AiModule.ModelName.ToLowerInvariant() switch
+        {
+            "tiktok" => "tiktok",
+            "pinterest" => "pinterest",
+            _ => "instagram"
+        };
+        var platformLabel = publishPlatform switch
+        {
+            "tiktok" => "TikTok",
+            "pinterest" => "Pinterest",
+            _ => "Instagram"
+        };
+        var configJson = publishPlatform switch
+        {
+            "tiktok" => ctx.Project.TikTokConfig,
+            "pinterest" => ctx.Project.PinterestConfig,
+            _ => ctx.Project.InstagramConfig
+        };
 
         if (string.IsNullOrWhiteSpace(configJson))
             return ModuleResult.Failed($"Modulo {stepName}: El proyecto no tiene configuracion de Buffer para {platformLabel}");

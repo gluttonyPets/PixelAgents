@@ -10,6 +10,7 @@ namespace Server.Models
         public string? TelegramConfig { get; set; }
         public string? InstagramConfig { get; set; }
         public string? TikTokConfig { get; set; }
+        public string? PinterestConfig { get; set; }
         public string? GraphLayout { get; set; }
 
         public DateTime CreatedAt { get; set; }
