@@ -71,7 +71,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         CancellationToken ct = default,
         bool useHistory = true)
     {
-        _logger = _baseLogger.WithDb(db);
+        _logger = _baseLogger.WithTenant(_tenantFactory, tenantDbName);
 
         var project = await LoadProjectAsync(projectId, db, ct);
         if (project.ProjectModules.Count == 0)
@@ -143,7 +143,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         string tenantDbName,
         CancellationToken ct = default)
     {
-        _logger = _baseLogger.WithDb(db);
+        _logger = _baseLogger.WithTenant(_tenantFactory, tenantDbName);
 
         var execution = await LoadExecutionAsync(executionId, db, ct);
         var project = await LoadProjectAsync(execution.ProjectId, db, ct);
@@ -208,7 +208,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         string tenantDbName,
         CancellationToken ct)
     {
-        _logger = _baseLogger.WithDb(db);
+        _logger = _baseLogger.WithTenant(_tenantFactory, tenantDbName);
 
         var (execution, project, graph, workspacePath, filePaths, state) =
             await RebuildPausedGraphAsync(executionId, db, ct);
@@ -270,7 +270,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         string tenantDbName,
         CancellationToken ct = default)
     {
-        _logger = _baseLogger.WithDb(db);
+        _logger = _baseLogger.WithTenant(_tenantFactory, tenantDbName);
 
         var (execution, project, graph, workspacePath, filePaths, state) =
             await RebuildPausedGraphAsync(executionId, db, ct);
@@ -339,7 +339,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         UserDbContext db,
         string tenantDbName)
     {
-        _logger = _baseLogger.WithDb(db);
+        _logger = _baseLogger.WithTenant(_tenantFactory, tenantDbName);
 
         var execution = await db.ProjectExecutions
             .Include(e => e.StepExecutions)

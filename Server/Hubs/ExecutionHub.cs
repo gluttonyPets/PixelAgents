@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR;
 using Server.Data;
 using Server.Models;
+using Server.Services;
 
 namespace Server.Hubs
 {
@@ -53,28 +54,39 @@ namespace Server.Hubs
         Task LogStepProgressAsync(Guid projectId, Guid projectModuleId, string status);
 
         /// <summary>
-        /// Returns a wrapper that persists all logs to the given DB context.
+        /// Returns a wrapper that persists logs using an independent DB connection so the logger
+        /// never shares a DbContext with the pipeline (avoids concurrent-operation exceptions when
+        /// graph nodes run in parallel and all call LogAsync at the same time).
         /// </summary>
         IExecutionLogger WithDb(UserDbContext db);
+
+        IExecutionLogger WithTenant(ITenantDbContextFactory factory, string tenantDbName);
     }
 
     public class SignalRExecutionLogger : IExecutionLogger
     {
         private readonly IHubContext<ExecutionHub> _hub;
-        private readonly UserDbContext? _db;
+        private readonly ITenantDbContextFactory? _factory;
+        private readonly string? _tenantDbName;
 
         public SignalRExecutionLogger(IHubContext<ExecutionHub> hub)
         {
             _hub = hub;
         }
 
-        private SignalRExecutionLogger(IHubContext<ExecutionHub> hub, UserDbContext db)
+        private SignalRExecutionLogger(IHubContext<ExecutionHub> hub, ITenantDbContextFactory factory, string tenantDbName)
         {
             _hub = hub;
-            _db = db;
+            _factory = factory;
+            _tenantDbName = tenantDbName;
         }
 
-        public IExecutionLogger WithDb(UserDbContext db) => new SignalRExecutionLogger(_hub, db);
+        // Legacy overload kept for compatibility — internally uses the factory path via a shared context.
+        // Prefer WithTenant for new call sites.
+        public IExecutionLogger WithDb(UserDbContext db) => this;
+
+        public IExecutionLogger WithTenant(ITenantDbContextFactory factory, string tenantDbName)
+            => new SignalRExecutionLogger(_hub, factory, tenantDbName);
 
         public async Task LogTaskProgressAsync(Guid projectId, OrchestratorTaskProgressEntry progress)
         {
@@ -98,12 +110,15 @@ namespace Server.Hubs
             await _hub.Clients.Group(projectId.ToString())
                 .SendAsync("ExecutionLog", entry);
 
-            // Persist to DB
-            if (_db is not null)
+            // Persist using a short-lived independent context so this logger never competes
+            // with the pipeline's own DbContext operations (concurrent SaveChangesAsync would
+            // corrupt the context state when graph nodes execute in parallel).
+            if (_factory is not null && _tenantDbName is not null)
             {
                 try
                 {
-                    _db.ExecutionLogs.Add(new ExecutionLog
+                    await using var db = _factory.Create(_tenantDbName);
+                    db.ExecutionLogs.Add(new ExecutionLog
                     {
                         Id = Guid.NewGuid(),
                         ExecutionId = executionId,
@@ -113,7 +128,7 @@ namespace Server.Hubs
                         ModuleName = moduleName,
                         Timestamp = timestamp
                     });
-                    await _db.SaveChangesAsync();
+                    await db.SaveChangesAsync();
                 }
                 catch { /* Don't fail the pipeline if log persistence fails */ }
             }
