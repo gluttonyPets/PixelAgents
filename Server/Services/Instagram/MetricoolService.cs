@@ -47,7 +47,8 @@ namespace Server.Services.Instagram
             string publishType = "post",
             string platform = "instagram",
             TikTokPublishOptions? tikTokOptions = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool retryOnDuplicate = true)
         {
             // Escape text for GraphQL string literal
             var escapedText = text
@@ -214,7 +215,16 @@ namespace Server.Services.Instagram
             // Check for mutation-level error (MutationError)
             if (result.TryGetProperty("message", out var errMsg))
             {
-                baseResult.Error = $"Buffer error: {errMsg.GetString()}";
+                var errorMessage = errMsg.GetString() ?? "";
+                // Buffer rejects posts with identical content published recently.
+                // Retry once with a zero-width space appended so the hash differs.
+                if (retryOnDuplicate && errorMessage.Contains("posted that one recently"))
+                {
+                    Console.WriteLine("[Buffer] Duplicate post detected, retrying with modified text...");
+                    return await PublishAsync(config, text + "​", media, publishType, platform,
+                        tikTokOptions, cancellationToken, retryOnDuplicate: false);
+                }
+                baseResult.Error = $"Buffer error: {errorMessage}";
                 return baseResult;
             }
 
