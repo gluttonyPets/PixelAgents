@@ -73,8 +73,10 @@ namespace Server.Services.Instagram
                     FileSize = imageData.Length
                 };
 
-                // Build the public URL
-                var url = $"{publicBaseUrl.TrimEnd('/')}/api/public/buffer-image/{slot}";
+                // Build the public URL with a unique version token so Buffer never
+                // treats a reused slot as duplicate content from a previous post.
+                var version = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var url = $"{publicBaseUrl.TrimEnd('/')}/api/public/buffer-image/{slot}?v={version}";
 
                 Console.WriteLine($"[BufferPool] ✓ Allocated slot {slot}: {fileName} → {url}");
                 _logger.LogInformation(
