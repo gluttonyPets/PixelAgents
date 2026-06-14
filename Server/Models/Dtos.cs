@@ -26,6 +26,8 @@ namespace Server.Models
         Guid Id, string Name, string? Description, string ProviderType,
         string ModuleType, string ModelName, Guid? ApiKeyId, string? ApiKeyName,
         string? Configuration, bool IsEnabled, DateTime CreatedAt, DateTime UpdatedAt);
+    // Uso de un modulo de catalogo a traves de los proyectos.
+    public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
 
     // ── Project ──
     public record CreateProjectRequest(string Name, string? Description, string? Context);
@@ -40,6 +42,9 @@ namespace Server.Models
     // ── ProjectModule ──
     public record AddProjectModuleRequest(Guid AiModuleId, string? StepName, string? Configuration);
     public record UpdateProjectModuleRequest(string? StepName, string? Configuration, bool IsActive);
+    // Reapunta una instancia de modulo (nodo del pipeline) a otro modulo de catalogo,
+    // util tras duplicar un modulo compartido con cambios.
+    public record ReassignProjectModuleRequest(Guid AiModuleId);
     public record ProjectModuleResponse(
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
         string? StepName, string? Configuration, bool IsActive,

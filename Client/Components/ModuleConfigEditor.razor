@@ -1,0 +1,853 @@
+@* Editor de configuracion reutilizable de un AiModule.
+   Se usa tanto en la pagina Modulos (boton "Configurar") como en el popup
+   "Editar nodo" del editor de pipeline. Recibe un AiModuleResponse, parsea su
+   Configuration en campos editables y expone BuildConfig() para reconstruir el JSON. *@
+
+@{ var m = Module; }
+
+@if (m is null)
+{
+    <p class="text-muted">No hay modulo seleccionado.</p>
+}
+else if (m.ModuleType is "Text" or "Coordinator")
+{
+    <div class="form-group">
+        <label>System Prompt</label>
+        <textarea @bind="_editSystemPrompt" rows="4" placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : "Ej: Eres un asistente experto en...")"></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Temperatura <span class="text-sm text-muted">(0.0 - 2.0)</span></label>
+            <input type="number" step="0.1" min="0" max="2" @bind="_editTemperature" />
+        </div>
+        <div class="form-group">
+            <label>Max Tokens</label>
+            <input type="number" min="1" max="200000" @bind="_editMaxTokens" />
+        </div>
+    </div>
+}
+else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
+{
+    <div class="form-group">
+        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Tamano</label>
+            <select @bind="_editImageSize">
+                @foreach (var s in GetImageSizesForModel(m.ModelName))
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Calidad</label>
+            <select @bind="_editImageQuality">
+                <option value="standard">Standard</option>
+                <option value="hd">HD</option>
+            </select>
+        </div>
+    </div>
+}
+else if (m.ModuleType == "Image" && m.ProviderType == "Google")
+{
+    <div class="form-group">
+        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Relacion de aspecto</label>
+            <select @bind="_editGeminiAspectRatio">
+                <option value="1:1">1:1 (Cuadrado)</option>
+                <option value="16:9">16:9 (Paisaje)</option>
+                <option value="9:16">9:16 (Retrato)</option>
+                <option value="4:3">4:3 (Clasico)</option>
+                <option value="3:4">3:4 (Retrato clasico)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+            <input type="number" min="1" max="4" @bind="_editGeminiImageCount" />
+        </div>
+    </div>
+}
+else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
+{
+    <div class="form-group">
+        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+            <input type="number" min="1" max="4" @bind="_editGrokImageCount" />
+        </div>
+    </div>
+}
+else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
+{
+    <div class="form-group">
+        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Ancho</label>
+            <select @bind="_editLeoWidth">
+                <option value="512">512</option>
+                <option value="768">768</option>
+                <option value="1024">1024</option>
+                <option value="1360">1360</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Alto</label>
+            <select @bind="_editLeoHeight">
+                <option value="512">512</option>
+                <option value="768">768</option>
+                <option value="1024">1024</option>
+                <option value="1360">1360</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Estilo</label>
+        <select @bind="_editLeoPresetStyle">
+            <option value="DYNAMIC">Dynamic</option>
+            <option value="NONE">Ninguno</option>
+            <option value="ANIME">Anime</option>
+            <option value="CINEMATIC">Cinematico</option>
+            <option value="PHOTOGRAPHY">Fotografia</option>
+            <option value="ILLUSTRATION">Ilustracion</option>
+            <option value="RAYTRACED">Raytraced</option>
+        </select>
+    </div>
+}
+else if (m.ModuleType == "Video" && m.ProviderType == "Google")
+{
+    <div class="form-row">
+        <div class="form-group">
+            <label>Relacion de aspecto</label>
+            <select @bind="_editVideoAspectRatio">
+                <option value="16:9">16:9 (Paisaje)</option>
+                <option value="9:16">9:16 (Retrato)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Duracion (segundos)</label>
+            <select @bind="_editVideoDuration">
+                <option value="4">4s</option>
+                <option value="5">5s</option>
+                <option value="6">6s</option>
+                <option value="8">8s</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Resolucion</label>
+            <select @bind="_editVideoResolution">
+                <option value="720p">720p</option>
+                <option value="1080p">1080p</option>
+                <option value="4k">4K</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Generacion de personas</label>
+            <select @bind="_editVideoPersonGeneration">
+                <option value="allow_adult">Permitir adultos</option>
+                <option value="allow_all">Permitir todos</option>
+                <option value="dont_allow">No permitir</option>
+            </select>
+        </div>
+    </div>
+}
+else if (m.ModuleType == "Video" && m.ProviderType == "OpenAI")
+{
+    <div class="form-row">
+        <div class="form-group">
+            <label>Resolucion</label>
+            <select @bind="_editSoraSize">
+                <option value="1280x720">1280x720 (Paisaje 720p)</option>
+                <option value="720x1280">720x1280 (Retrato 720p)</option>
+                <option value="1920x1080">1920x1080 (Paisaje 1080p)</option>
+                <option value="1080x1920">1080x1920 (Retrato 1080p)</option>
+                <option value="480x480">480x480 (Cuadrado)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Duracion (segundos)</label>
+            <select @bind="_editSoraDuration">
+                <option value="5">5s</option>
+                <option value="8">8s</option>
+                <option value="10">10s</option>
+                <option value="16">16s</option>
+                <option value="20">20s</option>
+            </select>
+        </div>
+    </div>
+}
+else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
+{
+    <div class="form-row">
+        <div class="form-group">
+            <label>Voz</label>
+            <select @bind="_editTtsVoice">
+                <option value="alloy">Alloy</option>
+                <option value="echo">Echo</option>
+                <option value="fable">Fable</option>
+                <option value="onyx">Onyx</option>
+                <option value="nova">Nova</option>
+                <option value="shimmer">Shimmer</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Velocidad <span class="text-sm text-muted">(0.25 - 4.0)</span></label>
+            <input type="number" step="0.25" min="0.25" max="4.0" @bind="_editTtsSpeed" />
+        </div>
+    </div>
+}
+else if (m.ModuleType == "VideoSearch" && m.ProviderType == "Pexels")
+{
+    <div class="form-row">
+        <div class="form-group">
+            <label>Orientacion</label>
+            <select @bind="_editPexelsOrientation">
+                <option value="landscape">Paisaje</option>
+                <option value="portrait">Retrato</option>
+                <option value="square">Cuadrado</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Tamano minimo</label>
+            <select @bind="_editPexelsSize">
+                <option value="large">Grande (4K)</option>
+                <option value="medium">Medio (Full HD)</option>
+                <option value="small">Pequeno (HD)</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Calidad preferida</label>
+            <select @bind="_editPexelsQuality">
+                <option value="hd">HD</option>
+                <option value="sd">SD</option>
+                <option value="uhd">UHD (4K)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Idioma de busqueda</label>
+            <select @bind="_editPexelsLocale">
+                <option value="es-ES">Espanol</option>
+                <option value="en-US">Ingles</option>
+                <option value="fr-FR">Frances</option>
+                <option value="de-DE">Aleman</option>
+                <option value="pt-BR">Portugues</option>
+                <option value="it-IT">Italiano</option>
+                <option value="ja-JP">Japones</option>
+                <option value="zh-CN">Chino</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Duracion minima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
+            <input type="number" min="0" @bind="_editPexelsMinDuration" />
+        </div>
+        <div class="form-group">
+            <label>Duracion maxima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
+            <input type="number" min="0" @bind="_editPexelsMaxDuration" />
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Resultados por pagina <span class="text-sm text-muted">(1-80)</span></label>
+        <input type="number" min="1" max="80" @bind="_editPexelsPerPage" />
+    </div>
+}
+else if (m.ModuleType == "VideoEdit" && m.ProviderType == "Json2Video")
+{
+    <div class="form-group">
+        <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+            <input type="checkbox" @bind="_editJ2vUseTemplate" /> Usar plantilla
+        </label>
+        <p class="text-sm text-muted" style="margin-top: 0.15rem;">Activa el modo plantilla para enviar variables a un template de Json2Video.</p>
+    </div>
+
+    @if (_editJ2vUseTemplate)
+    {
+        <div class="form-group" style="border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; background: var(--bg-secondary, rgba(255,255,255,0.03));">
+            <label style="font-weight: 600; margin-bottom: 0.25rem;">Variables de plantilla</label>
+            <p class="text-sm text-muted" style="margin-bottom: 0.5rem;">
+                <i class="bi bi-exclamation-triangle" style="color: #ffc107;"></i>
+                El nombre debe coincidir exactamente con la variable del template en Json2Video.
+            </p>
+
+            @if (_editJ2vTemplateVars.Count > 0)
+            {
+                @foreach (var tv in _editJ2vTemplateVars)
+                {
+                    var capturedTv = tv;
+                    <div style="border: 1px solid var(--border); border-radius: 0.35rem; padding: 0.4rem 0.5rem; margin-bottom: 0.35rem;">
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span style="font-family: monospace; font-size: 0.85rem; flex: 1;">@tv.Name</span>
+                            <span class="badge" style="background: @(tv.Type == "scene" ? "#ff7043" : tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
+                                @(tv.Type == "scene" ? "Escena" : tv.Type == "file" ? "Archivo" : "Texto")
+                            </span>
+                            <button type="button" class="btn-icon" title="Eliminar"
+                                    @onclick="() => _editJ2vTemplateVars.Remove(capturedTv)"
+                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        @if (tv.Type == "scene")
+                        {
+                            <div style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px dashed var(--border);">
+                                <label style="font-size: 0.78rem; font-weight: 600;">Campos de cada escena:</label>
+                                @if (tv.Fields is { Count: > 0 })
+                                {
+                                    @foreach (var f in tv.Fields)
+                                    {
+                                        var capturedField = f;
+                                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.2rem; padding-left: 0.5rem;">
+                                            <span style="font-family: monospace; font-size: 0.8rem; flex: 1;">@f.Name</span>
+                                            <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
+                                                @(f.Type == "file" ? "Archivo" : "Texto")
+                                            </span>
+                                            <button type="button" title="Eliminar campo"
+                                                    @onclick="() => capturedTv.Fields?.Remove(capturedField)"
+                                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
+                                                <i class="bi bi-x-lg"></i>
+                                            </button>
+                                        </div>
+                                    }
+                                }
+                                <div style="display: flex; align-items: flex-end; gap: 0.3rem; margin-top: 0.3rem; padding-left: 0.5rem;">
+                                    <input type="text" @bind="_editJ2vNewFieldName" placeholder="nombre del campo"
+                                           style="flex: 2; font-size: 0.8rem; padding: 0.15rem 0.3rem;" />
+                                    <select @bind="_editJ2vNewFieldType" style="flex: 1; font-size: 0.8rem; padding: 0.15rem 0.3rem;">
+                                        <option value="text">Texto</option>
+                                        <option value="file">Archivo</option>
+                                    </select>
+                                    <button type="button" class="btn btn-sm"
+                                            style="font-size: 0.75rem; padding: 0.15rem 0.4rem;"
+                                            disabled="@string.IsNullOrWhiteSpace(_editJ2vNewFieldName)"
+                                            @onclick="() => AddEditJ2vSceneField(capturedTv)">
+                                        <i class="bi bi-plus"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+
+            <div class="form-row" style="align-items: flex-end; gap: 0.5rem;">
+                <div class="form-group" style="flex: 2;">
+                    <label>Nombre</label>
+                    <input type="text" @bind="_editJ2vNewVarName" placeholder="ej: titulo, slides..." />
+                </div>
+                <div class="form-group" style="flex: 1;">
+                    <label>Tipo</label>
+                    <select @bind="_editJ2vNewVarType">
+                        <option value="text">Texto</option>
+                        <option value="file">Archivo</option>
+                        <option value="scene">Escena</option>
+                    </select>
+                </div>
+                <button type="button" class="btn btn-sm"
+                        style="margin-bottom: 0.25rem; white-space: nowrap;"
+                        disabled="@string.IsNullOrWhiteSpace(_editJ2vNewVarName)"
+                        @onclick="AddEditJ2vTemplateVar">
+                    <i class="bi bi-plus-lg"></i> Anadir
+                </button>
+            </div>
+        </div>
+    }
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>Resolucion</label>
+            <select @bind="_editJ2vResolution">
+                <option value="full-hd">Full HD (1080p)</option>
+                <option value="hd">HD (720p)</option>
+                <option value="4k">4K</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Modelo de voz</label>
+            <select @bind="_editJ2vVoiceModel">
+                <option value="azure">Azure (gratis)</option>
+                <option value="elevenlabs">ElevenLabs (premium)</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Nombre de voz <span class="text-sm text-muted">(ej: es-ES-AlvaroNeural)</span></label>
+        <input type="text" @bind="_editJ2vVoiceName" placeholder="es-ES-AlvaroNeural" />
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Idioma subtitulos</label>
+            <select @bind="_editJ2vSubtitleLanguage">
+                <option value="es">Espanol</option>
+                <option value="en">Ingles</option>
+                <option value="fr">Frances</option>
+                <option value="de">Aleman</option>
+                <option value="pt">Portugues</option>
+                <option value="it">Italiano</option>
+                <option value="ja">Japones</option>
+                <option value="zh">Chino</option>
+                <option value="auto">Auto-detectar</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Estilo subtitulos</label>
+            <select @bind="_editJ2vSubtitleStyle">
+                <option value="boxed">Con fondo</option>
+                <option value="classic">Solo texto</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Tamano fuente <span class="text-sm text-muted">(90-150)</span></label>
+            <input type="number" min="90" max="150" @bind="_editJ2vSubtitleFontSize" />
+        </div>
+        <div class="form-group">
+            <label>Color palabra activa <span class="text-sm text-muted">(hex)</span></label>
+            <input type="text" @bind="_editJ2vSubtitleWordColor" placeholder="#FFFF00" />
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label><input type="checkbox" @bind="_editJ2vEnableVoice" /> Habilitar voz (TTS)</label>
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" @bind="_editJ2vEnableSubtitles" /> Habilitar subtitulos</label>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Duracion de escenas con imagen (seg)</label>
+        <input type="number" min="1" max="30" step="0.5" @bind="_editJ2vImageDuration" />
+    </div>
+}
+else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
+{
+    <div class="form-group">
+        <label>Access Token</label>
+        <input type="password" @bind="_editCanvaAccessToken" placeholder="Token OAuth de Canva" />
+    </div>
+    <div class="form-group">
+        <label>Formato de exportacion</label>
+        <select @bind="_editCanvaExportFormat">
+            <option value="png">PNG (imagen)</option>
+            <option value="jpg">JPG (imagen)</option>
+            <option value="pdf">PDF (documento)</option>
+            <option value="pptx">PPTX (presentacion)</option>
+        </select>
+    </div>
+    @if (m.ModelName == "canva-autofill")
+    {
+        <div class="form-group">
+            <label>Brand Template ID</label>
+            <input type="text" @bind="_editCanvaBrandTemplate" placeholder="Ej: DAVZr1z5464..." />
+        </div>
+    }
+    else
+    {
+        <div class="form-group">
+            <label>Tipo de diseno</label>
+            <select @bind="_editCanvaDesignType">
+                <option value="doc">Documento</option>
+                <option value="presentation">Presentacion</option>
+                <option value="whiteboard">Pizarra</option>
+            </select>
+        </div>
+    }
+}
+else if (m.ModuleType == "StaticText")
+{
+    <div class="form-group">
+        <label>Contenido de texto</label>
+        <textarea @bind="_editStaticTextContent" rows="5" placeholder="Texto que este modulo emitira como salida..."></textarea>
+        <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo.</p>
+    </div>
+}
+else
+{
+    <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
+}
+
+@code {
+    [Parameter] public AiModuleResponse? Module { get; set; }
+
+    // Identificador del modulo actualmente parseado, para re-parsear solo al cambiar de modulo.
+    private Guid? _loadedModuleId;
+
+    // ── Campos editables ──
+    private string _editSystemPrompt = "";
+    private double _editTemperature = 0.7;
+    private int _editMaxTokens = 4096;
+    private string _editImageSize = "1024x1024";
+    private string _editImageQuality = "standard";
+    private string _editTtsVoice = "alloy";
+    private double _editTtsSpeed = 1.0;
+    private int _editLeoWidth = 1024;
+    private int _editLeoHeight = 1024;
+    private string _editLeoPresetStyle = "DYNAMIC";
+    private string _editStaticTextContent = "";
+    private string _editGeminiAspectRatio = "1:1";
+    private int _editGeminiImageCount = 1;
+    private int _editGrokImageCount = 1;
+    private string _editVideoAspectRatio = "16:9";
+    private string _editVideoDuration = "8";
+    private string _editVideoResolution = "720p";
+    private string _editVideoPersonGeneration = "allow_adult";
+    private string _editSoraSize = "1280x720";
+    private string _editSoraDuration = "8";
+    private string _editPexelsOrientation = "landscape";
+    private string _editPexelsSize = "medium";
+    private string _editPexelsQuality = "hd";
+    private string _editPexelsLocale = "es-ES";
+    private int _editPexelsMinDuration = 0;
+    private int _editPexelsMaxDuration = 0;
+    private int _editPexelsPerPage = 15;
+    private string _editJ2vResolution = "full-hd";
+    private bool _editJ2vEnableVoice = true;
+    private bool _editJ2vEnableSubtitles = true;
+    private string _editJ2vVoiceModel = "azure";
+    private string _editJ2vVoiceName = "es-ES-AlvaroNeural";
+    private string _editJ2vSubtitleLanguage = "es";
+    private string _editJ2vSubtitleStyle = "boxed";
+    private int _editJ2vSubtitleFontSize = 120;
+    private string _editJ2vSubtitleWordColor = "#FFFF00";
+    private double _editJ2vImageDuration = 5.0;
+    private bool _editJ2vUseTemplate = false;
+    private List<TemplateVariable> _editJ2vTemplateVars = [];
+    private string _editJ2vNewVarName = "";
+    private string _editJ2vNewVarType = "text";
+    private string _editJ2vNewFieldName = "";
+    private string _editJ2vNewFieldType = "text";
+    private string _editCanvaAccessToken = "";
+    private string _editCanvaExportFormat = "png";
+    private string _editCanvaBrandTemplate = "";
+    private string _editCanvaDesignType = "doc";
+
+    protected override void OnParametersSet()
+    {
+        // Reparsear solo cuando cambia el modulo objetivo, para no pisar la edicion en curso.
+        if (Module is not null && Module.Id != _loadedModuleId)
+        {
+            _loadedModuleId = Module.Id;
+            LoadFromConfiguration(Module);
+        }
+    }
+
+    /// <summary>Vuelve a cargar los campos desde el modulo actual (util tras un cambio externo).</summary>
+    public void Reload()
+    {
+        if (Module is not null)
+        {
+            _loadedModuleId = Module.Id;
+            LoadFromConfiguration(Module);
+        }
+    }
+
+    private void LoadFromConfiguration(AiModuleResponse module)
+    {
+        _editSystemPrompt = "";
+        _editTemperature = 0.7;
+        _editMaxTokens = 4096;
+        _editImageSize = "1024x1024";
+        _editImageQuality = "standard";
+        _editTtsVoice = "alloy";
+        _editTtsSpeed = 1.0;
+        _editLeoWidth = 1024;
+        _editLeoHeight = 1024;
+        _editLeoPresetStyle = "DYNAMIC";
+        _editCanvaAccessToken = "";
+        _editCanvaExportFormat = "png";
+        _editCanvaBrandTemplate = "";
+        _editCanvaDesignType = "doc";
+        _editGrokImageCount = 1;
+        _editGeminiAspectRatio = "1:1";
+        _editGeminiImageCount = 1;
+        _editVideoAspectRatio = "16:9";
+        _editVideoDuration = "8";
+        _editVideoResolution = "720p";
+        _editVideoPersonGeneration = "allow_adult";
+        _editSoraSize = "1280x720";
+        _editSoraDuration = "8";
+        _editPexelsOrientation = "landscape";
+        _editPexelsSize = "medium";
+        _editPexelsQuality = "hd";
+        _editPexelsLocale = "es-ES";
+        _editPexelsMinDuration = 0;
+        _editPexelsMaxDuration = 0;
+        _editPexelsPerPage = 15;
+        _editJ2vResolution = "full-hd";
+        _editJ2vEnableVoice = true;
+        _editJ2vEnableSubtitles = true;
+        _editJ2vVoiceModel = "azure";
+        _editJ2vVoiceName = "es-ES-AlvaroNeural";
+        _editJ2vSubtitleLanguage = "es";
+        _editJ2vSubtitleStyle = "boxed";
+        _editJ2vSubtitleFontSize = 120;
+        _editJ2vSubtitleWordColor = "#FFFF00";
+        _editJ2vImageDuration = 5.0;
+        _editJ2vUseTemplate = false;
+        _editJ2vTemplateVars = [];
+        _editStaticTextContent = "";
+
+        if (string.IsNullOrWhiteSpace(module.Configuration)) return;
+
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(module.Configuration);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("systemPrompt", out var sp)) _editSystemPrompt = sp.GetString() ?? "";
+            if (root.TryGetProperty("temperature", out var t)) _editTemperature = t.GetDouble();
+            if (root.TryGetProperty("maxTokens", out var mt)) _editMaxTokens = mt.GetInt32();
+            if (root.TryGetProperty("size", out var sz)) _editImageSize = sz.GetString() ?? "1024x1024";
+            if (root.TryGetProperty("quality", out var q)) _editImageQuality = q.GetString() ?? "standard";
+            if (root.TryGetProperty("voice", out var v)) _editTtsVoice = v.GetString() ?? "alloy";
+            if (root.TryGetProperty("speed", out var spd)) _editTtsSpeed = spd.GetDouble();
+            if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
+            if (root.TryGetProperty("height", out var lh)) _editLeoHeight = lh.GetInt32();
+            if (root.TryGetProperty("presetStyle", out var lps)) _editLeoPresetStyle = lps.GetString() ?? "DYNAMIC";
+            if (root.TryGetProperty("aspectRatio", out var ar))
+            {
+                _editGeminiAspectRatio = ar.GetString() ?? "1:1";
+                _editVideoAspectRatio = ar.GetString() ?? "16:9";
+            }
+            if (root.TryGetProperty("numberOfImages", out var ni)) _editGeminiImageCount = ni.GetInt32();
+            if (root.TryGetProperty("n", out var grokN)) _editGrokImageCount = grokN.GetInt32();
+            if (root.TryGetProperty("duration", out var vdur))
+            {
+                _editVideoDuration = vdur.GetString() ?? "8";
+                _editSoraDuration = vdur.GetString() ?? "8";
+            }
+            if (root.TryGetProperty("resolution", out var vres)) _editVideoResolution = vres.GetString() ?? "720p";
+            if (root.TryGetProperty("personGeneration", out var vpg)) _editVideoPersonGeneration = vpg.GetString() ?? "allow_adult";
+            if (root.TryGetProperty("size", out var soraSize) && soraSize.GetString()?.Contains("x") == true)
+                _editSoraSize = soraSize.GetString() ?? "1280x720";
+            if (root.TryGetProperty("accessToken", out var cat)) _editCanvaAccessToken = cat.GetString() ?? "";
+            if (root.TryGetProperty("exportFormat", out var cef)) _editCanvaExportFormat = cef.GetString() ?? "png";
+            if (root.TryGetProperty("brandTemplateId", out var cbt)) _editCanvaBrandTemplate = cbt.GetString() ?? "";
+            if (root.TryGetProperty("designType", out var cdt)) _editCanvaDesignType = cdt.GetString() ?? "doc";
+            if (root.TryGetProperty("orientation", out var por)) _editPexelsOrientation = por.GetString() ?? "landscape";
+            if (root.TryGetProperty("size", out var psz2) && psz2.GetString() is "large" or "medium" or "small") _editPexelsSize = psz2.GetString()!;
+            if (root.TryGetProperty("preferredQuality", out var ppq)) _editPexelsQuality = ppq.GetString() ?? "hd";
+            if (root.TryGetProperty("locale", out var ploc)) _editPexelsLocale = ploc.GetString() ?? "es-ES";
+            if (root.TryGetProperty("minDuration", out var pmd)) _editPexelsMinDuration = pmd.GetInt32();
+            if (root.TryGetProperty("maxDuration", out var pmxd)) _editPexelsMaxDuration = pmxd.GetInt32();
+            if (root.TryGetProperty("perPage", out var ppp)) _editPexelsPerPage = ppp.GetInt32();
+            if (root.TryGetProperty("useTemplate", out var j2vUt)) _editJ2vUseTemplate = j2vUt.ValueKind == System.Text.Json.JsonValueKind.True;
+            if (root.TryGetProperty("templateVars", out var j2vTv) && j2vTv.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                _editJ2vTemplateVars = System.Text.Json.JsonSerializer.Deserialize<List<TemplateVariable>>(j2vTv.GetRawText()) ?? [];
+            }
+            if (root.TryGetProperty("resolution", out var j2vRes) && j2vRes.GetString() is "full-hd" or "hd" or "4k") _editJ2vResolution = j2vRes.GetString()!;
+            if (root.TryGetProperty("enableVoice", out var j2vEv)) _editJ2vEnableVoice = j2vEv.ValueKind != System.Text.Json.JsonValueKind.False;
+            if (root.TryGetProperty("enableSubtitles", out var j2vEs)) _editJ2vEnableSubtitles = j2vEs.ValueKind != System.Text.Json.JsonValueKind.False;
+            if (root.TryGetProperty("voiceModel", out var j2vVm)) _editJ2vVoiceModel = j2vVm.GetString() ?? "azure";
+            if (root.TryGetProperty("voiceName", out var j2vVn)) _editJ2vVoiceName = j2vVn.GetString() ?? "es-ES-AlvaroNeural";
+            if (root.TryGetProperty("subtitleLanguage", out var j2vSl)) _editJ2vSubtitleLanguage = j2vSl.GetString() ?? "es";
+            if (root.TryGetProperty("subtitleStyle", out var j2vSs)) _editJ2vSubtitleStyle = j2vSs.GetString() ?? "boxed";
+            if (root.TryGetProperty("subtitleFontSize", out var j2vSf)) _editJ2vSubtitleFontSize = j2vSf.GetInt32();
+            if (root.TryGetProperty("subtitleWordColor", out var j2vSw)) _editJ2vSubtitleWordColor = j2vSw.GetString() ?? "#FFFF00";
+            if (root.TryGetProperty("imageDuration", out var j2vId)) _editJ2vImageDuration = j2vId.GetDouble();
+            if (root.TryGetProperty("content", out var stContent)) _editStaticTextContent = stContent.GetString() ?? "";
+        }
+        catch { }
+    }
+
+    /// <summary>Reconstruye el JSON de configuracion a partir de los campos editados.</summary>
+    public string? BuildConfig()
+    {
+        if (Module is null) return null;
+        var moduleType = Module.ModuleType;
+        var providerType = Module.ProviderType;
+        var parts = new List<string>();
+
+        if (moduleType is "Text" or "Orchestrator" or "Coordinator")
+        {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
+            if (_editTemperature != 0.7)
+                parts.Add($"\"temperature\":{_editTemperature}");
+            if (_editMaxTokens != 4096)
+                parts.Add($"\"maxTokens\":{_editMaxTokens}");
+        }
+        else if (moduleType == "Image" && providerType == "Google")
+        {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
+            if (_editGeminiAspectRatio != "1:1")
+                parts.Add($"\"aspectRatio\":\"{_editGeminiAspectRatio}\"");
+            if (_editGeminiImageCount != 1)
+                parts.Add($"\"numberOfImages\":{_editGeminiImageCount}");
+        }
+        else if (moduleType == "Image" && providerType == "xAI")
+        {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
+            if (_editGrokImageCount != 1)
+                parts.Add($"\"n\":{_editGrokImageCount}");
+        }
+        else if (moduleType == "Image" && providerType == "LeonardoAI")
+        {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
+            if (_editLeoWidth != 1024)
+                parts.Add($"\"width\":{_editLeoWidth}");
+            if (_editLeoHeight != 1024)
+                parts.Add($"\"height\":{_editLeoHeight}");
+            if (_editLeoPresetStyle != "DYNAMIC")
+                parts.Add($"\"presetStyle\":\"{_editLeoPresetStyle}\"");
+        }
+        else if (moduleType == "Image")
+        {
+            if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
+                parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
+            if (_editImageSize != "1024x1024")
+                parts.Add($"\"size\":\"{_editImageSize}\"");
+            if (_editImageQuality != "standard")
+                parts.Add($"\"quality\":\"{_editImageQuality}\"");
+        }
+        else if (moduleType == "Video" && providerType == "Google")
+        {
+            if (_editVideoAspectRatio != "16:9")
+                parts.Add($"\"aspectRatio\":\"{_editVideoAspectRatio}\"");
+            if (_editVideoDuration != "8")
+                parts.Add($"\"duration\":\"{_editVideoDuration}\"");
+            if (_editVideoResolution != "720p")
+                parts.Add($"\"resolution\":\"{_editVideoResolution}\"");
+            if (_editVideoPersonGeneration != "allow_adult")
+                parts.Add($"\"personGeneration\":\"{_editVideoPersonGeneration}\"");
+        }
+        else if (moduleType == "Video" && providerType == "OpenAI")
+        {
+            if (_editSoraSize != "1280x720")
+                parts.Add($"\"size\":\"{_editSoraSize}\"");
+            if (_editSoraDuration != "8")
+                parts.Add($"\"duration\":\"{_editSoraDuration}\"");
+        }
+        else if (moduleType == "Audio")
+        {
+            parts.Add($"\"voice\":\"{_editTtsVoice}\"");
+            if (_editTtsSpeed != 1.0)
+                parts.Add($"\"speed\":{_editTtsSpeed}");
+        }
+        else if (moduleType == "Design" && providerType == "Canva")
+        {
+            if (!string.IsNullOrWhiteSpace(_editCanvaAccessToken))
+                parts.Add($"\"accessToken\":{System.Text.Json.JsonSerializer.Serialize(_editCanvaAccessToken)}");
+            if (_editCanvaExportFormat != "png")
+                parts.Add($"\"exportFormat\":\"{_editCanvaExportFormat}\"");
+            if (!string.IsNullOrWhiteSpace(_editCanvaBrandTemplate))
+                parts.Add($"\"brandTemplateId\":{System.Text.Json.JsonSerializer.Serialize(_editCanvaBrandTemplate)}");
+            if (_editCanvaDesignType != "doc")
+                parts.Add($"\"designType\":\"{_editCanvaDesignType}\"");
+        }
+        else if (moduleType == "VideoSearch" && providerType == "Pexels")
+        {
+            if (_editPexelsOrientation != "landscape")
+                parts.Add($"\"orientation\":\"{_editPexelsOrientation}\"");
+            if (_editPexelsSize != "medium")
+                parts.Add($"\"size\":\"{_editPexelsSize}\"");
+            if (_editPexelsQuality != "hd")
+                parts.Add($"\"preferredQuality\":\"{_editPexelsQuality}\"");
+            if (_editPexelsLocale != "es-ES")
+                parts.Add($"\"locale\":\"{_editPexelsLocale}\"");
+            if (_editPexelsMinDuration > 0)
+                parts.Add($"\"minDuration\":{_editPexelsMinDuration}");
+            if (_editPexelsMaxDuration > 0)
+                parts.Add($"\"maxDuration\":{_editPexelsMaxDuration}");
+            if (_editPexelsPerPage != 15)
+                parts.Add($"\"perPage\":{_editPexelsPerPage}");
+        }
+        else if (moduleType == "VideoEdit" && providerType == "Json2Video")
+        {
+            if (_editJ2vUseTemplate)
+            {
+                parts.Add("\"useTemplate\":true");
+                if (_editJ2vTemplateVars.Count > 0)
+                    parts.Add($"\"templateVars\":{System.Text.Json.JsonSerializer.Serialize(_editJ2vTemplateVars)}");
+            }
+            if (_editJ2vResolution != "full-hd")
+                parts.Add($"\"resolution\":\"{_editJ2vResolution}\"");
+            if (!_editJ2vEnableVoice)
+                parts.Add("\"enableVoice\":false");
+            if (!_editJ2vEnableSubtitles)
+                parts.Add("\"enableSubtitles\":false");
+            if (_editJ2vVoiceModel != "azure")
+                parts.Add($"\"voiceModel\":\"{_editJ2vVoiceModel}\"");
+            if (_editJ2vVoiceName != "es-ES-AlvaroNeural")
+                parts.Add($"\"voiceName\":\"{_editJ2vVoiceName}\"");
+            if (_editJ2vSubtitleLanguage != "es")
+                parts.Add($"\"subtitleLanguage\":\"{_editJ2vSubtitleLanguage}\"");
+            if (_editJ2vSubtitleStyle != "boxed")
+                parts.Add($"\"subtitleStyle\":\"{_editJ2vSubtitleStyle}\"");
+            if (_editJ2vSubtitleFontSize != 120)
+                parts.Add($"\"subtitleFontSize\":{_editJ2vSubtitleFontSize}");
+            if (_editJ2vSubtitleWordColor != "#FFFF00")
+                parts.Add($"\"subtitleWordColor\":\"{_editJ2vSubtitleWordColor}\"");
+            if (Math.Abs(_editJ2vImageDuration - 5.0) > 0.01)
+                parts.Add($"\"imageDuration\":{_editJ2vImageDuration.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        }
+
+        if (moduleType == "StaticText")
+        {
+            if (!string.IsNullOrWhiteSpace(_editStaticTextContent))
+                parts.Add($"\"content\":{System.Text.Json.JsonSerializer.Serialize(_editStaticTextContent)}");
+        }
+
+        return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
+    }
+
+    /// <summary>Indica si este tipo de modulo expone configuracion editable y guardable.</summary>
+    public bool HasEditableConfig() =>
+        Module is not null &&
+        Module.ModuleType is "Text" or "Image" or "Audio" or "Video" or "Design"
+            or "VideoSearch" or "VideoEdit" or "Coordinator" or "StaticText";
+
+    private static string[] GetImageSizesForModel(string model)
+    {
+        return model switch
+        {
+            _ when model.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase)
+                => ["auto", "1024x1024", "1536x1024", "1024x1536"],
+            "dall-e-3" => ["1024x1024", "1024x1792", "1792x1024"],
+            "dall-e-2" => ["256x256", "512x512", "1024x1024"],
+            _ => ["1024x1024"]
+        };
+    }
+
+    private void AddEditJ2vTemplateVar()
+    {
+        var name = _editJ2vNewVarName?.Trim();
+        if (!string.IsNullOrWhiteSpace(name) && !_editJ2vTemplateVars.Any(v => v.Name == name))
+        {
+            var tv = new TemplateVariable { Name = name, Type = _editJ2vNewVarType };
+            if (_editJ2vNewVarType == "scene") tv.Fields = new List<SceneField>();
+            _editJ2vTemplateVars.Add(tv);
+            _editJ2vNewVarName = "";
+        }
+    }
+
+    private void AddEditJ2vSceneField(TemplateVariable tv)
+    {
+        var name = _editJ2vNewFieldName?.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        tv.Fields ??= new List<SceneField>();
+        if (tv.Fields.Any(f => f.Name == name)) return;
+        tv.Fields.Add(new SceneField { Name = name, Type = _editJ2vNewFieldType });
+        _editJ2vNewFieldName = "";
+    }
+}

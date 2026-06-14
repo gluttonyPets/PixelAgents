@@ -1165,6 +1165,7 @@
                     @if (sel.ModuleType != "Start")
                     {
                         <div class="inspector-section">
+                            <button class="btn btn-xs btn-primary" style="width:100%; margin-bottom: 0.35rem;" @onclick="() => OpenEditNode(sel)">Editar nodo</button>
                             <button class="btn btn-xs btn-danger" style="width:100%;" @onclick="() => RequestDeleteNode(sel.Id)">Eliminar nodo</button>
                         </div>
                     }
@@ -1296,6 +1297,70 @@
     </div>
 }
 
+@* ── Popup "Editar nodo": edita la configuracion del modulo de catalogo del nodo,
+     igual que el boton "Configurar" de la pagina Modulos. ── *@
+@if (_editNodeModule is not null)
+{
+    <div class="modal-overlay" @onclick="CloseEditNode">
+        <div class="modal-content" style="max-width:760px; width:95vw;" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 style="margin:0; font-size:1.05rem; flex:1;">Editar nodo &mdash; @_editNodeModule.Name</h3>
+                <button class="node-btn" @onclick="CloseEditNode" title="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_editNodeError is not null)
+                {
+                    <div class="alert alert-error">@_editNodeError</div>
+                }
+                @if (_editNodeSuccess)
+                {
+                    <div class="alert alert-success">Cambios guardados</div>
+                }
+
+                @if (_editNodeUsageOtherProjects > 0)
+                {
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle" style="margin-right: 0.3rem;"></i>
+                        Este modulo tambien se usa en <strong>@_editNodeUsageOtherProjects</strong>
+                        @(_editNodeUsageOtherProjects == 1 ? " proyecto" : " proyectos") mas
+                        @if (_editNodeUsageNames.Count > 0)
+                        {
+                            <text>(@string.Join(", ", _editNodeUsageNames))</text>
+                        }
+                        . Si guardas los cambios, afectaran a todos. Usa <strong>Duplicar con cambios</strong>
+                        para crear una copia independiente solo para este proyecto.
+                    </div>
+                }
+
+                <div class="form-group">
+                    <label>Nombre del modulo</label>
+                    <input type="text" @bind="_editNodeName" placeholder="Nombre del modulo" />
+                </div>
+                <div class="form-group">
+                    <label>Descripcion</label>
+                    <input type="text" @bind="_editNodeDesc" placeholder="Descripcion opcional" />
+                </div>
+
+                <fieldset class="config-fieldset">
+                    <legend>Configuracion</legend>
+                    <ModuleConfigEditor @ref="_nodeConfigEditor" Module="_editNodeModule" />
+                </fieldset>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm" @onclick="CloseEditNode" disabled="@_editNodeSaving">Cancelar</button>
+                <div style="flex: 1;"></div>
+                <button class="btn btn-sm" @onclick="DuplicateNodeModule" disabled="@_editNodeSaving"
+                        title="Crea una copia del modulo con estos cambios y la asigna solo a este nodo">
+                    <i class="bi bi-files" style="margin-right: 0.2rem;"></i>Duplicar con cambios
+                </button>
+                <button class="btn btn-primary btn-sm" @onclick="SaveNodeModule" disabled="@_editNodeSaving">
+                    @(_editNodeSaving ? "Guardando..." : "Guardar cambios")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public Guid ProjectId { get; set; }
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
@@ -1306,6 +1371,9 @@
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
     [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
     [Parameter] public EventCallback<SaveGraphRequest> OnSaveGraph { get; set; }
+    // Avisa al padre de que la lista de modulos o el modulo de algun nodo cambio,
+    // para que recargue los datos (catalogo + proyecto).
+    [Parameter] public EventCallback OnModulesChanged { get; set; }
 
     // Execution state from parent
     [Parameter] public bool Executing { get; set; }
@@ -1327,6 +1395,18 @@
     private int _lastModuleCount;
     private int _lastConnectionCount;
     private Dictionary<Guid, int> _sceneCountOverrides = new();
+
+    // ── Estado del popup "Editar nodo" ──
+    private ProjectModuleResponse? _editNodeProjectModule; // nodo (instancia) en edicion
+    private AiModuleResponse? _editNodeModule;             // modulo de catalogo del nodo
+    private ModuleConfigEditor? _nodeConfigEditor;
+    private string _editNodeName = "";
+    private string? _editNodeDesc;
+    private bool _editNodeSaving;
+    private bool _editNodeSuccess;
+    private string? _editNodeError;
+    private int _editNodeUsageOtherProjects;
+    private List<string> _editNodeUsageNames = [];
     private static readonly string[] _orchestratorModels = [
         "gpt-4o", "gpt-4o-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano",
         "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-haiku-20241022",
@@ -1814,6 +1894,119 @@
         await JS.InvokeVoidAsync("pipelineEditor.removeNodeByModuleId", id.ToString());
         await OnRemoveModule.InvokeAsync(id);
         await NotifyGraphChanged();
+    }
+
+    // ── Popup "Editar nodo" ──
+
+    private async Task OpenEditNode(ProjectModuleResponse node)
+    {
+        _editNodeError = null;
+        _editNodeSuccess = false;
+        _editNodeSaving = false;
+        _editNodeProjectModule = node;
+
+        // Resolver el modulo de catalogo asociado al nodo.
+        var catalog = AvailableModules.FirstOrDefault(m => m.Id == node.AiModuleId);
+        if (catalog is null)
+        {
+            // Fallback: pedirlo al servidor por si no esta en la lista local.
+            catalog = await Api.GetModuleAsync(node.AiModuleId);
+        }
+        if (catalog is null)
+        {
+            _editNodeError = "No se pudo cargar la configuracion del modulo.";
+            _editNodeModule = null;
+            return;
+        }
+
+        _editNodeModule = catalog;
+        _editNodeName = catalog.Name;
+        _editNodeDesc = catalog.Description;
+
+        // Comprobar uso en otros proyectos (excluyendo el actual) para advertir.
+        var usage = await Api.GetModuleUsageAsync(catalog.Id, ProjectId);
+        _editNodeUsageOtherProjects = usage.ProjectCount;
+        _editNodeUsageNames = usage.ProjectNames ?? [];
+
+        StateHasChanged();
+    }
+
+    private void CloseEditNode()
+    {
+        _editNodeModule = null;
+        _editNodeProjectModule = null;
+        _editNodeError = null;
+        _editNodeSuccess = false;
+        _editNodeUsageOtherProjects = 0;
+        _editNodeUsageNames = [];
+    }
+
+    // Guarda los cambios sobre el modulo de catalogo (afecta a todos los proyectos que lo usan).
+    private async Task SaveNodeModule()
+    {
+        if (_editNodeModule is null) return;
+        _editNodeError = null;
+        _editNodeSuccess = false;
+        _editNodeSaving = true;
+        try
+        {
+            var config = _nodeConfigEditor?.BuildConfig();
+            // UpdateModuleConfigAsync envia Name/Description desde 'current', asi que pasamos
+            // el modulo con el nombre/descripcion ya actualizados para persistirlo todo.
+            var updated = _editNodeModule with { Name = _editNodeName, Description = _editNodeDesc, Configuration = config };
+            var (ok, error) = await Api.UpdateModuleConfigAsync(_editNodeModule.Id, updated, config);
+            if (ok)
+            {
+                _editNodeSuccess = true;
+                await OnModulesChanged.InvokeAsync();
+                CloseEditNode();
+            }
+            else
+            {
+                _editNodeError = error ?? "Error al guardar.";
+            }
+        }
+        catch (Exception ex) { _editNodeError = $"Error: {ex.Message}"; }
+        _editNodeSaving = false;
+    }
+
+    // Crea una copia del modulo con los cambios y la asigna solo a este nodo.
+    private async Task DuplicateNodeModule()
+    {
+        if (_editNodeModule is null || _editNodeProjectModule is null) return;
+        _editNodeError = null;
+        _editNodeSuccess = false;
+        _editNodeSaving = true;
+        try
+        {
+            var config = _nodeConfigEditor?.BuildConfig();
+            var dupName = string.IsNullOrWhiteSpace(_editNodeName) ? _editNodeModule.Name : _editNodeName;
+            var req = new CreateAiModuleRequest(
+                dupName + " (copia)", _editNodeDesc, _editNodeModule.ProviderType,
+                _editNodeModule.ModuleType, _editNodeModule.ModelName, _editNodeModule.ApiKeyId, config);
+
+            var (ok, error, newId) = await Api.CreateModuleAsync(req);
+            if (!ok || newId is null)
+            {
+                _editNodeError = error ?? "No se pudo duplicar el modulo.";
+                _editNodeSaving = false;
+                return;
+            }
+
+            var (rok, rerror) = await Api.ReassignProjectModuleAsync(ProjectId, _editNodeProjectModule.Id, newId.Value);
+            if (!rok)
+            {
+                _editNodeError = rerror ?? "Se creo la copia pero no se pudo asignar al nodo.";
+                _editNodeSaving = false;
+                return;
+            }
+
+            _editNodeSuccess = true;
+            await OnModulesChanged.InvokeAsync();
+            CloseEditNode();
+        }
+        catch (Exception ex) { _editNodeError = $"Error: {ex.Message}"; }
+        _editNodeSaving = false;
     }
 
     private async Task AddOrchestratorOutput(ProjectModuleResponse module)

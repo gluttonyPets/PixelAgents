@@ -113,6 +113,13 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<AiModuleResponse>>() ?? [];
     }
 
+    public async Task<AiModuleResponse?> GetModuleAsync(Guid id)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/modules/{id}");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<AiModuleResponse>();
+    }
+
     public async Task<(bool Ok, string? Error, Guid? ModuleId)> CreateModuleAsync(CreateAiModuleRequest req)
     {
         var resp = await SendAsync(HttpMethod.Post, "/api/modules", req);
@@ -181,6 +188,26 @@ public class ApiClient
     public async Task DeleteModuleAsync(Guid id)
     {
         await SendAsync(HttpMethod.Delete, $"/api/modules/{id}");
+    }
+
+    // Cuenta en cuantos proyectos se usa un modulo de catalogo (opcionalmente excluyendo uno).
+    public async Task<ModuleUsageResponse> GetModuleUsageAsync(Guid moduleId, Guid? excludeProjectId = null)
+    {
+        var query = $"/api/modules/{moduleId}/usage";
+        if (excludeProjectId is not null) query += $"?excludeProjectId={excludeProjectId}";
+        var resp = await SendAsync(HttpMethod.Get, query);
+        if (!resp.IsSuccessStatusCode) return new ModuleUsageResponse(0, []);
+        return await resp.Content.ReadFromJsonAsync<ModuleUsageResponse>() ?? new ModuleUsageResponse(0, []);
+    }
+
+    // Reapunta un nodo del pipeline a otro modulo de catalogo (mismo tipo).
+    public async Task<(bool Ok, string? Error)> ReassignProjectModuleAsync(Guid projectId, Guid projectModuleId, Guid newAiModuleId)
+    {
+        var resp = await SendAsync(HttpMethod.Put,
+            $"/api/projects/{projectId}/modules/{projectModuleId}/reassign",
+            new ReassignProjectModuleRequest(newAiModuleId));
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
     }
 
     // ── Module Files ──

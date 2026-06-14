@@ -27,6 +27,9 @@ public record AiModuleResponse(
     Guid Id, string Name, string? Description, string ProviderType,
     string ModuleType, string ModelName, Guid? ApiKeyId, string? ApiKeyName,
     string? Configuration, bool IsEnabled, DateTime CreatedAt, DateTime UpdatedAt);
+// Uso de un modulo de catalogo a traves de los proyectos (para advertir antes de editar).
+public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
+public record ReassignProjectModuleRequest(Guid AiModuleId);
 
 // ── Project ──
 public record CreateProjectRequest(string Name, string? Description, string? Context);

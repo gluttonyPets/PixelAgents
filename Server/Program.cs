@@ -675,6 +675,29 @@ app.MapGet("/api/modules/{id}", async (
         m.CreatedAt, m.UpdatedAt));
 }).RequireAuthorization();
 
+// Devuelve en cuantos proyectos se usa un modulo de catalogo. Permite excluir el
+// proyecto actual para advertir al usuario antes de editar un modulo compartido.
+app.MapGet("/api/modules/{id}/usage", async (
+    Guid id, Guid? excludeProjectId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var query = db.ProjectModules
+        .Include(pm => pm.Project)
+        .Where(pm => pm.AiModuleId == id);
+    if (excludeProjectId is not null)
+        query = query.Where(pm => pm.ProjectId != excludeProjectId);
+
+    var projects = await query
+        .Select(pm => new { pm.ProjectId, pm.Project.Name })
+        .Distinct()
+        .ToListAsync();
+
+    return Results.Ok(new ModuleUsageResponse(projects.Count, projects.Select(p => p.Name).ToList()));
+}).RequireAuthorization();
+
 app.MapPut("/api/modules/{id}", async (
     Guid id, UpdateAiModuleRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
@@ -1446,6 +1469,36 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
     }
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
         pm.AiModule.ModuleType, updateEffectiveModel, pm.StepName,
+        pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
+}).RequireAuthorization();
+
+// Reapunta un nodo del pipeline a otro modulo de catalogo (mismo tipo). Se usa al
+// duplicar un modulo compartido con cambios, para que el nodo use la copia nueva.
+app.MapPut("/api/projects/{projectId}/modules/{id}/reassign", async (
+    Guid projectId, Guid id, ReassignProjectModuleRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var pm = await db.ProjectModules
+        .Include(x => x.AiModule)
+        .FirstOrDefaultAsync(x => x.Id == id && x.ProjectId == projectId);
+    if (pm is null) return Results.NotFound();
+
+    var newModule = await db.AiModules.FindAsync(req.AiModuleId);
+    if (newModule is null) return Results.BadRequest(new { error = "El modulo destino no existe." });
+
+    // Solo permitir reapuntar a un modulo del mismo tipo para no romper puertos ni conexiones.
+    if (newModule.ModuleType != pm.AiModule.ModuleType)
+        return Results.BadRequest(new { error = "El modulo destino debe ser del mismo tipo." });
+
+    pm.AiModuleId = newModule.Id;
+    pm.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, newModule.Name,
+        newModule.ModuleType, newModule.ModelName, pm.StepName,
         pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
 }).RequireAuthorization();
 
