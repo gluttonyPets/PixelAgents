@@ -3801,3 +3801,35 @@ a.link:hover { text-decoration: underline; }
 .mb-1 { margin-bottom: 0.5rem; }
 .text-muted { color: var(--text-muted); }
 .text-sm { font-size: 0.8rem; }
+
+/* Buffer channel picker */
+.channel-picker-list {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 0.4rem;
+}
+.channel-picker-item {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.channel-picker-item:hover {
+    background: var(--bg-hover, rgba(255,255,255,0.06));
+}
+.channel-service-badge {
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    background: var(--accent, #6c63ff);
+    color: #fff;
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.25rem;
+    white-space: nowrap;
+}
+.channel-name {
+    flex: 1; font-size: 0.9rem;
+}
+.channel-id {
+    font-size: 0.7rem; font-family: monospace;
+    max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

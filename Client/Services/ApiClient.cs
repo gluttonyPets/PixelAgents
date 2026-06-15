@@ -517,6 +517,20 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Buffer Channels ──
+
+    public async Task<(List<BufferChannelDto>? Channels, string? Error)> GetBufferChannelsAsync(string apiKey)
+    {
+        var encoded = Uri.EscapeDataString(apiKey);
+        var resp = await SendAsync(HttpMethod.Get, $"/api/buffer/channels?apiKey={encoded}");
+        if (resp.IsSuccessStatusCode)
+        {
+            var list = await resp.Content.ReadFromJsonAsync<List<BufferChannelDto>>();
+            return (list, null);
+        }
+        return (null, await ReadErrorAsync(resp));
+    }
+
     // ── Instagram (Buffer) Config ──
 
     public async Task<BufferConfigDto?> GetInstagramConfigAsync(Guid projectId)

@@ -113,6 +113,7 @@ public record TelegramConfigDto(string BotToken, string ChatId);
 
 // ── Instagram (Buffer) / TikTok (Buffer) ──
 public record BufferConfigDto(string ApiKey, string ChannelId);
+public record BufferChannelDto(string Id, string Name, string Service);
 
 // ── Module Files ──
 public record ModuleFileResponse(

@@ -1110,12 +1110,15 @@ else
                                 </div>
                                 <div class="form-group">
                                     <label>Channel ID</label>
-                                    <input type="text" @bind="_igChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
+                                    <div style="display:flex;gap:0.5rem;align-items:center;">
+                                        <input type="text" @bind="_igChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." style="flex:1;" />
+                                        <button class="btn btn-outline btn-sm" type="button" @onclick='() => OpenChannelPicker("ig")'>Seleccionar canal</button>
+                                    </div>
                                 </div>
                             </div>
                             <p class="text-sm text-muted">
                                 1. Ve a <strong>buffer.com</strong> &#x2192; Cuenta &#x2192; API Settings &#x2192; genera tu API Key.<br/>
-                                2. El <strong>Channel ID</strong> se obtiene consultando tus canales conectados via la API.<br/>
+                                2. Pulsa <strong>Seleccionar canal</strong> para elegir tu canal de Instagram conectado en Buffer.<br/>
                                 3. Plan gratuito: 3 canales, 10 posts programados por canal.
                             </p>
                             <button class="btn btn-primary btn-sm" @onclick="SaveInstagramConfig" disabled="@_igSaving">
@@ -1147,11 +1150,14 @@ else
                                 </div>
                                 <div class="form-group">
                                     <label>Channel ID (TikTok)</label>
-                                    <input type="text" @bind="_tkChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
+                                    <div style="display:flex;gap:0.5rem;align-items:center;">
+                                        <input type="text" @bind="_tkChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." style="flex:1;" />
+                                        <button class="btn btn-outline btn-sm" type="button" @onclick='() => OpenChannelPicker("tk")'>Seleccionar canal</button>
+                                    </div>
                                 </div>
                             </div>
                             <p class="text-sm text-muted">
-                                Usa la misma API Key de Buffer. El <strong>Channel ID</strong> debe ser el de tu canal TikTok conectado en Buffer.<br/>
+                                Usa la misma API Key de Buffer. Pulsa <strong>Seleccionar canal</strong> para elegir tu canal TikTok conectado en Buffer.<br/>
                                 Soporta videos e imagenes (hasta 4 por post). Formatos: PNG, JPG, GIF, WebP (max 8MB).
                             </p>
                             <button class="btn btn-primary btn-sm" @onclick="SaveTikTokConfig" disabled="@_tkSaving">
@@ -1183,11 +1189,14 @@ else
                                 </div>
                                 <div class="form-group">
                                     <label>Channel ID (Pinterest)</label>
-                                    <input type="text" @bind="_ptChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." />
+                                    <div style="display:flex;gap:0.5rem;align-items:center;">
+                                        <input type="text" @bind="_ptChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." style="flex:1;" />
+                                        <button class="btn btn-outline btn-sm" type="button" @onclick='() => OpenChannelPicker("pt")'>Seleccionar canal</button>
+                                    </div>
                                 </div>
                             </div>
                             <p class="text-sm text-muted">
-                                Usa la misma API Key de Buffer. El <strong>Channel ID</strong> debe ser el de tu canal Pinterest conectado en Buffer.<br/>
+                                Usa la misma API Key de Buffer. Pulsa <strong>Seleccionar canal</strong> para elegir tu canal Pinterest conectado en Buffer.<br/>
                                 Soporta imagenes (PNG, JPG, WebP). Publica como Pin en tu tablero.
                             </p>
                             <button class="btn btn-primary btn-sm" @onclick="SavePinterestConfig" disabled="@_ptSaving">
@@ -1529,6 +1538,45 @@ else
     </div>
 }
 
+@if (_showChannelPicker)
+{
+    <div class="modal-overlay" @onclick="() => _showChannelPicker = false">
+        <div class="modal-content" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h3>Seleccionar canal de Buffer</h3>
+                <button class="btn-icon" @onclick="() => _showChannelPicker = false">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_channelPickerLoading)
+                {
+                    <p class="text-muted">Cargando canales...</p>
+                }
+                else if (_channelPickerError is not null)
+                {
+                    <div class="alert alert-error">@_channelPickerError</div>
+                }
+                else if (_bufferChannels.Count == 0)
+                {
+                    <p class="text-muted">No se encontraron canales conectados en tu cuenta de Buffer.</p>
+                }
+                else
+                {
+                    <ul class="channel-picker-list">
+                        @foreach (var ch in _bufferChannels)
+                        {
+                            <li class="channel-picker-item" @onclick="() => SelectBufferChannel(ch)">
+                                <span class="channel-service-badge">@ch.Service</span>
+                                <span class="channel-name">@ch.Name</span>
+                                <span class="channel-id text-muted">@ch.Id</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public Guid ProjectId { get; set; }
 
@@ -1694,6 +1742,13 @@ else
     private string? _ptError;
     private bool _ptSuccess;
     private bool _ptSaving;
+
+    // Buffer channel picker
+    private bool _showChannelPicker;
+    private string _channelPickerTarget = ""; // "ig", "tk", "pt"
+    private bool _channelPickerLoading;
+    private string? _channelPickerError;
+    private List<BufferChannelDto> _bufferChannels = new();
 
     // Buffer API debug modal
     private bool _showBufferDebug;
@@ -2146,6 +2201,52 @@ else
         }
         catch (Exception ex) { _tgError = ex.Message; }
         _tgSaving = false;
+    }
+
+    private async Task OpenChannelPicker(string target)
+    {
+        var apiKey = target switch
+        {
+            "ig" => _igApiKey,
+            "tk" => _tkApiKey,
+            "pt" => _ptApiKey,
+            _ => ""
+        };
+
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            var errMsg = "Introduce primero la API Key de Buffer.";
+            if (target == "ig") _igError = errMsg;
+            else if (target == "tk") _tkError = errMsg;
+            else _ptError = errMsg;
+            return;
+        }
+
+        _channelPickerTarget = target;
+        _channelPickerLoading = true;
+        _channelPickerError = null;
+        _bufferChannels = new();
+        _showChannelPicker = true;
+
+        try
+        {
+            var (channels, error) = await Api.GetBufferChannelsAsync(apiKey);
+            if (channels is not null)
+                _bufferChannels = channels;
+            else
+                _channelPickerError = error ?? "Error al obtener canales";
+        }
+        catch (Exception ex) { _channelPickerError = ex.Message; }
+
+        _channelPickerLoading = false;
+    }
+
+    private void SelectBufferChannel(BufferChannelDto channel)
+    {
+        if (_channelPickerTarget == "ig") _igChannelId = channel.Id;
+        else if (_channelPickerTarget == "tk") _tkChannelId = channel.Id;
+        else if (_channelPickerTarget == "pt") _ptChannelId = channel.Id;
+        _showChannelPicker = false;
     }
 
     private async Task SaveInstagramConfig()

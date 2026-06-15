@@ -2791,6 +2791,30 @@ app.MapGet("/api/projects/{projectId:guid}/telegram-webhook-info", async (
     }
 }).RequireAuthorization();
 
+// ==================== Buffer Channels Endpoint ====================
+
+app.MapGet("/api/buffer/channels", async (
+    string apiKey, HttpContext ctx,
+    UserManager<ApplicationUser> um,
+    Server.Services.Instagram.BufferService bufferService) =>
+{
+    var user = await um.GetUserAsync(ctx.User);
+    if (user is null) return Results.Unauthorized();
+
+    if (string.IsNullOrWhiteSpace(apiKey))
+        return Results.BadRequest(new { error = "apiKey requerida" });
+
+    try
+    {
+        var channels = await bufferService.GetChannelsAsync(apiKey);
+        return Results.Ok(channels);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
 // ==================== Instagram (Buffer) Config Endpoints ====================
 
 app.MapGet("/api/projects/{projectId:guid}/instagram-config", async (
