@@ -236,29 +236,49 @@ namespace Server.Services.Instagram
         /// </summary>
         public async Task<List<BufferChannel>> GetChannelsAsync(string apiKey)
         {
-            var mutation = @"
-                query {
-                    channels(input: {}) {
-                        id
-                        name
-                        service
-                    }
-                }";
+            var normalizedKey = NormalizeApiKey(apiKey);
 
-            var request = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
-            request.Headers.Add("Authorization", $"Bearer {NormalizeApiKey(apiKey)}");
+            // Step 1: get organization id
+            var orgQuery = @"{""query"": ""query GetOrganizations { account { organizations { id name } } }""}";
+            var orgRequest = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
+            orgRequest.Headers.Add("Authorization", $"Bearer {normalizedKey}");
+            orgRequest.Content = new StringContent(orgQuery, Encoding.UTF8, "application/json");
 
-            var body = new Dictionary<string, object> { ["query"] = mutation };
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var orgResponse = await _http.SendAsync(orgRequest);
+            if (!orgResponse.IsSuccessStatusCode)
+            {
+                var errorBody = await orgResponse.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Buffer API error {(int)orgResponse.StatusCode}: {errorBody}");
+            }
 
-            var response = await _http.SendAsync(request);
+            var orgJson = await orgResponse.Content.ReadAsStringAsync();
+            await EnsureGraphQLSuccessAsync(orgJson);
 
+            string? organizationId = null;
+            using (var orgDoc = JsonDocument.Parse(orgJson))
+            {
+                var orgs = orgDoc.RootElement
+                    .GetProperty("data")
+                    .GetProperty("account")
+                    .GetProperty("organizations");
+                if (orgs.GetArrayLength() > 0)
+                    organizationId = orgs[0].GetProperty("id").GetString();
+            }
+
+            if (string.IsNullOrEmpty(organizationId))
+                throw new InvalidOperationException("No se encontró ninguna organización en la cuenta de Buffer.");
+
+            // Step 2: get channels for that organization
+            var channelQuery = $@"{{""query"": ""query GetChannels {{ channels(input: {{ organizationId: \""{organizationId}\"" }}) {{ id name service }} }}"" }}";
+            var chanRequest = new HttpRequestMessage(HttpMethod.Post, ApiUrl);
+            chanRequest.Headers.Add("Authorization", $"Bearer {normalizedKey}");
+            chanRequest.Content = new StringContent(channelQuery, Encoding.UTF8, "application/json");
+
+            var response = await _http.SendAsync(chanRequest);
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException(
-                    $"Buffer API error {(int)response.StatusCode}: {errorBody}");
+                throw new HttpRequestException($"Buffer API error {(int)response.StatusCode}: {errorBody}");
             }
 
             var json = await response.Content.ReadAsStringAsync();
