@@ -1363,6 +1363,29 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 $"{node.ProjectModule.StepName ?? node.AiModule.Name} completado",
                 node.ModuleId,
                 node.ProjectModule.StepName ?? node.AiModule.Name);
+
+            // If an Interaction module completes without pausing (waitForResponse=false),
+            // still send the message to Telegram as a plain notification (no buttons).
+            if (node.ModuleType == "Interaction"
+                && node.AiModule.ModelName.Equals("telegram", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(project.TelegramConfig))
+            {
+                try
+                {
+                    var tgConfig = JsonSerializer.Deserialize<TelegramConfig>(project.TelegramConfig, JsonOptions);
+                    var msg = node.Output?.Content ?? "";
+                    if (tgConfig is not null && !string.IsNullOrWhiteSpace(msg))
+                        await _telegram.SendTextMessageAsync(tgConfig, msg);
+                }
+                catch (Exception ex)
+                {
+                    await _logger.LogAsync(project.Id, execution.Id, "warning",
+                        $"No se pudo enviar notificacion Telegram: {ex.Message}",
+                        node.ModuleId,
+                        node.ProjectModule.StepName ?? node.AiModule.Name);
+                }
+            }
+
             return;
         }
 
