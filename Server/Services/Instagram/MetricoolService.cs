@@ -238,7 +238,7 @@ namespace Server.Services.Instagram
         {
             var mutation = @"
                 query {
-                    channels {
+                    channels(input: {}) {
                         id
                         name
                         service
