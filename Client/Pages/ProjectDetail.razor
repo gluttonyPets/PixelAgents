@@ -251,6 +251,39 @@ else
                                         </div>
                                     }
                                 </div>
+
+                                <div class="planner-history">
+                                    <div class="planner-queue-header">
+                                        <strong class="planner-queue-title">Historial de ejecuciones (@_executions.Count)</strong>
+                                    </div>
+                                    @if (_executions.Count == 0)
+                                    {
+                                        <div class="planner-queue-empty">No hay ejecuciones previas.</div>
+                                    }
+                                    else
+                                    {
+                                        <div class="planner-history-list">
+                                            @foreach (var exec in _executions.Take(20))
+                                            {
+                                                var histStatusClass = exec.Status == "Completed" ? "is-used" : exec.Status == "Failed" ? "is-skipped" : "is-pending";
+                                                <div class="planner-prompt-card @histStatusClass planner-history-card">
+                                                    <div class="planner-prompt-toolbar">
+                                                        <span class="planner-prompt-status">@exec.Status</span>
+                                                        <span class="planner-history-date">@exec.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                                                        <button class="btn btn-ghost btn-xs" title="Repetir esta ejecución"
+                                                                disabled="@_executing"
+                                                                @onclick="() => RepeatExecution(exec.UserInput)">
+                                                            &#x27F3; Repetir
+                                                        </button>
+                                                    </div>
+                                                    <div class="planner-prompt-content">
+                                                        @(string.IsNullOrWhiteSpace(exec.UserInput) ? "(sin input)" : exec.UserInput)
+                                                    </div>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
                             </div>
                         }
                         @if (_executing || _result is not null)
@@ -2699,6 +2732,22 @@ else
             var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput, _useHistory);
             if (!ok) { _execError = error; _executing = false; }
             else StartPolling(); // Safety net in case SignalR misses completion
+        }
+        catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; _executing = false; }
+    }
+
+    private async Task RepeatExecution(string? userInput)
+    {
+        _execError = null; _executing = true; _result = null;
+        _logEntries.Clear();
+        _realtimeStepStatuses.Clear();
+        _activeTab = "pipeline";
+
+        try
+        {
+            var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(userInput) ? null : userInput, _useHistory);
+            if (!ok) { _execError = error; _executing = false; }
+            else StartPolling();
         }
         catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; _executing = false; }
     }
