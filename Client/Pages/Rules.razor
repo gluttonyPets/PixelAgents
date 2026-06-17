@@ -1,48 +1,15 @@
 @page "/rules"
 @inject ApiClient Api
 
-<h2>Reglas obligatorias</h2>
-
-<p class="text-muted" style="font-size:0.85rem;">
-    Cada regla activa se inyecta automaticamente en el system prompt de TODAS las llamadas a IA del pipeline
-    (texto, imagen, coordinador, orquestador, diseno). Usalas para imponer formato, idioma, restricciones de marca, etc.
-</p>
-
-<div class="card">
-    <h3>@(_editingId is null ? "Nueva regla" : "Editar regla")</h3>
-    @if (_error is not null)
-    {
-        <div class="alert alert-error">@_error</div>
-    }
-    <div class="form-group">
-        <label>Titulo</label>
-        <input type="text" @bind="_title" placeholder="Idioma de salida" />
+<div class="apikeys-page-header">
+    <div>
+        <h2>Reglas obligatorias</h2>
+        <p class="text-muted" style="font-size:0.85rem; margin:0;">
+            Cada regla activa se inyecta automaticamente en el system prompt de TODAS las llamadas a IA del pipeline
+            (texto, imagen, coordinador, orquestador, diseno). Usalas para imponer formato, idioma, restricciones de marca, etc.
+        </p>
     </div>
-    <div class="form-group">
-        <label>Contenido (instruccion enviada al modelo)</label>
-        <textarea rows="5" @bind="_content" placeholder="Toda salida debe estar en espanol..."></textarea>
-    </div>
-    <div class="form-row">
-        <div class="form-group">
-            <label>Orden</label>
-            <input type="number" @bind="_sortOrder" style="width:6rem;" />
-        </div>
-        <div class="form-group" style="display:flex; align-items:end;">
-            <label style="display:flex; gap:.5rem; align-items:center;">
-                <input type="checkbox" @bind="_isActive" />
-                <span>Activa</span>
-            </label>
-        </div>
-    </div>
-    <div style="display:flex; gap:.5rem;">
-        <button class="btn btn-primary" @onclick="Save" disabled="@_loading">
-            @(_editingId is null ? "Crear" : "Guardar")
-        </button>
-        @if (_editingId is not null)
-        {
-            <button class="btn btn-sm" @onclick="CancelEdit">Cancelar</button>
-        }
-    </div>
+    <button class="btn btn-primary" @onclick="OpenCreate" style="flex-shrink:0;">+ Nueva Regla</button>
 </div>
 
 @if (_rules.Count > 0)
@@ -87,7 +54,55 @@
 }
 else if (!_loading)
 {
-    <p class="text-muted">No hay reglas configuradas.</p>
+    <div class="apikeys-empty">
+        <div class="apikeys-empty-icon">📋</div>
+        <div class="apikeys-empty-title">Sin reglas configuradas</div>
+        <div class="apikeys-empty-desc">Pulsa <strong>+ Nueva Regla</strong> para añadir tu primera regla de system prompt.</div>
+    </div>
+}
+
+@if (_showModal)
+{
+    <div class="modal-overlay" @onclick="CancelEdit">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width: 560px;">
+            <div class="modal-header">
+                <strong style="flex:1">@(_editingId is null ? "Nueva regla" : "Editar regla")</strong>
+                <button class="modal-close-btn" @onclick="CancelEdit" aria-label="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error" style="margin-bottom:0.8rem;">@_error</div>
+                }
+                <div class="form-group">
+                    <label>Titulo</label>
+                    <input type="text" @bind="_title" placeholder="Idioma de salida" />
+                </div>
+                <div class="form-group">
+                    <label>Contenido (instruccion enviada al modelo)</label>
+                    <textarea rows="5" @bind="_content" placeholder="Toda salida debe estar en espanol..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Orden</label>
+                        <input type="number" @bind="_sortOrder" style="width:6rem;" />
+                    </div>
+                    <div class="form-group" style="display:flex; align-items:end;">
+                        <label style="display:flex; gap:.5rem; align-items:center;">
+                            <input type="checkbox" @bind="_isActive" />
+                            <span>Activa</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm" @onclick="CancelEdit" disabled="@_loading">Cancelar</button>
+                <button class="btn btn-primary btn-sm" @onclick="Save" disabled="@_loading">
+                    @(_loading ? "Guardando..." : (_editingId is null ? "Crear" : "Guardar"))
+                </button>
+            </div>
+        </div>
+    </div>
 }
 
 @code {
@@ -95,6 +110,7 @@ else if (!_loading)
     private bool _loading;
     private string? _error;
 
+    private bool _showModal;
     private Guid? _editingId;
     private string _title = "";
     private string _content = "";
@@ -110,6 +126,13 @@ else if (!_loading)
         _loading = false;
     }
 
+    private void OpenCreate()
+    {
+        _editingId = null;
+        _title = ""; _content = ""; _isActive = true; _sortOrder = 0; _error = null;
+        _showModal = true;
+    }
+
     private void StartEdit(RuleResponse r)
     {
         _editingId = r.Id;
@@ -118,15 +141,15 @@ else if (!_loading)
         _isActive = r.IsActive;
         _sortOrder = r.SortOrder;
         _error = null;
+        _showModal = true;
     }
 
     private void CancelEdit()
     {
+        if (_loading) return;
+        _showModal = false;
         _editingId = null;
-        _title = "";
-        _content = "";
-        _isActive = true;
-        _sortOrder = 0;
+        _title = ""; _content = ""; _isActive = true; _sortOrder = 0;
         _error = null;
     }
 
