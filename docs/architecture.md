@@ -27,9 +27,9 @@ ASP.NET Core Minimal API (:5000)
   |-- Identity + CoreDbContext  (DB: pixelagents_core)
   |-- TenantDbContextFactory    (DB: una por usuario/cuenta)
   |-- GraphPipelineExecutor     (motor de ejecucion de grafos)
-  |-- IModuleHandler x17        (handlers por tipo de modulo)
-  |-- IAiProvider x6            (OpenAI, Anthropic, Google, xAI,
-  |                               LeonardoAI, Pexels)
+  |-- IModuleHandler x15        (handlers por tipo de modulo)
+  |-- IAiProvider x5            (OpenAI, Anthropic, Google, xAI,
+  |                               LeonardoAI)
   |-- ExecutionHub (SignalR)
   |-- TelegramPollingService    (hosted service)
   |-- SchedulerBackgroundService (hosted service, cron via Cronos)
@@ -106,8 +106,6 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 | FileUpload    | FileUploadModuleHandler    | Pasa archivos adjuntos al modulo como salida               |
 | Text          | TextModuleHandler          | Genera texto con un proveedor LLM                          |
 | Image         | ImageModuleHandler         | Genera imagenes con un proveedor de imagen                 |
-| Video         | VideoModuleHandler         | Genera video con un proveedor de video                     |
-| VideoSearch   | VideoSearchModuleHandler   | Busca videos en proveedores externos (Pexels, etc.)        |
 | Audio         | AudioModuleHandler         | Genera audio (TTS) con un proveedor                        |
 | Transcription | TranscriptionModuleHandler | Transcribe audio a texto via proveedor                     |
 | Embeddings    | EmbeddingsModuleHandler    | Genera embeddings de texto via proveedor                   |
@@ -125,12 +123,11 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 
 | Proveedor   | ProviderType | Modulos que sirve                              |
 |-------------|--------------|------------------------------------------------|
-| OpenAI      | `OpenAI`     | Text, Image (DALL-E), Video                    |
+| OpenAI      | `OpenAI`     | Text, Image (DALL-E)                           |
 | Anthropic   | `Anthropic`  | Text (Claude)                                  |
-| Google      | `Google`     | Text (Gemini), Image, Video                    |
+| Google      | `Google`     | Text (Gemini), Image                           |
 | xAI         | `xAI`        | Text (Grok), Image                             |
 | LeonardoAI  | `LeonardoAI` | Image                                          |
-| Pexels      | `Pexels`     | VideoSearch                                    |
 
 ---
 

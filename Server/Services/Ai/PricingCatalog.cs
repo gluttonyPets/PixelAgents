@@ -78,19 +78,6 @@ namespace Server.Services.Ai
                 ["leonardo-flux-schnell"]  = 0.021m,
             };
 
-        // ── Video models: price per second ──
-        private static readonly Dictionary<string, decimal> VideoPerSecondPrices =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-                // Google Veo
-                ["veo-2"]               = 0.35m,
-                ["veo-3.1-generate-preview"] = 0.50m,
-
-                // OpenAI Sora ($0.10/s for 720p — approximate for higher res)
-                ["sora-2"]     = 0.10m,
-                ["sora-2-pro"] = 0.10m,
-            };
-
         // ── DALL-E 3 detailed pricing by quality+size ──
         private static readonly Dictionary<string, decimal> DallE3Detailed =
             new(StringComparer.OrdinalIgnoreCase)
@@ -223,28 +210,6 @@ namespace Server.Services.Ai
             var matchKey = ImageFixedPrices.Keys.FirstOrDefault(k =>
                 modelName.StartsWith(k, StringComparison.OrdinalIgnoreCase));
             return matchKey is not null ? ImageFixedPrices[matchKey] : 0m;
-        }
-
-        /// <summary>
-        /// Estimates cost for a video search (e.g. Pexels). Always free.
-        /// </summary>
-        public static decimal EstimateVideoSearchCost(string modelName) => 0m;
-
-        /// <summary>
-        /// Estimates cost for a video generation based on duration in seconds.
-        /// </summary>
-        public static decimal EstimateVideoCost(string modelName, int durationSeconds = 8)
-        {
-            decimal perSecond;
-            if (!VideoPerSecondPrices.TryGetValue(modelName, out perSecond))
-            {
-                var key = VideoPerSecondPrices.Keys.FirstOrDefault(k =>
-                    modelName.StartsWith(k, StringComparison.OrdinalIgnoreCase));
-                if (key is null) return 0m;
-                perSecond = VideoPerSecondPrices[key];
-            }
-
-            return perSecond * durationSeconds;
         }
     }
 }

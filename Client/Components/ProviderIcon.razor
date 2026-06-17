@@ -1,6 +1,6 @@
 @* Componente que muestra el logotipo oficial de cada proveedor de IA como SVG inline.
    Uso: <ProviderIcon Provider="OpenAI" Size="16" />
-   Proveedores soportados: OpenAI, Anthropic, Google, xAI, LeonardoAI, Pexels, System *@
+   Proveedores soportados: OpenAI, Anthropic, Google, xAI, LeonardoAI, System *@
 
 @switch (Provider)
 {
@@ -56,15 +56,6 @@
         </svg>
         break;
 
-    case "Pexels":
-        @* Logo de Pexels (P sobre fondo verde) *@
-        <svg class="provider-logo" width="@Size" height="@Size" viewBox="0 0 32 32" fill="none"
-             xmlns="http://www.w3.org/2000/svg" aria-label="Pexels">
-            <rect width="32" height="32" rx="6" fill="#05A081"/>
-            <path d="M12 8h5.5a4.5 4.5 0 0 1 0 9H15v7h-3V8zm3 6.5h2.5a1.5 1.5 0 0 0 0-3H15v3z" fill="white"/>
-        </svg>
-        break;
-
     case "Canva":
         @* Icono de Canva (C estilizada) *@
         <svg class="provider-logo" width="@Size" height="@Size" viewBox="0 0 32 32" fill="none"
@@ -91,7 +82,7 @@
 }
 
 @code {
-    /// <summary>Nombre del proveedor: OpenAI, Anthropic, Google, xAI, LeonardoAI, Pexels, Canva</summary>
+    /// <summary>Nombre del proveedor: OpenAI, Anthropic, Google, xAI, LeonardoAI, Canva</summary>
     [Parameter] public string Provider { get; set; } = "";
 
     /// <summary>Tamanio del icono en pixeles (ancho y alto). Por defecto 16.</summary>

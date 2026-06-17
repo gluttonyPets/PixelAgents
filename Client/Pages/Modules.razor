@@ -42,7 +42,6 @@
             <option value="xAI">xAI (Grok)</option>
             <option value="LeonardoAI">Leonardo AI</option>
             <option value="Canva">Canva</option>
-            <option value="Pexels">Pexels (Video gratuito)</option>
         </select>
     </div>
 
@@ -249,84 +248,6 @@
                     </div>
                 </div>
             }
-            else if (_moduleType == "Video" && _provider == "Google")
-            {
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Relacion de aspecto</label>
-                        <select @bind="_videoAspectRatio">
-                            <option value="16:9">16:9 (Paisaje)</option>
-                            <option value="9:16">9:16 (Retrato)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Duracion (segundos)</label>
-                        <select @bind="_videoDuration">
-                            @if (_model.Contains("veo-2"))
-                            {
-                                <option value="5">5s</option>
-                                <option value="6">6s</option>
-                                <option value="8">8s</option>
-                            }
-                            else
-                            {
-                                <option value="4">4s</option>
-                                <option value="6">6s</option>
-                                <option value="8">8s</option>
-                            }
-                        </select>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Resolucion</label>
-                        <select @bind="_videoResolution">
-                            <option value="720p">720p</option>
-                            @if (!_model.Contains("veo-2"))
-                            {
-                                <option value="1080p">1080p</option>
-                                <option value="4k">4K</option>
-                            }
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Generacion de personas</label>
-                        <select @bind="_videoPersonGeneration">
-                            <option value="allow_adult">Permitir adultos</option>
-                            <option value="allow_all">Permitir todos</option>
-                            <option value="dont_allow">No permitir</option>
-                        </select>
-                    </div>
-                </div>
-            }
-            else if (_moduleType == "Video" && _provider == "OpenAI")
-            {
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Resolucion</label>
-                        <select @bind="_soraSize">
-                            <option value="1280x720">1280x720 (Paisaje 720p)</option>
-                            <option value="720x1280">720x1280 (Retrato 720p)</option>
-                            @if (_model.Contains("pro"))
-                            {
-                                <option value="1920x1080">1920x1080 (Paisaje 1080p)</option>
-                                <option value="1080x1920">1080x1920 (Retrato 1080p)</option>
-                            }
-                            <option value="480x480">480x480 (Cuadrado)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Duracion (segundos)</label>
-                        <select @bind="_soraDuration">
-                            <option value="5">5s</option>
-                            <option value="8">8s</option>
-                            <option value="10">10s</option>
-                            <option value="16">16s</option>
-                            <option value="20">20s</option>
-                        </select>
-                    </div>
-                </div>
-            }
             else if (_moduleType == "Design" && _provider == "Canva")
             {
                 <div class="form-group">
@@ -360,64 +281,6 @@
                         </select>
                     </div>
                 }
-            }
-            else if (_moduleType == "VideoSearch" && _provider == "Pexels")
-            {
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Orientacion</label>
-                        <select @bind="_pexelsOrientation">
-                            <option value="landscape">Paisaje</option>
-                            <option value="portrait">Retrato</option>
-                            <option value="square">Cuadrado</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Tamano minimo</label>
-                        <select @bind="_pexelsSize">
-                            <option value="large">Grande (4K)</option>
-                            <option value="medium">Medio (Full HD)</option>
-                            <option value="small">Pequeno (HD)</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Calidad preferida</label>
-                        <select @bind="_pexelsQuality">
-                            <option value="hd">HD</option>
-                            <option value="sd">SD</option>
-                            <option value="uhd">UHD (4K)</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Idioma de busqueda</label>
-                        <select @bind="_pexelsLocale">
-                            <option value="es-ES">Espanol</option>
-                            <option value="en-US">Ingles</option>
-                            <option value="fr-FR">Frances</option>
-                            <option value="de-DE">Aleman</option>
-                            <option value="pt-BR">Portugues</option>
-                            <option value="it-IT">Italiano</option>
-                            <option value="ja-JP">Japones</option>
-                            <option value="zh-CN">Chino</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Duracion minima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
-                        <input type="number" min="0" @bind="_pexelsMinDuration" />
-                    </div>
-                    <div class="form-group">
-                        <label>Duracion maxima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
-                        <input type="number" min="0" @bind="_pexelsMaxDuration" />
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Resultados por pagina <span class="text-sm text-muted">(1-80)</span></label>
-                    <input type="number" min="1" max="80" @bind="_pexelsPerPage" />
-                </div>
             }
             else if (_moduleType == "StaticText")
             {
@@ -702,70 +565,6 @@
                                         </select>
                                     </div>
                                 }
-                                else if (m.ModuleType == "Video" && m.ProviderType == "Google")
-                                {
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Relacion de aspecto</label>
-                                            <select @bind="_editVideoAspectRatio">
-                                                <option value="16:9">16:9 (Paisaje)</option>
-                                                <option value="9:16">9:16 (Retrato)</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Duracion (segundos)</label>
-                                            <select @bind="_editVideoDuration">
-                                                <option value="4">4s</option>
-                                                <option value="5">5s</option>
-                                                <option value="6">6s</option>
-                                                <option value="8">8s</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Resolucion</label>
-                                            <select @bind="_editVideoResolution">
-                                                <option value="720p">720p</option>
-                                                <option value="1080p">1080p</option>
-                                                <option value="4k">4K</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Generacion de personas</label>
-                                            <select @bind="_editVideoPersonGeneration">
-                                                <option value="allow_adult">Permitir adultos</option>
-                                                <option value="allow_all">Permitir todos</option>
-                                                <option value="dont_allow">No permitir</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                }
-                                else if (m.ModuleType == "Video" && m.ProviderType == "OpenAI")
-                                {
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Resolucion</label>
-                                            <select @bind="_editSoraSize">
-                                                <option value="1280x720">1280x720 (Paisaje 720p)</option>
-                                                <option value="720x1280">720x1280 (Retrato 720p)</option>
-                                                <option value="1920x1080">1920x1080 (Paisaje 1080p)</option>
-                                                <option value="1080x1920">1080x1920 (Retrato 1080p)</option>
-                                                <option value="480x480">480x480 (Cuadrado)</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Duracion (segundos)</label>
-                                            <select @bind="_editSoraDuration">
-                                                <option value="5">5s</option>
-                                                <option value="8">8s</option>
-                                                <option value="10">10s</option>
-                                                <option value="16">16s</option>
-                                                <option value="20">20s</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                }
                                 else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
                                 {
                                     <div class="form-row">
@@ -784,64 +583,6 @@
                                             <label>Velocidad <span class="text-sm text-muted">(0.25 - 4.0)</span></label>
                                             <input type="number" step="0.25" min="0.25" max="4.0" @bind="_editTtsSpeed" />
                                         </div>
-                                    </div>
-                                }
-                                else if (m.ModuleType == "VideoSearch" && m.ProviderType == "Pexels")
-                                {
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Orientacion</label>
-                                            <select @bind="_editPexelsOrientation">
-                                                <option value="landscape">Paisaje</option>
-                                                <option value="portrait">Retrato</option>
-                                                <option value="square">Cuadrado</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Tamano minimo</label>
-                                            <select @bind="_editPexelsSize">
-                                                <option value="large">Grande (4K)</option>
-                                                <option value="medium">Medio (Full HD)</option>
-                                                <option value="small">Pequeno (HD)</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Calidad preferida</label>
-                                            <select @bind="_editPexelsQuality">
-                                                <option value="hd">HD</option>
-                                                <option value="sd">SD</option>
-                                                <option value="uhd">UHD (4K)</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Idioma de busqueda</label>
-                                            <select @bind="_editPexelsLocale">
-                                                <option value="es-ES">Espanol</option>
-                                                <option value="en-US">Ingles</option>
-                                                <option value="fr-FR">Frances</option>
-                                                <option value="de-DE">Aleman</option>
-                                                <option value="pt-BR">Portugues</option>
-                                                <option value="it-IT">Italiano</option>
-                                                <option value="ja-JP">Japones</option>
-                                                <option value="zh-CN">Chino</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Duracion minima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
-                                            <input type="number" min="0" @bind="_editPexelsMinDuration" />
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Duracion maxima <span class="text-sm text-muted">(segundos, 0 = sin limite)</span></label>
-                                            <input type="number" min="0" @bind="_editPexelsMaxDuration" />
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Resultados por pagina <span class="text-sm text-muted">(1-80)</span></label>
-                                        <input type="number" min="1" max="80" @bind="_editPexelsPerPage" />
                                     </div>
                                 }
                                 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
@@ -894,7 +635,7 @@
                                 @* Los archivos viven en cada instancia ProjectModule del proyecto,
                                    no en el catalogo. Se gestionan desde el editor de cada proyecto. *@
 
-                                @if (m.ModuleType is "Text" or "Image" or "Audio" or "Video" or "Design" or "VideoSearch")
+                                @if (m.ModuleType is "Text" or "Image" or "Audio" or "Design")
                                 {
                                     <button class="btn btn-primary btn-sm" @onclick="() => SaveConfig(m)" disabled="@_editConfigSaving">
                                         @(_editConfigSaving ? "Guardando..." : "Guardar")
@@ -933,12 +674,10 @@ else
     [
         ("Text",        "Generacion de texto",   "T"),
         ("Image",       "Generacion de imagen",  "I"),
-        ("Video",       "Generacion de video",   "V"),
         ("Audio",       "Generacion de audio",   "A"),
         ("Interaction", "Interaccion",           "C"),
         ("Publish",     "Publicacion",           "P"),
         ("Design",      "Diseno",                "D"),
-        ("VideoSearch", "Busqueda de video",     "S"),
         ("FileUpload",  "Archivos",              "F"),
         ("StaticText",  "Texto plano",           "T"),
         ("Checkpoint",  "Checkpoint",            "C"),
@@ -971,7 +710,6 @@ else
         "Google"     => "badge-google",
         "LeonardoAI" => "badge-leonardo",
         "xAI"        => "badge-xai",
-        "Pexels"     => "badge-pexels",
         _            => "badge-info"
     };
 
@@ -1058,47 +796,9 @@ else
     private int _grokImageCount = 1;
     private int _editGrokImageCount = 1;
 
-    // ── Form: video (Google Veo) ──
-    private string _videoAspectRatio = "16:9";
-    private string _videoDuration = "8";
-    private string _videoResolution = "720p";
-    private string _videoPersonGeneration = "allow_adult";
-
-    // ── Edit: video config (Google Veo) ──
-    private string _editVideoAspectRatio = "16:9";
-    private string _editVideoDuration = "8";
-    private string _editVideoResolution = "720p";
-    private string _editVideoPersonGeneration = "allow_adult";
-
-    // ── Form: video (OpenAI Sora) ──
-    private string _soraSize = "1280x720";
-    private string _soraDuration = "8";
-
-    // ── Edit: video config (OpenAI Sora) ──
-    private string _editSoraSize = "1280x720";
-    private string _editSoraDuration = "8";
-
     // ── Form: audio TTS ──
     private string _ttsVoice = "alloy";
     private double _ttsSpeed = 1.0;
-
-    // ── Form: Pexels VideoSearch ──
-    private string _pexelsOrientation = "landscape";
-    private string _pexelsSize = "medium";
-    private string _pexelsQuality = "hd";
-    private string _pexelsLocale = "es-ES";
-    private int _pexelsMinDuration = 0;
-    private int _pexelsMaxDuration = 0;
-    private int _pexelsPerPage = 15;
-
-    // ── Edit: Pexels VideoSearch config ──
-    private string _editPexelsOrientation = "landscape";
-    private string _editPexelsSize = "medium";
-    private string _editPexelsQuality = "hd";
-    private string _editPexelsLocale = "es-ES";
-    private int _editPexelsMinDuration = 0;
-    private int _editPexelsMaxDuration = 0;
-    private int _editPexelsPerPage = 15;
 
     // ── Form: transcription ──
     private string _transcriptionLang = "";
@@ -1222,17 +922,6 @@ else
         new("gemini-3.1-flash-image-preview","Gemini 3.1 Flash Image Preview","Google", ["Image"], ["image-generation"], "Ultimo modelo de imagen. Optimizado para velocidad."),
         new("gemini-3-pro-image-preview",   "Gemini 3 Pro Image Preview",   "Google", ["Image"], ["image-generation"], "Modelo Pro. Alta calidad para produccion profesional."),
 
-        // ─── Google: Video Generation (Veo) ───
-        new("veo-3.1-generate-preview", "Veo 3.1 Preview",       "Google", ["Video"], ["video-generation"], "Ultimo modelo. Hasta 8s, 4K. Soporta imagen como entrada."),
-        new("veo-3.1-fast-generate-preview", "Veo 3.1 Fast Preview", "Google", ["Video"], ["video-generation"], "Veo 3.1 rapido. Menor latencia. Soporta imagen como entrada."),
-        new("veo-3.0-generate-001",     "Veo 3.0",               "Google", ["Video"], ["video-generation"], "Veo 3 estable. Hasta 8s, 1080p. Solo texto."),
-        new("veo-3.0-fast-generate-001", "Veo 3.0 Fast",         "Google", ["Video"], ["video-generation"], "Veo 3 rapido. Menor latencia. Solo texto."),
-        new("veo-2.0-generate-001",     "Veo 2.0",               "Google", ["Video"], ["video-generation"], "Veo 2. Hasta 8s, 720p. Solo texto."),
-
-        // ─── OpenAI: Video Generation (Sora 2) ───
-        new("sora-2",     "Sora 2",     "OpenAI", ["Video"], ["video-generation"], "Rapido y flexible. Ideal para iteracion y borradores. Hasta 20s, 720p."),
-        new("sora-2-pro", "Sora 2 Pro", "OpenAI", ["Video"], ["video-generation"], "Alta calidad cinematografica. Hasta 20s, 1080p. Soporta imagen como entrada."),
-
         // ─── Leonardo AI: Image Generation ───
         new("leonardo-phoenix",              "Leonardo Phoenix 1.0","LeonardoAI", ["Image"], ["image-generation"], "Modelo flagship de Leonardo. Alta calidad y versatilidad."),
         new("leonardo-phoenix-0.9",          "Leonardo Phoenix 0.9","LeonardoAI", ["Image"], ["image-generation"], "Version anterior de Phoenix, estable y probada."),
@@ -1242,9 +931,6 @@ else
         // ─── Canva: Design ───
         new("canva-design",    "Canva Design",    "Canva", ["Design"], ["design-creation","export"],           "Crea disenos en blanco y exporta en PNG, JPG, PDF o PPTX."),
         new("canva-autofill",  "Canva Autofill",  "Canva", ["Design"], ["design-creation","autofill","export"], "Autofill de brand templates con datos del pipeline."),
-
-        // ─── Pexels: Video Search (free) ───
-        new("pexels-video",    "Pexels Video Search", "Pexels", ["VideoSearch"], ["video-search","free"], "Busca videos de stock gratuitos en Pexels. Sin coste. Ideal para pipelines."),
 
     ];
 
@@ -1263,11 +949,9 @@ else
                 "Text"          => "Texto / Chat",
                 "Image"         => "Generacion de imagen",
                 "Embeddings"    => "Embeddings",
-                "Video"         => "Generacion de video",
                 "Audio"         => "Audio (TTS)",
                 "Transcription" => "Transcripcion (STT)",
                 "Design"        => "Diseno (Canva)",
-                "VideoSearch"   => "Busqueda de video (stock)",
                 "Orchestrator"  => "Orquestador de pipeline",
                 "Coordinator"   => "Coordinador (multi-entrada)",
                 "FileUpload"    => "Archivos",
@@ -1351,12 +1035,6 @@ else
         _geminiAspectRatio = "1:1";
         _geminiImageCount = 1;
         _grokImageCount = 1;
-        _videoAspectRatio = "16:9";
-        _videoDuration = "8";
-        _videoResolution = "720p";
-        _videoPersonGeneration = "allow_adult";
-        _soraSize = "1280x720";
-        _soraDuration = "8";
         _ttsVoice = "alloy";
         _ttsSpeed = 1.0;
         _transcriptionLang = "";
@@ -1365,13 +1043,6 @@ else
         _canvaExportFormat = "png";
         _canvaBrandTemplate = "";
         _canvaDesignType = "doc";
-        _pexelsOrientation = "landscape";
-        _pexelsSize = "medium";
-        _pexelsQuality = "hd";
-        _pexelsLocale = "es-ES";
-        _pexelsMinDuration = 0;
-        _pexelsMaxDuration = 0;
-        _pexelsPerPage = 15;
         _staticTextContent = "";
     }
 
@@ -1427,24 +1098,6 @@ else
             if (IsGptImage() && _imageCount != 1)
                 parts.Add($"\"n\":{_imageCount}");
         }
-        else if (_moduleType == "Video" && _provider == "Google")
-        {
-            if (_videoAspectRatio != "16:9")
-                parts.Add($"\"aspectRatio\":\"{_videoAspectRatio}\"");
-            if (_videoDuration != "8")
-                parts.Add($"\"duration\":\"{_videoDuration}\"");
-            if (_videoResolution != "720p")
-                parts.Add($"\"resolution\":\"{_videoResolution}\"");
-            if (_videoPersonGeneration != "allow_adult")
-                parts.Add($"\"personGeneration\":\"{_videoPersonGeneration}\"");
-        }
-        else if (_moduleType == "Video" && _provider == "OpenAI")
-        {
-            if (_soraSize != "1280x720")
-                parts.Add($"\"size\":\"{_soraSize}\"");
-            if (_soraDuration != "8")
-                parts.Add($"\"duration\":\"{_soraDuration}\"");
-        }
         else if (_moduleType == "StaticText")
         {
             if (!string.IsNullOrWhiteSpace(_staticTextContent))
@@ -1479,24 +1132,6 @@ else
             if (_canvaDesignType != "doc")
                 parts.Add($"\"designType\":\"{_canvaDesignType}\"");
         }
-        else if (_moduleType == "VideoSearch" && _provider == "Pexels")
-        {
-            if (_pexelsOrientation != "landscape")
-                parts.Add($"\"orientation\":\"{_pexelsOrientation}\"");
-            if (_pexelsSize != "medium")
-                parts.Add($"\"size\":\"{_pexelsSize}\"");
-            if (_pexelsQuality != "hd")
-                parts.Add($"\"preferredQuality\":\"{_pexelsQuality}\"");
-            if (_pexelsLocale != "es-ES")
-                parts.Add($"\"locale\":\"{_pexelsLocale}\"");
-            if (_pexelsMinDuration > 0)
-                parts.Add($"\"minDuration\":{_pexelsMinDuration}");
-            if (_pexelsMaxDuration > 0)
-                parts.Add($"\"maxDuration\":{_pexelsMaxDuration}");
-            if (_pexelsPerPage != 15)
-                parts.Add($"\"perPage\":{_pexelsPerPage}");
-        }
-
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
     }
 
@@ -1627,33 +1262,13 @@ else
                 if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
                 if (root.TryGetProperty("height", out var lh)) _editLeoHeight = lh.GetInt32();
                 if (root.TryGetProperty("presetStyle", out var lps)) _editLeoPresetStyle = lps.GetString() ?? "DYNAMIC";
-                if (root.TryGetProperty("aspectRatio", out var ar))
-                {
-                    _editGeminiAspectRatio = ar.GetString() ?? "1:1";
-                    _editVideoAspectRatio = ar.GetString() ?? "16:9";
-                }
+                if (root.TryGetProperty("aspectRatio", out var ar)) _editGeminiAspectRatio = ar.GetString() ?? "1:1";
                 if (root.TryGetProperty("numberOfImages", out var ni)) _editGeminiImageCount = ni.GetInt32();
                 if (root.TryGetProperty("n", out var grokN)) _editGrokImageCount = grokN.GetInt32();
-                if (root.TryGetProperty("duration", out var vdur))
-                {
-                    _editVideoDuration = vdur.GetString() ?? "8";
-                    _editSoraDuration = vdur.GetString() ?? "8";
-                }
-                if (root.TryGetProperty("resolution", out var vres)) _editVideoResolution = vres.GetString() ?? "720p";
-                if (root.TryGetProperty("personGeneration", out var vpg)) _editVideoPersonGeneration = vpg.GetString() ?? "allow_adult";
-                if (root.TryGetProperty("size", out var soraSize) && soraSize.GetString()?.Contains("x") == true)
-                    _editSoraSize = soraSize.GetString() ?? "1280x720";
                 if (root.TryGetProperty("accessToken", out var cat)) _editCanvaAccessToken = cat.GetString() ?? "";
                 if (root.TryGetProperty("exportFormat", out var cef)) _editCanvaExportFormat = cef.GetString() ?? "png";
                 if (root.TryGetProperty("brandTemplateId", out var cbt)) _editCanvaBrandTemplate = cbt.GetString() ?? "";
                 if (root.TryGetProperty("designType", out var cdt)) _editCanvaDesignType = cdt.GetString() ?? "doc";
-                if (root.TryGetProperty("orientation", out var por)) _editPexelsOrientation = por.GetString() ?? "landscape";
-                if (root.TryGetProperty("size", out var psz2) && psz2.GetString() is "large" or "medium" or "small") _editPexelsSize = psz2.GetString()!;
-                if (root.TryGetProperty("preferredQuality", out var ppq)) _editPexelsQuality = ppq.GetString() ?? "hd";
-                if (root.TryGetProperty("locale", out var ploc)) _editPexelsLocale = ploc.GetString() ?? "es-ES";
-                if (root.TryGetProperty("minDuration", out var pmd)) _editPexelsMinDuration = pmd.GetInt32();
-                if (root.TryGetProperty("maxDuration", out var pmxd)) _editPexelsMaxDuration = pmxd.GetInt32();
-                if (root.TryGetProperty("perPage", out var ppp)) _editPexelsPerPage = ppp.GetInt32();
                 // StaticText
                 if (root.TryGetProperty("content", out var stContent)) _editStaticTextContent = stContent.GetString() ?? "";
             }
@@ -1794,24 +1409,6 @@ else
             if (_editImageQuality != "standard")
                 parts.Add($"\"quality\":\"{_editImageQuality}\"");
         }
-        else if (moduleType == "Video" && providerType == "Google")
-        {
-            if (_editVideoAspectRatio != "16:9")
-                parts.Add($"\"aspectRatio\":\"{_editVideoAspectRatio}\"");
-            if (_editVideoDuration != "8")
-                parts.Add($"\"duration\":\"{_editVideoDuration}\"");
-            if (_editVideoResolution != "720p")
-                parts.Add($"\"resolution\":\"{_editVideoResolution}\"");
-            if (_editVideoPersonGeneration != "allow_adult")
-                parts.Add($"\"personGeneration\":\"{_editVideoPersonGeneration}\"");
-        }
-        else if (moduleType == "Video" && providerType == "OpenAI")
-        {
-            if (_editSoraSize != "1280x720")
-                parts.Add($"\"size\":\"{_editSoraSize}\"");
-            if (_editSoraDuration != "8")
-                parts.Add($"\"duration\":\"{_editSoraDuration}\"");
-        }
         else if (moduleType == "Audio")
         {
             parts.Add($"\"voice\":\"{_editTtsVoice}\"");
@@ -1829,24 +1426,6 @@ else
             if (_editCanvaDesignType != "doc")
                 parts.Add($"\"designType\":\"{_editCanvaDesignType}\"");
         }
-        else if (moduleType == "VideoSearch" && providerType == "Pexels")
-        {
-            if (_editPexelsOrientation != "landscape")
-                parts.Add($"\"orientation\":\"{_editPexelsOrientation}\"");
-            if (_editPexelsSize != "medium")
-                parts.Add($"\"size\":\"{_editPexelsSize}\"");
-            if (_editPexelsQuality != "hd")
-                parts.Add($"\"preferredQuality\":\"{_editPexelsQuality}\"");
-            if (_editPexelsLocale != "es-ES")
-                parts.Add($"\"locale\":\"{_editPexelsLocale}\"");
-            if (_editPexelsMinDuration > 0)
-                parts.Add($"\"minDuration\":{_editPexelsMinDuration}");
-            if (_editPexelsMaxDuration > 0)
-                parts.Add($"\"maxDuration\":{_editPexelsMaxDuration}");
-            if (_editPexelsPerPage != 15)
-                parts.Add($"\"perPage\":{_editPexelsPerPage}");
-        }
-
         if (moduleType == "StaticText")
         {
             if (!string.IsNullOrWhiteSpace(_editStaticTextContent))

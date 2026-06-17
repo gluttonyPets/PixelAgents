@@ -88,15 +88,6 @@ public static class PortDataResolver
                     SourcePortId = port.PortId,
                 },
 
-            "output_video" or "output_videos"
-                => new PortData
-                {
-                    DataType = "video",
-                    Files = output.Files,
-                    FullOutput = output,
-                    SourcePortId = port.PortId,
-                },
-
             "output_audio"
                 => new PortData
                 {

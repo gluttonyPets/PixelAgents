@@ -7,8 +7,6 @@ public static class PortDataType
 {
     public const string Text = "text";
     public const string Image = "image";
-    public const string Video = "video";
-    public const string VideoList = "video[]";
     public const string Audio = "audio";
     public const string File = "file";
     public const string Config = "config";
@@ -19,8 +17,6 @@ public static class PortDataType
     {
         Text => "#6c63ff",
         Image => "#4caf50",
-        Video => "#ff9800",
-        VideoList => "#ff9800",
         Audio => "#e91e63",
         File => "#888",
         Config => "#ffc107",
@@ -33,8 +29,6 @@ public static class PortDataType
     {
         Text => "Texto",
         Image => "Imagen",
-        Video => "Video",
-        VideoList => "Videos",
         Audio => "Audio",
         File => "Archivo",
         Config => "Config",
@@ -165,17 +159,6 @@ public static class ModulePortRegistry
                 }
                 break;
 
-            case "Video":
-                ports.Add(new("input_prompt", "Prompt", PortDataType.Text, isInput: true, isRequired: true));
-                ports.Add(new("input_image", "Imagen ref.", PortDataType.Image, isInput: true));
-                ports.Add(new("output_video", "Video", PortDataType.Video, isInput: false));
-                break;
-
-            case "VideoSearch":
-                ports.Add(new("input_query", "Busqueda", PortDataType.Text, isInput: true, isRequired: true));
-                ports.Add(new("output_videos", "Videos", PortDataType.VideoList, isInput: false));
-                break;
-
             case "Audio":
                 ports.Add(new("input_text", "Texto", PortDataType.Text, isInput: true, isRequired: true));
                 ports.Add(new("output_audio", "Audio", PortDataType.Audio, isInput: false));
@@ -276,8 +259,6 @@ public static class ModulePortRegistry
     {
         "Text" => "bi-chat-left-text",
         "Image" => "bi-image",
-        "Video" => "bi-camera-video",
-        "VideoSearch" => "bi-search",
         "Audio" => "bi-volume-up",
         "Transcription" => "bi-mic",
         "Orchestrator" => "bi-diagram-3",
@@ -297,8 +278,6 @@ public static class ModulePortRegistry
     {
         "Text" => "#6c63ff",
         "Image" => "#4caf50",
-        "Video" => "#ff9800",
-        "VideoSearch" => "#ff6f00",
         "Audio" => "#e91e63",
         "Transcription" => "#ad1457",
         "Orchestrator" => "#7c4dff",
@@ -344,8 +323,8 @@ public static class ActiveRulesRegistry
 {
     private static readonly HashSet<string> AiCallingModules = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Text", "Coordinator", "Orchestrator", "Image", "Video",
-        "VideoSearch", "Audio", "Transcription", "Design", "Embeddings",
+        "Text", "Coordinator", "Orchestrator", "Image",
+        "Audio", "Transcription", "Design", "Embeddings",
     };
 
     private static readonly HashSet<string> TextPathModules = new(StringComparer.OrdinalIgnoreCase)
