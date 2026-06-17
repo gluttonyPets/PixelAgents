@@ -300,33 +300,16 @@
                         </div>
                     }
 
-                    @if (sel.ModuleType == "Video")
+                    @if (sel.ModuleType == "Image")
                     {
                         <div class="inspector-section">
-                            <div class="inspector-section-title">Generacion de video</div>
+                            <div class="inspector-section-title">Salidas</div>
                             <div class="inspector-field">
-                                <label>Prompt del video <span style="color: var(--danger);">*</span></label>
-                                <textarea rows="3" placeholder="Describe lo que quieres que muestre el video..."
-                                          value="@GetModuleConfig(sel.Id, "videoPrompt", "")"
-                                          @onchange="@(e => SetModuleConfig(sel.Id, "videoPrompt", e.Value?.ToString() ?? ""))"></textarea>
-                            </div>
-                            <div class="inspector-field">
-                                <label>Fuente de video</label>
-                                <select value="@GetModuleConfig(sel.Id, "videoSource", "prompt")"
-                                        @onchange="@(e => SetModuleConfig(sel.Id, "videoSource", e.Value?.ToString() ?? "prompt"))">
-                                    <option value="prompt">Solo texto</option>
-                                    <option value="both">Imagen + prompt</option>
-                                </select>
-                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">
-                                    @if (GetModuleConfig(sel.Id, "videoSource", "prompt") == "both")
-                                    {
-                                        <text>Se usara la imagen del paso anterior como primer fotograma.</text>
-                                    }
-                                    else
-                                    {
-                                        <text>El video se generara unicamente a partir del prompt de texto.</text>
-                                    }
-                                </p>
+                                <label>Numero de imagenes</label>
+                                <input type="number" min="1" max="20"
+                                       value="@GetSceneCount(sel.Id)"
+                                       @onchange="@(e => OnImageCountChange(sel.Id, e))" />
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cada imagen tendra su propia salida. El resto de ajustes (instrucciones, prompt, tamaño...) estan en "Editar nodo".</p>
                             </div>
                         </div>
                     }
@@ -913,22 +896,6 @@
                         </div>
                     }
 
-                    @if (sel.ModuleType == "StaticText")
-                    {
-                        <div class="inspector-section">
-                            <div class="inspector-section-title">Contenido</div>
-                            <div class="inspector-field">
-                                <label>Texto</label>
-                                <textarea value="@GetModuleConfig(sel.Id, "content", "")"
-                                          rows="5"
-                                          placeholder="Escribe el texto plano..."
-                                          @onchange="@(e => SetModuleConfig(sel.Id, "content", e.Value?.ToString() ?? ""))"
-                                          style="width: 100%; font-size: 0.85rem;"></textarea>
-                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se emite como salida en cada ejecucion.</p>
-                            </div>
-                        </div>
-                    }
-
                     @if (sel.ModuleType == "FileUpload")
                     {
                         <div class="inspector-section">
@@ -969,6 +936,117 @@
                             @if (_fileUploadError is not null)
                             {
                                 <div class="alert alert-error" style="font-size: 0.75rem; margin-top: 0.2rem;">@_fileUploadError</div>
+                            }
+                        </div>
+                    }
+
+                    @if (sel.ModuleType == "Publish")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Configuracion de publicacion</div>
+
+                            <p class="text-sm text-muted" style="margin-bottom:0.5rem;">
+                                <i class="bi bi-info-circle"></i>
+                                La publicacion se realiza a traves de Buffer. Elige el canal de destino;
+                                las credenciales de Buffer (API Key y Channel ID) de cada red se configuran
+                                en los ajustes del proyecto.
+                            </p>
+
+                            <div class="inspector-field">
+                                <label>Red social (canal de Buffer)</label>
+                                <select value="@GetModuleConfig(sel.Id, "provider", "instagram")"
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "provider", e.Value?.ToString() ?? "instagram"))">
+                                    <option value="instagram">Instagram</option>
+                                    <option value="tiktok">TikTok</option>
+                                    <option value="pinterest">Pinterest</option>
+                                </select>
+                            </div>
+
+                            @if (GetModuleConfig(sel.Id, "provider", "instagram") != "tiktok")
+                            {
+                                <div class="inspector-field">
+                                    <label>Tipo de publicacion</label>
+                                    <select value="@GetModuleConfig(sel.Id, "publishType", "post")"
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "publishType", e.Value?.ToString() ?? "post"))">
+                                        <option value="post">Post</option>
+                                        <option value="reel">Reel</option>
+                                        <option value="story">Story</option>
+                                    </select>
+                                </div>
+                            }
+
+                            <div class="inspector-field">
+                                <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
+                                <textarea rows="3" placeholder="{previous_output}"
+                                          value="@GetModuleConfig(sel.Id, "caption", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "caption", e.Value?.ToString() ?? ""))"></textarea>
+                            </div>
+
+                            @if (GetModuleConfig(sel.Id, "provider", "instagram") == "tiktok")
+                            {
+                                <div class="inspector-field">
+                                    <label>Privacidad</label>
+                                    <select value="@GetModuleConfig(sel.Id, "privacyLevel", "PUBLIC_TO_EVERYONE")"
+                                            @onchange="@(e => SetModuleConfig(sel.Id, "privacyLevel", e.Value?.ToString() ?? "PUBLIC_TO_EVERYONE"))">
+                                        <option value="PUBLIC_TO_EVERYONE">Publico</option>
+                                        <option value="FOLLOWER_OF_CREATOR">Solo seguidores</option>
+                                        <option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option>
+                                        <option value="SELF_ONLY">Solo yo</option>
+                                    </select>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowComments", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowComments", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir comentarios</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowDuet", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowDuet", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir Duet</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "allowStitch", true)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "allowStitch", ((bool)(e.Value ?? true)).ToString().ToLower()))" />
+                                        <span>Permitir Stitch</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "brandedContent", false)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "brandedContent", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
+                                        <span>Contenido de marca</span>
+                                    </label>
+                                </div>
+                                <div class="inspector-field">
+                                    <label class="inspector-checkbox">
+                                        <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "brandPartnership", false)"
+                                               @onchange="@(e => SetModuleConfig(sel.Id, "brandPartnership", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
+                                        <span>Asociacion de marca</span>
+                                    </label>
+                                </div>
+                            }
+
+                            @if (GetModuleConfig(sel.Id, "provider", "instagram") == "pinterest")
+                            {
+                                <div class="inspector-field">
+                                    <label>Nombre del tablero <span class="text-sm text-muted">(opcional)</span></label>
+                                    <input type="text"
+                                           value="@GetModuleConfig(sel.Id, "boardName", "")"
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "boardName", e.Value?.ToString() ?? ""))"
+                                           placeholder="Ej: Mi tablero de recetas" />
+                                </div>
+                                <div class="inspector-field">
+                                    <label>Enlace destino <span class="text-sm text-muted">(opcional)</span></label>
+                                    <input type="url"
+                                           value="@GetModuleConfig(sel.Id, "link", "")"
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "link", e.Value?.ToString() ?? ""))"
+                                           placeholder="https://..." />
+                                </div>
                             }
                         </div>
                     }
