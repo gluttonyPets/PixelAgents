@@ -1,37 +1,9 @@
 @page "/apikeys"
 @inject ApiClient Api
 
-<h2>API Keys</h2>
-
-<div class="card">
-    <h3>Nueva API Key</h3>
-    @if (_error is not null)
-    {
-        <div class="alert alert-error">@_error</div>
-    }
-    <div class="form-row">
-        <div class="form-group">
-            <label>Nombre</label>
-            <input type="text" @bind="_name" placeholder="Mi clave OpenAI" />
-        </div>
-        <div class="form-group">
-            <label>Proveedor</label>
-            <select @bind="_provider">
-                <option value="OpenAI">OpenAI</option>
-                <option value="Anthropic">Anthropic</option>
-                <option value="Google">Google (Gemini)</option>
-                <option value="LeonardoAI">Leonardo AI</option>
-                <option value="xAI">xAI (Grok)</option>
-                <option value="Pexels">Pexels</option>
-                <option value="Json2Video">Json2Video</option>
-            </select>
-        </div>
-    </div>
-    <div class="form-group">
-        <label>API Key</label>
-        <input type="password" @bind="_key" placeholder="sk-..." />
-    </div>
-    <button class="btn btn-primary" @onclick="Create" disabled="@_loading">Crear</button>
+<div class="apikeys-page-header">
+    <h2>API Keys</h2>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ Nueva API Key</button>
 </div>
 
 @if (_loading)
@@ -166,7 +138,53 @@ else
     <div class="apikeys-empty">
         <div class="apikeys-empty-icon">🔑</div>
         <div class="apikeys-empty-title">Sin API Keys configuradas</div>
-        <div class="apikeys-empty-desc">Añade tu primera clave usando el formulario de arriba para conectar con los proveedores de IA.</div>
+        <div class="apikeys-empty-desc">Pulsa <strong>+ Nueva API Key</strong> para conectar con los proveedores de IA.</div>
+    </div>
+}
+
+@if (_showCreate)
+{
+    <div class="modal-overlay" @onclick="CancelCreate">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width: 520px;">
+            <div class="modal-header">
+                <strong style="flex:1">Nueva API Key</strong>
+                <button class="modal-close-btn" @onclick="CancelCreate" aria-label="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error" style="margin-bottom:0.8rem;">@_error</div>
+                }
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input type="text" @bind="_name" placeholder="Mi clave OpenAI" />
+                    </div>
+                    <div class="form-group">
+                        <label>Proveedor</label>
+                        <select @bind="_provider">
+                            <option value="OpenAI">OpenAI</option>
+                            <option value="Anthropic">Anthropic</option>
+                            <option value="Google">Google (Gemini)</option>
+                            <option value="LeonardoAI">Leonardo AI</option>
+                            <option value="xAI">xAI (Grok)</option>
+                            <option value="Pexels">Pexels</option>
+                            <option value="Json2Video">Json2Video</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>API Key</label>
+                    <input type="password" @bind="_key" placeholder="sk-..." autocomplete="new-password" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm" @onclick="CancelCreate" disabled="@_loading">Cancelar</button>
+                <button class="btn btn-primary btn-sm" @onclick="Create" disabled="@_loading">
+                    @(_loading ? "Creando..." : "Crear")
+                </button>
+            </div>
+        </div>
     </div>
 }
 
@@ -229,6 +247,7 @@ else
     private string? _error;
     private Guid? _confirmDeleteId;
 
+    private bool _showCreate;
     private string _name = "";
     private string _provider = "OpenAI";
     private string _key = "";
@@ -248,13 +267,26 @@ else
         _loading = false;
     }
 
+    private void OpenCreate()
+    {
+        _name = ""; _key = ""; _provider = "OpenAI"; _error = null;
+        _showCreate = true;
+    }
+
+    private void CancelCreate()
+    {
+        if (_loading) return;
+        _showCreate = false;
+        _error = null;
+    }
+
     private async Task Create()
     {
         _error = null; _loading = true;
         try
         {
             var (ok, error) = await Api.CreateApiKeyAsync(new CreateApiKeyRequest(_name, _provider, _key));
-            if (ok) { _name = ""; _key = ""; await Load(); }
+            if (ok) { _showCreate = false; _name = ""; _key = ""; await Load(); }
             else _error = error;
         }
         catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }

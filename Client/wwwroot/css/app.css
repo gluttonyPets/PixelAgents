@@ -3575,6 +3575,17 @@ a.link:hover { text-decoration: underline; }
 .badge-json2video { background: rgba(255, 112, 67, 0.15);  color: #ff7043; }
 
 /* ─── API Keys – Table & layout ──────────────────────────────── */
+.apikeys-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.2rem;
+}
+
+.apikeys-page-header h2 {
+    margin: 0;
+}
+
 .apikeys-header {
     display: flex;
     align-items: center;
