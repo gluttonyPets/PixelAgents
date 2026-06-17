@@ -8,21 +8,11 @@ namespace Server.Data
     {
         public CoreDbContext(DbContextOptions<CoreDbContext> options) : base(options) { }
         public DbSet<Account> Accounts => Set<Account>();
-        public DbSet<WhatsAppCorrelation> WhatsAppCorrelations => Set<WhatsAppCorrelation>();
         public DbSet<TelegramCorrelation> TelegramCorrelations => Set<TelegramCorrelation>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-
-            modelBuilder.Entity<WhatsAppCorrelation>(e =>
-            {
-                e.HasKey(x => x.Id);
-                e.Property(x => x.ProjectModuleId).IsRequired();
-                e.Property(x => x.TenantDbName).IsRequired().HasMaxLength(200);
-                e.Property(x => x.RecipientNumber).IsRequired().HasMaxLength(50);
-                e.HasIndex(x => new { x.RecipientNumber, x.IsResolved });
-            });
 
             modelBuilder.Entity<TelegramCorrelation>(e =>
             {

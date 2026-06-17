@@ -104,10 +104,6 @@ public record OrchestratorTaskProgressEntry(
     int Order, string Status, string? FileUrl, string? ContentType,
     string? ErrorMessage, DateTime Timestamp);
 
-// ── WhatsApp ──
-public record WhatsAppConfigDto(string PhoneNumberId, string AccessToken,
-    string RecipientNumber, string WebhookVerifyToken);
-
 // ── Telegram ──
 public record TelegramConfigDto(string BotToken, string ChatId);
 

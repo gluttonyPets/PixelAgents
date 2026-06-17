@@ -27,7 +27,6 @@ else
             <!-- Integration status pills -->
             <div class="integration-pills">
                 <span class="pill @(string.IsNullOrWhiteSpace(_tgBotToken) ? "pill-off" : "pill-on")" title="Telegram">TG</span>
-                <span class="pill @(string.IsNullOrWhiteSpace(_waAccessToken) ? "pill-off" : "pill-on")" title="WhatsApp">WA</span>
                 <span class="pill @(string.IsNullOrWhiteSpace(_igApiKey) ? "pill-off" : "pill-on")" title="Buffer">BF</span>
                 @if (_schedule is not null && _schedule.IsEnabled)
                 {
@@ -1039,48 +1038,6 @@ else
                             </button>
                         </div>
 
-                        <!-- WhatsApp -->
-                        <div class="settings-block">
-                            <div class="settings-block-header">
-                                <strong>WhatsApp</strong>
-                                @if (!string.IsNullOrWhiteSpace(_waAccessToken))
-                                {
-                                    <span class="badge badge-success">Configurado</span>
-                                }
-                            </div>
-                            @if (_waError is not null)
-                            {
-                                <div class="alert alert-error">@_waError</div>
-                            }
-                            @if (_waSuccess)
-                            {
-                                <div class="alert alert-success">Guardado correctamente</div>
-                            }
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Phone Number ID</label>
-                                    <input type="text" @bind="_waPhoneNumberId" placeholder="Ej: 123456789012345" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Numero destinatario</label>
-                                    <input type="text" @bind="_waRecipientNumber" placeholder="Ej: 34612345678" />
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label>Access Token</label>
-                                <input type="password" @bind="_waAccessToken" placeholder="EAABx..." />
-                            </div>
-                            <div class="form-group">
-                                <label>Webhook Verify Token</label>
-                                <input type="text" @bind="_waVerifyToken" placeholder="Token de verificacion para el webhook" />
-                            </div>
-                            <p class="text-sm text-muted">
-                                Webhook URL: <code>https://tu-servidor/api/webhooks/whatsapp</code>
-                            </p>
-                            <button class="btn btn-primary btn-sm" @onclick="SaveWhatsAppConfig" disabled="@_waSaving">
-                                @(_waSaving ? "Guardando..." : "Guardar")
-                            </button>
-                        </div>
                     }
 
                     <!-- SOCIAL TAB -->
@@ -1756,15 +1713,6 @@ else
     private string? _bufferDebugResponse;
     private int? _bufferDebugStatus;
 
-    // WhatsApp config
-    private string _waPhoneNumberId = "";
-    private string _waAccessToken = "";
-    private string _waRecipientNumber = "";
-    private string _waVerifyToken = "";
-    private string? _waError;
-    private bool _waSuccess;
-    private bool _waSaving;
-
     // Schedule
     private ScheduleResponse? _schedule;
     private string _schedPreset = "daily";
@@ -2073,16 +2021,6 @@ else
                 _schedUsePromptQueue = _schedule.UsePromptQueue;
                 // Try to detect preset from cron
                 DetectPresetFromCron(_schedule.CronExpression);
-            }
-
-            // Load WhatsApp config
-            var waConfig = await Api.GetWhatsAppConfigAsync(ProjectId);
-            if (waConfig is not null)
-            {
-                _waPhoneNumberId = waConfig.PhoneNumberId;
-                _waAccessToken = waConfig.AccessToken;
-                _waRecipientNumber = waConfig.RecipientNumber;
-                _waVerifyToken = waConfig.WebhookVerifyToken;
             }
 
             // Load connections from DB (positions are already on each module)
@@ -2464,27 +2402,6 @@ else
         }
         catch (Exception ex) { _schedError = ex.Message; }
         _schedSaving = false;
-    }
-
-    private async Task SaveWhatsAppConfig()
-    {
-        _waError = null;
-        _waSuccess = false;
-        _waSaving = true;
-        try
-        {
-            var dto = new WhatsAppConfigDto(_waPhoneNumberId, _waAccessToken, _waRecipientNumber, _waVerifyToken);
-            var (ok, error) = await Api.SaveWhatsAppConfigAsync(ProjectId, dto);
-            if (ok)
-            {
-                _waSuccess = true;
-                _modules = await Api.GetModulesAsync(); // Refresh to pick up sentinel module
-            }
-            else
-                _waError = error;
-        }
-        catch (Exception ex) { _waError = ex.Message; }
-        _waSaving = false;
     }
 
     private bool IsStepSkipped(ProjectModuleResponse pm)

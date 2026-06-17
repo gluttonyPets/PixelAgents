@@ -61,7 +61,6 @@ namespace Server.Data
                 e.Property(x => x.Name).IsRequired().HasMaxLength(200);
                 e.Property(x => x.Description).HasMaxLength(2000);
                 e.Property(x => x.Context).HasColumnType("text");
-                e.Property(x => x.WhatsAppConfig).HasColumnType("text");
                 e.Property(x => x.TelegramConfig).HasColumnType("text");
                 e.Property(x => x.InstagramConfig).HasColumnType("text");
                 e.Property(x => x.TikTokConfig).HasColumnType("text");

@@ -8,7 +8,6 @@ using Server.Models;
 using Server.Services.Ai.Handlers;
 using Server.Services.Instagram;
 using Server.Services.Telegram;
-using Server.Services.WhatsApp;
 
 namespace Server.Services.Ai;
 
@@ -23,7 +22,6 @@ public class GraphPipelineExecutor : IPipelineExecutor
     private readonly CoreDbContext _coreDb;
     private readonly ITenantDbContextFactory _tenantFactory;
     private readonly TelegramService _telegram;
-    private readonly WhatsAppService _whatsApp;
     private readonly BufferService _buffer;
     private readonly BufferImagePoolService _bufferPool;
     private readonly IConfiguration _configuration;
@@ -39,7 +37,6 @@ public class GraphPipelineExecutor : IPipelineExecutor
         CoreDbContext coreDb,
         ITenantDbContextFactory tenantFactory,
         TelegramService telegram,
-        WhatsAppService whatsApp,
         BufferService buffer,
         BufferImagePoolService bufferPool,
         IConfiguration configuration,
@@ -52,7 +49,6 @@ public class GraphPipelineExecutor : IPipelineExecutor
         _coreDb = coreDb;
         _tenantFactory = tenantFactory;
         _telegram = telegram;
-        _whatsApp = whatsApp;
         _buffer = buffer;
         _bufferPool = bufferPool;
         _configuration = configuration;
@@ -1666,24 +1662,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(project.WhatsAppConfig))
-            throw new InvalidOperationException("El proyecto no tiene configuracion de WhatsApp");
-
-        var waConfig = JsonSerializer.Deserialize<WhatsAppConfig>(project.WhatsAppConfig, JsonOptions)
-            ?? throw new InvalidOperationException("Configuracion de WhatsApp invalida");
-        await _whatsApp.SendTextMessageAsync(waConfig, message);
-
-        _coreDb.WhatsAppCorrelations.Add(new WhatsAppCorrelation
-        {
-            Id = Guid.NewGuid(),
-            ExecutionId = execution.Id,
-            ProjectModuleId = node.ModuleId,
-            TenantDbName = tenantDbName,
-            RecipientNumber = waConfig.RecipientNumber,
-            CreatedAt = DateTime.UtcNow,
-            IsResolved = false,
-        });
-        await _coreDb.SaveChangesAsync(ct);
+        throw new InvalidOperationException("Canal de interaccion WhatsApp no disponible");
     }
 
     private async Task<(ProjectExecution Execution, Project Project, ExecutionGraph Graph, string WorkspacePath,
