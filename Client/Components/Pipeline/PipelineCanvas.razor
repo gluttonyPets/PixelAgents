@@ -1004,8 +1004,15 @@
                         <div class="inspector-section">
                             <div class="inspector-section-title">Configuracion de publicacion</div>
 
+                            <p class="text-sm text-muted" style="margin-bottom:0.5rem;">
+                                <i class="bi bi-info-circle"></i>
+                                La publicacion se realiza a traves de Buffer. Elige el canal de destino;
+                                las credenciales de Buffer (API Key y Channel ID) de cada red se configuran
+                                en los ajustes del proyecto.
+                            </p>
+
                             <div class="inspector-field">
-                                <label>Red social</label>
+                                <label>Red social (canal de Buffer)</label>
                                 <select value="@GetModuleConfig(sel.Id, "provider", "instagram")"
                                         @onchange="@(e => SetModuleConfig(sel.Id, "provider", e.Value?.ToString() ?? "instagram"))">
                                     <option value="instagram">Instagram</option>
