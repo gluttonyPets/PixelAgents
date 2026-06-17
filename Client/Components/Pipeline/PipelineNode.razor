@@ -61,18 +61,6 @@
             </div>
         }
     </div>
-
-    <!-- Dynamic config for VideoEdit (scene count) -->
-    @if (Module.ModuleType == "VideoEdit")
-    {
-        <div class="node-config">
-            <div class="node-config-row">
-                <label>Escenas:</label>
-                <input type="number" min="1" max="10" value="@SceneCount"
-                       @onchange="OnSceneCountChange" />
-            </div>
-        </div>
-    }
 </div>
 
 @code {
@@ -87,7 +75,6 @@
     [Parameter] public EventCallback<(string moduleId, string portId, bool isInput, double clientX, double clientY)> OnPortDragStart { get; set; }
     [Parameter] public EventCallback OnSelectNode { get; set; }
     [Parameter] public EventCallback OnDelete { get; set; }
-    [Parameter] public EventCallback<int> OnSceneCountChanged { get; set; }
 
     private List<PortDefinition> InputPorts => ModulePortRegistry.GetPorts(Module.ModuleType, "", SceneCount, orchestratorOutputs: Module.OrchestratorOutputs, modelName: Module.ModelName)
         .Where(p => p.IsInput).ToList();
@@ -124,13 +111,5 @@
     private async Task OnDeleteClick()
     {
         await OnDelete.InvokeAsync();
-    }
-
-    private async Task OnSceneCountChange(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var count) && count >= 1 && count <= 10)
-        {
-            await OnSceneCountChanged.InvokeAsync(count);
-        }
     }
 }

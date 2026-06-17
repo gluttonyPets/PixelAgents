@@ -369,13 +369,6 @@ else
                                     </select>
                                 </div>
                             }
-                            @if (editPm.ModuleType == "VideoEdit")
-                            {
-                                <div class="form-group">
-                                    <label>Guion / texto de voz</label>
-                                    <textarea @bind="_videoPrompt" rows="3" placeholder="Guion / texto de voz (obligatorio)"></textarea>
-                                </div>
-                            }
                             @if (editPm.ModuleType == "Publish")
                             {
                                 <div class="form-group">
@@ -1601,9 +1594,6 @@ else
     private string _videoSource = "prompt";
     private string _videoPrompt = "";
 
-    // VideoEdit step
-    private string _j2vSubtitleLanguage = "es";
-
     // History expansion
     private Guid? _expandedExecId;
     private ExecutionDetailResponse? _expandedExecDetail;
@@ -2530,20 +2520,6 @@ else
                     videoPrompt = _videoPrompt.Trim()
                 });
             }
-            if (mod?.ModuleType == "VideoEdit")
-            {
-                if (string.IsNullOrWhiteSpace(_videoPrompt))
-                {
-                    _stepError = "El guion del video es obligatorio.";
-                    _loading = false;
-                    return;
-                }
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    videoPrompt = _videoPrompt.Trim(),
-                    subtitleLanguage = _j2vSubtitleLanguage
-                });
-            }
             var req = new AddProjectModuleRequest(moduleId, string.IsNullOrWhiteSpace(_stepName) ? null : _stepName, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
             if (ok)
@@ -2560,7 +2536,7 @@ else
                     }
                     _pendingOrchestratorOutputs.Clear();
                 }
-                _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = ""; _j2vSubtitleLanguage = "es";
+                _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc"; _videoSource = "prompt"; _videoPrompt = "";
                 await LoadAll();
             }
             else _stepError = error;
@@ -2578,7 +2554,6 @@ else
         // Reset all type-specific fields
         _imagePrompt = "";
         _videoPrompt = "";
-        _j2vSubtitleLanguage = "es";
         _videoSource = "prompt";
         _publishCaption = "";
         _publishType = "post";
@@ -2603,8 +2578,6 @@ else
                         _videoPrompt = vpEl.GetString() ?? "";
                     if (cfg.TryGetValue("videoSource", out var vsEl))
                         _videoSource = vsEl.GetString() ?? "prompt";
-                    if (cfg.TryGetValue("subtitleLanguage", out var slEl))
-                        _j2vSubtitleLanguage = slEl.GetString() ?? "es";
                     if (cfg.TryGetValue("caption", out var capEl))
                         _publishCaption = capEl.GetString() ?? "";
                     if (cfg.TryGetValue("publishType", out var ptEl))
@@ -2685,14 +2658,6 @@ else
                     designTitle = _canvaDesignTitle,
                     brandTemplateId = string.IsNullOrWhiteSpace(_canvaStepBrandTemplateId) ? (string?)null : _canvaStepBrandTemplateId,
                     designType = _canvaDesignType
-                });
-            }
-            else if (pm.ModuleType == "VideoEdit")
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    videoPrompt = _videoPrompt.Trim(),
-                    subtitleLanguage = _j2vSubtitleLanguage
                 });
             }
             else

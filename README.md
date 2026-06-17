@@ -129,8 +129,7 @@ Servicios registrados relevantes:
 
 - `IAccountService -> AccountService`.
 - `ITenantDbContextFactory -> TenantDbContextFactory`.
-- `IAiProvider` para OpenAI, Anthropic, Leonardo, Gemini, Pexels, Json2Video y
-  Grok.
+- `IAiProvider` para OpenAI, Anthropic, Leonardo, Gemini, Pexels y Grok.
 - `IAiProviderRegistry -> AiProviderRegistry`.
 - `IModuleHandler` para cada tipo de modulo soportado.
 - `IPipelineExecutor -> GraphPipelineExecutor`.
@@ -365,7 +364,6 @@ Handlers actuales:
 - `Text`: generacion de texto mediante proveedor IA.
 - `Image`: generacion o edicion de imagenes.
 - `Video`: generacion de video.
-- `VideoEdit`: composicion/render de video.
 - `VideoSearch`: busqueda de video en Pexels.
 - `Audio`: texto a voz.
 - `Transcription`: audio a texto.
@@ -407,7 +405,6 @@ Providers registrados:
 - `GrokProvider`.
 - `LeonardoProvider`.
 - `PexelsProvider`.
-- `Json2VideoProvider`.
 
 `IAiProviderRegistry` resuelve proveedores por `ProviderType` y expone la lista
 de proveedores disponibles.
@@ -603,11 +600,6 @@ en el workspace de la ejecucion.
 ### Pexels
 
 Proveedor de busqueda de video para modulos `VideoSearch`.
-
-### Json2Video
-
-Proveedor de video/render. Se usa especialmente desde `Video` o `VideoEdit`,
-incluyendo modos con escenas o variables de plantilla segun configuracion.
 
 ### Canva
 

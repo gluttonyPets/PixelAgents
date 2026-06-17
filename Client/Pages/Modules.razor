@@ -43,7 +43,6 @@
             <option value="LeonardoAI">Leonardo AI</option>
             <option value="Canva">Canva</option>
             <option value="Pexels">Pexels (Video gratuito)</option>
-            <option value="Json2Video">Json2Video (Edicion de video)</option>
         </select>
     </div>
 
@@ -130,7 +129,7 @@
             {
                 <div class="form-group">
                     <label>System Prompt @(_moduleType == "Orchestrator" ? "(se combina con instrucciones del orquestador)" : _moduleType == "Coordinator" ? "(instrucciones para coordinar las entradas)" : "")</label>
-                    <textarea @bind="_systemPrompt" rows="3" placeholder="@(_moduleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas (imagenes, textos). Genera un JSON array de recursos para Json2Video..." : _moduleType == "Orchestrator" ? "Ej: Prioriza videos de stock sobre generacion. Maximo 5 tareas por plan." : "Ej: Eres un asistente experto en...")"></textarea>
+                    <textarea @bind="_systemPrompt" rows="3" placeholder="@(_moduleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas (imagenes, textos). Genera un JSON array de recursos..." : _moduleType == "Orchestrator" ? "Ej: Prioriza videos de stock sobre generacion. Maximo 5 tareas por plan." : "Ej: Eres un asistente experto en...")"></textarea>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -418,173 +417,6 @@
                 <div class="form-group">
                     <label>Resultados por pagina <span class="text-sm text-muted">(1-80)</span></label>
                     <input type="number" min="1" max="80" @bind="_pexelsPerPage" />
-                </div>
-            }
-            else if (_moduleType == "VideoEdit" && _provider == "Json2Video")
-            {
-                <div class="form-group">
-                    <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
-                        <input type="checkbox" @bind="_j2vUseTemplate" /> Usar plantilla
-                    </label>
-                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">Activa el modo plantilla para enviar variables a un template de Json2Video.</p>
-                </div>
-
-                @if (_j2vUseTemplate)
-                {
-                    <div class="form-group" style="border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; background: var(--bg-secondary, rgba(255,255,255,0.03));">
-                        <label style="font-weight: 600; margin-bottom: 0.25rem;">Variables de plantilla</label>
-                        <p class="text-sm text-muted" style="margin-bottom: 0.5rem;">
-                            <i class="bi bi-exclamation-triangle" style="color: #ffc107;"></i>
-                            El nombre debe coincidir exactamente con la variable del template en Json2Video.
-                        </p>
-
-                        @if (_j2vTemplateVars.Count > 0)
-                        {
-                            @foreach (var tv in _j2vTemplateVars)
-                            {
-                                var capturedTv = tv;
-                                <div style="border: 1px solid var(--border); border-radius: 0.35rem; padding: 0.4rem 0.5rem; margin-bottom: 0.35rem;">
-                                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                        <span style="font-family: monospace; font-size: 0.85rem; flex: 1;">@tv.Name</span>
-                                        <span class="badge" style="background: @(tv.Type == "scene" ? "#ff7043" : tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
-                                            @(tv.Type == "scene" ? "Escena" : tv.Type == "file" ? "Archivo" : "Texto")
-                                        </span>
-                                        <button type="button" class="btn-icon" title="Eliminar"
-                                                @onclick="() => _j2vTemplateVars.Remove(capturedTv)"
-                                                style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
-                                            <i class="bi bi-trash"></i>
-                                        </button>
-                                    </div>
-                                    @if (tv.Type == "scene")
-                                    {
-                                        <div style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px dashed var(--border);">
-                                            <label style="font-size: 0.78rem; font-weight: 600;">Campos de cada escena:</label>
-                                            @if (tv.Fields is { Count: > 0 })
-                                            {
-                                                @foreach (var f in tv.Fields)
-                                                {
-                                                    var capturedField = f;
-                                                    <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.2rem; padding-left: 0.5rem;">
-                                                        <span style="font-family: monospace; font-size: 0.8rem; flex: 1;">@f.Name</span>
-                                                        <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
-                                                            @(f.Type == "file" ? "Archivo" : "Texto")
-                                                        </span>
-                                                        <button type="button" title="Eliminar campo"
-                                                                @onclick="() => capturedTv.Fields?.Remove(capturedField)"
-                                                                style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
-                                                            <i class="bi bi-x-lg"></i>
-                                                        </button>
-                                                    </div>
-                                                }
-                                            }
-                                            <div style="display: flex; align-items: flex-end; gap: 0.3rem; margin-top: 0.3rem; padding-left: 0.5rem;">
-                                                <input type="text" @bind="_j2vNewFieldName" placeholder="nombre del campo"
-                                                       style="flex: 2; font-size: 0.8rem; padding: 0.15rem 0.3rem;" />
-                                                <select @bind="_j2vNewFieldType" style="flex: 1; font-size: 0.8rem; padding: 0.15rem 0.3rem;">
-                                                    <option value="text">Texto</option>
-                                                    <option value="file">Archivo</option>
-                                                </select>
-                                                <button type="button" class="btn btn-sm"
-                                                        style="font-size: 0.75rem; padding: 0.15rem 0.4rem;"
-                                                        disabled="@string.IsNullOrWhiteSpace(_j2vNewFieldName)"
-                                                        @onclick="() => AddJ2vSceneField(capturedTv)">
-                                                    <i class="bi bi-plus"></i>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        }
-
-                        <div class="form-row" style="align-items: flex-end; gap: 0.5rem;">
-                            <div class="form-group" style="flex: 2;">
-                                <label>Nombre</label>
-                                <input type="text" @bind="_j2vNewVarName" placeholder="ej: titulo, slides..." />
-                            </div>
-                            <div class="form-group" style="flex: 1;">
-                                <label>Tipo</label>
-                                <select @bind="_j2vNewVarType">
-                                    <option value="text">Texto</option>
-                                    <option value="file">Archivo</option>
-                                    <option value="scene">Escena</option>
-                                </select>
-                            </div>
-                            <button type="button" class="btn btn-sm"
-                                    style="margin-bottom: 0.25rem; white-space: nowrap;"
-                                    disabled="@string.IsNullOrWhiteSpace(_j2vNewVarName)"
-                                    @onclick="AddJ2vTemplateVar">
-                                <i class="bi bi-plus-lg"></i> Anadir
-                            </button>
-                        </div>
-                    </div>
-                }
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Resolucion</label>
-                        <select @bind="_j2vResolution">
-                            <option value="full-hd">Full HD (1080p)</option>
-                            <option value="hd">HD (720p)</option>
-                            <option value="4k">4K</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Modelo de voz</label>
-                        <select @bind="_j2vVoiceModel">
-                            <option value="azure">Azure (gratis)</option>
-                            <option value="elevenlabs">ElevenLabs (premium)</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Nombre de voz <span class="text-sm text-muted">(ej: es-ES-AlvaroNeural, en-US-EmmaMultilingualNeural)</span></label>
-                    <input type="text" @bind="_j2vVoiceName" placeholder="es-ES-AlvaroNeural" />
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Idioma subtitulos</label>
-                        <select @bind="_j2vSubtitleLanguage">
-                            <option value="es">Espanol</option>
-                            <option value="en">Ingles</option>
-                            <option value="fr">Frances</option>
-                            <option value="de">Aleman</option>
-                            <option value="pt">Portugues</option>
-                            <option value="it">Italiano</option>
-                            <option value="ja">Japones</option>
-                            <option value="zh">Chino</option>
-                            <option value="auto">Auto-detectar</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Estilo subtitulos</label>
-                        <select @bind="_j2vSubtitleStyle">
-                            <option value="boxed">Con fondo</option>
-                            <option value="classic">Solo texto</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Tamano fuente <span class="text-sm text-muted">(90-150)</span></label>
-                        <input type="number" min="90" max="150" @bind="_j2vSubtitleFontSize" />
-                    </div>
-                    <div class="form-group">
-                        <label>Color palabra activa <span class="text-sm text-muted">(hex)</span></label>
-                        <input type="text" @bind="_j2vSubtitleWordColor" placeholder="#FFFF00" />
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label><input type="checkbox" @bind="_j2vEnableVoice" /> Habilitar voz (TTS)</label>
-                    </div>
-                    <div class="form-group">
-                        <label><input type="checkbox" @bind="_j2vEnableSubtitles" /> Habilitar subtitulos</label>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Duracion de escenas con imagen (seg)</label>
-                    <input type="number" min="1" max="30" step="0.5" @bind="_j2vImageDuration" />
                 </div>
             }
             else if (_moduleType == "StaticText")
@@ -1012,173 +844,6 @@
                                         <input type="number" min="1" max="80" @bind="_editPexelsPerPage" />
                                     </div>
                                 }
-                                else if (m.ModuleType == "VideoEdit" && m.ProviderType == "Json2Video")
-                                {
-                                    <div class="form-group">
-                                        <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
-                                            <input type="checkbox" @bind="_editJ2vUseTemplate" /> Usar plantilla
-                                        </label>
-                                        <p class="text-sm text-muted" style="margin-top: 0.15rem;">Activa el modo plantilla para enviar variables a un template de Json2Video.</p>
-                                    </div>
-
-                                    @if (_editJ2vUseTemplate)
-                                    {
-                                        <div class="form-group" style="border: 1px solid var(--border); border-radius: 0.5rem; padding: 0.75rem; background: var(--bg-secondary, rgba(255,255,255,0.03));">
-                                            <label style="font-weight: 600; margin-bottom: 0.25rem;">Variables de plantilla</label>
-                                            <p class="text-sm text-muted" style="margin-bottom: 0.5rem;">
-                                                <i class="bi bi-exclamation-triangle" style="color: #ffc107;"></i>
-                                                El nombre debe coincidir exactamente con la variable del template en Json2Video.
-                                            </p>
-
-                                            @if (_editJ2vTemplateVars.Count > 0)
-                                            {
-                                                @foreach (var tv in _editJ2vTemplateVars)
-                                                {
-                                                    var capturedTv = tv;
-                                                    <div style="border: 1px solid var(--border); border-radius: 0.35rem; padding: 0.4rem 0.5rem; margin-bottom: 0.35rem;">
-                                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                                            <span style="font-family: monospace; font-size: 0.85rem; flex: 1;">@tv.Name</span>
-                                                            <span class="badge" style="background: @(tv.Type == "scene" ? "#ff7043" : tv.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem;">
-                                                                @(tv.Type == "scene" ? "Escena" : tv.Type == "file" ? "Archivo" : "Texto")
-                                                            </span>
-                                                            <button type="button" class="btn-icon" title="Eliminar"
-                                                                    @onclick="() => _editJ2vTemplateVars.Remove(capturedTv)"
-                                                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.9rem;">
-                                                                <i class="bi bi-trash"></i>
-                                                            </button>
-                                                        </div>
-                                                        @if (tv.Type == "scene")
-                                                        {
-                                                            <div style="margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px dashed var(--border);">
-                                                                <label style="font-size: 0.78rem; font-weight: 600;">Campos de cada escena:</label>
-                                                                @if (tv.Fields is { Count: > 0 })
-                                                                {
-                                                                    @foreach (var f in tv.Fields)
-                                                                    {
-                                                                        var capturedField = f;
-                                                                        <div style="display: flex; align-items: center; gap: 0.4rem; margin-top: 0.2rem; padding-left: 0.5rem;">
-                                                                            <span style="font-family: monospace; font-size: 0.8rem; flex: 1;">@f.Name</span>
-                                                                            <span style="background: @(f.Type == "file" ? "#607d8b" : "#6c63ff"); color: #fff; padding: 0.05rem 0.3rem; border-radius: 0.2rem; font-size: 0.7rem;">
-                                                                                @(f.Type == "file" ? "Archivo" : "Texto")
-                                                                            </span>
-                                                                            <button type="button" title="Eliminar campo"
-                                                                                    @onclick="() => capturedTv.Fields?.Remove(capturedField)"
-                                                                                    style="color: #f44336; background: none; border: none; cursor: pointer; font-size: 0.8rem; padding: 0;">
-                                                                                <i class="bi bi-x-lg"></i>
-                                                                            </button>
-                                                                        </div>
-                                                                    }
-                                                                }
-                                                                <div style="display: flex; align-items: flex-end; gap: 0.3rem; margin-top: 0.3rem; padding-left: 0.5rem;">
-                                                                    <input type="text" @bind="_editJ2vNewFieldName" placeholder="nombre del campo"
-                                                                           style="flex: 2; font-size: 0.8rem; padding: 0.15rem 0.3rem;" />
-                                                                    <select @bind="_editJ2vNewFieldType" style="flex: 1; font-size: 0.8rem; padding: 0.15rem 0.3rem;">
-                                                                        <option value="text">Texto</option>
-                                                                        <option value="file">Archivo</option>
-                                                                    </select>
-                                                                    <button type="button" class="btn btn-sm"
-                                                                            style="font-size: 0.75rem; padding: 0.15rem 0.4rem;"
-                                                                            disabled="@string.IsNullOrWhiteSpace(_editJ2vNewFieldName)"
-                                                                            @onclick="() => AddEditJ2vSceneField(capturedTv)">
-                                                                        <i class="bi bi-plus"></i>
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        }
-                                                    </div>
-                                                }
-                                            }
-
-                                            <div class="form-row" style="align-items: flex-end; gap: 0.5rem;">
-                                                <div class="form-group" style="flex: 2;">
-                                                    <label>Nombre</label>
-                                                    <input type="text" @bind="_editJ2vNewVarName" placeholder="ej: titulo, slides..." />
-                                                </div>
-                                                <div class="form-group" style="flex: 1;">
-                                                    <label>Tipo</label>
-                                                    <select @bind="_editJ2vNewVarType">
-                                                        <option value="text">Texto</option>
-                                                        <option value="file">Archivo</option>
-                                                        <option value="scene">Escena</option>
-                                                    </select>
-                                                </div>
-                                                <button type="button" class="btn btn-sm"
-                                                        style="margin-bottom: 0.25rem; white-space: nowrap;"
-                                                        disabled="@string.IsNullOrWhiteSpace(_editJ2vNewVarName)"
-                                                        @onclick="AddEditJ2vTemplateVar">
-                                                    <i class="bi bi-plus-lg"></i> Anadir
-                                                </button>
-                                            </div>
-                                        </div>
-                                    }
-
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Resolucion</label>
-                                            <select @bind="_editJ2vResolution">
-                                                <option value="full-hd">Full HD (1080p)</option>
-                                                <option value="hd">HD (720p)</option>
-                                                <option value="4k">4K</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Modelo de voz</label>
-                                            <select @bind="_editJ2vVoiceModel">
-                                                <option value="azure">Azure (gratis)</option>
-                                                <option value="elevenlabs">ElevenLabs (premium)</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Nombre de voz <span class="text-sm text-muted">(ej: es-ES-AlvaroNeural)</span></label>
-                                        <input type="text" @bind="_editJ2vVoiceName" placeholder="es-ES-AlvaroNeural" />
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Idioma subtitulos</label>
-                                            <select @bind="_editJ2vSubtitleLanguage">
-                                                <option value="es">Espanol</option>
-                                                <option value="en">Ingles</option>
-                                                <option value="fr">Frances</option>
-                                                <option value="de">Aleman</option>
-                                                <option value="pt">Portugues</option>
-                                                <option value="it">Italiano</option>
-                                                <option value="ja">Japones</option>
-                                                <option value="zh">Chino</option>
-                                                <option value="auto">Auto-detectar</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Estilo subtitulos</label>
-                                            <select @bind="_editJ2vSubtitleStyle">
-                                                <option value="boxed">Con fondo</option>
-                                                <option value="classic">Solo texto</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Tamano fuente <span class="text-sm text-muted">(90-150)</span></label>
-                                            <input type="number" min="90" max="150" @bind="_editJ2vSubtitleFontSize" />
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Color palabra activa <span class="text-sm text-muted">(hex)</span></label>
-                                            <input type="text" @bind="_editJ2vSubtitleWordColor" placeholder="#FFFF00" />
-                                        </div>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label><input type="checkbox" @bind="_editJ2vEnableVoice" /> Habilitar voz (TTS)</label>
-                                        </div>
-                                        <div class="form-group">
-                                            <label><input type="checkbox" @bind="_editJ2vEnableSubtitles" /> Habilitar subtitulos</label>
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Duracion de escenas con imagen (seg)</label>
-                                        <input type="number" min="1" max="30" step="0.5" @bind="_editJ2vImageDuration" />
-                                    </div>
-                                }
                                 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
                                 {
                                     <div class="form-group">
@@ -1274,7 +939,6 @@ else
         ("Publish",     "Publicacion",           "P"),
         ("Design",      "Diseno",                "D"),
         ("VideoSearch", "Busqueda de video",     "S"),
-        ("VideoEdit",   "Edicion de video",      "E"),
         ("FileUpload",  "Archivos",              "F"),
         ("StaticText",  "Texto plano",           "T"),
         ("Checkpoint",  "Checkpoint",            "C"),
@@ -1308,7 +972,6 @@ else
         "LeonardoAI" => "badge-leonardo",
         "xAI"        => "badge-xai",
         "Pexels"     => "badge-pexels",
-        "Json2Video" => "badge-json2video",
         _            => "badge-info"
     };
 
@@ -1436,42 +1099,6 @@ else
     private int _editPexelsMinDuration = 0;
     private int _editPexelsMaxDuration = 0;
     private int _editPexelsPerPage = 15;
-
-    // ── Form: Json2Video VideoEdit ──
-    private string _j2vResolution = "full-hd";
-    private bool _j2vEnableVoice = true;
-    private bool _j2vEnableSubtitles = true;
-    private string _j2vVoiceModel = "azure";
-    private string _j2vVoiceName = "es-ES-AlvaroNeural";
-    private string _j2vSubtitleLanguage = "es";
-    private string _j2vSubtitleStyle = "boxed";
-    private int _j2vSubtitleFontSize = 120;
-    private string _j2vSubtitleWordColor = "#FFFF00";
-    private double _j2vImageDuration = 5.0;
-    private bool _j2vUseTemplate = false;
-    private List<TemplateVariable> _j2vTemplateVars = [];
-    private string _j2vNewVarName = "";
-    private string _j2vNewVarType = "text";
-    private string _j2vNewFieldName = "";
-    private string _j2vNewFieldType = "text";
-
-    // ── Edit: Json2Video VideoEdit config ──
-    private string _editJ2vResolution = "full-hd";
-    private bool _editJ2vEnableVoice = true;
-    private bool _editJ2vEnableSubtitles = true;
-    private string _editJ2vVoiceModel = "azure";
-    private string _editJ2vVoiceName = "es-ES-AlvaroNeural";
-    private string _editJ2vSubtitleLanguage = "es";
-    private string _editJ2vSubtitleStyle = "boxed";
-    private int _editJ2vSubtitleFontSize = 120;
-    private string _editJ2vSubtitleWordColor = "#FFFF00";
-    private double _editJ2vImageDuration = 5.0;
-    private bool _editJ2vUseTemplate = false;
-    private List<TemplateVariable> _editJ2vTemplateVars = [];
-    private string _editJ2vNewVarName = "";
-    private string _editJ2vNewVarType = "text";
-    private string _editJ2vNewFieldName = "";
-    private string _editJ2vNewFieldType = "text";
 
     // ── Form: transcription ──
     private string _transcriptionLang = "";
@@ -1619,9 +1246,6 @@ else
         // ─── Pexels: Video Search (free) ───
         new("pexels-video",    "Pexels Video Search", "Pexels", ["VideoSearch"], ["video-search","free"], "Busca videos de stock gratuitos en Pexels. Sin coste. Ideal para pipelines."),
 
-        // ─── Json2Video: Video Editing ───
-        new("json2video-v2",   "Json2Video Editor",   "Json2Video", ["VideoEdit"], ["video-editing","subtitles","tts","composition"], "Edicion automatica de video con subtitulos, voz TTS y composicion de escenas."),
-
     ];
 
     // ── Available types per provider ──
@@ -1644,7 +1268,6 @@ else
                 "Transcription" => "Transcripcion (STT)",
                 "Design"        => "Diseno (Canva)",
                 "VideoSearch"   => "Busqueda de video (stock)",
-                "VideoEdit"     => "Edicion de video (Json2Video)",
                 "Orchestrator"  => "Orquestador de pipeline",
                 "Coordinator"   => "Coordinador (multi-entrada)",
                 "FileUpload"    => "Archivos",
@@ -1713,50 +1336,6 @@ else
         _imageSize = sizes[0];
     }
 
-    private void AddJ2vTemplateVar()
-    {
-        var name = _j2vNewVarName?.Trim();
-        if (!string.IsNullOrWhiteSpace(name) && !_j2vTemplateVars.Any(v => v.Name == name))
-        {
-            var tv = new TemplateVariable { Name = name, Type = _j2vNewVarType };
-            if (_j2vNewVarType == "scene") tv.Fields = new List<SceneField>();
-            _j2vTemplateVars.Add(tv);
-            _j2vNewVarName = "";
-        }
-    }
-
-    private void AddEditJ2vTemplateVar()
-    {
-        var name = _editJ2vNewVarName?.Trim();
-        if (!string.IsNullOrWhiteSpace(name) && !_editJ2vTemplateVars.Any(v => v.Name == name))
-        {
-            var tv = new TemplateVariable { Name = name, Type = _editJ2vNewVarType };
-            if (_editJ2vNewVarType == "scene") tv.Fields = new List<SceneField>();
-            _editJ2vTemplateVars.Add(tv);
-            _editJ2vNewVarName = "";
-        }
-    }
-
-    private void AddJ2vSceneField(TemplateVariable tv)
-    {
-        var name = _j2vNewFieldName?.Trim();
-        if (string.IsNullOrWhiteSpace(name)) return;
-        tv.Fields ??= new List<SceneField>();
-        if (tv.Fields.Any(f => f.Name == name)) return;
-        tv.Fields.Add(new SceneField { Name = name, Type = _j2vNewFieldType });
-        _j2vNewFieldName = "";
-    }
-
-    private void AddEditJ2vSceneField(TemplateVariable tv)
-    {
-        var name = _editJ2vNewFieldName?.Trim();
-        if (string.IsNullOrWhiteSpace(name)) return;
-        tv.Fields ??= new List<SceneField>();
-        if (tv.Fields.Any(f => f.Name == name)) return;
-        tv.Fields.Add(new SceneField { Name = name, Type = _editJ2vNewFieldType });
-        _editJ2vNewFieldName = "";
-    }
-
     private void ResetConfig()
     {
         _systemPrompt = "";
@@ -1793,22 +1372,6 @@ else
         _pexelsMinDuration = 0;
         _pexelsMaxDuration = 0;
         _pexelsPerPage = 15;
-        _j2vResolution = "full-hd";
-        _j2vEnableVoice = true;
-        _j2vEnableSubtitles = true;
-        _j2vVoiceModel = "azure";
-        _j2vVoiceName = "es-ES-AlvaroNeural";
-        _j2vSubtitleLanguage = "es";
-        _j2vSubtitleStyle = "boxed";
-        _j2vSubtitleFontSize = 120;
-        _j2vSubtitleWordColor = "#FFFF00";
-        _j2vImageDuration = 5.0;
-        _j2vUseTemplate = false;
-        _j2vTemplateVars = [];
-        _j2vNewVarName = "";
-        _j2vNewVarType = "text";
-        _j2vNewFieldName = "";
-        _j2vNewFieldType = "text";
         _staticTextContent = "";
     }
 
@@ -1932,35 +1495,6 @@ else
                 parts.Add($"\"maxDuration\":{_pexelsMaxDuration}");
             if (_pexelsPerPage != 15)
                 parts.Add($"\"perPage\":{_pexelsPerPage}");
-        }
-        else if (_moduleType == "VideoEdit" && _provider == "Json2Video")
-        {
-            if (_j2vUseTemplate)
-            {
-                parts.Add("\"useTemplate\":true");
-                if (_j2vTemplateVars.Count > 0)
-                    parts.Add($"\"templateVars\":{System.Text.Json.JsonSerializer.Serialize(_j2vTemplateVars)}");
-            }
-            if (_j2vResolution != "full-hd")
-                parts.Add($"\"resolution\":\"{_j2vResolution}\"");
-            if (!_j2vEnableVoice)
-                parts.Add("\"enableVoice\":false");
-            if (!_j2vEnableSubtitles)
-                parts.Add("\"enableSubtitles\":false");
-            if (_j2vVoiceModel != "azure")
-                parts.Add($"\"voiceModel\":\"{_j2vVoiceModel}\"");
-            if (_j2vVoiceName != "es-ES-AlvaroNeural")
-                parts.Add($"\"voiceName\":\"{_j2vVoiceName}\"");
-            if (_j2vSubtitleLanguage != "es")
-                parts.Add($"\"subtitleLanguage\":\"{_j2vSubtitleLanguage}\"");
-            if (_j2vSubtitleStyle != "boxed")
-                parts.Add($"\"subtitleStyle\":\"{_j2vSubtitleStyle}\"");
-            if (_j2vSubtitleFontSize != 120)
-                parts.Add($"\"subtitleFontSize\":{_j2vSubtitleFontSize}");
-            if (_j2vSubtitleWordColor != "#FFFF00")
-                parts.Add($"\"subtitleWordColor\":\"{_j2vSubtitleWordColor}\"");
-            if (Math.Abs(_j2vImageDuration - 5.0) > 0.01)
-                parts.Add($"\"imageDuration\":{_j2vImageDuration.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
@@ -2120,22 +1654,6 @@ else
                 if (root.TryGetProperty("minDuration", out var pmd)) _editPexelsMinDuration = pmd.GetInt32();
                 if (root.TryGetProperty("maxDuration", out var pmxd)) _editPexelsMaxDuration = pmxd.GetInt32();
                 if (root.TryGetProperty("perPage", out var ppp)) _editPexelsPerPage = ppp.GetInt32();
-                // Json2Video VideoEdit
-                if (root.TryGetProperty("useTemplate", out var j2vUt)) _editJ2vUseTemplate = j2vUt.ValueKind == System.Text.Json.JsonValueKind.True;
-                if (root.TryGetProperty("templateVars", out var j2vTv) && j2vTv.ValueKind == System.Text.Json.JsonValueKind.Array)
-                {
-                    _editJ2vTemplateVars = System.Text.Json.JsonSerializer.Deserialize<List<TemplateVariable>>(j2vTv.GetRawText()) ?? [];
-                }
-                if (root.TryGetProperty("resolution", out var j2vRes) && j2vRes.GetString() is "full-hd" or "hd" or "4k") _editJ2vResolution = j2vRes.GetString()!;
-                if (root.TryGetProperty("enableVoice", out var j2vEv)) _editJ2vEnableVoice = j2vEv.ValueKind != System.Text.Json.JsonValueKind.False;
-                if (root.TryGetProperty("enableSubtitles", out var j2vEs)) _editJ2vEnableSubtitles = j2vEs.ValueKind != System.Text.Json.JsonValueKind.False;
-                if (root.TryGetProperty("voiceModel", out var j2vVm)) _editJ2vVoiceModel = j2vVm.GetString() ?? "azure";
-                if (root.TryGetProperty("voiceName", out var j2vVn)) _editJ2vVoiceName = j2vVn.GetString() ?? "es-ES-AlvaroNeural";
-                if (root.TryGetProperty("subtitleLanguage", out var j2vSl)) _editJ2vSubtitleLanguage = j2vSl.GetString() ?? "es";
-                if (root.TryGetProperty("subtitleStyle", out var j2vSs)) _editJ2vSubtitleStyle = j2vSs.GetString() ?? "boxed";
-                if (root.TryGetProperty("subtitleFontSize", out var j2vSf)) _editJ2vSubtitleFontSize = j2vSf.GetInt32();
-                if (root.TryGetProperty("subtitleWordColor", out var j2vSw)) _editJ2vSubtitleWordColor = j2vSw.GetString() ?? "#FFFF00";
-                if (root.TryGetProperty("imageDuration", out var j2vId)) _editJ2vImageDuration = j2vId.GetDouble();
                 // StaticText
                 if (root.TryGetProperty("content", out var stContent)) _editStaticTextContent = stContent.GetString() ?? "";
             }
@@ -2327,35 +1845,6 @@ else
                 parts.Add($"\"maxDuration\":{_editPexelsMaxDuration}");
             if (_editPexelsPerPage != 15)
                 parts.Add($"\"perPage\":{_editPexelsPerPage}");
-        }
-        else if (moduleType == "VideoEdit" && providerType == "Json2Video")
-        {
-            if (_editJ2vUseTemplate)
-            {
-                parts.Add("\"useTemplate\":true");
-                if (_editJ2vTemplateVars.Count > 0)
-                    parts.Add($"\"templateVars\":{System.Text.Json.JsonSerializer.Serialize(_editJ2vTemplateVars)}");
-            }
-            if (_editJ2vResolution != "full-hd")
-                parts.Add($"\"resolution\":\"{_editJ2vResolution}\"");
-            if (!_editJ2vEnableVoice)
-                parts.Add("\"enableVoice\":false");
-            if (!_editJ2vEnableSubtitles)
-                parts.Add("\"enableSubtitles\":false");
-            if (_editJ2vVoiceModel != "azure")
-                parts.Add($"\"voiceModel\":\"{_editJ2vVoiceModel}\"");
-            if (_editJ2vVoiceName != "es-ES-AlvaroNeural")
-                parts.Add($"\"voiceName\":\"{_editJ2vVoiceName}\"");
-            if (_editJ2vSubtitleLanguage != "es")
-                parts.Add($"\"subtitleLanguage\":\"{_editJ2vSubtitleLanguage}\"");
-            if (_editJ2vSubtitleStyle != "boxed")
-                parts.Add($"\"subtitleStyle\":\"{_editJ2vSubtitleStyle}\"");
-            if (_editJ2vSubtitleFontSize != 120)
-                parts.Add($"\"subtitleFontSize\":{_editJ2vSubtitleFontSize}");
-            if (_editJ2vSubtitleWordColor != "#FFFF00")
-                parts.Add($"\"subtitleWordColor\":\"{_editJ2vSubtitleWordColor}\"");
-            if (Math.Abs(_editJ2vImageDuration - 5.0) > 0.01)
-                parts.Add($"\"imageDuration\":{_editJ2vImageDuration.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         }
 
         if (moduleType == "StaticText")

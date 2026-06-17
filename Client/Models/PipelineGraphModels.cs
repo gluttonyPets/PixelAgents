@@ -70,7 +70,7 @@ public class PortDefinition
     }
 }
 
-// ── Template variable for Json2Video ──
+// ── Template/scene field variable (used by Scene module fields) ──
 public class TemplateVariable
 {
     [JsonPropertyName("name")]
@@ -114,7 +114,7 @@ public class PipelineNodeState
     [JsonPropertyName("y")]
     public double Y { get; set; }
 
-    /// <summary>Extra config like sceneCount for Json2Video</summary>
+    /// <summary>Extra config like sceneCount for multi-port modules</summary>
     [JsonPropertyName("nodeConfig")]
     public Dictionary<string, object>? NodeConfig { get; set; }
 }
@@ -174,38 +174,6 @@ public static class ModulePortRegistry
             case "VideoSearch":
                 ports.Add(new("input_query", "Busqueda", PortDataType.Text, isInput: true, isRequired: true));
                 ports.Add(new("output_videos", "Videos", PortDataType.VideoList, isInput: false));
-                break;
-
-            case "VideoEdit":
-                if (templateVars is { Count: > 0 })
-                {
-                    // Template mode: each variable becomes an input port
-                    foreach (var tv in templateVars)
-                    {
-                        if (tv.Type == "scene")
-                        {
-                            // Scene variables accept multiple Scene modules (one per slide)
-                            ports.Add(new($"input_tpl_{tv.Name}", tv.Name, PortDataType.Scene, isInput: true, isRequired: false, allowMultiple: true));
-                        }
-                        else
-                        {
-                            var dataType = tv.Type == "file" ? PortDataType.File : PortDataType.Text;
-                            ports.Add(new($"input_tpl_{tv.Name}", tv.Name, dataType, isInput: true, isRequired: false, allowMultiple: false));
-                        }
-                    }
-                }
-                else
-                {
-                    ports.Add(new("input_script", "Guion", PortDataType.Text, isInput: true));
-                    // Dynamic media inputs (one per scene) — accept video, image, or any file
-                    // AllowMultiple: each scene port can receive multiple files (e.g. image + text overlay)
-                    var scenes = Math.Max(sceneCount, 1);
-                    for (int i = 1; i <= scenes; i++)
-                    {
-                        ports.Add(new($"input_scene_{i}_media", $"Escena {i}", PortDataType.Any, isInput: true, isRequired: true, allowMultiple: true));
-                    }
-                }
-                ports.Add(new("output_video", "Video final", PortDataType.Video, isInput: false));
                 break;
 
             case "Audio":
@@ -310,7 +278,6 @@ public static class ModulePortRegistry
         "Image" => "bi-image",
         "Video" => "bi-camera-video",
         "VideoSearch" => "bi-search",
-        "VideoEdit" => "bi-scissors",
         "Audio" => "bi-volume-up",
         "Transcription" => "bi-mic",
         "Orchestrator" => "bi-diagram-3",
@@ -332,7 +299,6 @@ public static class ModulePortRegistry
         "Image" => "#4caf50",
         "Video" => "#ff9800",
         "VideoSearch" => "#ff6f00",
-        "VideoEdit" => "#e65100",
         "Audio" => "#e91e63",
         "Transcription" => "#ad1457",
         "Orchestrator" => "#7c4dff",
@@ -378,7 +344,7 @@ public static class ActiveRulesRegistry
 {
     private static readonly HashSet<string> AiCallingModules = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Text", "Coordinator", "Orchestrator", "Image", "Video", "VideoEdit",
+        "Text", "Coordinator", "Orchestrator", "Image", "Video",
         "VideoSearch", "Audio", "Transcription", "Design", "Embeddings",
     };
 

@@ -27,9 +27,9 @@ ASP.NET Core Minimal API (:5000)
   |-- Identity + CoreDbContext  (DB: pixelagents_core)
   |-- TenantDbContextFactory    (DB: una por usuario/cuenta)
   |-- GraphPipelineExecutor     (motor de ejecucion de grafos)
-  |-- IModuleHandler x18        (handlers por tipo de modulo)
-  |-- IAiProvider x7            (OpenAI, Anthropic, Google, xAI,
-  |                               LeonardoAI, Pexels, Json2Video)
+  |-- IModuleHandler x17        (handlers por tipo de modulo)
+  |-- IAiProvider x6            (OpenAI, Anthropic, Google, xAI,
+  |                               LeonardoAI, Pexels)
   |-- ExecutionHub (SignalR)
   |-- TelegramPollingService    (hosted service)
   |-- SchedulerBackgroundService (hosted service, cron via Cronos)
@@ -107,7 +107,6 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 | Text          | TextModuleHandler          | Genera texto con un proveedor LLM                          |
 | Image         | ImageModuleHandler         | Genera imagenes con un proveedor de imagen                 |
 | Video         | VideoModuleHandler         | Genera video con un proveedor de video                     |
-| VideoEdit     | VideoEditModuleHandler     | Edita video existente via proveedor                        |
 | VideoSearch   | VideoSearchModuleHandler   | Busca videos en proveedores externos (Pexels, etc.)        |
 | Audio         | AudioModuleHandler         | Genera audio (TTS) con un proveedor                        |
 | Transcription | TranscriptionModuleHandler | Transcribe audio a texto via proveedor                     |
@@ -132,7 +131,6 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 | xAI         | `xAI`        | Text (Grok), Image                             |
 | LeonardoAI  | `LeonardoAI` | Image                                          |
 | Pexels      | `Pexels`     | VideoSearch                                    |
-| Json2Video  | `Json2Video` | VideoEdit                                      |
 
 ---
 

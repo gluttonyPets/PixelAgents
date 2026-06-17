@@ -3383,22 +3383,6 @@ a.link:hover { text-decoration: underline; }
     letter-spacing: 0.03em;
 }
 
-/* VideoEdit color picker row */
-.ve-color-row {
-    display: flex;
-    gap: 0.4rem;
-    margin-bottom: 0.3rem;
-}
-.ve-color-row input[type="color"] {
-    width: 100%;
-    height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    padding: 1px 2px;
-    cursor: pointer;
-    background: var(--bg-card);
-}
-
 .inspector-field {
     margin-bottom: 0.5rem;
 }
@@ -3572,7 +3556,6 @@ a.link:hover { text-decoration: underline; }
 .badge-leonardo   { background: rgba(139, 92, 246, 0.15);  color: #a78bfa; }
 .badge-xai        { background: rgba(156, 163, 175, 0.15); color: #9ca3af; }
 .badge-pexels     { background: rgba(5, 160, 129, 0.15);   color: #05a081; }
-.badge-json2video { background: rgba(255, 112, 67, 0.15);  color: #ff7043; }
 
 /* ─── API Keys – Table & layout ──────────────────────────────── */
 .apikeys-page-header {
@@ -3730,7 +3713,6 @@ a.link:hover { text-decoration: underline; }
 .filter-pill.active.badge-leonardo   { background: rgba(139, 92, 246, 0.15);  border-color: #a78bfa; color: #a78bfa; }
 .filter-pill.active.badge-xai        { background: rgba(156, 163, 175, 0.15); border-color: #9ca3af; color: #9ca3af; }
 .filter-pill.active.badge-pexels     { background: rgba(5, 160, 129, 0.15);   border-color: #05a081; color: #05a081; }
-.filter-pill.active.badge-json2video { background: rgba(255, 112, 67, 0.15);  border-color: #ff7043; color: #ff7043; }
 
 .filter-count {
     font-size: 0.7rem;
