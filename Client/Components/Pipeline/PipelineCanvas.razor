@@ -64,6 +64,48 @@
                                 }
                             </div>
                         }
+
+                        @* Categoria especial: Publicacion (siempre visible, no viene del catalogo) *@
+                        <div class="module-category">
+                            <button class="module-category-header" @onclick="() => ToggleCategory("publish-cat")">
+                                <span class="module-category-icon"><i class="bi bi-send"></i></span>
+                                <span class="module-category-label">Publicacion</span>
+                                <span class="module-category-count">3</span>
+                                <span class="module-category-chevron @(_expandedCategories.Contains("publish-cat") ? "expanded" : "")">&#x25B6;</span>
+                            </button>
+                            @if (_expandedCategories.Contains("publish-cat"))
+                            {
+                                <div class="module-category-items">
+                                    <div class="palette-item" @onclick="() => OpenPublishModal("instagram")">
+                                        <div class="palette-item-icon" style="background: #e1306c;">
+                                            <i class="bi bi-instagram"></i>
+                                        </div>
+                                        <div class="palette-item-info">
+                                            <div class="palette-item-name">Publicar en Instagram</div>
+                                            <div class="palette-item-type">Buffer · Instagram</div>
+                                        </div>
+                                    </div>
+                                    <div class="palette-item" @onclick="() => OpenPublishModal("tiktok")">
+                                        <div class="palette-item-icon" style="background: #010101;">
+                                            <i class="bi bi-tiktok"></i>
+                                        </div>
+                                        <div class="palette-item-info">
+                                            <div class="palette-item-name">Publicar en TikTok</div>
+                                            <div class="palette-item-type">Buffer · TikTok</div>
+                                        </div>
+                                    </div>
+                                    <div class="palette-item" @onclick="() => OpenPublishModal("pinterest")">
+                                        <div class="palette-item-icon" style="background: #e60023;">
+                                            <i class="bi bi-pinterest"></i>
+                                        </div>
+                                        <div class="palette-item-info">
+                                            <div class="palette-item-name">Publicar en Pinterest</div>
+                                            <div class="palette-item-type">Buffer · Pinterest</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
                     }
                     else
                     {
@@ -97,6 +139,113 @@
             </div>
         }
     </div>
+
+    @* ── Modal de publicacion ── *@
+    @if (_showPublishModal)
+    {
+        <div class="modal-overlay" @onclick="ClosePublishModal">
+            <div class="modal-content" style="max-width:560px; width:95vw;" @onclick:stopPropagation="true">
+                <div class="modal-header">
+                    <h3 style="margin:0; font-size:1.05rem; flex:1;">
+                        @(_publishProvider switch {
+                            "tiktok"    => "Configurar publicacion en TikTok",
+                            "pinterest" => "Configurar publicacion en Pinterest",
+                            _           => "Configurar publicacion en Instagram"
+                        })
+                    </h3>
+                    <button class="btn-icon" @onclick="ClosePublishModal">&#x2715;</button>
+                </div>
+                <div class="modal-body">
+                    @if (_publishError is not null)
+                    {
+                        <div class="alert alert-error">@_publishError</div>
+                    }
+
+                    <div class="form-group">
+                        <label>Nombre del paso <span class="text-sm text-muted">(opcional)</span></label>
+                        <input type="text" @bind="_publishStepName" placeholder="Ej: Publicar resultado final" />
+                    </div>
+
+                    <fieldset class="config-fieldset">
+                        <legend>Configuracion del canal</legend>
+
+                        @if (_publishProvider != "tiktok")
+                        {
+                            <div class="form-group">
+                                <label>Tipo de publicacion</label>
+                                <select @bind="_publishType">
+                                    <option value="post">Post</option>
+                                    <option value="reel">Reel</option>
+                                    <option value="story">Story</option>
+                                </select>
+                            </div>
+                        }
+
+                        <div class="form-group">
+                            <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir la salida anterior)</span></label>
+                            <textarea @bind="_publishCaption" rows="3" placeholder="{previous_output}"></textarea>
+                        </div>
+
+                        @if (_publishProvider == "tiktok")
+                        {
+                            <div class="form-group">
+                                <label>Privacidad</label>
+                                <select @bind="_publishTikTokPrivacy">
+                                    <option value="PUBLIC_TO_EVERYONE">Publico</option>
+                                    <option value="FOLLOWER_OF_CREATOR">Solo seguidores</option>
+                                    <option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option>
+                                    <option value="SELF_ONLY">Solo yo</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+                                        <input type="checkbox" @bind="_publishTikTokComments" /> Permitir comentarios
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+                                        <input type="checkbox" @bind="_publishTikTokDuet" /> Permitir Duet
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+                                        <input type="checkbox" @bind="_publishTikTokStitch" /> Permitir Stitch
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;">
+                                        <input type="checkbox" @bind="_publishTikTokBranded" /> Contenido de marca
+                                    </label>
+                                </div>
+                            </div>
+                        }
+
+                        @if (_publishProvider == "pinterest")
+                        {
+                            <div class="form-group">
+                                <label>Nombre del tablero <span class="text-sm text-muted">(opcional)</span></label>
+                                <input type="text" @bind="_publishPinterestBoard" placeholder="Ej: Mi tablero de recetas" />
+                            </div>
+                            <div class="form-group">
+                                <label>Enlace destino <span class="text-sm text-muted">(opcional)</span></label>
+                                <input type="url" @bind="_publishPinterestLink" placeholder="https://..." />
+                            </div>
+                        }
+                    </fieldset>
+
+                    <div style="display:flex;gap:0.5rem;margin-top:1rem;">
+                        <button class="btn btn-primary" @onclick="ConfirmAddPublishModule" disabled="@_publishSaving">
+                            @(_publishSaving ? "Creando..." : "Agregar modulo")
+                        </button>
+                        <button class="btn" @onclick="ClosePublishModal">Cancelar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 
     <!-- ── Right: Execute + Inspector ── -->
     <div class="pipeline-inspector">
@@ -1437,13 +1586,29 @@
 
     // Module panel state
     private bool _showModulePanel;
-    private HashSet<string> _expandedCategories = new() { "ai" };
+    private HashSet<string> _expandedCategories = new() { "ai", "publish-cat" };
 
     // FileUpload inspector state
     private const long MaxUploadFileSize = 512L * 1024 * 1024;
     private List<ModuleFileResponse> _fileUploadFiles = [];
     private bool _fileUploadUploading;
     private string? _fileUploadError;
+
+    // ── Estado del modal de publicacion ──
+    private bool _showPublishModal;
+    private string _publishProvider = "instagram";
+    private string _publishStepName = "";
+    private string _publishCaption = "";
+    private string _publishType = "post";
+    private string _publishTikTokPrivacy = "PUBLIC_TO_EVERYONE";
+    private bool _publishTikTokComments = true;
+    private bool _publishTikTokDuet = true;
+    private bool _publishTikTokStitch = true;
+    private bool _publishTikTokBranded = false;
+    private string _publishPinterestBoard = "";
+    private string _publishPinterestLink = "";
+    private bool _publishSaving;
+    private string? _publishError;
 
     private record ModuleCategory(string Key, string Icon, string Label, string[] Types);
     private static readonly ModuleCategory[] _moduleCategories =
@@ -1452,7 +1617,7 @@
         new("media", "bi-brush", "Generacion", ["Image", "Video", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["VideoSearch", "Transcription", "Embeddings"]),
         new("resources", "bi-paperclip", "Recursos", ["FileUpload", "StaticText"]),
-        new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Scene", "Checkpoint", "Publish", "Coordinator"]),
+        new("control", "bi-sliders", "Control y Salida", ["VideoEdit", "Scene", "Checkpoint", "Coordinator"]),
     ];
 
     private void ToggleModulePanel() => _showModulePanel = !_showModulePanel;
@@ -1879,6 +2044,101 @@
         _showModulePanel = false;
         _searchFilter = "";
         await OnAddModule.InvokeAsync(module.Id);
+    }
+
+    // ── Publish modal ──
+
+    private void OpenPublishModal(string provider)
+    {
+        _publishProvider = provider;
+        _publishStepName = "";
+        _publishCaption = "";
+        _publishType = "post";
+        _publishTikTokPrivacy = "PUBLIC_TO_EVERYONE";
+        _publishTikTokComments = true;
+        _publishTikTokDuet = true;
+        _publishTikTokStitch = true;
+        _publishTikTokBranded = false;
+        _publishPinterestBoard = "";
+        _publishPinterestLink = "";
+        _publishError = null;
+        _showPublishModal = true;
+        _showModulePanel = false;
+        _searchFilter = "";
+    }
+
+    private void ClosePublishModal()
+    {
+        _showPublishModal = false;
+        _publishError = null;
+    }
+
+    private async Task ConfirmAddPublishModule()
+    {
+        _publishSaving = true;
+        _publishError = null;
+        try
+        {
+            var config = BuildPublishConfig();
+            var req = new CreateProjectPublishModuleRequest(
+                _publishProvider,
+                string.IsNullOrWhiteSpace(_publishStepName) ? null : _publishStepName.Trim(),
+                config);
+
+            var (ok, error) = await Api.CreateProjectPublishModuleAsync(ProjectId, req);
+            if (ok)
+            {
+                _showPublishModal = false;
+                _pendingAutoSelectModuleType = "Publish";
+                await OnModulesChanged.InvokeAsync();
+            }
+            else
+            {
+                _publishError = error ?? "Error al crear el modulo de publicacion.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _publishError = $"Error: {ex.Message}";
+        }
+        _publishSaving = false;
+    }
+
+    private string? BuildPublishConfig()
+    {
+        var parts = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(_publishCaption))
+            parts.Add($"\"caption\":{System.Text.Json.JsonSerializer.Serialize(_publishCaption)}");
+
+        if (_publishProvider == "tiktok")
+        {
+            if (_publishTikTokPrivacy != "PUBLIC_TO_EVERYONE")
+                parts.Add($"\"privacyLevel\":\"{_publishTikTokPrivacy}\"");
+            if (!_publishTikTokComments)
+                parts.Add("\"allowComments\":false");
+            if (!_publishTikTokDuet)
+                parts.Add("\"allowDuet\":false");
+            if (!_publishTikTokStitch)
+                parts.Add("\"allowStitch\":false");
+            if (_publishTikTokBranded)
+                parts.Add("\"brandedContent\":true");
+        }
+        else
+        {
+            if (_publishType != "post")
+                parts.Add($"\"publishType\":\"{_publishType}\"");
+        }
+
+        if (_publishProvider == "pinterest")
+        {
+            if (!string.IsNullOrWhiteSpace(_publishPinterestBoard))
+                parts.Add($"\"boardName\":{System.Text.Json.JsonSerializer.Serialize(_publishPinterestBoard)}");
+            if (!string.IsNullOrWhiteSpace(_publishPinterestLink))
+                parts.Add($"\"link\":{System.Text.Json.JsonSerializer.Serialize(_publishPinterestLink)}");
+        }
+
+        return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
     }
 
     private void DeselectNode()

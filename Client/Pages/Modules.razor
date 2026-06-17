@@ -1287,6 +1287,7 @@ else
         var groups = new List<ModuleGroup>();
         foreach (var (type, label, icon) in ModuleTypeOrder)
         {
+            if (type == "Publish") continue;
             var mods = _modules.Where(m => m.ModuleType == type).ToList();
             if (mods.Count > 0)
                 groups.Add(new ModuleGroup(type, label, icon, mods));
@@ -1631,6 +1632,7 @@ else
         var types = AllModels
             .Where(m => m.Provider == _provider)
             .SelectMany(m => m.Types)
+            .Where(t => t != "Publish")
             .Distinct()
             .Select(t => new TypeOption(t, t switch
             {
