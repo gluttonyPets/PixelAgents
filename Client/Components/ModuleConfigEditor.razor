@@ -477,6 +477,76 @@ else if (m.ModuleType == "StaticText")
         <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo.</p>
     </div>
 }
+else if (m.ModuleType == "Publish")
+{
+    <p class="text-sm text-muted" style="margin-bottom:0.5rem;">
+        <i class="bi bi-info-circle"></i>
+        La publicacion se realiza a traves de Buffer. Elige el canal de destino;
+        las credenciales de Buffer (API Key y Channel ID) de cada red se configuran
+        en los ajustes del proyecto.
+    </p>
+    <div class="form-group">
+        <label>Red social (canal de Buffer)</label>
+        <select @bind="_editPublishProvider">
+            <option value="instagram">Instagram</option>
+            <option value="tiktok">TikTok</option>
+            <option value="pinterest">Pinterest</option>
+        </select>
+    </div>
+    @if (_editPublishProvider != "tiktok")
+    {
+        <div class="form-group">
+            <label>Tipo de publicacion</label>
+            <select @bind="_editPublishType">
+                <option value="post">Post</option>
+                <option value="reel">Reel</option>
+                <option value="story">Story</option>
+            </select>
+        </div>
+    }
+    <div class="form-group">
+        <label>Caption <span class="text-sm text-muted">(usa {previous_output} para incluir salida anterior)</span></label>
+        <textarea @bind="_editPublishCaption" rows="3" placeholder="{previous_output}"></textarea>
+    </div>
+    @if (_editPublishProvider == "tiktok")
+    {
+        <div class="form-group">
+            <label>Privacidad</label>
+            <select @bind="_editPublishPrivacyLevel">
+                <option value="PUBLIC_TO_EVERYONE">Publico</option>
+                <option value="FOLLOWER_OF_CREATOR">Solo seguidores</option>
+                <option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option>
+                <option value="SELF_ONLY">Solo yo</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" @bind="_editPublishAllowComments" /> Permitir comentarios</label>
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" @bind="_editPublishAllowDuet" /> Permitir Duet</label>
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" @bind="_editPublishAllowStitch" /> Permitir Stitch</label>
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" @bind="_editPublishBrandedContent" /> Contenido de marca</label>
+        </div>
+        <div class="form-group">
+            <label><input type="checkbox" @bind="_editPublishBrandPartnership" /> Asociacion de marca</label>
+        </div>
+    }
+    @if (_editPublishProvider == "pinterest")
+    {
+        <div class="form-group">
+            <label>Nombre del tablero <span class="text-sm text-muted">(opcional)</span></label>
+            <input type="text" @bind="_editPublishBoardName" placeholder="Ej: Mi tablero de recetas" />
+        </div>
+        <div class="form-group">
+            <label>Enlace destino <span class="text-sm text-muted">(opcional)</span></label>
+            <input type="url" @bind="_editPublishLink" placeholder="https://..." />
+        </div>
+    }
+}
 else
 {
     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
@@ -536,6 +606,17 @@ else
     private string _editCanvaExportFormat = "png";
     private string _editCanvaBrandTemplate = "";
     private string _editCanvaDesignType = "doc";
+    private string _editPublishProvider = "instagram";
+    private string _editPublishType = "post";
+    private string _editPublishCaption = "";
+    private string _editPublishPrivacyLevel = "PUBLIC_TO_EVERYONE";
+    private bool _editPublishAllowComments = true;
+    private bool _editPublishAllowDuet = true;
+    private bool _editPublishAllowStitch = true;
+    private bool _editPublishBrandedContent = false;
+    private bool _editPublishBrandPartnership = false;
+    private string _editPublishBoardName = "";
+    private string _editPublishLink = "";
 
     protected override void OnParametersSet()
     {
@@ -602,6 +683,17 @@ else
         _editJ2vUseTemplate = false;
         _editJ2vTemplateVars = [];
         _editStaticTextContent = "";
+        _editPublishProvider = "instagram";
+        _editPublishType = "post";
+        _editPublishCaption = "";
+        _editPublishPrivacyLevel = "PUBLIC_TO_EVERYONE";
+        _editPublishAllowComments = true;
+        _editPublishAllowDuet = true;
+        _editPublishAllowStitch = true;
+        _editPublishBrandedContent = false;
+        _editPublishBrandPartnership = false;
+        _editPublishBoardName = "";
+        _editPublishLink = "";
 
         if (string.IsNullOrWhiteSpace(module.Configuration)) return;
 
@@ -663,6 +755,17 @@ else
             if (root.TryGetProperty("subtitleWordColor", out var j2vSw)) _editJ2vSubtitleWordColor = j2vSw.GetString() ?? "#FFFF00";
             if (root.TryGetProperty("imageDuration", out var j2vId)) _editJ2vImageDuration = j2vId.GetDouble();
             if (root.TryGetProperty("content", out var stContent)) _editStaticTextContent = stContent.GetString() ?? "";
+            if (root.TryGetProperty("provider", out var pubProv)) _editPublishProvider = pubProv.GetString() ?? "instagram";
+            if (root.TryGetProperty("publishType", out var pubType)) _editPublishType = pubType.GetString() ?? "post";
+            if (root.TryGetProperty("caption", out var pubCap)) _editPublishCaption = pubCap.GetString() ?? "";
+            if (root.TryGetProperty("privacyLevel", out var pubPriv)) _editPublishPrivacyLevel = pubPriv.GetString() ?? "PUBLIC_TO_EVERYONE";
+            if (root.TryGetProperty("allowComments", out var pubAc)) _editPublishAllowComments = pubAc.ValueKind != System.Text.Json.JsonValueKind.False;
+            if (root.TryGetProperty("allowDuet", out var pubAd)) _editPublishAllowDuet = pubAd.ValueKind != System.Text.Json.JsonValueKind.False;
+            if (root.TryGetProperty("allowStitch", out var pubAs)) _editPublishAllowStitch = pubAs.ValueKind != System.Text.Json.JsonValueKind.False;
+            if (root.TryGetProperty("brandedContent", out var pubBc)) _editPublishBrandedContent = pubBc.ValueKind == System.Text.Json.JsonValueKind.True;
+            if (root.TryGetProperty("brandPartnership", out var pubBp)) _editPublishBrandPartnership = pubBp.ValueKind == System.Text.Json.JsonValueKind.True;
+            if (root.TryGetProperty("boardName", out var pubBn)) _editPublishBoardName = pubBn.GetString() ?? "";
+            if (root.TryGetProperty("link", out var pubLink)) _editPublishLink = pubLink.GetString() ?? "";
         }
         catch { }
     }
@@ -808,6 +911,38 @@ else
                 parts.Add($"\"content\":{System.Text.Json.JsonSerializer.Serialize(_editStaticTextContent)}");
         }
 
+        if (moduleType == "Publish")
+        {
+            if (_editPublishProvider != "instagram")
+                parts.Add($"\"provider\":\"{_editPublishProvider}\"");
+            if (_editPublishProvider != "tiktok" && _editPublishType != "post")
+                parts.Add($"\"publishType\":\"{_editPublishType}\"");
+            if (!string.IsNullOrWhiteSpace(_editPublishCaption))
+                parts.Add($"\"caption\":{System.Text.Json.JsonSerializer.Serialize(_editPublishCaption)}");
+            if (_editPublishProvider == "tiktok")
+            {
+                if (_editPublishPrivacyLevel != "PUBLIC_TO_EVERYONE")
+                    parts.Add($"\"privacyLevel\":\"{_editPublishPrivacyLevel}\"");
+                if (!_editPublishAllowComments)
+                    parts.Add("\"allowComments\":false");
+                if (!_editPublishAllowDuet)
+                    parts.Add("\"allowDuet\":false");
+                if (!_editPublishAllowStitch)
+                    parts.Add("\"allowStitch\":false");
+                if (_editPublishBrandedContent)
+                    parts.Add("\"brandedContent\":true");
+                if (_editPublishBrandPartnership)
+                    parts.Add("\"brandPartnership\":true");
+            }
+            else if (_editPublishProvider == "pinterest")
+            {
+                if (!string.IsNullOrWhiteSpace(_editPublishBoardName))
+                    parts.Add($"\"boardName\":{System.Text.Json.JsonSerializer.Serialize(_editPublishBoardName)}");
+                if (!string.IsNullOrWhiteSpace(_editPublishLink))
+                    parts.Add($"\"link\":{System.Text.Json.JsonSerializer.Serialize(_editPublishLink)}");
+            }
+        }
+
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
     }
 
@@ -815,7 +950,7 @@ else
     public bool HasEditableConfig() =>
         Module is not null &&
         Module.ModuleType is "Text" or "Image" or "Audio" or "Video" or "Design"
-            or "VideoSearch" or "VideoEdit" or "Coordinator" or "StaticText";
+            or "VideoSearch" or "VideoEdit" or "Coordinator" or "StaticText" or "Publish";
 
     private static string[] GetImageSizesForModel(string model)
     {
