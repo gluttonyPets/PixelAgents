@@ -858,7 +858,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var projectId = ctx.Project.Id;
         var executionId = ctx.Execution.Id;
 
-        var publishPlatform = node.AiModule.ModelName.ToLowerInvariant() switch
+        var publishPlatform = ctx.GetConfig("provider", "instagram").ToLowerInvariant() switch
         {
             "tiktok" => "tiktok",
             "pinterest" => "pinterest",

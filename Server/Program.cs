@@ -587,7 +587,6 @@ app.MapGet("/api/modules", async (
 
     modules = modules
         .Where(m => !(m.ProviderType == "System" && m.ModuleType == "Scene"))
-        .Where(m => m.ModuleType != "Publish")
         .GroupBy(m => m.ProviderType == "System" && m.ModuleType is "FileUpload" or "StaticText"
             ? $"System:{m.ModuleType}"
             : m.Id.ToString())
@@ -1413,59 +1412,6 @@ app.MapPost("/api/projects/{projectId}/modules", async (
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
             module.ModuleType, addEffectiveModel, pm.StepName,
             pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
-}).RequireAuthorization();
-
-app.MapPost("/api/projects/{projectId}/modules/publish", async (
-    Guid projectId, CreateProjectPublishModuleRequest req, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(req.Provider))
-        return Results.BadRequest(new { error = "Proveedor requerido" });
-
-    // Create a project-scoped AiModule for this publish channel
-    var aiModule = new AiModule
-    {
-        Id = Guid.NewGuid(),
-        Name = req.Provider switch
-        {
-            "tiktok" => "Publicar en TikTok",
-            "pinterest" => "Publicar en Pinterest",
-            _ => "Publicar en Instagram"
-        },
-        Description = $"Modulo de publicacion para {req.Provider}",
-        ProviderType = "Publish",
-        ModuleType = "Publish",
-        ModelName = req.Provider,
-        IsEnabled = true,
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow
-    };
-    db.AiModules.Add(aiModule);
-
-    var pm = new ProjectModule
-    {
-        Id = Guid.NewGuid(),
-        ProjectId = projectId,
-        AiModuleId = aiModule.Id,
-        StepName = req.StepName,
-        Configuration = req.Configuration,
-        IsActive = true,
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow
-    };
-    db.ProjectModules.Add(pm);
-    await db.SaveChangesAsync();
-
-    var result = new ProjectModuleResponse(
-        pm.Id, aiModule.Id, aiModule.Name, aiModule.ModuleType, aiModule.ModelName,
-        pm.StepName, pm.Configuration, pm.IsActive, pm.PosX, pm.PosY, null);
-    return Results.Ok(result);
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/modules/{id}", async (

@@ -41,11 +41,7 @@ namespace Server.Models
 
     // ── ProjectModule ──
     public record AddProjectModuleRequest(Guid AiModuleId, string? StepName, string? Configuration);
-    public record CreateProjectPublishModuleRequest(
-        string Provider,
-        string? StepName,
-        string? Configuration);
-    public record UpdateProjectModuleRequest(string? StepName, string? Configuration, bool IsActive);
+public record UpdateProjectModuleRequest(string? StepName, string? Configuration, bool IsActive);
     // Reapunta una instancia de modulo (nodo del pipeline) a otro modulo de catalogo,
     // util tras duplicar un modulo compartido con cambios.
     public record ReassignProjectModuleRequest(Guid AiModuleId);

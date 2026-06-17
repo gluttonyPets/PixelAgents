@@ -29,6 +29,11 @@ public static class SystemModuleCatalog
             "Pausa la ejecucion para revisar los datos antes de continuar",
             "Checkpoint",
             "checkpoint"),
+        new(
+            "Publicar",
+            "Publica contenido en redes sociales (Instagram, TikTok, Pinterest)",
+            "Publish",
+            "publish"),
     ];
 
     public static bool TryGetDefinition(string? providerType, string? moduleType, out SystemModuleDefinition definition)

@@ -47,10 +47,6 @@ public record ProjectDetailResponse(
 
 // ── ProjectModule ──
 public record AddProjectModuleRequest(Guid AiModuleId, string? StepName, string? Configuration);
-public record CreateProjectPublishModuleRequest(
-    string Provider,
-    string? StepName,
-    string? Configuration);
 public record UpdateProjectModuleRequest(string? StepName, string? Configuration, bool IsActive);
 public record ProjectModuleResponse(
     Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
