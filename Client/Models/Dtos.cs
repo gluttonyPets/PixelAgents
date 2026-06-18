@@ -104,12 +104,28 @@ public record OrchestratorTaskProgressEntry(
     int Order, string Status, string? FileUrl, string? ContentType,
     string? ErrorMessage, DateTime Timestamp);
 
-// ── Telegram ──
-public record TelegramConfigDto(string BotToken, string ChatId);
-
-// ── Instagram (Buffer) / TikTok (Buffer) ──
-public record BufferConfigDto(string ApiKey, string ChannelId);
+// ── Buffer (canales disponibles para una cuenta) ──
 public record BufferChannelDto(string Id, string Name, string Service);
+
+// ── Conexiones de redes sociales (Buffer) reutilizables ──
+public record SocialConnectionResponse(Guid Id, string Name, string Platform,
+    string ChannelId, string? ChannelName, DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount);
+public record CreateSocialConnectionRequest(string Name, string Platform,
+    string ApiKey, string ChannelId, string? ChannelName);
+public record UpdateSocialConnectionRequest(string Name, string Platform,
+    string? ApiKey, string ChannelId, string? ChannelName);
+
+// ── Conexiones de mensajeria (Telegram) reutilizables ──
+public record MessagingConnectionResponse(Guid Id, string Name, string Provider,
+    string ChatId, DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount);
+public record CreateMessagingConnectionRequest(string Name, string Provider,
+    string BotToken, string ChatId);
+public record UpdateMessagingConnectionRequest(string Name, string Provider,
+    string? BotToken, string ChatId);
+
+// ── Asignacion de conexiones a un proyecto ──
+public record ProjectConnectionsDto(Guid? InstagramConnectionId, Guid? TikTokConnectionId,
+    Guid? PinterestConnectionId, Guid? TelegramConnectionId);
 
 // ── Module Files ──
 public record ModuleFileResponse(

@@ -79,9 +79,15 @@ namespace Server.Services.Telegram
             {
                 var exec = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
                 if (exec is null) return null;
-                var proj = await db.Projects.FindAsync(exec.ProjectId);
-                if (proj?.TelegramConfig is null) return null;
-                return JsonSerializer.Deserialize<TelegramConfig>(proj.TelegramConfig);
+                var proj = await db.Projects
+                    .Include(p => p.TelegramConnection)
+                    .FirstOrDefaultAsync(p => p.Id == exec.ProjectId);
+                if (proj?.TelegramConnection is null) return null;
+                return new TelegramConfig
+                {
+                    BotToken = proj.TelegramConnection.BotToken,
+                    ChatId = proj.TelegramConnection.ChatId,
+                };
             }
 
             try

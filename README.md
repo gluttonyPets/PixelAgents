@@ -538,13 +538,25 @@ proyectos habilitados.
 
 ### Integraciones De Mensajeria Y Publicacion
 
-Configuracion por proyecto:
+Las credenciales se definen una sola vez como **conexiones reutilizables** y
+luego cada proyecto solo asigna cual usar (no se reintroducen por proyecto):
 
-- WhatsApp: `/api/projects/{projectId}/whatsapp-config`.
-- Telegram: `/api/projects/{projectId}/telegram-config`.
-- Diagnostico Telegram: `/api/projects/{projectId}/telegram-webhook-info`.
-- Instagram via Buffer: `/api/projects/{projectId}/instagram-config`.
-- TikTok via Buffer: `/api/projects/{projectId}/tiktok-config`.
+- Redes sociales (Buffer): `GET|POST /api/social-connections`,
+  `PUT|DELETE /api/social-connections/{id}`. Cada conexion guarda token de Buffer
+  + canal para una plataforma (`instagram`, `tiktok` o `pinterest`).
+- Mensajeria (Telegram): `GET|POST /api/messaging-connections`,
+  `PUT|DELETE /api/messaging-connections/{id}`. Cada conexion guarda el bot token
+  + chat id.
+- Canales de Buffer disponibles para un token: `GET /api/buffer/channels?apiKey=...`.
+
+Asignacion por proyecto:
+
+- `GET|PUT /api/projects/{projectId}/connections`: asigna las conexiones de
+  Instagram, TikTok, Pinterest y Telegram que usa el proyecto (por Id).
+
+En la UI esto vive en las secciones **Redes sociales** (`/redes-sociales`) y
+**Mensajeria** (`/mensajeria`); dentro del proyecto, la pestana de configuracion
+solo muestra selectores de la conexion guardada.
 
 Webhooks:
 

@@ -1243,9 +1243,10 @@ app.MapPost("/api/projects/{id}/duplicate", async (
         Name = source.Name + " (copia)",
         Description = source.Description,
         Context = source.Context,
-        TelegramConfig = source.TelegramConfig,
-        InstagramConfig = source.InstagramConfig,
-        TikTokConfig = source.TikTokConfig,
+        InstagramConnectionId = source.InstagramConnectionId,
+        TikTokConnectionId = source.TikTokConnectionId,
+        PinterestConnectionId = source.PinterestConnectionId,
+        TelegramConnectionId = source.TelegramConnectionId,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
     };
@@ -2542,117 +2543,6 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}/exec
     return Results.Accepted(value: snapshot);
 }).RequireAuthorization();
 
-// ==================== Telegram Config Endpoints ====================
-
-app.MapGet("/api/projects/{projectId:guid}/telegram-config", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(project.TelegramConfig))
-        return Results.Ok(new TelegramConfigDto("", ""));
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<TelegramConfigDto>(project.TelegramConfig);
-    return Results.Ok(config);
-}).RequireAuthorization();
-
-app.MapPut("/api/projects/{projectId:guid}/telegram-config", async (
-    Guid projectId, TelegramConfigDto dto, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    Server.Services.Telegram.TelegramService telegram) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    project.TelegramConfig = System.Text.Json.JsonSerializer.Serialize(dto);
-    project.UpdatedAt = DateTime.UtcNow;
-
-    // Ensure the Telegram Interaction sentinel module exists
-    var hasTelegramInteraction = await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction" && m.ModelName == "telegram");
-    if (!hasTelegramInteraction)
-    {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "Telegram Interaction",
-            Description = "Pausa el pipeline y envia un mensaje a Telegram para obtener feedback del usuario.",
-            ProviderType = "System",
-            ModuleType = "Interaction",
-            ModelName = "telegram",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-    }
-
-    await db.SaveChangesAsync();
-
-    // Register webhook with Telegram
-    if (!string.IsNullOrWhiteSpace(dto.BotToken))
-    {
-        try
-        {
-            var baseUrl = builder.Configuration["Telegram:WebhookBaseUrl"]
-                ?? builder.Configuration["BaseUrl"]
-                ?? "";
-
-            if (string.IsNullOrWhiteSpace(baseUrl))
-            {
-                // No public URL → delete webhook so polling mode works
-                Console.WriteLine("[Telegram] No WebhookBaseUrl configured. Deleting webhook for polling mode.");
-                await telegram.DeleteWebhookAsync(dto.BotToken);
-                return Results.Ok(new { message = "Configuracion Telegram guardada. Modo polling activo (sin webhook).", mode = "polling" });
-            }
-
-            var webhookUrl = $"{baseUrl.TrimEnd('/')}/api/webhooks/telegram";
-            Console.WriteLine($"[Telegram] Registering webhook: {webhookUrl}");
-            await telegram.SetWebhookAsync(dto.BotToken, webhookUrl);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Warning: Could not set Telegram webhook: {ex.Message}");
-            return Results.Ok(new { message = "Configuracion guardada, pero no se pudo registrar el webhook de Telegram.", webhookError = ex.Message });
-        }
-    }
-
-    return Results.Ok(new { message = "Configuracion Telegram guardada y webhook registrado.", mode = "webhook" });
-}).RequireAuthorization();
-
-// Telegram webhook diagnostic endpoint
-app.MapGet("/api/projects/{projectId:guid}/telegram-webhook-info", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    Server.Services.Telegram.TelegramService telegram) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(project.TelegramConfig))
-        return Results.Ok(new { error = "No hay configuracion de Telegram" });
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<TelegramConfigDto>(project.TelegramConfig);
-    if (config is null || string.IsNullOrWhiteSpace(config.BotToken))
-        return Results.Ok(new { error = "BotToken vacio" });
-
-    try
-    {
-        var info = await telegram.GetWebhookInfoAsync(config.BotToken);
-        return Results.Ok(new { webhookInfo = info });
-    }
-    catch (Exception ex)
-    {
-        return Results.Ok(new { error = ex.Message });
-    }
-}).RequireAuthorization();
 
 // ==================== Buffer Channels Endpoint ====================
 
@@ -2678,9 +2568,255 @@ app.MapGet("/api/buffer/channels", async (
     }
 }).RequireAuthorization();
 
-// ==================== Instagram (Buffer) Config Endpoints ====================
+// ==================== Social Connections (Redes sociales) ====================
 
-app.MapGet("/api/projects/{projectId:guid}/instagram-config", async (
+var socialPlatforms = new[] { "instagram", "tiktok", "pinterest" };
+
+// Registra o elimina el webhook de Telegram para un bot token segun haya o no URL publica.
+async Task EnsureTelegramWebhookAsync(Server.Services.Telegram.TelegramService telegram, string botToken)
+{
+    if (string.IsNullOrWhiteSpace(botToken)) return;
+    var baseUrl = builder.Configuration["Telegram:WebhookBaseUrl"]
+        ?? builder.Configuration["BaseUrl"]
+        ?? "";
+    try
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            await telegram.DeleteWebhookAsync(botToken);
+        else
+            await telegram.SetWebhookAsync(botToken, $"{baseUrl.TrimEnd('/')}/api/webhooks/telegram");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Warning: Could not set Telegram webhook: {ex.Message}");
+    }
+}
+
+// Asegura que el modulo sentinel (catalogo) exista para una plataforma de publicacion.
+static async Task EnsurePublishSentinelAsync(UserDbContext db, string platform)
+{
+    var (name, desc) = platform switch
+    {
+        "tiktok" => ("TikTok Publish", "Publica contenido en TikTok (videos e imagenes) via Buffer."),
+        "pinterest" => ("Pinterest Publish", "Publica contenido en Pinterest (imagenes) via Buffer."),
+        _ => ("Buffer Publish", "Publica contenido en redes sociales (Instagram, etc.) via Buffer."),
+    };
+    if (await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == platform)) return;
+    db.AiModules.Add(new AiModule
+    {
+        Id = Guid.NewGuid(),
+        Name = name,
+        Description = desc,
+        ProviderType = "System",
+        ModuleType = "Publish",
+        ModelName = platform,
+        IsEnabled = true,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    });
+}
+
+app.MapGet("/api/social-connections", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conns = await db.SocialConnections.OrderByDescending(c => c.CreatedAt).ToListAsync();
+    var refs = await db.Projects
+        .Select(p => new { p.InstagramConnectionId, p.TikTokConnectionId, p.PinterestConnectionId })
+        .ToListAsync();
+
+    var result = conns.Select(c => new SocialConnectionResponse(
+        c.Id, c.Name, c.Platform, c.ChannelId, c.ChannelName, c.CreatedAt, c.UpdatedAt,
+        refs.Count(r => r.InstagramConnectionId == c.Id || r.TikTokConnectionId == c.Id || r.PinterestConnectionId == c.Id)));
+    return Results.Ok(result);
+}).RequireAuthorization();
+
+app.MapPost("/api/social-connections", async (
+    CreateSocialConnectionRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var platform = (req.Platform ?? "").Trim().ToLowerInvariant();
+    if (!socialPlatforms.Contains(platform))
+        return Results.BadRequest(new { error = "Plataforma invalida. Usa instagram, tiktok o pinterest." });
+    if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ApiKey) || string.IsNullOrWhiteSpace(req.ChannelId))
+        return Results.BadRequest(new { error = "Nombre, API Key y canal son obligatorios." });
+
+    var conn = new SocialConnection
+    {
+        Id = Guid.NewGuid(),
+        Name = req.Name.Trim(),
+        Platform = platform,
+        ApiKey = req.ApiKey.Trim(),
+        ChannelId = req.ChannelId.Trim(),
+        ChannelName = req.ChannelName,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+    db.SocialConnections.Add(conn);
+    await EnsurePublishSentinelAsync(db, platform);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/social-connections/{conn.Id}", new SocialConnectionResponse(
+        conn.Id, conn.Name, conn.Platform, conn.ChannelId, conn.ChannelName, conn.CreatedAt, conn.UpdatedAt, 0));
+}).RequireAuthorization();
+
+app.MapPut("/api/social-connections/{id:guid}", async (
+    Guid id, UpdateSocialConnectionRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conn = await db.SocialConnections.FindAsync(id);
+    if (conn is null) return Results.NotFound();
+
+    var platform = (req.Platform ?? "").Trim().ToLowerInvariant();
+    if (!socialPlatforms.Contains(platform))
+        return Results.BadRequest(new { error = "Plataforma invalida. Usa instagram, tiktok o pinterest." });
+    if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ChannelId))
+        return Results.BadRequest(new { error = "Nombre y canal son obligatorios." });
+
+    conn.Name = req.Name.Trim();
+    conn.Platform = platform;
+    conn.ChannelId = req.ChannelId.Trim();
+    conn.ChannelName = req.ChannelName;
+    if (!string.IsNullOrWhiteSpace(req.ApiKey))
+        conn.ApiKey = req.ApiKey.Trim();
+    conn.UpdatedAt = DateTime.UtcNow;
+
+    await EnsurePublishSentinelAsync(db, platform);
+    await db.SaveChangesAsync();
+    return Results.Ok(new { message = "Conexion actualizada" });
+}).RequireAuthorization();
+
+app.MapDelete("/api/social-connections/{id:guid}", async (
+    Guid id, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conn = await db.SocialConnections.FindAsync(id);
+    if (conn is null) return Results.NotFound();
+
+    db.SocialConnections.Remove(conn);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+// ==================== Messaging Connections (Mensajeria) ====================
+
+app.MapGet("/api/messaging-connections", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conns = await db.MessagingConnections.OrderByDescending(c => c.CreatedAt).ToListAsync();
+    var refs = await db.Projects.Select(p => p.TelegramConnectionId).ToListAsync();
+
+    var result = conns.Select(c => new MessagingConnectionResponse(
+        c.Id, c.Name, c.Provider, c.ChatId, c.CreatedAt, c.UpdatedAt,
+        refs.Count(r => r == c.Id)));
+    return Results.Ok(result);
+}).RequireAuthorization();
+
+app.MapPost("/api/messaging-connections", async (
+    CreateMessagingConnectionRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.Telegram.TelegramService telegram) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var provider = (req.Provider ?? "telegram").Trim().ToLowerInvariant();
+    if (provider != "telegram")
+        return Results.BadRequest(new { error = "Proveedor de mensajeria no soportado." });
+    if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.BotToken) || string.IsNullOrWhiteSpace(req.ChatId))
+        return Results.BadRequest(new { error = "Nombre, bot token y chat id son obligatorios." });
+
+    var conn = new MessagingConnection
+    {
+        Id = Guid.NewGuid(),
+        Name = req.Name.Trim(),
+        Provider = provider,
+        BotToken = req.BotToken.Trim(),
+        ChatId = req.ChatId.Trim(),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+    db.MessagingConnections.Add(conn);
+
+    // Ensure the Telegram Interaction sentinel module exists
+    if (!await db.AiModules.AnyAsync(m => m.ModuleType == "Interaction" && m.ModelName == "telegram"))
+    {
+        db.AiModules.Add(new AiModule
+        {
+            Id = Guid.NewGuid(),
+            Name = "Telegram Interaction",
+            Description = "Pausa el pipeline y envia un mensaje a Telegram para obtener feedback del usuario.",
+            ProviderType = "System",
+            ModuleType = "Interaction",
+            ModelName = "telegram",
+            IsEnabled = true,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+    }
+
+    await db.SaveChangesAsync();
+    await EnsureTelegramWebhookAsync(telegram, conn.BotToken);
+
+    return Results.Created($"/api/messaging-connections/{conn.Id}", new MessagingConnectionResponse(
+        conn.Id, conn.Name, conn.Provider, conn.ChatId, conn.CreatedAt, conn.UpdatedAt, 0));
+}).RequireAuthorization();
+
+app.MapPut("/api/messaging-connections/{id:guid}", async (
+    Guid id, UpdateMessagingConnectionRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.Telegram.TelegramService telegram) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conn = await db.MessagingConnections.FindAsync(id);
+    if (conn is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ChatId))
+        return Results.BadRequest(new { error = "Nombre y chat id son obligatorios." });
+
+    conn.Name = req.Name.Trim();
+    conn.ChatId = req.ChatId.Trim();
+    if (!string.IsNullOrWhiteSpace(req.BotToken))
+        conn.BotToken = req.BotToken.Trim();
+    conn.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    await EnsureTelegramWebhookAsync(telegram, conn.BotToken);
+    return Results.Ok(new { message = "Conexion actualizada" });
+}).RequireAuthorization();
+
+app.MapDelete("/api/messaging-connections/{id:guid}", async (
+    Guid id, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conn = await db.MessagingConnections.FindAsync(id);
+    if (conn is null) return Results.NotFound();
+
+    db.MessagingConnections.Remove(conn);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+// ==================== Project ↔ Connections assignment ====================
+
+app.MapGet("/api/projects/{projectId:guid}/connections", async (
     Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
@@ -2689,16 +2825,15 @@ app.MapGet("/api/projects/{projectId:guid}/instagram-config", async (
     var project = await db.Projects.FindAsync(projectId);
     if (project is null) return Results.NotFound();
 
-    if (string.IsNullOrWhiteSpace(project.InstagramConfig))
-        return Results.Ok(new BufferConfigDto("", ""));
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.InstagramConfig);
-    return Results.Ok(config);
+    return Results.Ok(new ProjectConnectionsDto(
+        project.InstagramConnectionId, project.TikTokConnectionId,
+        project.PinterestConnectionId, project.TelegramConnectionId));
 }).RequireAuthorization();
 
-app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
-    Guid projectId, BufferConfigDto dto, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+app.MapPut("/api/projects/{projectId:guid}/connections", async (
+    Guid projectId, ProjectConnectionsDto dto, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.Telegram.TelegramService telegram) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -2706,135 +2841,38 @@ app.MapPut("/api/projects/{projectId:guid}/instagram-config", async (
     var project = await db.Projects.FindAsync(projectId);
     if (project is null) return Results.NotFound();
 
-    project.InstagramConfig = System.Text.Json.JsonSerializer.Serialize(dto);
-    project.UpdatedAt = DateTime.UtcNow;
-
-    // Ensure the Buffer Publish sentinel module exists
-    var hasBufferPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "instagram");
-    if (!hasBufferPublish)
+    // Validate that each assigned connection exists and matches its slot.
+    async Task<bool> ValidSocialAsync(Guid? connId, string platform)
     {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "Buffer Publish",
-            Description = "Publica contenido en redes sociales (Instagram, Twitter, etc.) via Buffer.",
-            ProviderType = "System",
-            ModuleType = "Publish",
-            ModelName = "instagram",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
+        if (connId is null) return true;
+        var c = await db.SocialConnections.FindAsync(connId.Value);
+        return c is not null && c.Platform == platform;
     }
 
-    await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Configuracion Buffer guardada" });
-}).RequireAuthorization();
+    if (!await ValidSocialAsync(dto.InstagramConnectionId, "instagram")
+        || !await ValidSocialAsync(dto.TikTokConnectionId, "tiktok")
+        || !await ValidSocialAsync(dto.PinterestConnectionId, "pinterest"))
+        return Results.BadRequest(new { error = "Conexion social invalida para la plataforma." });
 
-// ==================== TikTok (Buffer) Config Endpoints ====================
-
-app.MapGet("/api/projects/{projectId:guid}/tiktok-config", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(project.TikTokConfig))
-        return Results.Ok(new BufferConfigDto("", ""));
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.TikTokConfig);
-    return Results.Ok(config);
-}).RequireAuthorization();
-
-app.MapPut("/api/projects/{projectId:guid}/tiktok-config", async (
-    Guid projectId, BufferConfigDto dto, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    project.TikTokConfig = System.Text.Json.JsonSerializer.Serialize(dto);
-    project.UpdatedAt = DateTime.UtcNow;
-
-    // Ensure the TikTok Publish sentinel module exists
-    var hasTikTokPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "tiktok");
-    if (!hasTikTokPublish)
+    MessagingConnection? tgConn = null;
+    if (dto.TelegramConnectionId is not null)
     {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "TikTok Publish",
-            Description = "Publica contenido en TikTok (videos e imagenes) via Buffer.",
-            ProviderType = "System",
-            ModuleType = "Publish",
-            ModelName = "tiktok",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
+        tgConn = await db.MessagingConnections.FindAsync(dto.TelegramConnectionId.Value);
+        if (tgConn is null || tgConn.Provider != "telegram")
+            return Results.BadRequest(new { error = "Conexion de Telegram invalida." });
     }
 
-    await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Configuracion TikTok guardada" });
-}).RequireAuthorization();
-
-// ==================== Pinterest (Buffer) Config Endpoints ====================
-
-app.MapGet("/api/projects/{projectId:guid}/pinterest-config", async (
-    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    if (string.IsNullOrWhiteSpace(project.PinterestConfig))
-        return Results.Ok(new BufferConfigDto("", ""));
-
-    var config = System.Text.Json.JsonSerializer.Deserialize<BufferConfigDto>(project.PinterestConfig);
-    return Results.Ok(config);
-}).RequireAuthorization();
-
-app.MapPut("/api/projects/{projectId:guid}/pinterest-config", async (
-    Guid projectId, BufferConfigDto dto, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(projectId);
-    if (project is null) return Results.NotFound();
-
-    project.PinterestConfig = System.Text.Json.JsonSerializer.Serialize(dto);
+    project.InstagramConnectionId = dto.InstagramConnectionId;
+    project.TikTokConnectionId = dto.TikTokConnectionId;
+    project.PinterestConnectionId = dto.PinterestConnectionId;
+    project.TelegramConnectionId = dto.TelegramConnectionId;
     project.UpdatedAt = DateTime.UtcNow;
-
-    // Ensure the Pinterest Publish sentinel module exists
-    var hasPinterestPublish = await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == "pinterest");
-    if (!hasPinterestPublish)
-    {
-        db.AiModules.Add(new AiModule
-        {
-            Id = Guid.NewGuid(),
-            Name = "Pinterest Publish",
-            Description = "Publica contenido en Pinterest (imagenes) via Buffer.",
-            ProviderType = "System",
-            ModuleType = "Publish",
-            ModelName = "pinterest",
-            IsEnabled = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        });
-    }
-
     await db.SaveChangesAsync();
-    return Results.Ok(new { message = "Configuracion Pinterest guardada" });
+
+    if (tgConn is not null)
+        await EnsureTelegramWebhookAsync(telegram, tgConn.BotToken);
+
+    return Results.Ok(new { message = "Conexiones del proyecto actualizadas" });
 }).RequireAuthorization();
 
 // ==================== Telegram Webhook Endpoint ====================

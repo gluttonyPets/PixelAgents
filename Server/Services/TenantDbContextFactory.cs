@@ -34,11 +34,44 @@ namespace Server.Services
         private static void ApplyPendingColumns(UserDbContext ctx, ILogger log)
         {
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"Context\" text", log);
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"TelegramConfig\" text", log);
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"InstagramConfig\" text", log);
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"TikTokConfig\" text", log);
-            RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"PinterestConfig\" text", log);
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"GraphLayout\" text", log);
+
+            // ── Conexiones reutilizables (redes sociales + mensajeria) ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""SocialConnections"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""Name"" varchar(200) NOT NULL,
+                    ""Platform"" varchar(50) NOT NULL,
+                    ""ApiKey"" text NOT NULL,
+                    ""ChannelId"" varchar(200) NOT NULL,
+                    ""ChannelName"" varchar(200),
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_SocialConnections_Platform"" ON ""SocialConnections"" (""Platform"")", log);
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""MessagingConnections"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""Name"" varchar(200) NOT NULL,
+                    ""Provider"" varchar(50) NOT NULL,
+                    ""BotToken"" text NOT NULL,
+                    ""ChatId"" varchar(200) NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_MessagingConnections_Provider"" ON ""MessagingConnections"" (""Provider"")", log);
+
+            // Referencias del proyecto a las conexiones asignadas
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""InstagramConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""TikTokConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""PinterestConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""TelegramConnectionId"" uuid REFERENCES ""MessagingConnections""(""Id"") ON DELETE SET NULL", log);
+
+            // Columnas JSON antiguas (credenciales por proyecto) reemplazadas por conexiones
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" DROP COLUMN IF EXISTS ""TelegramConfig""", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" DROP COLUMN IF EXISTS ""InstagramConfig""", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" DROP COLUMN IF EXISTS ""TikTokConfig""", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" DROP COLUMN IF EXISTS ""PinterestConfig""", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedAtModuleId\" uuid", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" DROP COLUMN IF EXISTS \"PausedAtStepOrder\"", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text", log);

@@ -486,22 +486,6 @@ public class ApiClient
         }
     }
 
-    // ── Telegram Config ──
-
-    public async Task<TelegramConfigDto?> GetTelegramConfigAsync(Guid projectId)
-    {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/telegram-config");
-        if (!resp.IsSuccessStatusCode) return null;
-        return await resp.Content.ReadFromJsonAsync<TelegramConfigDto>();
-    }
-
-    public async Task<(bool Ok, string? Error)> SaveTelegramConfigAsync(Guid projectId, TelegramConfigDto dto)
-    {
-        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/telegram-config", dto);
-        if (resp.IsSuccessStatusCode) return (true, null);
-        return (false, await ReadErrorAsync(resp));
-    }
-
     // ── Buffer Channels ──
 
     public async Task<(List<BufferChannelDto>? Channels, string? Error)> GetBufferChannelsAsync(string apiKey)
@@ -516,50 +500,74 @@ public class ApiClient
         return (null, await ReadErrorAsync(resp));
     }
 
-    // ── Instagram (Buffer) Config ──
+    // ── Social Connections (Redes sociales) ──
 
-    public async Task<BufferConfigDto?> GetInstagramConfigAsync(Guid projectId)
+    public async Task<List<SocialConnectionResponse>> GetSocialConnectionsAsync()
     {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/instagram-config");
-        if (!resp.IsSuccessStatusCode) return null;
-        return await resp.Content.ReadFromJsonAsync<BufferConfigDto>();
+        var resp = await SendAsync(HttpMethod.Get, "/api/social-connections");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<SocialConnectionResponse>>() ?? [];
     }
 
-    public async Task<(bool Ok, string? Error)> SaveInstagramConfigAsync(Guid projectId, BufferConfigDto dto)
+    public async Task<(bool Ok, string? Error)> CreateSocialConnectionAsync(CreateSocialConnectionRequest req)
     {
-        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/instagram-config", dto);
+        var resp = await SendAsync(HttpMethod.Post, "/api/social-connections", req);
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }
 
-    // ── TikTok (Buffer) Config ──
-
-    public async Task<BufferConfigDto?> GetTikTokConfigAsync(Guid projectId)
+    public async Task<(bool Ok, string? Error)> UpdateSocialConnectionAsync(Guid id, UpdateSocialConnectionRequest req)
     {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/tiktok-config");
-        if (!resp.IsSuccessStatusCode) return null;
-        return await resp.Content.ReadFromJsonAsync<BufferConfigDto>();
-    }
-
-    public async Task<(bool Ok, string? Error)> SaveTikTokConfigAsync(Guid projectId, BufferConfigDto dto)
-    {
-        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/tiktok-config", dto);
+        var resp = await SendAsync(HttpMethod.Put, $"/api/social-connections/{id}", req);
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }
 
-    // ── Pinterest (Buffer) Config ──
-
-    public async Task<BufferConfigDto?> GetPinterestConfigAsync(Guid projectId)
+    public async Task DeleteSocialConnectionAsync(Guid id)
     {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/pinterest-config");
-        if (!resp.IsSuccessStatusCode) return null;
-        return await resp.Content.ReadFromJsonAsync<BufferConfigDto>();
+        await SendAsync(HttpMethod.Delete, $"/api/social-connections/{id}");
     }
 
-    public async Task<(bool Ok, string? Error)> SavePinterestConfigAsync(Guid projectId, BufferConfigDto dto)
+    // ── Messaging Connections (Mensajeria) ──
+
+    public async Task<List<MessagingConnectionResponse>> GetMessagingConnectionsAsync()
     {
-        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/pinterest-config", dto);
+        var resp = await SendAsync(HttpMethod.Get, "/api/messaging-connections");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<MessagingConnectionResponse>>() ?? [];
+    }
+
+    public async Task<(bool Ok, string? Error)> CreateMessagingConnectionAsync(CreateMessagingConnectionRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/messaging-connections", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateMessagingConnectionAsync(Guid id, UpdateMessagingConnectionRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/messaging-connections/{id}", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task DeleteMessagingConnectionAsync(Guid id)
+    {
+        await SendAsync(HttpMethod.Delete, $"/api/messaging-connections/{id}");
+    }
+
+    // ── Project ↔ Connections assignment ──
+
+    public async Task<ProjectConnectionsDto?> GetProjectConnectionsAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/connections");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<ProjectConnectionsDto>();
+    }
+
+    public async Task<(bool Ok, string? Error)> SaveProjectConnectionsAsync(Guid projectId, ProjectConnectionsDto dto)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/connections", dto);
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }

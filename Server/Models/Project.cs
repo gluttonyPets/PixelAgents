@@ -6,11 +6,18 @@ namespace Server.Models
         public string Name { get; set; } = default!;
         public string? Description { get; set; }
         public string? Context { get; set; }
-        public string? TelegramConfig { get; set; }
-        public string? InstagramConfig { get; set; }
-        public string? TikTokConfig { get; set; }
-        public string? PinterestConfig { get; set; }
         public string? GraphLayout { get; set; }
+
+        // ── Conexiones asignadas (credenciales reutilizables definidas globalmente) ──
+        public Guid? InstagramConnectionId { get; set; }
+        public Guid? TikTokConnectionId { get; set; }
+        public Guid? PinterestConnectionId { get; set; }
+        public Guid? TelegramConnectionId { get; set; }
+
+        public SocialConnection? InstagramConnection { get; set; }
+        public SocialConnection? TikTokConnection { get; set; }
+        public SocialConnection? PinterestConnection { get; set; }
+        public MessagingConnection? TelegramConnection { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }

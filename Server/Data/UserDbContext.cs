@@ -9,6 +9,8 @@ namespace Server.Data
 
         public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
         public DbSet<AiModule> AiModules => Set<AiModule>();
+        public DbSet<SocialConnection> SocialConnections => Set<SocialConnection>();
+        public DbSet<MessagingConnection> MessagingConnections => Set<MessagingConnection>();
         public DbSet<Project> Projects => Set<Project>();
         public DbSet<ProjectModule> ProjectModules => Set<ProjectModule>();
         public DbSet<ProjectExecution> ProjectExecutions => Set<ProjectExecution>();
@@ -54,6 +56,29 @@ namespace Server.Data
                 e.HasIndex(x => x.ModuleType);
             });
 
+            // ── SocialConnection ──
+            modelBuilder.Entity<SocialConnection>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Platform).IsRequired().HasMaxLength(50);
+                e.Property(x => x.ApiKey).IsRequired();
+                e.Property(x => x.ChannelId).IsRequired().HasMaxLength(200);
+                e.Property(x => x.ChannelName).HasMaxLength(200);
+                e.HasIndex(x => x.Platform);
+            });
+
+            // ── MessagingConnection ──
+            modelBuilder.Entity<MessagingConnection>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Provider).IsRequired().HasMaxLength(50);
+                e.Property(x => x.BotToken).IsRequired();
+                e.Property(x => x.ChatId).IsRequired().HasMaxLength(200);
+                e.HasIndex(x => x.Provider);
+            });
+
             // ── Project ──
             modelBuilder.Entity<Project>(e =>
             {
@@ -61,12 +86,24 @@ namespace Server.Data
                 e.Property(x => x.Name).IsRequired().HasMaxLength(200);
                 e.Property(x => x.Description).HasMaxLength(2000);
                 e.Property(x => x.Context).HasColumnType("text");
-                e.Property(x => x.TelegramConfig).HasColumnType("text");
-                e.Property(x => x.InstagramConfig).HasColumnType("text");
-                e.Property(x => x.TikTokConfig).HasColumnType("text");
-                e.Property(x => x.PinterestConfig).HasColumnType("text");
                 e.Property(x => x.GraphLayout).HasColumnType("text");
 
+                e.HasOne(x => x.InstagramConnection)
+                    .WithMany()
+                    .HasForeignKey(x => x.InstagramConnectionId)
+                    .OnDelete(DeleteBehavior.SetNull);
+                e.HasOne(x => x.TikTokConnection)
+                    .WithMany()
+                    .HasForeignKey(x => x.TikTokConnectionId)
+                    .OnDelete(DeleteBehavior.SetNull);
+                e.HasOne(x => x.PinterestConnection)
+                    .WithMany()
+                    .HasForeignKey(x => x.PinterestConnectionId)
+                    .OnDelete(DeleteBehavior.SetNull);
+                e.HasOne(x => x.TelegramConnection)
+                    .WithMany()
+                    .HasForeignKey(x => x.TelegramConnectionId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
 
             // ── ProjectModule ──

@@ -1,0 +1,276 @@
+@page "/redes-sociales"
+@inject ApiClient Api
+
+<div class="apikeys-page-header">
+    <h2>Redes sociales</h2>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ Nueva conexion</button>
+</div>
+
+<p class="text-muted" style="margin-top:-0.4rem;margin-bottom:1rem;">
+    Guarda aqui las cuentas de Buffer (token + canal) una sola vez. Luego en cada
+    proyecto solo tendras que asignar la conexion, sin volver a meter credenciales.
+</p>
+
+@if (_loading)
+{
+    <p class="text-muted">Cargando...</p>
+}
+else if (_conns.Count > 0)
+{
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Plataforma</th>
+                    <th>Nombre</th>
+                    <th>Canal</th>
+                    <th>Uso</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _conns)
+                {
+                    var isConfirming = _confirmDeleteId == c.Id;
+                    <tr class="@(isConfirming ? "row-confirming" : c.ProjectCount == 0 ? "row-unused" : "")">
+                        <td><span class="badge badge-info">@PlatformLabel(c.Platform)</span></td>
+                        <td><span class="key-name">@c.Name</span></td>
+                        <td>@(string.IsNullOrWhiteSpace(c.ChannelName) ? c.ChannelId : c.ChannelName)</td>
+                        <td>
+                            @if (c.ProjectCount > 0)
+                            {
+                                <span class="key-usage-badge key-usage-active">@c.ProjectCount proyecto@(c.ProjectCount == 1 ? "" : "s")</span>
+                            }
+                            else
+                            {
+                                <span class="key-usage-badge key-usage-idle">Sin uso</span>
+                            }
+                        </td>
+                        <td class="apikeys-actions">
+                            @if (isConfirming)
+                            {
+                                <span class="text-muted" style="margin-right:0.5rem;">¿Eliminar?</span>
+                                <button class="btn btn-danger btn-sm" @onclick="() => ConfirmDelete(c.Id)">Si</button>
+                                <button class="btn btn-sm" @onclick="CancelDelete" style="margin-left:0.25rem;">No</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-primary btn-sm" @onclick="() => StartEdit(c)" style="margin-right:0.25rem;">Editar</button>
+                                <button class="btn btn-danger btn-sm" @onclick="() => RequestDelete(c.Id)">Eliminar</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="apikeys-empty">
+        <div class="apikeys-empty-icon">📣</div>
+        <div class="apikeys-empty-title">Sin conexiones de redes sociales</div>
+        <div class="apikeys-empty-desc">Pulsa <strong>+ Nueva conexion</strong> para guardar una cuenta de Buffer.</div>
+    </div>
+}
+
+@if (_showModal)
+{
+    <div class="modal-overlay" @onclick="CancelModal">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width: 560px;">
+            <div class="modal-header">
+                <strong style="flex:1">@(_editingId is null ? "Nueva conexion" : "Editar conexion")</strong>
+                <button class="modal-close-btn" @onclick="CancelModal" aria-label="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error" style="margin-bottom:0.8rem;">@_error</div>
+                }
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input type="text" @bind="_name" placeholder="Mi cuenta de Instagram" />
+                    </div>
+                    <div class="form-group">
+                        <label>Plataforma</label>
+                        <select @bind="_platform">
+                            <option value="instagram">Instagram</option>
+                            <option value="tiktok">TikTok</option>
+                            <option value="pinterest">Pinterest</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>
+                        API Key de Buffer
+                        @if (_editingId is not null)
+                        {
+                            <span class="text-muted" style="font-weight:400;">(deja vacio para conservar la actual)</span>
+                        }
+                    </label>
+                    <div style="display:flex;gap:0.5rem;">
+                        <input type="password" @bind="_apiKey" placeholder="Token de Buffer" autocomplete="new-password" style="flex:1;" />
+                        <button class="btn btn-sm" @onclick="LoadChannels" disabled="@(_loadingChannels || string.IsNullOrWhiteSpace(_apiKey))">
+                            @(_loadingChannels ? "Cargando..." : "Cargar canales")
+                        </button>
+                    </div>
+                </div>
+
+                @if (_channels.Count > 0)
+                {
+                    <div class="form-group">
+                        <label>Canal (@PlatformLabel(_platform))</label>
+                        <select @bind="_channelId">
+                            <option value="">-- Seleccionar canal --</option>
+                            @foreach (var ch in _channels.Where(c => MapService(c.Service) == _platform))
+                            {
+                                <option value="@ch.Id">@ch.Name (@ch.Service)</option>
+                            }
+                        </select>
+                        @if (!_channels.Any(c => MapService(c.Service) == _platform))
+                        {
+                            <span class="text-sm text-muted">No hay canales de @PlatformLabel(_platform) en esta cuenta de Buffer.</span>
+                        }
+                    </div>
+                }
+                else if (!string.IsNullOrWhiteSpace(_channelId))
+                {
+                    <div class="form-group">
+                        <label>Canal actual</label>
+                        <div class="text-muted">@(string.IsNullOrWhiteSpace(_channelName) ? _channelId : _channelName)</div>
+                        <span class="text-sm text-muted">Pulsa "Cargar canales" para cambiarlo.</span>
+                    </div>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm" @onclick="CancelModal" disabled="@_saving">Cancelar</button>
+                <button class="btn btn-primary btn-sm" @onclick="Save" disabled="@_saving">
+                    @(_saving ? "Guardando..." : "Guardar")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<SocialConnectionResponse> _conns = [];
+    private bool _loading;
+    private Guid? _confirmDeleteId;
+
+    private bool _showModal;
+    private Guid? _editingId;
+    private string _name = "";
+    private string _platform = "instagram";
+    private string _apiKey = "";
+    private string _channelId = "";
+    private string? _channelName = "";
+    private List<BufferChannelDto> _channels = [];
+    private bool _loadingChannels;
+    private bool _saving;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        try { _conns = await Api.GetSocialConnectionsAsync(); } catch { }
+        _loading = false;
+    }
+
+    private void OpenCreate()
+    {
+        _editingId = null;
+        _name = ""; _platform = "instagram"; _apiKey = "";
+        _channelId = ""; _channelName = ""; _channels = [];
+        _error = null;
+        _showModal = true;
+    }
+
+    private void StartEdit(SocialConnectionResponse c)
+    {
+        _editingId = c.Id;
+        _name = c.Name; _platform = c.Platform; _apiKey = "";
+        _channelId = c.ChannelId; _channelName = c.ChannelName;
+        _channels = [];
+        _error = null;
+        _confirmDeleteId = null;
+        _showModal = true;
+    }
+
+    private void CancelModal()
+    {
+        if (_saving) return;
+        _showModal = false;
+        _error = null;
+    }
+
+    private async Task LoadChannels()
+    {
+        if (string.IsNullOrWhiteSpace(_apiKey)) return;
+        _loadingChannels = true; _error = null;
+        try
+        {
+            var (channels, error) = await Api.GetBufferChannelsAsync(_apiKey);
+            if (channels is not null) _channels = channels;
+            else _error = error ?? "No se pudieron cargar los canales.";
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        _loadingChannels = false;
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_name)) { _error = "El nombre es obligatorio."; return; }
+        if (string.IsNullOrWhiteSpace(_channelId)) { _error = "Selecciona un canal."; return; }
+        if (_editingId is null && string.IsNullOrWhiteSpace(_apiKey)) { _error = "La API Key es obligatoria."; return; }
+
+        // Resolve channel name from the loaded list when a channel was just picked.
+        var picked = _channels.FirstOrDefault(c => c.Id == _channelId);
+        if (picked is not null) _channelName = picked.Name;
+
+        _saving = true; _error = null;
+        try
+        {
+            if (_editingId is null)
+            {
+                var (ok, error) = await Api.CreateSocialConnectionAsync(
+                    new CreateSocialConnectionRequest(_name.Trim(), _platform, _apiKey.Trim(), _channelId, _channelName));
+                if (!ok) { _error = error; return; }
+            }
+            else
+            {
+                var newKey = string.IsNullOrWhiteSpace(_apiKey) ? null : _apiKey.Trim();
+                var (ok, error) = await Api.UpdateSocialConnectionAsync(_editingId.Value,
+                    new UpdateSocialConnectionRequest(_name.Trim(), _platform, newKey, _channelId, _channelName));
+                if (!ok) { _error = error; return; }
+            }
+            _showModal = false;
+            await Load();
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        finally { _saving = false; }
+    }
+
+    private void RequestDelete(Guid id) => _confirmDeleteId = id;
+    private void CancelDelete() => _confirmDeleteId = null;
+
+    private async Task ConfirmDelete(Guid id)
+    {
+        _confirmDeleteId = null;
+        try { await Api.DeleteSocialConnectionAsync(id); await Load(); }
+        catch { }
+    }
+
+    private static string PlatformLabel(string platform) => platform switch
+    {
+        "tiktok" => "TikTok",
+        "pinterest" => "Pinterest",
+        _ => "Instagram"
+    };
+
+    // Buffer service name → plataforma. Comparacion exacta en minusculas para no
+    // mezclar servicios no soportados con Instagram.
+    private static string MapService(string service) => (service ?? "").Trim().ToLowerInvariant();
+}

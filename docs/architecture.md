@@ -64,9 +64,11 @@ registrado) y las tablas de correlacion `TelegramCorrelations` / `WhatsAppCorrel
 almacenan el estado de interacciones externas pendientes de respuesta.
 
 **UserDb** (nombre dinamico, uno por cuenta) almacena todos los datos funcionales del tenant:
-`ApiKeys`, `AiModules`, `Projects`, `ProjectModules`, `ModuleConnections`, `ProjectExecutions`,
-`StepExecutions`, `ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs`
-y `Rules`. No hay migraciones EF formales: la BD se crea con `EnsureCreated` y los cambios de
+`ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `Projects`, `ProjectModules`,
+`ModuleConnections`, `ProjectExecutions`, `StepExecutions`, `ExecutionFiles`, `ExecutionLogs`,
+`ProjectSchedules`, `OrchestratorOutputs` y `Rules`. Las credenciales de redes sociales (Buffer)
+y mensajeria (Telegram) son conexiones reutilizables que los proyectos referencian por Id.
+No hay migraciones EF formales: la BD se crea con `EnsureCreated` y los cambios de
 esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXISTS`,
 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) al arrancar el servidor.
 

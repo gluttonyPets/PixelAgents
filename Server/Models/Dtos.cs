@@ -88,11 +88,25 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         string Direction, long FileSize, DateTime CreatedAt);
 
 
-    // ── Telegram ──
-    public record TelegramConfigDto(string BotToken, string ChatId);
+    // ── Conexiones de redes sociales (Buffer) reutilizables ──
+    public record SocialConnectionResponse(Guid Id, string Name, string Platform,
+        string ChannelId, string? ChannelName, DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount);
+    public record CreateSocialConnectionRequest(string Name, string Platform,
+        string ApiKey, string ChannelId, string? ChannelName);
+    public record UpdateSocialConnectionRequest(string Name, string Platform,
+        string? ApiKey, string ChannelId, string? ChannelName);
 
-    // ── Instagram (Buffer) / TikTok (Buffer) ──
-    public record BufferConfigDto(string ApiKey, string ChannelId);
+    // ── Conexiones de mensajeria (Telegram) reutilizables ──
+    public record MessagingConnectionResponse(Guid Id, string Name, string Provider,
+        string ChatId, DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount);
+    public record CreateMessagingConnectionRequest(string Name, string Provider,
+        string BotToken, string ChatId);
+    public record UpdateMessagingConnectionRequest(string Name, string Provider,
+        string? BotToken, string ChatId);
+
+    // ── Asignacion de conexiones a un proyecto ──
+    public record ProjectConnectionsDto(Guid? InstagramConnectionId, Guid? TikTokConnectionId,
+        Guid? PinterestConnectionId, Guid? TelegramConnectionId);
 
     // ── Module Files ──
     // Los archivos pertenecen a la INSTANCIA (ProjectModule), no al catalogo.

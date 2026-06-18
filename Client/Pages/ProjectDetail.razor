@@ -26,8 +26,8 @@ else
         <div class="project-header-actions">
             <!-- Integration status pills -->
             <div class="integration-pills">
-                <span class="pill @(string.IsNullOrWhiteSpace(_tgBotToken) ? "pill-off" : "pill-on")" title="Telegram">TG</span>
-                <span class="pill @(string.IsNullOrWhiteSpace(_igApiKey) ? "pill-off" : "pill-on")" title="Buffer">BF</span>
+                <span class="pill @(string.IsNullOrWhiteSpace(_telegramConnSel) ? "pill-off" : "pill-on")" title="Telegram">TG</span>
+                <span class="pill @(string.IsNullOrWhiteSpace(_instagramConnSel) && string.IsNullOrWhiteSpace(_tiktokConnSel) && string.IsNullOrWhiteSpace(_pinterestConnSel) ? "pill-off" : "pill-on")" title="Buffer">BF</span>
                 @if (_schedule is not null && _schedule.IsEnabled)
                 {
                     <span class="pill pill-on" title="Programacion activa">&#x23f0;</span>
@@ -985,35 +985,39 @@ else
                         <div class="settings-block">
                             <div class="settings-block-header">
                                 <strong>Telegram</strong>
-                                @if (!string.IsNullOrWhiteSpace(_tgBotToken))
+                                @if (!string.IsNullOrWhiteSpace(_telegramConnSel))
                                 {
-                                    <span class="badge badge-success">Configurado</span>
+                                    <span class="badge badge-success">Asignado</span>
                                 }
                             </div>
-                            @if (_tgError is not null)
+                            @if (_connError is not null)
                             {
-                                <div class="alert alert-error">@_tgError</div>
+                                <div class="alert alert-error">@_connError</div>
                             }
-                            @if (_tgSuccess)
+                            @if (_connSuccess)
                             {
                                 <div class="alert alert-success">Guardado correctamente</div>
                             }
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Bot Token</label>
-                                    <input type="password" @bind="_tgBotToken" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Chat ID</label>
-                                    <input type="text" @bind="_tgChatId" placeholder="Ej: 123456789" />
-                                </div>
+                            <div class="form-group">
+                                <label>Conexion de Telegram</label>
+                                <select @bind="_telegramConnSel">
+                                    <option value="">-- Sin asignar --</option>
+                                    @foreach (var c in _messagingConnections)
+                                    {
+                                        <option value="@c.Id">@c.Name (@c.ChatId)</option>
+                                    }
+                                </select>
+                                @if (_messagingConnections.Count == 0)
+                                {
+                                    <span class="text-sm text-muted">No tienes conexiones de Telegram. <a href="/mensajeria">Crear una</a>.</span>
+                                }
                             </div>
                             <p class="text-sm text-muted">
-                                1. Habla con <strong>@@BotFather</strong> en Telegram &#x2192; <code>/newbot</code> &#x2192; copia el token.<br/>
-                                2. Envia un mensaje al bot y visita <code>https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates</code> para obtener tu Chat ID.
+                                Las credenciales (bot token + chat) se gestionan en <a href="/mensajeria">Mensajeria</a>.
+                                Aqui solo eliges cual usa este proyecto.
                             </p>
-                            <button class="btn btn-primary btn-sm" @onclick="SaveTelegramConfig" disabled="@_tgSaving">
-                                @(_tgSaving ? "Guardando..." : "Guardar")
+                            <button class="btn btn-primary btn-sm" @onclick="SaveConnections" disabled="@_connSaving">
+                                @(_connSaving ? "Guardando..." : "Guardar")
                             </button>
                         </div>
 
@@ -1024,119 +1028,59 @@ else
                     {
                         <div class="settings-block">
                             <div class="settings-block-header">
-                                <strong>Buffer</strong>
-                                <span class="text-sm text-muted">Instagram, Twitter, LinkedIn...</span>
-                                @if (!string.IsNullOrWhiteSpace(_igApiKey))
-                                {
-                                    <span class="badge badge-success">Configurado</span>
-                                }
+                                <strong>Redes sociales (Buffer)</strong>
+                                <span class="text-sm text-muted">Asigna las cuentas guardadas</span>
                             </div>
-                            @if (_igError is not null)
+                            @if (_connError is not null)
                             {
-                                <div class="alert alert-error">@_igError</div>
+                                <div class="alert alert-error">@_connError</div>
                             }
-                            @if (_igSuccess)
+                            @if (_connSuccess)
                             {
                                 <div class="alert alert-success">Guardado correctamente</div>
                             }
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>API Key</label>
-                                    <input type="password" @bind="_igApiKey" placeholder="Token de Buffer API" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Channel ID</label>
-                                    <div style="display:flex;gap:0.5rem;align-items:center;">
-                                        <input type="text" @bind="_igChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." style="flex:1;" />
-                                        <button class="btn btn-outline btn-sm" type="button" @onclick='() => OpenChannelPicker("ig")'>Seleccionar canal</button>
-                                    </div>
-                                </div>
-                            </div>
-                            <p class="text-sm text-muted">
-                                1. Ve a <strong>buffer.com</strong> &#x2192; Cuenta &#x2192; API Settings &#x2192; genera tu API Key.<br/>
-                                2. Pulsa <strong>Seleccionar canal</strong> para elegir tu canal de Instagram conectado en Buffer.<br/>
-                                3. Plan gratuito: 3 canales, 10 posts programados por canal.
-                            </p>
-                            <button class="btn btn-primary btn-sm" @onclick="SaveInstagramConfig" disabled="@_igSaving">
-                                @(_igSaving ? "Guardando..." : "Guardar")
-                            </button>
-                        </div>
 
-                        <div class="settings-block" style="margin-top: 1rem;">
-                            <div class="settings-block-header">
-                                <strong>TikTok (via Buffer)</strong>
-                                <span class="text-sm text-muted">Videos e imagenes en TikTok</span>
-                                @if (!string.IsNullOrWhiteSpace(_tkApiKey))
-                                {
-                                    <span class="badge badge-success">Configurado</span>
-                                }
+                            <div class="form-group">
+                                <label>Instagram</label>
+                                <select @bind="_instagramConnSel">
+                                    <option value="">-- Sin asignar --</option>
+                                    @foreach (var c in _socialConnections.Where(c => c.Platform == "instagram"))
+                                    {
+                                        <option value="@c.Id">@c.Name (@(string.IsNullOrWhiteSpace(c.ChannelName) ? c.ChannelId : c.ChannelName))</option>
+                                    }
+                                </select>
                             </div>
-                            @if (_tkError is not null)
-                            {
-                                <div class="alert alert-error">@_tkError</div>
-                            }
-                            @if (_tkSuccess)
-                            {
-                                <div class="alert alert-success">Guardado correctamente</div>
-                            }
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>API Key</label>
-                                    <input type="password" @bind="_tkApiKey" placeholder="Token de Buffer API" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Channel ID (TikTok)</label>
-                                    <div style="display:flex;gap:0.5rem;align-items:center;">
-                                        <input type="text" @bind="_tkChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." style="flex:1;" />
-                                        <button class="btn btn-outline btn-sm" type="button" @onclick='() => OpenChannelPicker("tk")'>Seleccionar canal</button>
-                                    </div>
-                                </div>
+                            <div class="form-group">
+                                <label>TikTok</label>
+                                <select @bind="_tiktokConnSel">
+                                    <option value="">-- Sin asignar --</option>
+                                    @foreach (var c in _socialConnections.Where(c => c.Platform == "tiktok"))
+                                    {
+                                        <option value="@c.Id">@c.Name (@(string.IsNullOrWhiteSpace(c.ChannelName) ? c.ChannelId : c.ChannelName))</option>
+                                    }
+                                </select>
                             </div>
-                            <p class="text-sm text-muted">
-                                Usa la misma API Key de Buffer. Pulsa <strong>Seleccionar canal</strong> para elegir tu canal TikTok conectado en Buffer.<br/>
-                                Soporta videos e imagenes (hasta 4 por post). Formatos: PNG, JPG, GIF, WebP (max 8MB).
-                            </p>
-                            <button class="btn btn-primary btn-sm" @onclick="SaveTikTokConfig" disabled="@_tkSaving">
-                                @(_tkSaving ? "Guardando..." : "Guardar")
-                            </button>
-                        </div>
+                            <div class="form-group">
+                                <label>Pinterest</label>
+                                <select @bind="_pinterestConnSel">
+                                    <option value="">-- Sin asignar --</option>
+                                    @foreach (var c in _socialConnections.Where(c => c.Platform == "pinterest"))
+                                    {
+                                        <option value="@c.Id">@c.Name (@(string.IsNullOrWhiteSpace(c.ChannelName) ? c.ChannelId : c.ChannelName))</option>
+                                    }
+                                </select>
+                            </div>
 
-                        <div class="settings-block" style="margin-top: 1rem;">
-                            <div class="settings-block-header">
-                                <strong>Pinterest (via Buffer)</strong>
-                                <span class="text-sm text-muted">Pins e imagenes en Pinterest</span>
-                                @if (!string.IsNullOrWhiteSpace(_ptApiKey))
-                                {
-                                    <span class="badge badge-success">Configurado</span>
-                                }
-                            </div>
-                            @if (_ptError is not null)
+                            @if (_socialConnections.Count == 0)
                             {
-                                <div class="alert alert-error">@_ptError</div>
+                                <span class="text-sm text-muted">No tienes conexiones de redes sociales. <a href="/redes-sociales">Crear una</a>.</span>
                             }
-                            @if (_ptSuccess)
-                            {
-                                <div class="alert alert-success">Guardado correctamente</div>
-                            }
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>API Key</label>
-                                    <input type="password" @bind="_ptApiKey" placeholder="Token de Buffer API" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Channel ID (Pinterest)</label>
-                                    <div style="display:flex;gap:0.5rem;align-items:center;">
-                                        <input type="text" @bind="_ptChannelId" placeholder="Ej: 65a1b2c3d4e5f6..." style="flex:1;" />
-                                        <button class="btn btn-outline btn-sm" type="button" @onclick='() => OpenChannelPicker("pt")'>Seleccionar canal</button>
-                                    </div>
-                                </div>
-                            </div>
                             <p class="text-sm text-muted">
-                                Usa la misma API Key de Buffer. Pulsa <strong>Seleccionar canal</strong> para elegir tu canal Pinterest conectado en Buffer.<br/>
-                                Soporta imagenes (PNG, JPG, WebP). Publica como Pin en tu tablero.
+                                Las credenciales (token de Buffer + canal) se gestionan en
+                                <a href="/redes-sociales">Redes sociales</a>. Aqui solo eliges cuales usa este proyecto.
                             </p>
-                            <button class="btn btn-primary btn-sm" @onclick="SavePinterestConfig" disabled="@_ptSaving">
-                                @(_ptSaving ? "Guardando..." : "Guardar")
+                            <button class="btn btn-primary btn-sm" @onclick="SaveConnections" disabled="@_connSaving">
+                                @(_connSaving ? "Guardando..." : "Guardar")
                             </button>
                         </div>
                     }
@@ -1474,45 +1418,6 @@ else
     </div>
 }
 
-@if (_showChannelPicker)
-{
-    <div class="modal-overlay" @onclick="() => _showChannelPicker = false">
-        <div class="modal-content" @onclick:stopPropagation>
-            <div class="modal-header">
-                <h3>Seleccionar canal de Buffer</h3>
-                <button class="btn-icon" @onclick="() => _showChannelPicker = false">&#x2715;</button>
-            </div>
-            <div class="modal-body">
-                @if (_channelPickerLoading)
-                {
-                    <p class="text-muted">Cargando canales...</p>
-                }
-                else if (_channelPickerError is not null)
-                {
-                    <div class="alert alert-error">@_channelPickerError</div>
-                }
-                else if (_bufferChannels.Count == 0)
-                {
-                    <p class="text-muted">No se encontraron canales conectados en tu cuenta de Buffer.</p>
-                }
-                else
-                {
-                    <ul class="channel-picker-list">
-                        @foreach (var ch in _bufferChannels)
-                        {
-                            <li class="channel-picker-item" @onclick="() => SelectBufferChannel(ch)">
-                                <span class="channel-service-badge">@ch.Service</span>
-                                <span class="channel-name">@ch.Name</span>
-                                <span class="channel-id text-muted">@ch.Id</span>
-                            </li>
-                        }
-                    </ul>
-                }
-            </div>
-        </div>
-    </div>
-}
-
 @code {
     [Parameter] public Guid ProjectId { get; set; }
 
@@ -1644,40 +1549,16 @@ else
     private List<OrchestratorTaskDto>? _orchestratorActiveTasks;
     private Dictionary<string, OrchestratorTaskProgressState> _orchestratorTaskStatus = new();
 
-    // Telegram config
-    private string _tgBotToken = "";
-    private string _tgChatId = "";
-    private string? _tgError;
-    private bool _tgSuccess;
-    private bool _tgSaving;
-
-    // Buffer config (Instagram)
-    private string _igApiKey = "";
-    private string _igChannelId = "";
-    private string? _igError;
-    private bool _igSuccess;
-    private bool _igSaving;
-
-    // TikTok config (Buffer)
-    private string _tkApiKey = "";
-    private string _tkChannelId = "";
-    private string? _tkError;
-    private bool _tkSuccess;
-    private bool _tkSaving;
-
-    // Pinterest config (Buffer)
-    private string _ptApiKey = "";
-    private string _ptChannelId = "";
-    private string? _ptError;
-    private bool _ptSuccess;
-    private bool _ptSaving;
-
-    // Buffer channel picker
-    private bool _showChannelPicker;
-    private string _channelPickerTarget = ""; // "ig", "tk", "pt"
-    private bool _channelPickerLoading;
-    private string? _channelPickerError;
-    private List<BufferChannelDto> _bufferChannels = new();
+    // Conexiones reutilizables asignadas al proyecto (selecciones como string para el <select>)
+    private List<SocialConnectionResponse> _socialConnections = new();
+    private List<MessagingConnectionResponse> _messagingConnections = new();
+    private string _instagramConnSel = "";
+    private string _tiktokConnSel = "";
+    private string _pinterestConnSel = "";
+    private string _telegramConnSel = "";
+    private string? _connError;
+    private bool _connSuccess;
+    private bool _connSaving;
 
     // Buffer API debug modal
     private bool _showBufferDebug;
@@ -1950,36 +1831,16 @@ else
                 }
             }
 
-            // Load Telegram config
-            var tgConfig = await Api.GetTelegramConfigAsync(ProjectId);
-            if (tgConfig is not null)
+            // Load available connections and the project's current assignment
+            _socialConnections = await Api.GetSocialConnectionsAsync();
+            _messagingConnections = await Api.GetMessagingConnectionsAsync();
+            var conns = await Api.GetProjectConnectionsAsync(ProjectId);
+            if (conns is not null)
             {
-                _tgBotToken = tgConfig.BotToken;
-                _tgChatId = tgConfig.ChatId;
-            }
-
-            // Load Buffer config (Instagram)
-            var igConfig = await Api.GetInstagramConfigAsync(ProjectId);
-            if (igConfig is not null)
-            {
-                _igApiKey = igConfig.ApiKey;
-                _igChannelId = igConfig.ChannelId;
-            }
-
-            // Load TikTok config (Buffer)
-            var tkConfig = await Api.GetTikTokConfigAsync(ProjectId);
-            if (tkConfig is not null)
-            {
-                _tkApiKey = tkConfig.ApiKey;
-                _tkChannelId = tkConfig.ChannelId;
-            }
-
-            // Load Pinterest config (Buffer)
-            var ptConfig = await Api.GetPinterestConfigAsync(ProjectId);
-            if (ptConfig is not null)
-            {
-                _ptApiKey = ptConfig.ApiKey;
-                _ptChannelId = ptConfig.ChannelId;
+                _instagramConnSel = conns.InstagramConnectionId?.ToString() ?? "";
+                _tiktokConnSel = conns.TikTokConnectionId?.ToString() ?? "";
+                _pinterestConnSel = conns.PinterestConnectionId?.ToString() ?? "";
+                _telegramConnSel = conns.TelegramConnectionId?.ToString() ?? "";
             }
 
             // Load Schedule
@@ -2092,134 +1953,30 @@ else
         _contextSaving = false;
     }
 
-    private async Task SaveTelegramConfig()
+    private async Task SaveConnections()
     {
-        _tgError = null;
-        _tgSuccess = false;
-        _tgSaving = true;
+        _connError = null;
+        _connSuccess = false;
+        _connSaving = true;
         try
         {
-            var dto = new TelegramConfigDto(_tgBotToken, _tgChatId);
-            var (ok, error) = await Api.SaveTelegramConfigAsync(ProjectId, dto);
+            static Guid? Parse(string s) => Guid.TryParse(s, out var g) ? g : null;
+            var dto = new ProjectConnectionsDto(
+                Parse(_instagramConnSel),
+                Parse(_tiktokConnSel),
+                Parse(_pinterestConnSel),
+                Parse(_telegramConnSel));
+            var (ok, error) = await Api.SaveProjectConnectionsAsync(ProjectId, dto);
             if (ok)
             {
-                _tgSuccess = true;
+                _connSuccess = true;
                 _modules = await Api.GetModulesAsync();
             }
             else
-                _tgError = error;
+                _connError = error;
         }
-        catch (Exception ex) { _tgError = ex.Message; }
-        _tgSaving = false;
-    }
-
-    private async Task OpenChannelPicker(string target)
-    {
-        var apiKey = target switch
-        {
-            "ig" => _igApiKey,
-            "tk" => _tkApiKey,
-            "pt" => _ptApiKey,
-            _ => ""
-        };
-
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            var errMsg = "Introduce primero la API Key de Buffer.";
-            if (target == "ig") _igError = errMsg;
-            else if (target == "tk") _tkError = errMsg;
-            else _ptError = errMsg;
-            return;
-        }
-
-        _channelPickerTarget = target;
-        _channelPickerLoading = true;
-        _channelPickerError = null;
-        _bufferChannels = new();
-        _showChannelPicker = true;
-
-        try
-        {
-            var (channels, error) = await Api.GetBufferChannelsAsync(apiKey);
-            if (channels is not null)
-                _bufferChannels = channels;
-            else
-                _channelPickerError = error ?? "Error al obtener canales";
-        }
-        catch (Exception ex) { _channelPickerError = ex.Message; }
-
-        _channelPickerLoading = false;
-    }
-
-    private void SelectBufferChannel(BufferChannelDto channel)
-    {
-        if (_channelPickerTarget == "ig") _igChannelId = channel.Id;
-        else if (_channelPickerTarget == "tk") _tkChannelId = channel.Id;
-        else if (_channelPickerTarget == "pt") _ptChannelId = channel.Id;
-        _showChannelPicker = false;
-    }
-
-    private async Task SaveInstagramConfig()
-    {
-        _igError = null;
-        _igSuccess = false;
-        _igSaving = true;
-        try
-        {
-            var dto = new BufferConfigDto(_igApiKey, _igChannelId);
-            var (ok, error) = await Api.SaveInstagramConfigAsync(ProjectId, dto);
-            if (ok)
-            {
-                _igSuccess = true;
-                _modules = await Api.GetModulesAsync();
-            }
-            else
-                _igError = error;
-        }
-        catch (Exception ex) { _igError = ex.Message; }
-        _igSaving = false;
-    }
-
-    private async Task SaveTikTokConfig()
-    {
-        _tkError = null;
-        _tkSuccess = false;
-        _tkSaving = true;
-        try
-        {
-            var dto = new BufferConfigDto(_tkApiKey, _tkChannelId);
-            var (ok, error) = await Api.SaveTikTokConfigAsync(ProjectId, dto);
-            if (ok)
-            {
-                _tkSuccess = true;
-                _modules = await Api.GetModulesAsync();
-            }
-            else
-                _tkError = error;
-        }
-        catch (Exception ex) { _tkError = ex.Message; }
-        _tkSaving = false;
-    }
-
-    private async Task SavePinterestConfig()
-    {
-        _ptError = null;
-        _ptSuccess = false;
-        _ptSaving = true;
-        try
-        {
-            var dto = new BufferConfigDto(_ptApiKey, _ptChannelId);
-            var (ok, error) = await Api.SavePinterestConfigAsync(ProjectId, dto);
-            if (ok)
-            {
-                _ptSuccess = true;
-                _modules = await Api.GetModulesAsync();
-            }
-            else
-                _ptError = error;
-        }
-        catch (Exception ex) { _ptError = ex.Message; }
-        _ptSaving = false;
+        catch (Exception ex) { _connError = ex.Message; }
+        _connSaving = false;
     }
 
     private string BuildCronFromPreset()

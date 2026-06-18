@@ -870,26 +870,21 @@ public class GraphPipelineExecutor : IPipelineExecutor
             "pinterest" => "Pinterest",
             _ => "Instagram"
         };
-        var configJson = publishPlatform switch
+        var connection = publishPlatform switch
         {
-            "tiktok" => ctx.Project.TikTokConfig,
-            "pinterest" => ctx.Project.PinterestConfig,
-            _ => ctx.Project.InstagramConfig
+            "tiktok" => ctx.Project.TikTokConnection,
+            "pinterest" => ctx.Project.PinterestConnection,
+            _ => ctx.Project.InstagramConnection
         };
 
-        if (string.IsNullOrWhiteSpace(configJson))
-            return ModuleResult.Failed($"Modulo {stepName}: El proyecto no tiene configuracion de Buffer para {platformLabel}");
+        if (connection is null)
+            return ModuleResult.Failed($"Modulo {stepName}: El proyecto no tiene una conexion de {platformLabel} asignada");
 
-        BufferConfig bufferConfig;
-        try
+        var bufferConfig = new BufferConfig
         {
-            bufferConfig = JsonSerializer.Deserialize<BufferConfig>(configJson, JsonOptions)
-                ?? throw new InvalidOperationException("Configuracion vacia");
-        }
-        catch (Exception ex)
-        {
-            return ModuleResult.Failed($"Modulo {stepName}: Configuracion de Buffer ({platformLabel}) invalida: {ex.Message}");
-        }
+            ApiKey = connection.ApiKey,
+            ChannelId = connection.ChannelId,
+        };
 
         if (string.IsNullOrWhiteSpace(bufferConfig.ApiKey))
             return ModuleResult.Failed($"Modulo {stepName}: API Key de Buffer no configurada");
@@ -1364,11 +1359,15 @@ public class GraphPipelineExecutor : IPipelineExecutor
             // still send the message to Telegram as a plain notification (no buttons).
             if (node.ModuleType == "Interaction"
                 && node.AiModule.ModelName.Equals("telegram", StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(project.TelegramConfig))
+                && project.TelegramConnection is not null)
             {
                 try
                 {
-                    var tgConfig = JsonSerializer.Deserialize<TelegramConfig>(project.TelegramConfig, JsonOptions);
+                    var tgConfig = new TelegramConfig
+                    {
+                        BotToken = project.TelegramConnection.BotToken,
+                        ChatId = project.TelegramConnection.ChatId,
+                    };
                     var msg = node.Output?.Content ?? "";
                     if (tgConfig is not null && !string.IsNullOrWhiteSpace(msg))
                         await _telegram.SendTextMessageAsync(tgConfig, msg);
@@ -1609,11 +1608,14 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         if (useTelegram)
         {
-            if (string.IsNullOrWhiteSpace(project.TelegramConfig))
-                throw new InvalidOperationException("El proyecto no tiene configuracion de Telegram");
+            if (project.TelegramConnection is null)
+                throw new InvalidOperationException("El proyecto no tiene una conexion de Telegram asignada");
 
-            var config = JsonSerializer.Deserialize<TelegramConfig>(project.TelegramConfig, JsonOptions)
-                ?? throw new InvalidOperationException("Configuracion de Telegram invalida");
+            var config = new TelegramConfig
+            {
+                BotToken = project.TelegramConnection.BotToken,
+                ChatId = project.TelegramConnection.ChatId,
+            };
 
             var existing = await _coreDb.TelegramCorrelations
                 .FirstOrDefaultAsync(c =>
@@ -1713,6 +1715,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 .ThenInclude(pm => pm.Files)
             .Include(p => p.ProjectModules)
                 .ThenInclude(pm => pm.OrchestratorOutputs)
+            .Include(p => p.InstagramConnection)
+            .Include(p => p.TikTokConnection)
+            .Include(p => p.PinterestConnection)
+            .Include(p => p.TelegramConnection)
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);
 
         return project ?? throw new InvalidOperationException("Proyecto no encontrado");
@@ -1789,10 +1795,16 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await using var db = _tenantFactory.Create(correlation.TenantDbName);
         var exec = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
         if (exec is null) return (null, null, []);
-        var proj = await db.Projects.FindAsync(exec.ProjectId);
-        if (string.IsNullOrWhiteSpace(proj?.TelegramConfig)) return (null, null, []);
+        var proj = await db.Projects
+            .Include(p => p.TelegramConnection)
+            .FirstOrDefaultAsync(p => p.Id == exec.ProjectId);
+        if (proj?.TelegramConnection is null) return (null, null, []);
 
-        var config = JsonSerializer.Deserialize<TelegramConfig>(proj.TelegramConfig, JsonOptions);
+        var config = new TelegramConfig
+        {
+            BotToken = proj.TelegramConnection.BotToken,
+            ChatId = proj.TelegramConnection.ChatId,
+        };
         var filePaths = await LoadExecutionFilePathsAsync(correlation.ExecutionId, db, CancellationToken.None);
         return (config, ResolveWorkspacePath(exec.WorkspacePath), filePaths);
     }

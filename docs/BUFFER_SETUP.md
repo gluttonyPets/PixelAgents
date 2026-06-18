@@ -248,8 +248,8 @@ cd /ruta/a/PixelAgents
 
 O manualmente desde la interfaz de PixelAgents:
 
-1. Ve a tu proyecto → Integraciones → Telegram
-2. Simplemente **guarda la configuración de nuevo** (sin cambiar nada)
+1. Ve a la sección **Mensajería** (`/mensajeria`) y abre tu conexión de Telegram
+2. Simplemente **guarda la conexión de nuevo** (sin cambiar nada)
 3. Esto re-registrará el webhook con la nueva URL pública
 
 ## Soporte Adicional

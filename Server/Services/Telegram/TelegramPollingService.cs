@@ -170,21 +170,15 @@ namespace Server.Services.Telegram
                     try
                     {
                         await using var db = factory.Create(tenantDbName);
-                        var configs = await db.Projects
-                            .Where(p => p.TelegramConfig != null && p.TelegramConfig != "")
-                            .Select(p => p.TelegramConfig)
+                        var botTokens = await db.MessagingConnections
+                            .Where(c => c.Provider == "telegram" && c.BotToken != "")
+                            .Select(c => c.BotToken)
                             .ToListAsync();
 
-                        foreach (var configJson in configs)
+                        foreach (var token in botTokens)
                         {
-                            if (string.IsNullOrWhiteSpace(configJson)) continue;
-                            try
-                            {
-                                var config = JsonSerializer.Deserialize<TelegramConfig>(configJson);
-                                if (!string.IsNullOrWhiteSpace(config?.BotToken))
-                                    tokens.Add(config.BotToken);
-                            }
-                            catch { }
+                            if (!string.IsNullOrWhiteSpace(token))
+                                tokens.Add(token);
                         }
                     }
                     catch { }
