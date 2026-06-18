@@ -1,4 +1,6 @@
-# Fix: Módulo de Texto Ahora Acepta Imágenes sin Prompt de Texto
+# Fix: el módulo de texto acepta imágenes sin prompt de texto
+
+> Estado: **resuelto** · Área: `Server/Services/Ai/Handlers/TextModuleHandler.cs`
 
 ## Problema
 El módulo de texto (`TextModuleHandler`) rechazaba entradas que solo contenían imágenes sin texto, generando el error "Sin prompt de entrada".

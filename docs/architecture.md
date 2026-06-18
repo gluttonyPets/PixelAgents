@@ -183,6 +183,8 @@ docker compose up -d
 ## Donde profundizar
 
 - `README.md` — guia tecnica completa de onboarding
+- `docs/DOCUMENTACION.md` — como organizar y mantener los documentos del repo
+- `docs/fixes/` — registro de incidencias resueltas (bugs y fixes puntuales)
 - `docs/MIGRATION_PLAN_GRAPH_EXECUTOR.md` — decision de diseno del executor basado en grafo
 - `docs/MIGRATION_PROGRESS.md` — historial de la migracion al executor actual
 - `Server/Services/Ai/GraphPipelineExecutor.cs` — logica de ejecucion, pausas, reintentos y publicacion

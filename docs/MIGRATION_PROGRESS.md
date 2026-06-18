@@ -1,5 +1,10 @@
 # Progreso de Migración: Graph Pipeline Executor
 
+> **Nota histórica**: este documento refleja el estado durante la migración. Los
+> módulos `Video`, `VideoEdit` y `VideoSearch` (y los providers Json2Video y
+> Pexels) se eliminaron después; las filas que los mencionan se conservan solo
+> como registro del proceso, ya no existen en el código.
+
 ## Estado Actual: Fase 1-3 completadas, Fase 4 en progreso
 
 ---

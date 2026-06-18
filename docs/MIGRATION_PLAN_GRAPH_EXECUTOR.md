@@ -1,5 +1,9 @@
 # Plan: Refactorizar PipelineExecutor a Arquitectura Basada en Grafos
 
+> **Nota histórica**: documento de diseño original de la migración. Los módulos
+> `Video`, `VideoEdit` y `VideoSearch` que aparecen en los ejemplos se eliminaron
+> posteriormente y ya no existen en el código.
+
 ## Contexto
 
 El `PipelineExecutor.cs` actual tiene 7500+ lineas porque gestiona ejecucion lineal con branches, input resolution fragil, y logica duplicada en 5+ contextos diferentes (main, branch, retry, checkpoint resume, interaction resume). Cada tipo de modulo tiene handling especial repetido en cada contexto. El sistema de branches (`BranchId`, `BranchFromStep`, deferred branches) causa bugs constantes y el save-graph endpoint genera intermediarios innecesarios (`InputMapping`, `sceneInputs`, `templateInputs`, `fieldInputs`, `coordinatorInputs`).

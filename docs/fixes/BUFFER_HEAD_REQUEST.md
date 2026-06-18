@@ -1,4 +1,6 @@
-# Fix: Soporte para solicitudes HEAD en endpoint de Buffer
+# Fix: soporte para solicitudes HEAD en el endpoint de Buffer
+
+> Estado: **resuelto** · Área: `Server/Program.cs` (`/api/public/buffer-image/{slot}`)
 
 ## Problema
 

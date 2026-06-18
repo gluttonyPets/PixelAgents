@@ -78,3 +78,19 @@
 - master = producción
 - develop = preproducción
 - master, main y develop nunca se modifican directamente por agentes.
+
+## Documentación (.md)
+
+- La guía completa está en `docs/DOCUMENTACION.md`. Síguela al crear o tocar docs.
+- Estructura: raíz solo `README.md` y `CLAUDE.md`; documentación viva en `docs/`;
+  incidencias resueltas en `docs/fixes/`.
+- Antes de crear un `.md` nuevo, comprueba si ya existe uno sobre el tema y
+  actualízalo en vez de duplicar. No crear "summaries" sueltos en la raíz.
+- Antes de editar código, revisa si algún `.md` queda afectado:
+  - actualiza los docs que describan lo que cambias;
+  - si borras un módulo/provider/endpoint, elimina sus menciones en los `.md`
+    (`rg -i "loQueBorras" --glob '*.md'`);
+  - si una incidencia ya resuelta deja de aportar (su código ya no existe),
+    borra su doc en `docs/fixes/` en lugar de dejarlo obsoleto.
+- Sé responsable: deja solo información relevante y borra lo que sea basura o no
+  aporte. El historial de git conserva lo eliminado.
