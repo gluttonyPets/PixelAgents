@@ -11,6 +11,7 @@ namespace Server.Data
         public DbSet<AiModule> AiModules => Set<AiModule>();
         public DbSet<SocialConnection> SocialConnections => Set<SocialConnection>();
         public DbSet<MessagingConnection> MessagingConnections => Set<MessagingConnection>();
+        public DbSet<ShopifyConnection> ShopifyConnections => Set<ShopifyConnection>();
         public DbSet<Project> Projects => Set<Project>();
         public DbSet<ProjectModule> ProjectModules => Set<ProjectModule>();
         public DbSet<ProjectExecution> ProjectExecutions => Set<ProjectExecution>();
@@ -79,6 +80,15 @@ namespace Server.Data
                 e.HasIndex(x => x.Provider);
             });
 
+            // ── ShopifyConnection ──
+            modelBuilder.Entity<ShopifyConnection>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+                e.Property(x => x.ShopDomain).IsRequired().HasMaxLength(255);
+                e.Property(x => x.AccessToken).IsRequired();
+            });
+
             // ── Project ──
             modelBuilder.Entity<Project>(e =>
             {
@@ -103,6 +113,10 @@ namespace Server.Data
                 e.HasOne(x => x.TelegramConnection)
                     .WithMany()
                     .HasForeignKey(x => x.TelegramConnectionId)
+                    .OnDelete(DeleteBehavior.SetNull);
+                e.HasOne(x => x.ShopifyConnection)
+                    .WithMany()
+                    .HasForeignKey(x => x.ShopifyConnectionId)
                     .OnDelete(DeleteBehavior.SetNull);
             });
 

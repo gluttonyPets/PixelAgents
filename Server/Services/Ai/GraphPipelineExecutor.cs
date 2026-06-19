@@ -1719,6 +1719,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             .Include(p => p.TikTokConnection)
             .Include(p => p.PinterestConnection)
             .Include(p => p.TelegramConnection)
+            .Include(p => p.ShopifyConnection)
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);
 
         return project ?? throw new InvalidOperationException("Proyecto no encontrado");

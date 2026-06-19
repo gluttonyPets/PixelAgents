@@ -60,12 +60,22 @@ namespace Server.Services
                     ""UpdatedAt"" timestamp with time zone NOT NULL
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_MessagingConnections_Provider"" ON ""MessagingConnections"" (""Provider"")", log);
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ShopifyConnections"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""Name"" varchar(200) NOT NULL,
+                    ""ShopDomain"" varchar(255) NOT NULL,
+                    ""AccessToken"" text NOT NULL,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
 
             // Referencias del proyecto a las conexiones asignadas
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""InstagramConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""TikTokConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""PinterestConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""TelegramConnectionId"" uuid REFERENCES ""MessagingConnections""(""Id"") ON DELETE SET NULL", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""ShopifyConnectionId"" uuid REFERENCES ""ShopifyConnections""(""Id"") ON DELETE SET NULL", log);
 
             // Columnas JSON antiguas (credenciales por proyecto) reemplazadas por conexiones
             RunSafe(ctx, @"ALTER TABLE ""Projects"" DROP COLUMN IF EXISTS ""TelegramConfig""", log);

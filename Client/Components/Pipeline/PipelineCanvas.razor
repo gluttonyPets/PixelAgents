@@ -567,6 +567,68 @@
                         </div>
                     }
 
+                    @if (sel.ModuleType == "ShopifyBlog")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Articulo de blog (Shopify)</div>
+
+                            <p class="text-sm text-muted" style="margin-bottom:0.5rem;">
+                                <i class="bi bi-info-circle"></i>
+                                La tienda se elige asignando una conexion de Shopify en los ajustes del proyecto.
+                                El titulo y el cuerpo del articulo vienen del modulo conectado a la entrada.
+                            </p>
+
+                            <div class="inspector-field">
+                                <label>Blog destino</label>
+                                @if (_shopifyBlogs.Count > 0)
+                                {
+                                    <select value="@GetModuleConfig(sel.Id, "blogId", "")"
+                                            @onchange="@(e => OnShopifyBlogChanged(sel.Id, e.Value?.ToString() ?? ""))">
+                                        <option value="">-- Seleccionar blog --</option>
+                                        @foreach (var b in _shopifyBlogs)
+                                        {
+                                            <option value="@b.Id">@b.Title</option>
+                                        }
+                                    </select>
+                                }
+                                else if (!string.IsNullOrEmpty(GetModuleConfig(sel.Id, "blogTitle", "")))
+                                {
+                                    <div class="text-muted">Actual: @GetModuleConfig(sel.Id, "blogTitle", "")</div>
+                                }
+                                <button class="btn btn-outline btn-sm" style="margin-top:0.4rem;"
+                                        @onclick="LoadShopifyBlogs" disabled="@_loadingShopifyBlogs">
+                                    @(_loadingShopifyBlogs ? "Cargando..." : "Cargar blogs")
+                                </button>
+                                @if (_shopifyBlogsError is not null)
+                                {
+                                    <div class="alert alert-error" style="margin-top:0.4rem;">@_shopifyBlogsError</div>
+                                }
+                            </div>
+
+                            <div class="inspector-field">
+                                <label>Autor <span class="text-sm text-muted">(opcional)</span></label>
+                                <input type="text" value="@GetModuleConfig(sel.Id, "author", "")"
+                                       @onchange="@(e => SetModuleConfig(sel.Id, "author", e.Value?.ToString() ?? ""))"
+                                       placeholder="Ej: Equipo de marketing" />
+                            </div>
+
+                            <div class="inspector-field">
+                                <label>Tags <span class="text-sm text-muted">(separados por comas, opcional)</span></label>
+                                <input type="text" value="@GetModuleConfig(sel.Id, "tags", "")"
+                                       @onchange="@(e => SetModuleConfig(sel.Id, "tags", e.Value?.ToString() ?? ""))"
+                                       placeholder="novedades, recetas" />
+                            </div>
+
+                            <div class="inspector-field">
+                                <label class="inspector-checkbox">
+                                    <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "published", false)"
+                                           @onchange="@(e => SetModuleConfig(sel.Id, "published", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
+                                    <span>Publicar (si no, se guarda como borrador)</span>
+                                </label>
+                            </div>
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "Orchestrator")
                     {
                         <div class="inspector-section">
@@ -901,6 +963,11 @@
     private Dictionary<Guid, Dictionary<string, string>> _moduleConfigs = new();
     private bool _lastExecuting;
 
+    // Shopify blog picker (config del nodo ShopifyBlog)
+    private List<ShopifyBlogDto> _shopifyBlogs = new();
+    private bool _loadingShopifyBlogs;
+    private string? _shopifyBlogsError;
+
     private FormatEditorState? _formatEditor;
 
     private sealed class FormatEditorState
@@ -939,7 +1006,7 @@
         new("media", "bi-brush", "Generacion", ["Image", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["Transcription", "Embeddings"]),
         new("resources", "bi-paperclip", "Recursos", ["FileUpload", "StaticText"]),
-        new("control", "bi-sliders", "Control y Salida", ["Scene", "Checkpoint", "Publish", "Coordinator"]),
+        new("control", "bi-sliders", "Control y Salida", ["Scene", "Checkpoint", "Publish", "ShopifyBlog", "Coordinator"]),
     ];
 
     private void ToggleModulePanel() => _showModulePanel = !_showModulePanel;
@@ -1305,6 +1372,29 @@
             _moduleConfigs[moduleId] = new();
         _moduleConfigs[moduleId][key] = value;
         await AutoSaveGraph();
+    }
+
+    // ── Shopify blog picker ──
+
+    private async Task LoadShopifyBlogs()
+    {
+        _loadingShopifyBlogs = true;
+        _shopifyBlogsError = null;
+        try
+        {
+            var (blogs, error) = await Api.GetProjectShopifyBlogsAsync(ProjectId);
+            if (blogs is not null) _shopifyBlogs = blogs;
+            else _shopifyBlogsError = error ?? "No se pudieron cargar los blogs.";
+        }
+        catch (Exception ex) { _shopifyBlogsError = ex.Message; }
+        _loadingShopifyBlogs = false;
+    }
+
+    private async Task OnShopifyBlogChanged(Guid moduleId, string blogId)
+    {
+        await SetModuleConfig(moduleId, "blogId", blogId);
+        var blog = _shopifyBlogs.FirstOrDefault(b => b.Id == blogId);
+        await SetModuleConfig(moduleId, "blogTitle", blog?.Title ?? "");
     }
 
     private async Task ToggleSkipped(Guid moduleId, bool skipped)

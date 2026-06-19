@@ -572,6 +572,42 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Shopify Connections ──
+
+    public async Task<List<ShopifyConnectionResponse>> GetShopifyConnectionsAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/shopify-connections");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ShopifyConnectionResponse>>() ?? [];
+    }
+
+    public async Task<(bool Ok, string? Error)> CreateShopifyConnectionAsync(CreateShopifyConnectionRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/shopify-connections", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateShopifyConnectionAsync(Guid id, UpdateShopifyConnectionRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/shopify-connections/{id}", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task DeleteShopifyConnectionAsync(Guid id)
+    {
+        await SendAsync(HttpMethod.Delete, $"/api/shopify-connections/{id}");
+    }
+
+    public async Task<(List<ShopifyBlogDto>? Blogs, string? Error)> GetProjectShopifyBlogsAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/shopify/blogs");
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<List<ShopifyBlogDto>>(), null);
+        return (null, await ReadErrorAsync(resp));
+    }
+
     // ── Schedule ──
 
     public async Task<ScheduleResponse?> GetScheduleAsync(Guid projectId)

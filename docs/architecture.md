@@ -27,7 +27,7 @@ ASP.NET Core Minimal API (:5000)
   |-- Identity + CoreDbContext  (DB: pixelagents_core)
   |-- TenantDbContextFactory    (DB: una por usuario/cuenta)
   |-- GraphPipelineExecutor     (motor de ejecucion de grafos)
-  |-- IModuleHandler x15        (handlers por tipo de modulo)
+  |-- IModuleHandler x16        (handlers por tipo de modulo)
   |-- IAiProvider x5            (OpenAI, Anthropic, Google, xAI,
   |                               LeonardoAI)
   |-- ExecutionHub (SignalR)
@@ -64,10 +64,11 @@ registrado) y las tablas de correlacion `TelegramCorrelations` / `WhatsAppCorrel
 almacenan el estado de interacciones externas pendientes de respuesta.
 
 **UserDb** (nombre dinamico, uno por cuenta) almacena todos los datos funcionales del tenant:
-`ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `Projects`, `ProjectModules`,
-`ModuleConnections`, `ProjectExecutions`, `StepExecutions`, `ExecutionFiles`, `ExecutionLogs`,
-`ProjectSchedules`, `OrchestratorOutputs` y `Rules`. Las credenciales de redes sociales (Buffer)
-y mensajeria (Telegram) son conexiones reutilizables que los proyectos referencian por Id.
+`ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `ShopifyConnections`,
+`Projects`, `ProjectModules`, `ModuleConnections`, `ProjectExecutions`, `StepExecutions`,
+`ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs` y `Rules`. Las
+credenciales de redes sociales (Buffer), mensajeria (Telegram) y Shopify son conexiones
+reutilizables que los proyectos referencian por Id.
 No hay migraciones EF formales: la BD se crea con `EnsureCreated` y los cambios de
 esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXISTS`,
 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) al arrancar el servidor.
@@ -118,6 +119,7 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 | Checkpoint    | CheckpointModuleHandler    | Pausa para revision humana antes de continuar              |
 | Design        | DesignModuleHandler        | Genera disenos via proveedor grafico (Canva, etc.)         |
 | Publish       | PublishModuleHandler       | Publica contenido en Instagram o TikTok via Buffer API     |
+| ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en una tienda Shopify          |
 
 ---
 

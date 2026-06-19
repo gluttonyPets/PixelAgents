@@ -13,11 +13,13 @@ namespace Server.Models
         public Guid? TikTokConnectionId { get; set; }
         public Guid? PinterestConnectionId { get; set; }
         public Guid? TelegramConnectionId { get; set; }
+        public Guid? ShopifyConnectionId { get; set; }
 
         public SocialConnection? InstagramConnection { get; set; }
         public SocialConnection? TikTokConnection { get; set; }
         public SocialConnection? PinterestConnection { get; set; }
         public MessagingConnection? TelegramConnection { get; set; }
+        public ShopifyConnection? ShopifyConnection { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }

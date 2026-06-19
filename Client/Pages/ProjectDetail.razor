@@ -971,6 +971,10 @@ else
                             @onclick='() => _settingsTab = "social"'>
                         Redes sociales
                     </button>
+                    <button class="settings-tab @(_settingsTab == "shopify" ? "settings-tab-active" : "")"
+                            @onclick='() => _settingsTab = "shopify"'>
+                        Shopify
+                    </button>
                     <button class="settings-tab @(_settingsTab == "schedule" ? "settings-tab-active" : "")"
                             @onclick='() => _settingsTab = "schedule"'>
                         Programacion
@@ -1078,6 +1082,46 @@ else
                             <p class="text-sm text-muted">
                                 Las credenciales (token de Buffer + canal) se gestionan en
                                 <a href="/redes-sociales">Redes sociales</a>. Aqui solo eliges cuales usa este proyecto.
+                            </p>
+                            <button class="btn btn-primary btn-sm" @onclick="SaveConnections" disabled="@_connSaving">
+                                @(_connSaving ? "Guardando..." : "Guardar")
+                            </button>
+                        </div>
+                    }
+
+                    <!-- SHOPIFY TAB -->
+                    @if (_settingsTab == "shopify")
+                    {
+                        <div class="settings-block">
+                            <div class="settings-block-header">
+                                <strong>Shopify</strong>
+                                <span class="text-sm text-muted">Tienda para publicar articulos de blog</span>
+                            </div>
+                            @if (_connError is not null)
+                            {
+                                <div class="alert alert-error">@_connError</div>
+                            }
+                            @if (_connSuccess)
+                            {
+                                <div class="alert alert-success">Guardado correctamente</div>
+                            }
+                            <div class="form-group">
+                                <label>Tienda Shopify</label>
+                                <select @bind="_shopifyConnSel">
+                                    <option value="">-- Sin asignar --</option>
+                                    @foreach (var c in _shopifyConnections)
+                                    {
+                                        <option value="@c.Id">@c.Name (@c.ShopDomain)</option>
+                                    }
+                                </select>
+                            </div>
+                            @if (_shopifyConnections.Count == 0)
+                            {
+                                <span class="text-sm text-muted">No tienes conexiones de Shopify. <a href="/shopify">Crear una</a>.</span>
+                            }
+                            <p class="text-sm text-muted">
+                                Las credenciales (dominio + token) se gestionan en <a href="/shopify">Shopify</a>.
+                                El blog destino se elige en cada nodo ShopifyBlog del pipeline.
                             </p>
                             <button class="btn btn-primary btn-sm" @onclick="SaveConnections" disabled="@_connSaving">
                                 @(_connSaving ? "Guardando..." : "Guardar")
@@ -1552,10 +1596,12 @@ else
     // Conexiones reutilizables asignadas al proyecto (selecciones como string para el <select>)
     private List<SocialConnectionResponse> _socialConnections = new();
     private List<MessagingConnectionResponse> _messagingConnections = new();
+    private List<ShopifyConnectionResponse> _shopifyConnections = new();
     private string _instagramConnSel = "";
     private string _tiktokConnSel = "";
     private string _pinterestConnSel = "";
     private string _telegramConnSel = "";
+    private string _shopifyConnSel = "";
     private string? _connError;
     private bool _connSuccess;
     private bool _connSaving;
@@ -1834,6 +1880,7 @@ else
             // Load available connections and the project's current assignment
             _socialConnections = await Api.GetSocialConnectionsAsync();
             _messagingConnections = await Api.GetMessagingConnectionsAsync();
+            _shopifyConnections = await Api.GetShopifyConnectionsAsync();
             var conns = await Api.GetProjectConnectionsAsync(ProjectId);
             if (conns is not null)
             {
@@ -1841,6 +1888,7 @@ else
                 _tiktokConnSel = conns.TikTokConnectionId?.ToString() ?? "";
                 _pinterestConnSel = conns.PinterestConnectionId?.ToString() ?? "";
                 _telegramConnSel = conns.TelegramConnectionId?.ToString() ?? "";
+                _shopifyConnSel = conns.ShopifyConnectionId?.ToString() ?? "";
             }
 
             // Load Schedule
@@ -1965,7 +2013,8 @@ else
                 Parse(_instagramConnSel),
                 Parse(_tiktokConnSel),
                 Parse(_pinterestConnSel),
-                Parse(_telegramConnSel));
+                Parse(_telegramConnSel),
+                Parse(_shopifyConnSel));
             var (ok, error) = await Api.SaveProjectConnectionsAsync(ProjectId, dto);
             if (ok)
             {

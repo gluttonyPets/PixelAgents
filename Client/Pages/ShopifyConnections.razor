@@ -1,0 +1,205 @@
+@page "/shopify"
+@inject ApiClient Api
+
+<div class="apikeys-page-header">
+    <h2>Shopify</h2>
+    <button class="btn btn-primary" @onclick="OpenCreate">+ Nueva conexion</button>
+</div>
+
+<p class="text-muted" style="margin-top:-0.4rem;margin-bottom:1rem;">
+    Guarda aqui las tiendas Shopify (dominio + Admin API access token) una sola vez.
+    Luego en cada proyecto solo asignas la conexion, y en cada nodo eliges el blog destino.
+</p>
+
+@if (_loading)
+{
+    <p class="text-muted">Cargando...</p>
+}
+else if (_conns.Count > 0)
+{
+    <div class="table-wrap">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Tienda</th>
+                    <th>Nombre</th>
+                    <th>Uso</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in _conns)
+                {
+                    var isConfirming = _confirmDeleteId == c.Id;
+                    <tr class="@(isConfirming ? "row-confirming" : c.ProjectCount == 0 ? "row-unused" : "")">
+                        <td><span class="badge badge-info">@c.ShopDomain</span></td>
+                        <td><span class="key-name">@c.Name</span></td>
+                        <td>
+                            @if (c.ProjectCount > 0)
+                            {
+                                <span class="key-usage-badge key-usage-active">@c.ProjectCount proyecto@(c.ProjectCount == 1 ? "" : "s")</span>
+                            }
+                            else
+                            {
+                                <span class="key-usage-badge key-usage-idle">Sin uso</span>
+                            }
+                        </td>
+                        <td class="apikeys-actions">
+                            @if (isConfirming)
+                            {
+                                <span class="text-muted" style="margin-right:0.5rem;">¿Eliminar?</span>
+                                <button class="btn btn-danger btn-sm" @onclick="() => ConfirmDelete(c.Id)">Si</button>
+                                <button class="btn btn-sm" @onclick="CancelDelete" style="margin-left:0.25rem;">No</button>
+                            }
+                            else
+                            {
+                                <button class="btn btn-primary btn-sm" @onclick="() => StartEdit(c)" style="margin-right:0.25rem;">Editar</button>
+                                <button class="btn btn-danger btn-sm" @onclick="() => RequestDelete(c.Id)">Eliminar</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+else
+{
+    <div class="apikeys-empty">
+        <div class="apikeys-empty-icon">🛍️</div>
+        <div class="apikeys-empty-title">Sin conexiones de Shopify</div>
+        <div class="apikeys-empty-desc">Pulsa <strong>+ Nueva conexion</strong> para guardar una tienda.</div>
+    </div>
+}
+
+@if (_showModal)
+{
+    <div class="modal-overlay" @onclick="CancelModal">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width: 540px;">
+            <div class="modal-header">
+                <strong style="flex:1">@(_editingId is null ? "Nueva conexion" : "Editar conexion")</strong>
+                <button class="modal-close-btn" @onclick="CancelModal" aria-label="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error" style="margin-bottom:0.8rem;">@_error</div>
+                }
+                <div class="form-group">
+                    <label>Nombre</label>
+                    <input type="text" @bind="_name" placeholder="Mi tienda" />
+                </div>
+                <div class="form-group">
+                    <label>Dominio de la tienda</label>
+                    <input type="text" @bind="_domain" placeholder="mitienda.myshopify.com" />
+                </div>
+                <div class="form-group">
+                    <label>
+                        Admin API access token
+                        @if (_editingId is not null)
+                        {
+                            <span class="text-muted" style="font-weight:400;">(deja vacio para conservar el actual)</span>
+                        }
+                    </label>
+                    <input type="password" @bind="_token" placeholder="shpat_..." autocomplete="new-password" />
+                    <span class="text-sm text-muted">
+                        Lo generas en Shopify &#x2192; Apps &#x2192; Develop apps &#x2192; tu app &#x2192; Admin API.
+                        Necesita el scope <code>write_content</code>.
+                    </span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm" @onclick="CancelModal" disabled="@_saving">Cancelar</button>
+                <button class="btn btn-primary btn-sm" @onclick="Save" disabled="@_saving">
+                    @(_saving ? "Guardando..." : "Guardar")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ShopifyConnectionResponse> _conns = [];
+    private bool _loading;
+    private Guid? _confirmDeleteId;
+
+    private bool _showModal;
+    private Guid? _editingId;
+    private string _name = "";
+    private string _domain = "";
+    private string _token = "";
+    private bool _saving;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        try { _conns = await Api.GetShopifyConnectionsAsync(); } catch { }
+        _loading = false;
+    }
+
+    private void OpenCreate()
+    {
+        _editingId = null;
+        _name = ""; _domain = ""; _token = "";
+        _error = null;
+        _showModal = true;
+    }
+
+    private void StartEdit(ShopifyConnectionResponse c)
+    {
+        _editingId = c.Id;
+        _name = c.Name; _domain = c.ShopDomain; _token = "";
+        _error = null;
+        _confirmDeleteId = null;
+        _showModal = true;
+    }
+
+    private void CancelModal()
+    {
+        if (_saving) return;
+        _showModal = false;
+        _error = null;
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_name)) { _error = "El nombre es obligatorio."; return; }
+        if (string.IsNullOrWhiteSpace(_domain)) { _error = "El dominio es obligatorio."; return; }
+        if (_editingId is null && string.IsNullOrWhiteSpace(_token)) { _error = "El access token es obligatorio."; return; }
+
+        _saving = true; _error = null;
+        try
+        {
+            if (_editingId is null)
+            {
+                var (ok, error) = await Api.CreateShopifyConnectionAsync(
+                    new CreateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), _token.Trim()));
+                if (!ok) { _error = error; return; }
+            }
+            else
+            {
+                var newToken = string.IsNullOrWhiteSpace(_token) ? null : _token.Trim();
+                var (ok, error) = await Api.UpdateShopifyConnectionAsync(_editingId.Value,
+                    new UpdateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), newToken));
+                if (!ok) { _error = error; return; }
+            }
+            _showModal = false;
+            await Load();
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        finally { _saving = false; }
+    }
+
+    private void RequestDelete(Guid id) => _confirmDeleteId = id;
+    private void CancelDelete() => _confirmDeleteId = null;
+
+    private async Task ConfirmDelete(Guid id)
+    {
+        _confirmDeleteId = null;
+        try { await Api.DeleteShopifyConnectionAsync(id); await Load(); }
+        catch { }
+    }
+}

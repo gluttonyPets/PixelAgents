@@ -216,6 +216,11 @@ public static class ModulePortRegistry
                 ports.Add(new("output_result", "Resultado", PortDataType.Text, isInput: false));
                 break;
 
+            case "ShopifyBlog":
+                ports.Add(new("input_content", "Contenido", PortDataType.Any, isInput: true, isRequired: true));
+                ports.Add(new("output_result", "Resultado", PortDataType.Text, isInput: false));
+                break;
+
             case "Embeddings":
                 ports.Add(new("input_text", "Texto", PortDataType.Text, isInput: true, isRequired: true));
                 ports.Add(new("output_embedding", "Embedding", PortDataType.File, isInput: false));
@@ -265,6 +270,7 @@ public static class ModulePortRegistry
         "Design" => "bi-palette",
         "Interaction" => "bi-chat-dots",
         "Publish" => "bi-send",
+        "ShopifyBlog" => "bi-shop",
         "Embeddings" => "bi-grid-3x3",
         "Checkpoint" => "bi-check-circle",
         "FileUpload" => "bi-paperclip",
@@ -284,6 +290,7 @@ public static class ModulePortRegistry
         "Design" => "#00bcd4",
         "Interaction" => "#26a69a",
         "Publish" => "#ab47bc",
+        "ShopifyBlog" => "#95bf47",
         "Embeddings" => "#78909c",
         "Checkpoint" => "#f44336",
         "FileUpload" => "#607d8b",

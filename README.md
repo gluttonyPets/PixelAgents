@@ -547,16 +547,20 @@ luego cada proyecto solo asigna cual usar (no se reintroducen por proyecto):
 - Mensajeria (Telegram): `GET|POST /api/messaging-connections`,
   `PUT|DELETE /api/messaging-connections/{id}`. Cada conexion guarda el bot token
   + chat id.
+- Shopify: `GET|POST /api/shopify-connections`,
+  `PUT|DELETE /api/shopify-connections/{id}`. Cada conexion guarda el dominio de la
+  tienda + Admin API access token. El modulo `ShopifyBlog` publica articulos de blog;
+  el blog destino se elige en cada nodo (`GET /api/projects/{projectId}/shopify/blogs`).
 - Canales de Buffer disponibles para un token: `GET /api/buffer/channels?apiKey=...`.
 
 Asignacion por proyecto:
 
 - `GET|PUT /api/projects/{projectId}/connections`: asigna las conexiones de
-  Instagram, TikTok, Pinterest y Telegram que usa el proyecto (por Id).
+  Instagram, TikTok, Pinterest, Telegram y Shopify que usa el proyecto (por Id).
 
-En la UI esto vive en las secciones **Redes sociales** (`/redes-sociales`) y
-**Mensajeria** (`/mensajeria`); dentro del proyecto, la pestana de configuracion
-solo muestra selectores de la conexion guardada.
+En la UI esto vive en las secciones **Redes sociales** (`/redes-sociales`),
+**Mensajeria** (`/mensajeria`) y **Shopify** (`/shopify`); dentro del proyecto, las
+pestanas de configuracion solo muestran selectores de la conexion guardada.
 
 Webhooks:
 

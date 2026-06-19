@@ -84,6 +84,8 @@ builder.Services.AddTransient<IModuleHandler, CheckpointModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, InteractionModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, DesignModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, PublishModuleHandler>();
+builder.Services.AddTransient<IModuleHandler, ShopifyBlogModuleHandler>();
+builder.Services.AddHttpClient<Server.Services.Shopify.ShopifyService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddSingleton<Server.Services.Instagram.BufferImagePoolService>();
@@ -2814,6 +2816,132 @@ app.MapDelete("/api/messaging-connections/{id:guid}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+// ==================== Shopify Connections ====================
+
+// Asegura que el modulo sentinel "Shopify Blog" exista en el catalogo.
+static async Task EnsureShopifyBlogSentinelAsync(UserDbContext db)
+{
+    if (await db.AiModules.AnyAsync(m => m.ModuleType == "ShopifyBlog")) return;
+    db.AiModules.Add(new AiModule
+    {
+        Id = Guid.NewGuid(),
+        Name = "Shopify Blog",
+        Description = "Publica un articulo de blog en una tienda Shopify.",
+        ProviderType = "System",
+        ModuleType = "ShopifyBlog",
+        ModelName = "shopify-blog",
+        IsEnabled = true,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    });
+}
+
+app.MapGet("/api/shopify-connections", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conns = await db.ShopifyConnections.OrderByDescending(c => c.CreatedAt).ToListAsync();
+    var refs = await db.Projects.Select(p => p.ShopifyConnectionId).ToListAsync();
+
+    var result = conns.Select(c => new ShopifyConnectionResponse(
+        c.Id, c.Name, c.ShopDomain, c.CreatedAt, c.UpdatedAt, refs.Count(r => r == c.Id)));
+    return Results.Ok(result);
+}).RequireAuthorization();
+
+app.MapPost("/api/shopify-connections", async (
+    CreateShopifyConnectionRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ShopDomain) || string.IsNullOrWhiteSpace(req.AccessToken))
+        return Results.BadRequest(new { error = "Nombre, dominio y access token son obligatorios." });
+
+    var conn = new ShopifyConnection
+    {
+        Id = Guid.NewGuid(),
+        Name = req.Name.Trim(),
+        ShopDomain = Server.Services.Shopify.ShopifyService.NormalizeDomain(req.ShopDomain),
+        AccessToken = req.AccessToken.Trim(),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+    db.ShopifyConnections.Add(conn);
+    await EnsureShopifyBlogSentinelAsync(db);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/shopify-connections/{conn.Id}", new ShopifyConnectionResponse(
+        conn.Id, conn.Name, conn.ShopDomain, conn.CreatedAt, conn.UpdatedAt, 0));
+}).RequireAuthorization();
+
+app.MapPut("/api/shopify-connections/{id:guid}", async (
+    Guid id, UpdateShopifyConnectionRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conn = await db.ShopifyConnections.FindAsync(id);
+    if (conn is null) return Results.NotFound();
+
+    if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ShopDomain))
+        return Results.BadRequest(new { error = "Nombre y dominio son obligatorios." });
+
+    conn.Name = req.Name.Trim();
+    conn.ShopDomain = Server.Services.Shopify.ShopifyService.NormalizeDomain(req.ShopDomain);
+    if (!string.IsNullOrWhiteSpace(req.AccessToken))
+        conn.AccessToken = req.AccessToken.Trim();
+    conn.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { message = "Conexion actualizada" });
+}).RequireAuthorization();
+
+app.MapDelete("/api/shopify-connections/{id:guid}", async (
+    Guid id, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var conn = await db.ShopifyConnections.FindAsync(id);
+    if (conn is null) return Results.NotFound();
+
+    db.ShopifyConnections.Remove(conn);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+// Lista los blogs de la tienda Shopify asignada al proyecto (para elegir destino en el nodo).
+app.MapGet("/api/projects/{projectId:guid}/shopify/blogs", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.Shopify.ShopifyService shopify) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+    if (project.ShopifyConnectionId is null)
+        return Results.BadRequest(new { error = "El proyecto no tiene una conexion de Shopify asignada." });
+
+    var conn = await db.ShopifyConnections.FindAsync(project.ShopifyConnectionId.Value);
+    if (conn is null)
+        return Results.BadRequest(new { error = "La conexion de Shopify asignada ya no existe." });
+
+    try
+    {
+        var blogs = await shopify.ListBlogsAsync(conn.ShopDomain, conn.AccessToken, ctx.RequestAborted);
+        return Results.Ok(blogs);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
 // ==================== Project ↔ Connections assignment ====================
 
 app.MapGet("/api/projects/{projectId:guid}/connections", async (
@@ -2827,7 +2955,8 @@ app.MapGet("/api/projects/{projectId:guid}/connections", async (
 
     return Results.Ok(new ProjectConnectionsDto(
         project.InstagramConnectionId, project.TikTokConnectionId,
-        project.PinterestConnectionId, project.TelegramConnectionId));
+        project.PinterestConnectionId, project.TelegramConnectionId,
+        project.ShopifyConnectionId));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId:guid}/connections", async (
@@ -2862,10 +2991,15 @@ app.MapPut("/api/projects/{projectId:guid}/connections", async (
             return Results.BadRequest(new { error = "Conexion de Telegram invalida." });
     }
 
+    if (dto.ShopifyConnectionId is not null
+        && await db.ShopifyConnections.FindAsync(dto.ShopifyConnectionId.Value) is null)
+        return Results.BadRequest(new { error = "Conexion de Shopify invalida." });
+
     project.InstagramConnectionId = dto.InstagramConnectionId;
     project.TikTokConnectionId = dto.TikTokConnectionId;
     project.PinterestConnectionId = dto.PinterestConnectionId;
     project.TelegramConnectionId = dto.TelegramConnectionId;
+    project.ShopifyConnectionId = dto.ShopifyConnectionId;
     project.UpdatedAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
 
