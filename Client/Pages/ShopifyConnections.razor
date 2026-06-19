@@ -7,8 +7,9 @@
 </div>
 
 <p class="text-muted" style="margin-top:-0.4rem;margin-bottom:1rem;">
-    Guarda aqui las tiendas Shopify (dominio + Admin API access token) una sola vez.
-    Luego en cada proyecto solo asignas la conexion, y en cada nodo eliges el blog destino.
+    Guarda aqui las tiendas Shopify (dominio + Client ID + Client Secret de tu app del
+    Dev Dashboard) una sola vez. Luego en cada proyecto solo asignas la conexion, y en
+    cada nodo eliges el blog destino. El token se obtiene automaticamente.
 </p>
 
 @if (_loading)
@@ -92,19 +93,30 @@ else
                 <div class="form-group">
                     <label>Dominio de la tienda</label>
                     <input type="text" @bind="_domain" placeholder="mitienda.myshopify.com" />
+                    <span class="text-sm text-muted">El dominio <code>.myshopify.com</code>, no tu dominio personalizado.</span>
                 </div>
                 <div class="form-group">
                     <label>
-                        Admin API access token
+                        Client ID
                         @if (_editingId is not null)
                         {
                             <span class="text-muted" style="font-weight:400;">(deja vacio para conservar el actual)</span>
                         }
                     </label>
-                    <input type="password" @bind="_token" placeholder="shpat_..." autocomplete="new-password" />
+                    <input type="text" @bind="_clientId" placeholder="API key / Client ID de la app" autocomplete="off" />
+                </div>
+                <div class="form-group">
+                    <label>
+                        Client Secret
+                        @if (_editingId is not null)
+                        {
+                            <span class="text-muted" style="font-weight:400;">(deja vacio para conservar el actual)</span>
+                        }
+                    </label>
+                    <input type="password" @bind="_clientSecret" placeholder="API secret key / Client secret" autocomplete="new-password" />
                     <span class="text-sm text-muted">
-                        Lo generas en Shopify &#x2192; Apps &#x2192; Develop apps &#x2192; tu app &#x2192; Admin API.
-                        Necesita el scope <code>write_content</code>.
+                        En tu app del Dev Dashboard de Shopify &#x2192; <strong>Settings</strong> &#x2192; Client ID y Client secret.
+                        La app necesita los scopes <code>read_content</code> y <code>write_content</code> e instalada en la tienda.
                     </span>
                 </div>
             </div>
@@ -127,7 +139,8 @@ else
     private Guid? _editingId;
     private string _name = "";
     private string _domain = "";
-    private string _token = "";
+    private string _clientId = "";
+    private string _clientSecret = "";
     private bool _saving;
     private string? _error;
 
@@ -143,7 +156,7 @@ else
     private void OpenCreate()
     {
         _editingId = null;
-        _name = ""; _domain = ""; _token = "";
+        _name = ""; _domain = ""; _clientId = ""; _clientSecret = "";
         _error = null;
         _showModal = true;
     }
@@ -151,7 +164,7 @@ else
     private void StartEdit(ShopifyConnectionResponse c)
     {
         _editingId = c.Id;
-        _name = c.Name; _domain = c.ShopDomain; _token = "";
+        _name = c.Name; _domain = c.ShopDomain; _clientId = ""; _clientSecret = "";
         _error = null;
         _confirmDeleteId = null;
         _showModal = true;
@@ -168,7 +181,11 @@ else
     {
         if (string.IsNullOrWhiteSpace(_name)) { _error = "El nombre es obligatorio."; return; }
         if (string.IsNullOrWhiteSpace(_domain)) { _error = "El dominio es obligatorio."; return; }
-        if (_editingId is null && string.IsNullOrWhiteSpace(_token)) { _error = "El access token es obligatorio."; return; }
+        if (_editingId is null && (string.IsNullOrWhiteSpace(_clientId) || string.IsNullOrWhiteSpace(_clientSecret)))
+        {
+            _error = "El Client ID y el Client Secret son obligatorios.";
+            return;
+        }
 
         _saving = true; _error = null;
         try
@@ -176,14 +193,15 @@ else
             if (_editingId is null)
             {
                 var (ok, error) = await Api.CreateShopifyConnectionAsync(
-                    new CreateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), _token.Trim()));
+                    new CreateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), _clientId.Trim(), _clientSecret.Trim()));
                 if (!ok) { _error = error; return; }
             }
             else
             {
-                var newToken = string.IsNullOrWhiteSpace(_token) ? null : _token.Trim();
+                var newClientId = string.IsNullOrWhiteSpace(_clientId) ? null : _clientId.Trim();
+                var newSecret = string.IsNullOrWhiteSpace(_clientSecret) ? null : _clientSecret.Trim();
                 var (ok, error) = await Api.UpdateShopifyConnectionAsync(_editingId.Value,
-                    new UpdateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), newToken));
+                    new UpdateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), newClientId, newSecret));
                 if (!ok) { _error = error; return; }
             }
             _showModal = false;

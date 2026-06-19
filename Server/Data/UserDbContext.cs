@@ -86,7 +86,8 @@ namespace Server.Data
                 e.HasKey(x => x.Id);
                 e.Property(x => x.Name).IsRequired().HasMaxLength(200);
                 e.Property(x => x.ShopDomain).IsRequired().HasMaxLength(255);
-                e.Property(x => x.AccessToken).IsRequired();
+                e.Property(x => x.ClientId).IsRequired().HasMaxLength(255);
+                e.Property(x => x.ClientSecret).IsRequired();
             });
 
             // ── Project ──

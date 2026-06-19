@@ -52,7 +52,7 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         try
         {
             result = await _shopify.CreateArticleAsync(
-                connection.ShopDomain, connection.AccessToken, blogId,
+                connection.ShopDomain, connection.ClientId, connection.ClientSecret, blogId,
                 title, bodyHtml, string.IsNullOrWhiteSpace(author) ? null : author,
                 isPublished, tags, ctx.CancellationToken);
         }

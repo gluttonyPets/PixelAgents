@@ -5,8 +5,11 @@ using Server.Models;
 namespace Server.Services.Shopify
 {
     /// <summary>
-    /// Cliente minimo de la Admin GraphQL API de Shopify. Solo cubre lo que el
-    /// modulo de artículos de blog necesita: listar blogs y crear un articulo.
+    /// Cliente minimo de la Admin GraphQL API de Shopify. Obtiene el access token
+    /// mediante el flujo "client credentials" (Dev Dashboard, 2026+): intercambia
+    /// Client ID + Client Secret por un token de 24 h en cada operacion, y luego
+    /// llama a la API. Solo cubre lo que el modulo de blog necesita: listar blogs
+    /// y crear un articulo.
     /// </summary>
     public class ShopifyService
     {
@@ -30,18 +33,61 @@ namespace Server.Services.Shopify
             return d.TrimEnd('/');
         }
 
-        private string Endpoint(string shopDomain) =>
-            $"https://{NormalizeDomain(shopDomain)}/admin/api/{ApiVersion}/graphql.json";
+        /// <summary>
+        /// Intercambia Client ID + Client Secret por un access token (valido 24 h).
+        /// POST https://{shop}/admin/oauth/access_token con grant_type=client_credentials.
+        /// </summary>
+        private async Task<string> GetAccessTokenAsync(
+            string shopDomain, string clientId, string clientSecret, CancellationToken ct)
+        {
+            using var timeoutCts = new CancellationTokenSource(Timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
-        private async Task<JsonDocument> PostAsync(
+            var url = $"https://{NormalizeDomain(shopDomain)}/admin/oauth/access_token";
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["grant_type"] = "client_credentials",
+                    ["client_id"] = (clientId ?? "").Trim(),
+                    ["client_secret"] = (clientSecret ?? "").Trim(),
+                })
+            };
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await _http.SendAsync(request, linkedCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new TimeoutException("Shopify no respondio al pedir el token.");
+            }
+
+            var json = await response.Content.ReadAsStringAsync(linkedCts.Token);
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException(
+                    $"No se pudo obtener el token de Shopify ({(int)response.StatusCode}). " +
+                    $"Revisa el dominio, el Client ID y el Client Secret. {Truncate(json)}");
+
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("access_token", out var tokenEl) ||
+                tokenEl.GetString() is not { Length: > 0 } token)
+                throw new HttpRequestException("Shopify no devolvio un access token.");
+
+            return token;
+        }
+
+        private async Task<JsonDocument> PostGraphQlAsync(
             string shopDomain, string token, object payload, CancellationToken ct)
         {
             using var timeoutCts = new CancellationTokenSource(Timeout);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
+            var endpoint = $"https://{NormalizeDomain(shopDomain)}/admin/api/{ApiVersion}/graphql.json";
             var body = JsonSerializer.Serialize(payload);
-            using var request = new HttpRequestMessage(HttpMethod.Post, Endpoint(shopDomain));
-            request.Headers.Add("X-Shopify-Access-Token", (token ?? "").Trim());
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            request.Headers.Add("X-Shopify-Access-Token", token);
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
             HttpResponseMessage response;
@@ -74,10 +120,11 @@ namespace Server.Services.Shopify
 
         /// <summary>Lista los blogs de la tienda (id GID + titulo + handle).</summary>
         public async Task<List<ShopifyBlogDto>> ListBlogsAsync(
-            string shopDomain, string token, CancellationToken ct = default)
+            string shopDomain, string clientId, string clientSecret, CancellationToken ct = default)
         {
+            var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
             const string query = "query { blogs(first: 100) { nodes { id title handle } } }";
-            using var doc = await PostAsync(shopDomain, token, new { query }, ct);
+            using var doc = await PostGraphQlAsync(shopDomain, token, new { query }, ct);
 
             var result = new List<ShopifyBlogDto>();
             if (doc.RootElement.TryGetProperty("data", out var data) &&
@@ -98,10 +145,12 @@ namespace Server.Services.Shopify
 
         /// <summary>Crea un articulo de blog. Devuelve el id/handle o un error legible.</summary>
         public async Task<ShopifyArticleResult> CreateArticleAsync(
-            string shopDomain, string token, string blogId, string title, string bodyHtml,
-            string? authorName, bool isPublished, IEnumerable<string>? tags,
-            CancellationToken ct = default)
+            string shopDomain, string clientId, string clientSecret, string blogId,
+            string title, string bodyHtml, string? authorName, bool isPublished,
+            IEnumerable<string>? tags, CancellationToken ct = default)
         {
+            var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
+
             const string mutation = @"mutation CreateArticle($article: ArticleCreateInput!) {
   articleCreate(article: $article) {
     article { id title handle }
@@ -123,7 +172,7 @@ namespace Server.Services.Shopify
                 article["tags"] = tagList;
 
             var payload = new { query = mutation, variables = new { article } };
-            using var doc = await PostAsync(shopDomain, token, payload, ct);
+            using var doc = await PostGraphQlAsync(shopDomain, token, payload, ct);
 
             var createNode = doc.RootElement.GetProperty("data").GetProperty("articleCreate");
 

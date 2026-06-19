@@ -65,10 +65,15 @@ namespace Server.Services
                     ""Id"" uuid NOT NULL PRIMARY KEY,
                     ""Name"" varchar(200) NOT NULL,
                     ""ShopDomain"" varchar(255) NOT NULL,
-                    ""AccessToken"" text NOT NULL,
+                    ""ClientId"" varchar(255) NOT NULL DEFAULT '',
+                    ""ClientSecret"" text NOT NULL DEFAULT '',
                     ""CreatedAt"" timestamp with time zone NOT NULL,
                     ""UpdatedAt"" timestamp with time zone NOT NULL
                 )", log);
+            // Migracion del modelo viejo (token estatico) al nuevo (client credentials).
+            RunSafe(ctx, @"ALTER TABLE ""ShopifyConnections"" ADD COLUMN IF NOT EXISTS ""ClientId"" varchar(255) NOT NULL DEFAULT ''", log);
+            RunSafe(ctx, @"ALTER TABLE ""ShopifyConnections"" ADD COLUMN IF NOT EXISTS ""ClientSecret"" text NOT NULL DEFAULT ''", log);
+            RunSafe(ctx, @"ALTER TABLE ""ShopifyConnections"" DROP COLUMN IF EXISTS ""AccessToken""", log);
 
             // Referencias del proyecto a las conexiones asignadas
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""InstagramConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);

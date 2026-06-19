@@ -123,11 +123,11 @@ public record CreateMessagingConnectionRequest(string Name, string Provider,
 public record UpdateMessagingConnectionRequest(string Name, string Provider,
     string? BotToken, string ChatId);
 
-// ── Conexiones de Shopify reutilizables ──
+// ── Conexiones de Shopify reutilizables (client credentials grant) ──
 public record ShopifyConnectionResponse(Guid Id, string Name, string ShopDomain,
     DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount);
-public record CreateShopifyConnectionRequest(string Name, string ShopDomain, string AccessToken);
-public record UpdateShopifyConnectionRequest(string Name, string ShopDomain, string? AccessToken);
+public record CreateShopifyConnectionRequest(string Name, string ShopDomain, string ClientId, string ClientSecret);
+public record UpdateShopifyConnectionRequest(string Name, string ShopDomain, string? ClientId, string? ClientSecret);
 public record ShopifyBlogDto(string Id, string Title, string? Handle);
 
 // ── Asignacion de conexiones a un proyecto ──

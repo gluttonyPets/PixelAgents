@@ -2857,15 +2857,17 @@ app.MapPost("/api/shopify-connections", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ShopDomain) || string.IsNullOrWhiteSpace(req.AccessToken))
-        return Results.BadRequest(new { error = "Nombre, dominio y access token son obligatorios." });
+    if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ShopDomain)
+        || string.IsNullOrWhiteSpace(req.ClientId) || string.IsNullOrWhiteSpace(req.ClientSecret))
+        return Results.BadRequest(new { error = "Nombre, dominio, Client ID y Client Secret son obligatorios." });
 
     var conn = new ShopifyConnection
     {
         Id = Guid.NewGuid(),
         Name = req.Name.Trim(),
         ShopDomain = Server.Services.Shopify.ShopifyService.NormalizeDomain(req.ShopDomain),
-        AccessToken = req.AccessToken.Trim(),
+        ClientId = req.ClientId.Trim(),
+        ClientSecret = req.ClientSecret.Trim(),
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow,
     };
@@ -2892,8 +2894,10 @@ app.MapPut("/api/shopify-connections/{id:guid}", async (
 
     conn.Name = req.Name.Trim();
     conn.ShopDomain = Server.Services.Shopify.ShopifyService.NormalizeDomain(req.ShopDomain);
-    if (!string.IsNullOrWhiteSpace(req.AccessToken))
-        conn.AccessToken = req.AccessToken.Trim();
+    if (!string.IsNullOrWhiteSpace(req.ClientId))
+        conn.ClientId = req.ClientId.Trim();
+    if (!string.IsNullOrWhiteSpace(req.ClientSecret))
+        conn.ClientSecret = req.ClientSecret.Trim();
     conn.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
@@ -2933,7 +2937,7 @@ app.MapGet("/api/projects/{projectId:guid}/shopify/blogs", async (
 
     try
     {
-        var blogs = await shopify.ListBlogsAsync(conn.ShopDomain, conn.AccessToken, ctx.RequestAborted);
+        var blogs = await shopify.ListBlogsAsync(conn.ShopDomain, conn.ClientId, conn.ClientSecret, ctx.RequestAborted);
         return Results.Ok(blogs);
     }
     catch (Exception ex)

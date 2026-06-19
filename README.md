@@ -549,8 +549,10 @@ luego cada proyecto solo asigna cual usar (no se reintroducen por proyecto):
   + chat id.
 - Shopify: `GET|POST /api/shopify-connections`,
   `PUT|DELETE /api/shopify-connections/{id}`. Cada conexion guarda el dominio de la
-  tienda + Admin API access token. El modulo `ShopifyBlog` publica articulos de blog;
-  el blog destino se elige en cada nodo (`GET /api/projects/{projectId}/shopify/blogs`).
+  tienda + Client ID + Client Secret de una app del Dev Dashboard; el access token se
+  obtiene por client credentials grant (caduca cada 24 h, se renueva solo). El modulo
+  `ShopifyBlog` publica articulos de blog; el blog destino se elige en cada nodo
+  (`GET /api/projects/{projectId}/shopify/blogs`).
 - Canales de Buffer disponibles para un token: `GET /api/buffer/channels?apiKey=...`.
 
 Asignacion por proyecto:
