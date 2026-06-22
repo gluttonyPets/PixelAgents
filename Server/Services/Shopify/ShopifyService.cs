@@ -33,6 +33,21 @@ namespace Server.Services.Shopify
             return d.TrimEnd('/');
         }
 
+        // Shopify aplica proteccion anti-bot y bloquea (403 "Verifying your connection")
+        // las peticiones sin User-Agent. Estas cabeceras la evitan.
+        private static void AddDefaultHeaders(HttpRequestMessage request)
+        {
+            request.Headers.UserAgent.ParseAdd("PixelAgents/1.0 (+https://gluttony.es)");
+            request.Headers.Accept.ParseAdd("application/json");
+        }
+
+        private static bool LooksLikeHtml(string s)
+        {
+            var t = s.TrimStart();
+            return t.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
+                || t.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>
         /// Intercambia Client ID + Client Secret por un access token (valido 24 h).
         /// POST https://{shop}/admin/oauth/access_token con grant_type=client_credentials.
@@ -53,6 +68,7 @@ namespace Server.Services.Shopify
                     ["client_secret"] = (clientSecret ?? "").Trim(),
                 })
             };
+            AddDefaultHeaders(request);
 
             HttpResponseMessage response;
             try
@@ -65,10 +81,16 @@ namespace Server.Services.Shopify
             }
 
             var json = await response.Content.ReadAsStringAsync(linkedCts.Token);
-            if (!response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode || LooksLikeHtml(json))
+            {
+                if (LooksLikeHtml(json))
+                    throw new HttpRequestException(
+                        "Shopify devolvio una pagina de verificacion anti-bot al pedir el token. " +
+                        "Asegurate de usar el dominio .myshopify.com (no el dominio personalizado).");
                 throw new HttpRequestException(
                     $"No se pudo obtener el token de Shopify ({(int)response.StatusCode}). " +
-                    $"Revisa el dominio, el Client ID y el Client Secret. {Truncate(json)}");
+                    $"Revisa el dominio (.myshopify.com), el Client ID y el Client Secret. {Truncate(json)}");
+            }
 
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("access_token", out var tokenEl) ||
@@ -88,6 +110,7 @@ namespace Server.Services.Shopify
             var body = JsonSerializer.Serialize(payload);
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
             request.Headers.Add("X-Shopify-Access-Token", token);
+            AddDefaultHeaders(request);
             request.Content = new StringContent(body, Encoding.UTF8, "application/json");
 
             HttpResponseMessage response;
