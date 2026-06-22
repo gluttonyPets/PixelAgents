@@ -131,11 +131,11 @@ namespace Server.Services.Shopify
             if (doc.RootElement.TryGetProperty("errors", out var errors) &&
                 errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
             {
-                var messages = errors.EnumerateArray()
+                var messages = string.Join("; ", errors.EnumerateArray()
                     .Select(e => e.TryGetProperty("message", out var m) ? m.GetString() : null)
-                    .Where(m => !string.IsNullOrWhiteSpace(m));
+                    .Where(m => !string.IsNullOrWhiteSpace(m)));
                 doc.Dispose();
-                throw new HttpRequestException($"Shopify GraphQL error: {string.Join("; ", messages)}");
+                throw new HttpRequestException($"Shopify GraphQL error: {messages}");
             }
 
             return doc;
