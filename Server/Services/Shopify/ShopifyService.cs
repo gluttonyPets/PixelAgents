@@ -101,7 +101,8 @@ namespace Server.Services.Shopify
         }
 
         private async Task<JsonDocument> PostGraphQlAsync(
-            string shopDomain, string token, object payload, CancellationToken ct)
+            string shopDomain, string token, object payload, CancellationToken ct,
+            bool throwOnGraphQlErrors = true)
         {
             using var timeoutCts = new CancellationTokenSource(Timeout);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
@@ -128,7 +129,8 @@ namespace Server.Services.Shopify
                 throw new HttpRequestException($"Shopify API error {(int)response.StatusCode}: {Truncate(json)}");
 
             var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("errors", out var errors) &&
+            if (throwOnGraphQlErrors &&
+                doc.RootElement.TryGetProperty("errors", out var errors) &&
                 errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
             {
                 var messages = string.Join("; ", errors.EnumerateArray()
@@ -146,13 +148,22 @@ namespace Server.Services.Shopify
             string shopDomain, string clientId, string clientSecret, CancellationToken ct = default)
         {
             var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
-            const string query = "query { blogs(first: 100) { nodes { id title handle } } }";
-            using var doc = await PostGraphQlAsync(shopDomain, token, new { query }, ct);
+            // Pedimos tambien los scopes concedidos: si blogs sale denegado, el error
+            // dira exactamente que permisos tiene el token (para diagnosticar).
+            const string query = @"query {
+  currentAppInstallation { accessScopes { handle } }
+  blogs(first: 100) { nodes { id title handle } }
+}";
+            using var doc = await PostGraphQlAsync(shopDomain, token, new { query }, ct, throwOnGraphQlErrors: false);
+            var root = doc.RootElement;
 
             var result = new List<ShopifyBlogDto>();
-            if (doc.RootElement.TryGetProperty("data", out var data) &&
+            if (root.TryGetProperty("data", out var data) &&
+                data.ValueKind == JsonValueKind.Object &&
                 data.TryGetProperty("blogs", out var blogs) &&
-                blogs.TryGetProperty("nodes", out var nodes))
+                blogs.ValueKind == JsonValueKind.Object &&
+                blogs.TryGetProperty("nodes", out var nodes) &&
+                nodes.ValueKind == JsonValueKind.Array)
             {
                 foreach (var n in nodes.EnumerateArray())
                 {
@@ -162,8 +173,44 @@ namespace Server.Services.Shopify
                     if (!string.IsNullOrEmpty(id))
                         result.Add(new ShopifyBlogDto(id, title, handle));
                 }
+                return result;
             }
-            return result;
+
+            // blogs no resolvio -> construir un error con el motivo + scopes concedidos.
+            var errorMsg = "Access denied for blogs field.";
+            if (root.TryGetProperty("errors", out var errors) &&
+                errors.ValueKind == JsonValueKind.Array && errors.GetArrayLength() > 0)
+            {
+                errorMsg = string.Join("; ", errors.EnumerateArray()
+                    .Select(e => e.TryGetProperty("message", out var m) ? m.GetString() : null)
+                    .Where(m => !string.IsNullOrWhiteSpace(m)));
+            }
+
+            var grantedScopes = ExtractScopes(root);
+            var scopesText = grantedScopes.Count > 0
+                ? string.Join(", ", grantedScopes)
+                : "(ninguno detectado)";
+
+            throw new HttpRequestException(
+                $"{errorMsg} | Permisos concedidos al token: {scopesText}. " +
+                $"Para listar blogs hace falta 'read_content'. Si no aparece, anade ese scope a la app y REINSTALALA.");
+        }
+
+        private static List<string> ExtractScopes(JsonElement root)
+        {
+            var scopes = new List<string>();
+            if (root.TryGetProperty("data", out var data) &&
+                data.ValueKind == JsonValueKind.Object &&
+                data.TryGetProperty("currentAppInstallation", out var install) &&
+                install.ValueKind == JsonValueKind.Object &&
+                install.TryGetProperty("accessScopes", out var accessScopes) &&
+                accessScopes.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var s in accessScopes.EnumerateArray())
+                    if (s.TryGetProperty("handle", out var h) && h.GetString() is { Length: > 0 } handle)
+                        scopes.Add(handle);
+            }
+            return scopes;
         }
 
         /// <summary>Crea un articulo de blog. Devuelve el id/handle o un error legible.</summary>
