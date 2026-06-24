@@ -606,7 +606,7 @@
                             </div>
 
                             <div class="inspector-field">
-                                <label>Autor <span class="text-sm text-muted">(opcional)</span></label>
+                                <label>Autor <span class="text-sm text-muted">(opcional, por defecto "Equipo")</span></label>
                                 <input type="text" value="@GetModuleConfig(sel.Id, "author", "")"
                                        @onchange="@(e => SetModuleConfig(sel.Id, "author", e.Value?.ToString() ?? ""))"
                                        placeholder="Ej: Equipo de marketing" />

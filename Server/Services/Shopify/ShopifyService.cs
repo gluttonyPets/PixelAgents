@@ -234,9 +234,9 @@ namespace Server.Services.Shopify
                 ["title"] = title,
                 ["body"] = bodyHtml,
                 ["isPublished"] = isPublished,
+                // Shopify exige un autor no nulo en ArticleCreateInput.
+                ["author"] = new { name = string.IsNullOrWhiteSpace(authorName) ? "Equipo" : authorName.Trim() },
             };
-            if (!string.IsNullOrWhiteSpace(authorName))
-                article["author"] = new { name = authorName };
             var tagList = tags?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToList();
             if (tagList is { Count: > 0 })
                 article["tags"] = tagList;
