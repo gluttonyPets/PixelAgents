@@ -5,7 +5,6 @@
 <nav class="sidebar">
     <div class="sidebar-brand">PixelAgents</div>
 
-    <NavLink href="/" Match="NavLinkMatch.All">Auth</NavLink>
     <NavLink href="/apikeys">API Keys</NavLink>
     <NavLink href="/redes-sociales">Redes sociales</NavLink>
     <NavLink href="/mensajeria">Mensajeria</NavLink>
@@ -19,10 +18,11 @@
         @if (AuthState.IsAuthenticated)
         {
             <div>@AuthState.User!.Email</div>
+            <button class="btn btn-sm btn-danger mt-1" @onclick="Logout">Cerrar sesión</button>
         }
         else
         {
-            <div>No autenticado</div>
+            <button class="btn btn-sm btn-primary" @onclick="AuthState.RequireLogin">Iniciar sesión</button>
         }
         @if (_buildInfo is not null)
         {
@@ -47,6 +47,12 @@
             catch { }
         }
         try { _buildInfo = await Api.GetBuildInfoAsync(); } catch { }
+    }
+
+    private async Task Logout()
+    {
+        await Api.LogoutAsync();
+        AuthState.SetUser(null);
     }
 
     public void Dispose()

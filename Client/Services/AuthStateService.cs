@@ -10,10 +10,17 @@ public class AuthStateService
     public bool IsAuthenticated => _user is not null;
 
     public event Action? OnChange;
+    public event Action? OnLoginRequired;
 
     public void SetUser(AuthResponse? user)
     {
         _user = user;
         OnChange?.Invoke();
+    }
+
+    public void RequireLogin()
+    {
+        if (!IsAuthenticated)
+            OnLoginRequired?.Invoke();
     }
 }

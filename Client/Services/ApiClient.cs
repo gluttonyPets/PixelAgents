@@ -7,10 +7,12 @@ namespace Client.Services;
 public class ApiClient
 {
     private readonly HttpClient _http;
+    private readonly AuthStateService _auth;
 
-    public ApiClient(HttpClient http)
+    public ApiClient(HttpClient http, AuthStateService auth)
     {
         _http = http;
+        _auth = auth;
     }
 
     // ── Auth ──
@@ -460,7 +462,13 @@ public class ApiClient
 
             try
             {
-                return await _http.SendAsync(request);
+                var response = await _http.SendAsync(request);
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
+                    !url.StartsWith("/api/auth/"))
+                {
+                    _auth.RequireLogin();
+                }
+                return response;
             }
             catch (HttpRequestException) when (attempt < MaxRetries)
             {
