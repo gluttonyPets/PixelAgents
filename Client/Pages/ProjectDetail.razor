@@ -433,7 +433,7 @@ else
                     </button>
                     <div class="hd-chips">
                         <button class="hd-chip @(_historyShowAll ? "hd-chip-active" : "")"
-                                @onclick="() => { _historyShowAll = true; }">
+                                @onclick="() => { _historyShowAll = true; _historyPageSize = 20; }">
                             Todas <span class="hd-badge">@_executions.Count</span>
                         </button>
                         @foreach (var day in _executions.Select(e => e.CreatedAt.Date).Distinct().OrderByDescending(d => d).Take(14))
@@ -603,6 +603,13 @@ else
                             }
                         </div>
                     }
+                }
+                @if (_historyShowAll && _executions.Count > _historyPageSize)
+                {
+                    <div class="hc-load-more">
+                        <span class="text-sm text-muted">Mostrando @_historyPageSize de @_executions.Count</span>
+                        <button class="btn btn-sm" @onclick="() => _historyPageSize += 20">Ver 20 más</button>
+                    </div>
                 }
                 else
                 {
@@ -1576,8 +1583,9 @@ else
     // History date filter (defaults to today)
     private DateTime _historyDateFilter = DateTime.Today;
     private bool _historyShowAll;
+    private int _historyPageSize = 20;
     private List<ExecutionResponse> _filteredExecutions => _historyShowAll
-        ? _executions
+        ? _executions.Take(_historyPageSize).ToList()
         : _executions.Where(e => e.CreatedAt.Date == _historyDateFilter.Date).ToList();
 
     // History detail modal
@@ -2638,6 +2646,12 @@ else
             _executions = await Api.GetExecutionsAsync(ProjectId);
         }
         catch { /* keep previously loaded list on transient failure */ }
+
+        // Default to most recent day with data (usually today)
+        _historyShowAll = false;
+        _historyPageSize = 20;
+        var mostRecentDay = _executions.Select(e => e.CreatedAt.Date).Distinct().OrderByDescending(d => d).FirstOrDefault();
+        _historyDateFilter = mostRecentDay == default ? DateTime.Today : mostRecentDay;
     }
 
     private void HistoryDateNav(int direction)
