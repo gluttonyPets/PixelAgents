@@ -448,11 +448,11 @@
                                     <div class="alert alert-success">Configuracion guardada</div>
                                 }
 
-                                @if (m.ModuleType is "Text" or "Coordinator")
+                                @if (m.ModuleType is "Text" or "Coordinator" or "Orchestrator")
                                 {
                                     <div class="form-group">
                                         <label>System Prompt</label>
-                                        <textarea @bind="_editSystemPrompt" rows="4" placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : "Ej: Eres un asistente experto en...")"></textarea>
+                                        <textarea @bind="_editSystemPrompt" rows="4" placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : m.ModuleType == "Orchestrator" ? "Ej: Prioriza videos de stock sobre generacion. Maximo 5 tareas por plan." : "Ej: Eres un asistente experto en...")"></textarea>
                                     </div>
                                     <div class="form-row">
                                         <div class="form-group">
