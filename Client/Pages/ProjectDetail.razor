@@ -458,47 +458,68 @@ else
                     @foreach (var e in _filteredExecutions)
                     {
                         var isExpanded = _expandedExecId == e.Id;
-                        <div class="history-card" @key="e.Id">
+                        var hcClass = e.Status switch {
+                            "Completed" => "hc-completed",
+                            "Failed"    => "hc-failed",
+                            "Running"   => "hc-running",
+                            _           => "hc-pending"
+                        };
+                        <div class="history-card @hcClass" @key="e.Id">
                             <div class="history-card-header" @onclick="() => ToggleHistoryCard(e.Id)">
-                                <div class="history-card-info">
-                                    <span class="badge @StatusBadge(e.Status)">@e.Status</span>
-                                    <span class="text-sm text-muted">@e.CreatedAt.ToString("dd MMM yyyy HH:mm")</span>
-                                    @if (e.TotalEstimatedCost > 0)
-                                    {
-                                        <span class="text-sm text-muted">~$@e.TotalEstimatedCost.ToString("F4")</span>
-                                    }
-                                </div>
-                                <div class="history-card-prompt">
-                                    @if (e.UserInput is not null)
-                                    {
-                                        <span class="text-sm">@(e.UserInput.Length > 120 ? e.UserInput[..120] + "..." : e.UserInput)</span>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-sm text-muted">Sin prompt</span>
-                                    }
+                                <div class="history-card-main">
+                                    <div class="history-card-meta">
+                                        <span class="hc-dot hc-dot-@(e.Status.ToLower())"></span>
+                                        <span class="hc-status-label">@e.Status</span>
+                                        <span class="hc-sep">·</span>
+                                        <span class="hc-date">@e.CreatedAt.ToLocalTime().ToString("dd MMM, HH:mm")</span>
+                                        @if (e.TotalEstimatedCost > 0)
+                                        {
+                                            <span class="hc-sep">·</span>
+                                            <span class="hc-cost">~$@e.TotalEstimatedCost.ToString("F4")</span>
+                                        }
+                                    </div>
+                                    <div class="history-card-prompt">
+                                        @if (!string.IsNullOrWhiteSpace(e.UserInput))
+                                        {
+                                            <span class="hc-prompt-text">@(e.UserInput.Length > 140 ? e.UserInput[..140] + "…" : e.UserInput)</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="hc-prompt-empty">Sin prompt</span>
+                                        }
+                                    </div>
                                 </div>
                                 <div class="history-card-actions">
-                                    <button class="btn btn-sm btn-primary" @onclick="() => ViewExecution(e.Id)" @onclick:stopPropagation="true">
-                                        Abrir
+                                    <button class="btn btn-sm hc-open-btn" @onclick="() => ViewExecution(e.Id)" @onclick:stopPropagation="true" title="Ver detalle completo">
+                                        Ver detalle
                                     </button>
-                                    <span class="history-expand-icon">@(isExpanded ? "&#x25B2;" : "&#x25BC;")</span>
+                                    <span class="history-expand-icon @(isExpanded ? "hc-chevron-up" : "")">&#x25BC;</span>
                                 </div>
                             </div>
 
                             @if (isExpanded && _expandedExecDetail is not null && _expandedExecDetail.Id == e.Id)
                             {
+                                var outputSteps = _expandedExecDetail.Steps
+                                    .Where(s => s.Status != "Skipped")
+                                    .OrderBy(s => s.CreatedAt)
+                                    .ToList();
                                 <div class="history-card-body">
-                                    @foreach (var step in _expandedExecDetail.Steps.OrderBy(s => s.CreatedAt))
+                                    @if (outputSteps.Count == 0)
+                                    {
+                                        <p class="text-sm text-muted" style="margin:0;">Sin pasos registrados.</p>
+                                    }
+                                    @foreach (var step in outputSteps)
                                     {
                                         @if (step.Status == "WaitingForCheckpoint")
                                         {
-                                            <div class="history-step-preview" style="border-left: 3px solid #ff9800; padding-left: 0.5rem;">
-                                                <div style="display: flex; align-items: center; gap: 0.4rem;">
-                                                    <span class="text-sm" style="color: #ff9800; font-weight: 600;">Checkpoint esperando revision</span>
+                                            <div class="hc-step-block hc-step-checkpoint">
+                                                <div class="hc-step-label">
+                                                    <span class="hc-step-icon">⏸</span>
+                                                    <span class="hc-step-name">@step.ModuleName</span>
+                                                    <span class="hc-step-tag hc-tag-warning">Checkpoint</span>
                                                     @if (e.Status == "WaitingForCheckpoint")
                                                     {
-                                                        <button class="btn btn-success btn-xs" style="font-size: 0.65rem; padding: 0.1rem 0.35rem;"
+                                                        <button class="btn btn-success btn-xs" style="font-size:0.65rem;"
                                                                 @onclick:stopPropagation="true"
                                                                 @onclick="@(() => { _checkpointExecutionId = e.Id; _checkpointPreviewJson = step.InputData; _showCheckpointModal = true; StateHasChanged(); })">
                                                             Revisar
@@ -510,10 +531,14 @@ else
                                         else if (step.OutputData is not null)
                                         {
                                             var parsed = TryParseOutput(step.OutputData);
-                                            @if (parsed?.Type == "image" && parsed.Files is not null && parsed.Files.Count > 0)
+                                            @if (parsed?.Type == "image" && parsed.Files is { Count: > 0 })
                                             {
-                                                <div class="history-step-preview">
-                                                    <span class="text-sm text-muted">Modulo: @step.ModuleName</span>
+                                                <div class="hc-step-block">
+                                                    <div class="hc-step-label">
+                                                        <span class="hc-step-icon">🖼</span>
+                                                        <span class="hc-step-name">@step.ModuleName</span>
+                                                        <span class="hc-step-tag">@parsed.Files.Count imagen(es)</span>
+                                                    </div>
                                                     <div class="history-image-grid">
                                                         @foreach (var f in parsed.Files)
                                                         {
@@ -525,14 +550,17 @@ else
                                                     </div>
                                                 </div>
                                             }
-                                            else if (parsed?.Type == "video" && parsed.Files is not null && parsed.Files.Count > 0)
+                                            else if (parsed?.Type == "video" && parsed.Files is { Count: > 0 })
                                             {
-                                                <div class="history-step-preview">
-                                                    <span class="text-sm text-muted">Modulo: @step.ModuleName</span>
+                                                <div class="hc-step-block">
+                                                    <div class="hc-step-label">
+                                                        <span class="hc-step-icon">🎬</span>
+                                                        <span class="hc-step-name">@step.ModuleName</span>
+                                                    </div>
                                                     @foreach (var f in parsed.Files)
                                                     {
                                                         var fileUrl = $"{_apiBase}/api/executions/{_expandedExecDetail.Id}/files/{f.FileId}";
-                                                        <video controls style="max-width: 200px; border-radius: 6px; margin-top: 0.3rem;" crossorigin="use-credentials">
+                                                        <video controls class="hc-video-preview" crossorigin="use-credentials">
                                                             <source src="@fileUrl" type="@f.ContentType" />
                                                         </video>
                                                     }
@@ -540,13 +568,26 @@ else
                                             }
                                             else if (parsed?.Type == "text" && parsed.Content is not null)
                                             {
-                                                <div class="history-step-preview">
-                                                    <span class="text-sm text-muted">Modulo: @step.ModuleName</span>
-                                                    <div class="output-block" style="font-size: 0.8rem; max-height: 80px; overflow: hidden;">
-                                                        @(parsed.Content.Length > 200 ? parsed.Content[..200] + "..." : parsed.Content)
+                                                <div class="hc-step-block">
+                                                    <div class="hc-step-label">
+                                                        <span class="hc-step-icon">✍</span>
+                                                        <span class="hc-step-name">@step.ModuleName</span>
+                                                    </div>
+                                                    <div class="hc-text-preview">
+                                                        @(parsed.Content.Length > 280 ? parsed.Content[..280] + "…" : parsed.Content)
                                                     </div>
                                                 </div>
                                             }
+                                        }
+                                        else if (step.ErrorMessage is not null)
+                                        {
+                                            <div class="hc-step-block hc-step-error">
+                                                <div class="hc-step-label">
+                                                    <span class="hc-step-icon">✗</span>
+                                                    <span class="hc-step-name">@step.ModuleName</span>
+                                                </div>
+                                                <div class="hc-error-msg">@step.ErrorMessage</div>
+                                            </div>
                                         }
                                     }
                                 </div>
@@ -554,7 +595,10 @@ else
                             else if (isExpanded && _expandedExecDetail is null)
                             {
                                 <div class="history-card-body">
-                                    <p class="text-sm text-muted">Cargando...</p>
+                                    <div class="hc-loading">
+                                        <span class="spinner" style="width:1rem;height:1rem;"></span>
+                                        <span class="text-sm text-muted">Cargando...</span>
+                                    </div>
                                 </div>
                             }
                         </div>
