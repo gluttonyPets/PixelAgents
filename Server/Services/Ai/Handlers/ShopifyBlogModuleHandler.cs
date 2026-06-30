@@ -46,6 +46,27 @@ public class ShopifyBlogModuleHandler : IModuleHandler
 
         var bodyHtml = ToHtml(bodyText);
 
+        // Metadatos del articulo. Si el usuario los deja vacios en el nodo, se
+        // generan automaticamente a partir del titulo y del cuerpo.
+        var plainBody = StripHtml(bodyText);
+
+        var excerpt = ctx.GetConfig("excerpt");
+        if (string.IsNullOrWhiteSpace(excerpt))
+            excerpt = Summarize(plainBody, 300);
+
+        var seoTitle = ctx.GetConfig("seoTitle");
+        if (string.IsNullOrWhiteSpace(seoTitle))
+            seoTitle = title;
+
+        var metaDescription = ctx.GetConfig("metaDescription");
+        if (string.IsNullOrWhiteSpace(metaDescription))
+            metaDescription = Summarize(string.IsNullOrWhiteSpace(excerpt) ? plainBody : excerpt, 155);
+
+        // Identificador URL (slug). Si va vacio se deja en null para que Shopify lo
+        // genere a partir del titulo; si el usuario escribe algo, se normaliza.
+        var handleConfig = ctx.GetConfig("handle");
+        var handle = string.IsNullOrWhiteSpace(handleConfig) ? null : Slugify(handleConfig);
+
         await ctx.LogInfoAsync($"Publicando articulo en Shopify ({connection.ShopDomain}) — \"{title}\" ({(isPublished ? "publicado" : "borrador")})");
 
         ShopifyArticleResult result;
@@ -54,7 +75,10 @@ public class ShopifyBlogModuleHandler : IModuleHandler
             result = await _shopify.CreateArticleAsync(
                 connection.ShopDomain, connection.ClientId, connection.ClientSecret, blogId,
                 title, bodyHtml, string.IsNullOrWhiteSpace(author) ? null : author,
-                isPublished, tags, ctx.CancellationToken);
+                isPublished, tags,
+                summary: excerpt, handle: handle,
+                seoTitle: seoTitle, metaDescription: metaDescription,
+                ct: ctx.CancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -127,4 +151,46 @@ public class ShopifyBlogModuleHandler : IModuleHandler
 
     private static string Escape(string s) =>
         s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+
+    /// <summary>Quita etiquetas HTML y normaliza espacios para generar texto plano.</summary>
+    private static string StripHtml(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        var noTags = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", " ");
+        noTags = System.Net.WebUtility.HtmlDecode(noTags);
+        return System.Text.RegularExpressions.Regex.Replace(noTags, "\\s+", " ").Trim();
+    }
+
+    /// <summary>
+    /// Recorta el texto a <paramref name="maxChars"/> caracteres sin partir palabras,
+    /// anadiendo puntos suspensivos si se trunca.
+    /// </summary>
+    private static string Summarize(string text, int maxChars)
+    {
+        var t = (text ?? "").Trim();
+        if (t.Length <= maxChars) return t;
+        var cut = t[..maxChars];
+        var lastSpace = cut.LastIndexOf(' ');
+        if (lastSpace > maxChars / 2)
+            cut = cut[..lastSpace];
+        return cut.TrimEnd() + "…";
+    }
+
+    /// <summary>Convierte un texto en un slug valido para la URL (handle de Shopify).</summary>
+    private static string Slugify(string text)
+    {
+        var normalized = (text ?? "").Trim().ToLowerInvariant();
+        // Descomponer acentos (á -> a) y descartar los diacriticos.
+        normalized = normalized.Normalize(System.Text.NormalizationForm.FormD);
+        var sb = new StringBuilder();
+        foreach (var c in normalized)
+        {
+            var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+            if (cat == System.Globalization.UnicodeCategory.NonSpacingMark) continue;
+            if (char.IsLetterOrDigit(c)) sb.Append(c);
+            else if (c is ' ' or '-' or '_' or '.') sb.Append('-');
+        }
+        var slug = System.Text.RegularExpressions.Regex.Replace(sb.ToString(), "-+", "-").Trim('-');
+        return slug.Length > 0 ? slug : "articulo";
+    }
 }

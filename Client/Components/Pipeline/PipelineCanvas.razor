@@ -620,6 +620,34 @@
                             </div>
 
                             <div class="inspector-field">
+                                <label>Extracto <span class="text-sm text-muted">(opcional, si se deja vacio se genera del contenido)</span></label>
+                                <textarea rows="2" value="@GetModuleConfig(sel.Id, "excerpt", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "excerpt", e.Value?.ToString() ?? ""))"
+                                          placeholder="Resumen breve del articulo"></textarea>
+                            </div>
+
+                            <div class="inspector-field">
+                                <label>Identificador URL <span class="text-sm text-muted">(slug, opcional; por defecto se genera del titulo)</span></label>
+                                <input type="text" value="@GetModuleConfig(sel.Id, "handle", "")"
+                                       @onchange="@(e => SetModuleConfig(sel.Id, "handle", e.Value?.ToString() ?? ""))"
+                                       placeholder="mi-articulo-de-blog" />
+                            </div>
+
+                            <div class="inspector-field">
+                                <label>Titulo de la pagina (SEO) <span class="text-sm text-muted">(opcional, por defecto el titulo)</span></label>
+                                <input type="text" value="@GetModuleConfig(sel.Id, "seoTitle", "")"
+                                       @onchange="@(e => SetModuleConfig(sel.Id, "seoTitle", e.Value?.ToString() ?? ""))"
+                                       placeholder="Titulo que aparece en buscadores" />
+                            </div>
+
+                            <div class="inspector-field">
+                                <label>Metadescripcion (SEO) <span class="text-sm text-muted">(opcional, ~155 caracteres; si se deja vacia se genera)</span></label>
+                                <textarea rows="2" value="@GetModuleConfig(sel.Id, "metaDescription", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "metaDescription", e.Value?.ToString() ?? ""))"
+                                          placeholder="Descripcion breve para los resultados de busqueda"></textarea>
+                            </div>
+
+                            <div class="inspector-field">
                                 <label class="inspector-checkbox">
                                     <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "published", false)"
                                            @onchange="@(e => SetModuleConfig(sel.Id, "published", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
