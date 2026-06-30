@@ -21,6 +21,14 @@ namespace Server.Models
         /// <summary>Client Secret de la app (API secret key / Client secret).</summary>
         public string ClientSecret { get; set; } = default!;
 
+        /// <summary>
+        /// Plantilla JSON reutilizable que define el formato del articulo. Se copia en
+        /// el modulo de IA anterior para que genere el articulo estructurado (titulo,
+        /// cuerpo, extracto, slug y SEO) en un unico output, sin puertos extra. El nodo
+        /// ShopifyBlog parsea ese JSON y reparte cada campo. Opcional.
+        /// </summary>
+        public string? ArticleTemplate { get; set; }
+
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
     }

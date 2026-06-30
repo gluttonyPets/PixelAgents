@@ -557,6 +557,12 @@ luego cada proyecto solo asigna cual usar (no se reintroducen por proyecto):
   y metadescripcion SEO; si se dejan vacios se generan a partir del titulo/contenido.
   El extracto y el slug son campos nativos del articulo, y el SEO se guarda como
   metafields `global.title_tag` / `global.description_tag` (requiere scope `write_content`).
+  Cada conexion puede guardar una `ArticleTemplate` (plantilla JSON) que se copia en
+  el modulo de IA anterior para que genere el articulo ya estructurado en una sola
+  salida; el nodo parsea ese JSON (`titulo`, `cuerpo`, `extracto`, `slug`, `seo_titulo`,
+  `seo_descripcion`, `tags`) y reparte cada campo, sin puertos extra. Precedencia:
+  config del nodo > JSON del modulo anterior > autogenerado. Si la salida no es JSON,
+  todo el texto se usa como cuerpo (retrocompatible).
 - Canales de Buffer disponibles para un token: `GET /api/buffer/channels?apiKey=...`.
 
 Asignacion por proyecto:

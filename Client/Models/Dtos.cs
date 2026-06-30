@@ -125,9 +125,11 @@ public record UpdateMessagingConnectionRequest(string Name, string Provider,
 
 // ── Conexiones de Shopify reutilizables (client credentials grant) ──
 public record ShopifyConnectionResponse(Guid Id, string Name, string ShopDomain,
-    DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount);
-public record CreateShopifyConnectionRequest(string Name, string ShopDomain, string ClientId, string ClientSecret);
-public record UpdateShopifyConnectionRequest(string Name, string ShopDomain, string? ClientId, string? ClientSecret);
+    DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount, string? ArticleTemplate);
+public record CreateShopifyConnectionRequest(string Name, string ShopDomain, string ClientId, string ClientSecret,
+    string? ArticleTemplate = null);
+public record UpdateShopifyConnectionRequest(string Name, string ShopDomain, string? ClientId, string? ClientSecret,
+    string? ArticleTemplate = null);
 public record ShopifyBlogDto(string Id, string Title, string? Handle);
 
 // ── Asignacion de conexiones a un proyecto ──

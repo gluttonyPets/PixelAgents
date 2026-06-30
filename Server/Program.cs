@@ -2846,7 +2846,7 @@ app.MapGet("/api/shopify-connections", async (
     var refs = await db.Projects.Select(p => p.ShopifyConnectionId).ToListAsync();
 
     var result = conns.Select(c => new ShopifyConnectionResponse(
-        c.Id, c.Name, c.ShopDomain, c.CreatedAt, c.UpdatedAt, refs.Count(r => r == c.Id)));
+        c.Id, c.Name, c.ShopDomain, c.CreatedAt, c.UpdatedAt, refs.Count(r => r == c.Id), c.ArticleTemplate));
     return Results.Ok(result);
 }).RequireAuthorization();
 
@@ -2868,6 +2868,7 @@ app.MapPost("/api/shopify-connections", async (
         ShopDomain = Server.Services.Shopify.ShopifyService.NormalizeDomain(req.ShopDomain),
         ClientId = req.ClientId.Trim(),
         ClientSecret = req.ClientSecret.Trim(),
+        ArticleTemplate = string.IsNullOrWhiteSpace(req.ArticleTemplate) ? null : req.ArticleTemplate.Trim(),
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow,
     };
@@ -2876,7 +2877,7 @@ app.MapPost("/api/shopify-connections", async (
     await db.SaveChangesAsync();
 
     return Results.Created($"/api/shopify-connections/{conn.Id}", new ShopifyConnectionResponse(
-        conn.Id, conn.Name, conn.ShopDomain, conn.CreatedAt, conn.UpdatedAt, 0));
+        conn.Id, conn.Name, conn.ShopDomain, conn.CreatedAt, conn.UpdatedAt, 0, conn.ArticleTemplate));
 }).RequireAuthorization();
 
 app.MapPut("/api/shopify-connections/{id:guid}", async (
@@ -2898,6 +2899,7 @@ app.MapPut("/api/shopify-connections/{id:guid}", async (
         conn.ClientId = req.ClientId.Trim();
     if (!string.IsNullOrWhiteSpace(req.ClientSecret))
         conn.ClientSecret = req.ClientSecret.Trim();
+    conn.ArticleTemplate = string.IsNullOrWhiteSpace(req.ArticleTemplate) ? null : req.ArticleTemplate.Trim();
     conn.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();

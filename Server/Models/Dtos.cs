@@ -106,9 +106,11 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
 
     // ── Conexiones de Shopify reutilizables (client credentials grant) ──
     public record ShopifyConnectionResponse(Guid Id, string Name, string ShopDomain,
-        DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount);
-    public record CreateShopifyConnectionRequest(string Name, string ShopDomain, string ClientId, string ClientSecret);
-    public record UpdateShopifyConnectionRequest(string Name, string ShopDomain, string? ClientId, string? ClientSecret);
+        DateTime CreatedAt, DateTime UpdatedAt, int ProjectCount, string? ArticleTemplate);
+    public record CreateShopifyConnectionRequest(string Name, string ShopDomain, string ClientId, string ClientSecret,
+        string? ArticleTemplate = null);
+    public record UpdateShopifyConnectionRequest(string Name, string ShopDomain, string? ClientId, string? ClientSecret,
+        string? ArticleTemplate = null);
 
     // ── Blog de Shopify (para seleccionar el destino en el nodo) ──
     public record ShopifyBlogDto(string Id, string Title, string? Handle);
