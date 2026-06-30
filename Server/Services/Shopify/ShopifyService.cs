@@ -295,8 +295,8 @@ namespace Server.Services.Shopify
                 articleNode.ValueKind == JsonValueKind.Object)
             {
                 var id = articleNode.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
-                var handle = articleNode.TryGetProperty("handle", out var hEl) ? hEl.GetString() : null;
-                return new ShopifyArticleResult(true, id, handle, null);
+                var createdHandle = articleNode.TryGetProperty("handle", out var hEl) ? hEl.GetString() : null;
+                return new ShopifyArticleResult(true, id, createdHandle, null);
             }
 
             return new ShopifyArticleResult(false, null, null, "Shopify no devolvio el articulo creado.");
