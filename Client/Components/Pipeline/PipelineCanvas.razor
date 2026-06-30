@@ -842,6 +842,17 @@
                 <p class="text-sm text-muted" style="margin-bottom: 0.4rem;">
                     Define el JSON que el modulo origen debe emitir para que el destino pueda leer cada campo en su sitio. Se inyecta como instruccion al prompt del origen y guia al destino en la lectura.
                 </p>
+                <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.5rem;">
+                    <label class="text-sm text-muted" style="white-space:nowrap; margin:0;">Plantilla:</label>
+                    <select style="flex:1;" value="@_formatEditor.SelectedTemplate"
+                            @onchange="OnFormatTemplateSelected">
+                        <option value="">-- Personalizada --</option>
+                        @foreach (var t in FormatTemplates)
+                        {
+                            <option value="@t.Key">@t.Label</option>
+                        }
+                    </select>
+                </div>
                 <textarea rows="14" spellcheck="false"
                           placeholder='{"images":[{"prompt":"slide 1"},{"prompt":"slide 2"},{"prompt":"slide 3"}]}'
                           style="width: 100%; font-family: var(--font-mono, monospace); font-size: 0.8rem;"
@@ -1015,7 +1026,21 @@
         public bool IsValid { get; set; } = true;
         public string? Error { get; set; }
         public string? ShapeSummary { get; set; }
+        // Clave de la plantilla seleccionada en el desplegable ("" = personalizada).
+        public string SelectedTemplate { get; set; } = "";
     }
+
+    // Plantillas JSON predefinidas para el formato de la conexion. La de Shopify trae
+    // todos los campos que lee el nodo ShopifyBlog (titulo, cuerpo, extracto, slug, SEO).
+    private sealed record FormatTemplate(string Key, string Label, string Json);
+
+    private static readonly List<FormatTemplate> FormatTemplates = new()
+    {
+        new("shopify", "Shopify Blog — articulo completo",
+            "{\n  \"titulo\": \"\",\n  \"cuerpo\": \"\",\n  \"extracto\": \"\",\n  \"slug\": \"\",\n  \"seo_titulo\": \"\",\n  \"seo_descripcion\": \"\",\n  \"tags\": []\n}"),
+        new("slides", "Imagenes / slides",
+            "{\n  \"images\": [\n    { \"prompt\": \"slide 1\" },\n    { \"prompt\": \"slide 2\" },\n    { \"prompt\": \"slide 3\" }\n  ]\n}"),
+    };
     private int _lastLogCount;
     private string? _pendingAutoSelectModuleType;
 
@@ -1897,6 +1922,19 @@
             ToLabel = toLabel,
             Draft = conn.Format ?? "",
         };
+
+        // Si el destino es ShopifyBlog y la conexion aun no tiene formato, sugerimos
+        // la plantilla de Shopify ya cargada (el usuario puede cambiarla o vaciarla).
+        if (string.IsNullOrWhiteSpace(_formatEditor.Draft) && toModule?.ModuleType == "ShopifyBlog")
+        {
+            var shopifyTpl = FormatTemplates.FirstOrDefault(t => t.Key == "shopify");
+            if (shopifyTpl is not null)
+            {
+                _formatEditor.Draft = shopifyTpl.Json;
+                _formatEditor.SelectedTemplate = shopifyTpl.Key;
+            }
+        }
+
         ValidateFormatDraft();
         InvokeAsync(StateHasChanged);
     }
@@ -1910,7 +1948,22 @@
     {
         if (_formatEditor is null) return;
         _formatEditor.Draft = e.Value?.ToString() ?? "";
+        // Al editar a mano, la seleccion deja de coincidir con una plantilla.
+        _formatEditor.SelectedTemplate = "";
         ValidateFormatDraft();
+    }
+
+    private void OnFormatTemplateSelected(ChangeEventArgs e)
+    {
+        if (_formatEditor is null) return;
+        var key = e.Value?.ToString() ?? "";
+        _formatEditor.SelectedTemplate = key;
+        var tpl = FormatTemplates.FirstOrDefault(t => t.Key == key);
+        if (tpl is not null)
+        {
+            _formatEditor.Draft = tpl.Json;
+            ValidateFormatDraft();
+        }
     }
 
     private void PrettyPrintFormat()
