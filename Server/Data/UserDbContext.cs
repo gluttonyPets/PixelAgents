@@ -88,7 +88,6 @@ namespace Server.Data
                 e.Property(x => x.ShopDomain).IsRequired().HasMaxLength(255);
                 e.Property(x => x.ClientId).IsRequired().HasMaxLength(255);
                 e.Property(x => x.ClientSecret).IsRequired();
-                e.Property(x => x.ArticleTemplate).HasColumnType("text");
             });
 
             // ── Project ──

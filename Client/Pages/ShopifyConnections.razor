@@ -119,19 +119,6 @@ else
                         La app necesita los scopes <code>read_content</code> y <code>write_content</code> e instalada en la tienda.
                     </span>
                 </div>
-                <div class="form-group">
-                    <label>Plantilla del articulo (formato JSON) <span class="text-muted" style="font-weight:400;">(opcional)</span></label>
-                    <textarea @bind="_articleTemplate" rows="11" style="font-family:monospace;font-size:0.85rem;"
-                              placeholder="@DefaultTemplate"></textarea>
-                    <span class="text-sm text-muted">
-                        Copia este JSON en el modulo de IA anterior para que genere el articulo ya estructurado
-                        (titulo, cuerpo, extracto, slug y SEO) en una sola salida. El nodo <strong>ShopifyBlog</strong>
-                        lo parsea y reparte cada campo, sin entradas extra. Si la salida no es JSON, todo el texto
-                        se usa como cuerpo. Campos admitidos: <code>titulo</code>, <code>cuerpo</code>,
-                        <code>extracto</code>, <code>slug</code>, <code>seo_titulo</code>, <code>seo_descripcion</code>,
-                        <code>tags</code>.
-                    </span>
-                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-sm" @onclick="CancelModal" disabled="@_saving">Cancelar</button>
@@ -154,20 +141,8 @@ else
     private string _domain = "";
     private string _clientId = "";
     private string _clientSecret = "";
-    private string _articleTemplate = "";
     private bool _saving;
     private string? _error;
-
-    // Plantilla JSON por defecto que se pega en el modulo de IA anterior.
-    private const string DefaultTemplate = @"{
-  ""titulo"": """",
-  ""extracto"": """",
-  ""slug"": """",
-  ""seo_titulo"": """",
-  ""seo_descripcion"": """",
-  ""tags"": [],
-  ""cuerpo"": """"
-}";
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -182,7 +157,6 @@ else
     {
         _editingId = null;
         _name = ""; _domain = ""; _clientId = ""; _clientSecret = "";
-        _articleTemplate = DefaultTemplate;
         _error = null;
         _showModal = true;
     }
@@ -191,7 +165,6 @@ else
     {
         _editingId = c.Id;
         _name = c.Name; _domain = c.ShopDomain; _clientId = ""; _clientSecret = "";
-        _articleTemplate = string.IsNullOrWhiteSpace(c.ArticleTemplate) ? DefaultTemplate : c.ArticleTemplate;
         _error = null;
         _confirmDeleteId = null;
         _showModal = true;
@@ -220,8 +193,7 @@ else
             if (_editingId is null)
             {
                 var (ok, error) = await Api.CreateShopifyConnectionAsync(
-                    new CreateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), _clientId.Trim(), _clientSecret.Trim(),
-                        string.IsNullOrWhiteSpace(_articleTemplate) ? null : _articleTemplate.Trim()));
+                    new CreateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), _clientId.Trim(), _clientSecret.Trim()));
                 if (!ok) { _error = error; return; }
             }
             else
@@ -229,8 +201,7 @@ else
                 var newClientId = string.IsNullOrWhiteSpace(_clientId) ? null : _clientId.Trim();
                 var newSecret = string.IsNullOrWhiteSpace(_clientSecret) ? null : _clientSecret.Trim();
                 var (ok, error) = await Api.UpdateShopifyConnectionAsync(_editingId.Value,
-                    new UpdateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), newClientId, newSecret,
-                        string.IsNullOrWhiteSpace(_articleTemplate) ? null : _articleTemplate.Trim()));
+                    new UpdateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), newClientId, newSecret));
                 if (!ok) { _error = error; return; }
             }
             _showModal = false;
