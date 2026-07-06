@@ -100,6 +100,25 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 
 ---
 
+## Ejecuciones programadas y planificador
+
+`SchedulerBackgroundService` revisa cada 30 s los `ProjectSchedules` vencidos y lanza el
+pipeline. El input de cada corrida se decide asi:
+
+- Si el schedule tiene `UsePromptQueue` (checkbox "usar planificador"), consume el siguiente
+  `PlannedPrompt` pendiente de la cola del proyecto (por `OrderIndex`) y lo usa como input.
+- Si la cola esta vacia, cae al `UserInput` estatico del schedule.
+
+Cuando el planificador esta activo pero **no queda ningun prompt** (cola vacia y sin
+`UserInput`), el scheduler no ejecuta el pipeline con un prompt vacio: crea una correlacion
+Telegram en estado `awaiting_planning` (asociada al proyecto, sin ejecucion) y envia un mensaje
+al chat del proyecto pidiendo una nueva planificacion. La respuesta del usuario se procesa en
+`TelegramUpdateHandler`, que genera prompts con `PromptPlannerService` (o, si no hay API Key,
+toma cada linea como un prompt) y los encola como `PlannedPrompt` para las proximas corridas.
+Solo se abre una peticion por proyecto a la vez.
+
+---
+
 ## Modulos soportados
 
 | Tipo          | Handler                    | Descripcion breve                                          |

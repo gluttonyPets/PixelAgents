@@ -173,6 +173,9 @@ using (var scope = app.Services.CreateScope())
         // Migration: add EditStateData column for the out-of-band Edit flow
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""EditStateData"" text");
+        // Migration: add ProjectId column for correlations not tied to an execution (planning flow)
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""ProjectId"" uuid");
     }
     catch { }
 }

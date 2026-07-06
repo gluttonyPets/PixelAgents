@@ -15,6 +15,11 @@ namespace Server.Services.Telegram
         private readonly ITenantDbContextFactory _factory;
         private readonly IPipelineExecutor _executor;
         private readonly TelegramService _telegram;
+        private readonly IPromptPlannerService _planner;
+
+        // Defaults used when the user asks for a new planning from Telegram.
+        private const string PlanningModel = "gpt-4o-mini";
+        private const int PlanningCount = 5;
 
         // Buttons offered to the user every time we are waiting for input on an Interaction module.
         private static readonly List<(string Label, string CallbackData)> ControlOptions =
@@ -29,12 +34,14 @@ namespace Server.Services.Telegram
             CoreDbContext coreDb,
             ITenantDbContextFactory factory,
             IPipelineExecutor executor,
-            TelegramService telegram)
+            TelegramService telegram,
+            IPromptPlannerService planner)
         {
             _coreDb = coreDb;
             _factory = factory;
             _executor = executor;
             _telegram = telegram;
+            _planner = planner;
         }
 
         private class EditFlowState
@@ -101,6 +108,15 @@ namespace Server.Services.Telegram
                         try { await _telegram.AnswerCallbackQueryAsync(tgConfig.BotToken, callbackQueryId); }
                         catch { /* non-critical */ }
                     }
+                }
+
+                // State: awaiting_planning — a scheduled run had no prompt and asked the user
+                // to describe a new planning from the chat. The reply text becomes the planner
+                // instructions; the generated prompts are queued for upcoming scheduled runs.
+                if (correlation.State == "awaiting_planning")
+                {
+                    await HandlePlanningReplyAsync(correlation, db, text.Trim());
+                    return;
                 }
 
                 // State: awaiting_restart
@@ -373,6 +389,100 @@ namespace Server.Services.Telegram
         }
 
         /// <summary>
+        /// Handles the user's reply to an "awaiting_planning" request: turns the message into a
+        /// new planning (via the prompt planner, falling back to one prompt per line) and queues
+        /// the resulting prompts so the next scheduled runs have topics to work on.
+        /// </summary>
+        private async Task HandlePlanningReplyAsync(
+            TelegramCorrelation correlation, UserDbContext db, string instructions)
+        {
+            if (correlation.ProjectId is not { } projectId)
+            {
+                correlation.IsResolved = true;
+                await _coreDb.SaveChangesAsync();
+                return;
+            }
+
+            var project = await db.Projects
+                .Include(p => p.TelegramConnection)
+                .FirstOrDefaultAsync(p => p.Id == projectId);
+
+            TelegramConfig? tgConfig = project?.TelegramConnection is null
+                ? null
+                : new TelegramConfig
+                {
+                    BotToken = project.TelegramConnection.BotToken,
+                    ChatId = project.TelegramConnection.ChatId,
+                };
+
+            if (project is null)
+            {
+                correlation.IsResolved = true;
+                await _coreDb.SaveChangesAsync();
+                return;
+            }
+
+            // Prefer the AI planner; if it can't run (e.g. no OpenAI key) treat each non-empty
+            // line the user sent as a literal prompt so the feature still works without a key.
+            List<string> prompts;
+            var result = await _planner.GenerateAsync(db, projectId, PlanningModel, PlanningCount, instructions);
+            if (result.Success && result.Prompts.Count > 0)
+            {
+                prompts = result.Prompts;
+            }
+            else
+            {
+                prompts = instructions
+                    .Split('\n')
+                    .Select(l => l.Trim())
+                    .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .ToList();
+            }
+
+            if (prompts.Count == 0)
+            {
+                if (tgConfig is not null)
+                    try { await _telegram.SendTextMessageAsync(tgConfig, "⚠️ No pude generar ninguna temática. Vuelve a intentarlo describiendo los temas."); }
+                    catch { /* non-critical */ }
+                // Keep the correlation open so the user can retry.
+                return;
+            }
+
+            var now = DateTime.UtcNow;
+            var maxOrder = await db.PlannedPrompts
+                .Where(p => p.ProjectId == projectId)
+                .Select(p => (int?)p.OrderIndex)
+                .MaxAsync() ?? -1;
+
+            var idx = maxOrder + 1;
+            foreach (var content in prompts)
+            {
+                db.PlannedPrompts.Add(new PlannedPrompt
+                {
+                    Id = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    OrderIndex = idx++,
+                    Content = content,
+                    Status = PlannedPromptStatus.Pending,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                });
+            }
+            await db.SaveChangesAsync();
+
+            correlation.IsResolved = true;
+            await _coreDb.SaveChangesAsync();
+
+            if (tgConfig is not null)
+            {
+                var confirm = $"✅ Nueva planificación creada con {prompts.Count} temática(s). " +
+                    "Se usarán en las próximas ejecuciones programadas.";
+                try { await _telegram.SendTextMessageAsync(tgConfig, confirm); }
+                catch { /* non-critical */ }
+            }
+        }
+
+        /// <summary>
         /// Find a valid correlation for this chatId, skipping and resolving stale ones
         /// whose executions are no longer in WaitingForInput status.
         /// </summary>
@@ -404,7 +514,7 @@ namespace Server.Services.Telegram
                 }
 
                 // For these out-of-band states, the execution may not be in WaitingForInput — that's OK
-                if (candidate.State is "awaiting_restart" or "edit_select_provider" or "edit_select_model" or "edit_awaiting_prompt")
+                if (candidate.State is "awaiting_restart" or "edit_select_provider" or "edit_select_model" or "edit_awaiting_prompt" or "awaiting_planning")
                     return candidate;
 
                 // Verify the execution is actually still waiting for input

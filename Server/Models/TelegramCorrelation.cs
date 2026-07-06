@@ -5,6 +5,14 @@ namespace Server.Models
         public Guid Id { get; set; }
         public Guid ExecutionId { get; set; }
         public Guid ProjectModuleId { get; set; }
+
+        /// <summary>
+        /// Project this correlation belongs to. Only set for correlations that are not tied
+        /// to a running execution — currently the "awaiting_planning" flow, where a scheduled
+        /// run found no prompt to use and asks the user (via Telegram) to plan new topics.
+        /// </summary>
+        public Guid? ProjectId { get; set; }
+
         public string TenantDbName { get; set; } = default!;
         public string ChatId { get; set; } = default!;
         public DateTime CreatedAt { get; set; }
@@ -13,6 +21,7 @@ namespace Server.Models
         /// Tracks the correlation state: "waiting" (default), "awaiting_restart" (waiting for restart clarification text),
         /// "edit_select_model" (waiting for the user to pick a model for an edit),
         /// "edit_awaiting_prompt" (waiting for the user's edit prompt text),
+        /// "awaiting_planning" (a scheduled run had no prompt and is waiting for the user to describe a new planning),
         /// "queued" (message not yet sent — waiting for a prior interaction to resolve first).
         /// </summary>
         public string State { get; set; } = "waiting";

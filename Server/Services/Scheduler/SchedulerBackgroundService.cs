@@ -4,6 +4,7 @@ using Npgsql;
 using Server.Data;
 using Server.Models;
 using Server.Services.Ai;
+using Server.Services.Telegram;
 
 namespace Server.Services.Scheduler
 {
@@ -154,6 +155,26 @@ namespace Server.Services.Scheduler
                         }
                     }
 
+                    // Planner enabled ("usar planificador") but there is no prompt to run:
+                    // no pending planned prompt and no static UserInput fallback. Instead of
+                    // running the pipeline with an empty initial prompt, ask the user (via
+                    // Telegram) to create a new planning and skip this scheduled run.
+                    if (schedule.UsePromptQueue && string.IsNullOrWhiteSpace(effectiveInput))
+                    {
+                        var requested = await TryRequestPlanningAsync(db, schedule, dbName, ct);
+                        if (requested)
+                        {
+                            _log.LogInformation(
+                                "Schedule {Id}: no prompt available for project {ProjectId}, requested a new planning via Telegram; skipping run",
+                                schedule.Id, schedule.ProjectId);
+                            continue;
+                        }
+
+                        _log.LogWarning(
+                            "Schedule {Id}: no prompt available for project {ProjectId} and no Telegram connection to request a planning",
+                            schedule.Id, schedule.ProjectId);
+                    }
+
                     // Execute pipeline
                     using var execScope = _sp.CreateScope();
                     var executor = execScope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
@@ -195,6 +216,78 @@ namespace Server.Services.Scheduler
                     // NextRunAt was already advanced above, so we don't get stuck.
                 }
             }
+        }
+
+        /// <summary>
+        /// When a scheduled run driven by the planner ("usar planificador") has no prompt to
+        /// execute, notify the project's Telegram chat and open an "awaiting_planning"
+        /// correlation so the user can describe a new planning from the chat. Returns true when
+        /// the request was sent (or one is already pending), meaning the run should be skipped.
+        /// </summary>
+        private async Task<bool> TryRequestPlanningAsync(
+            UserDbContext db, ProjectSchedule schedule, string dbName, CancellationToken ct)
+        {
+            var project = await db.Projects
+                .Include(p => p.TelegramConnection)
+                .FirstOrDefaultAsync(p => p.Id == schedule.ProjectId, ct);
+
+            if (project?.TelegramConnection is null)
+                return false;
+
+            var config = new TelegramConfig
+            {
+                BotToken = project.TelegramConnection.BotToken,
+                ChatId = project.TelegramConnection.ChatId,
+            };
+
+            using var scope = _sp.CreateScope();
+            var coreDb = scope.ServiceProvider.GetRequiredService<CoreDbContext>();
+            var telegram = scope.ServiceProvider.GetRequiredService<TelegramService>();
+
+            // Avoid stacking multiple planning requests for the same project: if one is still
+            // pending, treat it as handled so we don't run an empty pipeline in the meantime.
+            var alreadyAsking = await coreDb.TelegramCorrelations
+                .AnyAsync(c => !c.IsResolved
+                    && c.State == "awaiting_planning"
+                    && c.ProjectId == schedule.ProjectId, ct);
+            if (alreadyAsking)
+                return true;
+
+            var correlation = new TelegramCorrelation
+            {
+                Id = Guid.NewGuid(),
+                ExecutionId = Guid.Empty,
+                ProjectModuleId = Guid.Empty,
+                ProjectId = schedule.ProjectId,
+                TenantDbName = dbName,
+                ChatId = config.ChatId,
+                CreatedAt = DateTime.UtcNow,
+                IsResolved = false,
+                State = "awaiting_planning",
+            };
+            coreDb.TelegramCorrelations.Add(correlation);
+            await coreDb.SaveChangesAsync(ct);
+
+            var msg =
+                $"📭 No quedan temáticas planificadas para \"{project.Name}\".\n\n" +
+                "Responde a este mensaje describiendo qué temas quieres generar y crearé una nueva " +
+                "planificación. También puedes enviar varios prompts, uno por línea.";
+
+            try
+            {
+                await telegram.SendTextMessageAsync(config, msg);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex,
+                    "Failed to send planning request for project {ProjectId}; discarding correlation",
+                    schedule.ProjectId);
+                correlation.IsResolved = true;
+                await coreDb.SaveChangesAsync(ct);
+                return false;
+            }
+
+            return true;
         }
 
         public static DateTime? ComputeNextRun(string cronExpression, string timeZone, DateTime utcNow)
