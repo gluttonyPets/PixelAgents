@@ -552,7 +552,17 @@ luego cada proyecto solo asigna cual usar (no se reintroducen por proyecto):
   tienda + Client ID + Client Secret de una app del Dev Dashboard; el access token se
   obtiene por client credentials grant (caduca cada 24 h, se renueva solo). El modulo
   `ShopifyBlog` publica articulos de blog; el blog destino se elige en cada nodo
-  (`GET /api/projects/{projectId}/shopify/blogs`).
+  (`GET /api/projects/{projectId}/shopify/blogs`). Ademas del titulo y el cuerpo,
+  el nodo permite configurar extracto, identificador URL (slug), titulo de pagina
+  y metadescripcion SEO; si se dejan vacios se generan a partir del titulo/contenido.
+  El extracto y el slug son campos nativos del articulo, y el SEO se guarda como
+  metafields `global.title_tag` / `global.description_tag` (requiere scope `write_content`).
+  El modulo de IA anterior puede emitir el articulo ya estructurado en un unico JSON
+  usando el "Formato de la conexion" del cable (hay una plantilla predefinida de
+  Shopify con `titulo`, `cuerpo`, `extracto`, `slug`, `seo_titulo`, `seo_descripcion`,
+  `tags`); el nodo parsea ese JSON y reparte cada campo, sin puertos extra. Precedencia:
+  config del nodo > JSON del modulo anterior > autogenerado. Si la salida no es JSON,
+  todo el texto se usa como cuerpo (retrocompatible).
 - Canales de Buffer disponibles para un token: `GET /api/buffer/channels?apiKey=...`.
 
 Asignacion por proyecto:

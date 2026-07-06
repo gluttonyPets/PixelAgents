@@ -119,7 +119,7 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 | Checkpoint    | CheckpointModuleHandler    | Pausa para revision humana antes de continuar              |
 | Design        | DesignModuleHandler        | Genera disenos via proveedor grafico (Canva, etc.)         |
 | Publish       | PublishModuleHandler       | Publica contenido en Instagram o TikTok via Buffer API     |
-| ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en una tienda Shopify          |
+| ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug y SEO) |
 
 ---
 

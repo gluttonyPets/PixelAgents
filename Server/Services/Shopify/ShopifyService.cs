@@ -214,10 +214,17 @@ namespace Server.Services.Shopify
         }
 
         /// <summary>Crea un articulo de blog. Devuelve el id/handle o un error legible.</summary>
+        /// <param name="summary">Extracto del articulo (campo nativo "summary"). Opcional.</param>
+        /// <param name="handle">Identificador URL / slug (campo nativo "handle"). Si va vacio, Shopify lo genera a partir del titulo.</param>
+        /// <param name="seoTitle">Titulo de la pagina para SEO. Se guarda como metafield global.title_tag. Opcional.</param>
+        /// <param name="metaDescription">Metadescripcion para SEO. Se guarda como metafield global.description_tag. Opcional.</param>
         public async Task<ShopifyArticleResult> CreateArticleAsync(
             string shopDomain, string clientId, string clientSecret, string blogId,
             string title, string bodyHtml, string? authorName, bool isPublished,
-            IEnumerable<string>? tags, CancellationToken ct = default)
+            IEnumerable<string>? tags,
+            string? summary = null, string? handle = null,
+            string? seoTitle = null, string? metaDescription = null,
+            CancellationToken ct = default)
         {
             var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
 
@@ -241,6 +248,35 @@ namespace Server.Services.Shopify
             if (tagList is { Count: > 0 })
                 article["tags"] = tagList;
 
+            // Extracto e identificador URL son campos nativos del ArticleCreateInput.
+            if (!string.IsNullOrWhiteSpace(summary))
+                article["summary"] = summary.Trim();
+            if (!string.IsNullOrWhiteSpace(handle))
+                article["handle"] = handle.Trim();
+
+            // El titulo de pagina y la metadescripcion SEO no son campos nativos del
+            // articulo: Shopify los expone como metafields del namespace "global"
+            // (title_tag / description_tag). Requiere el scope write_content.
+            var metafields = new List<object>();
+            if (!string.IsNullOrWhiteSpace(seoTitle))
+                metafields.Add(new
+                {
+                    @namespace = "global",
+                    key = "title_tag",
+                    type = "single_line_text_field",
+                    value = seoTitle.Trim(),
+                });
+            if (!string.IsNullOrWhiteSpace(metaDescription))
+                metafields.Add(new
+                {
+                    @namespace = "global",
+                    key = "description_tag",
+                    type = "single_line_text_field",
+                    value = metaDescription.Trim(),
+                });
+            if (metafields.Count > 0)
+                article["metafields"] = metafields;
+
             var payload = new { query = mutation, variables = new { article } };
             using var doc = await PostGraphQlAsync(shopDomain, token, payload, ct);
 
@@ -259,8 +295,8 @@ namespace Server.Services.Shopify
                 articleNode.ValueKind == JsonValueKind.Object)
             {
                 var id = articleNode.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
-                var handle = articleNode.TryGetProperty("handle", out var hEl) ? hEl.GetString() : null;
-                return new ShopifyArticleResult(true, id, handle, null);
+                var createdHandle = articleNode.TryGetProperty("handle", out var hEl) ? hEl.GetString() : null;
+                return new ShopifyArticleResult(true, id, createdHandle, null);
             }
 
             return new ShopifyArticleResult(false, null, null, "Shopify no devolvio el articulo creado.");
