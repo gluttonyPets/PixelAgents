@@ -12,6 +12,20 @@
     </button>
 </div>
 
+@* Buscador de módulos: filtra por nombre, proveedor, modelo o tipo en tiempo real.
+   Solo se muestra cuando el usuario tiene al menos un módulo creado. *@
+@if (_modules.Any(m => !m.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase)))
+{
+    <div class="modules-search-wrap">
+        <input class="modules-search" type="text" @bind="_search" @bind:event="oninput"
+               placeholder="🔍 Buscar por nombre, proveedor o modelo…" />
+        @if (!string.IsNullOrEmpty(_search))
+        {
+            <button class="modules-search-clear" @onclick="ClearSearch" title="Limpiar">&#x2715;</button>
+        }
+    </div>
+}
+
 @* Modal de creación: se renderiza solo cuando _showCreateModal es true.
    El overlay cubre toda la pantalla; hacer clic sobre él cierra el modal (CloseCreateModal).
    @onclick:stopPropagation evita que el clic dentro del contenido propague al overlay y lo cierre. *@
@@ -358,7 +372,17 @@
 
 @if (_modules.Count > 0)
 {
-    @foreach (var group in GetModuleGroups())
+    var _groups = GetModuleGroups();
+    if (_groups.Count == 0 && !string.IsNullOrWhiteSpace(_search))
+    {
+        @* Sin coincidencias para el término de búsqueda actual *@
+        <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-muted, #888);">
+            <div style="font-size:2rem; margin-bottom:0.5rem;"><i class="bi bi-search"></i></div>
+            <p style="font-size:0.95rem; margin-bottom:0.75rem;">No hay módulos que coincidan con «@_search».</p>
+            <button class="btn btn-sm" @onclick="ClearSearch">Limpiar búsqueda</button>
+        </div>
+    }
+    @foreach (var group in _groups)
     {
         <div class="module-group" data-type="@group.Type">
             <div class="module-group-header">
@@ -693,6 +717,19 @@ else
             .Where(m => !m.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
+        // Filtro del buscador: coincide por nombre, proveedor, modelo o tipo (case-insensitive).
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var term = _search.Trim();
+            userModules = userModules
+                .Where(m =>
+                    m.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || m.ProviderType.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || m.ModelName.Contains(term, StringComparison.OrdinalIgnoreCase)
+                    || m.ModuleType.Contains(term, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
         var groups = new List<ModuleGroup>();
         foreach (var (type, label, icon) in ModuleTypeOrder)
         {
@@ -726,6 +763,11 @@ else
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];
     private bool _loading;
+    // Término del buscador de módulos (filtra la lista en tiempo real por nombre/proveedor/modelo/tipo).
+    private string _search = "";
+
+    // Limpia el término de búsqueda (botón X del buscador y enlace del estado sin resultados).
+    private void ClearSearch() => _search = "";
     // Flag que controla la visibilidad del modal de creación de módulo.
     // true = modal abierto; false = modal cerrado (por X, clic en overlay o creación exitosa).
     private bool _showCreateModal;
