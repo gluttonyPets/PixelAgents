@@ -3929,6 +3929,51 @@ a.link:hover { text-decoration: underline; }
     color: var(--text-muted);
 }
 
+/* Buscador de módulos (página Módulos IA) */
+.modules-search-wrap {
+    position: relative;
+    max-width: 360px;
+    margin-bottom: 1.25rem;
+}
+
+.modules-search {
+    width: 100%;
+    padding: 0.45rem 2rem 0.45rem 0.7rem;
+    font-size: 0.9rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.modules-search:focus {
+    border-color: var(--accent);
+}
+
+.modules-search::placeholder {
+    color: var(--text-muted);
+}
+
+.modules-search-clear {
+    position: absolute;
+    top: 50%;
+    right: 0.5rem;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+    padding: 0.15rem 0.3rem;
+}
+
+.modules-search-clear:hover {
+    color: var(--text);
+}
+
 .apikeys-filters {
     display: flex;
     flex-wrap: wrap;
