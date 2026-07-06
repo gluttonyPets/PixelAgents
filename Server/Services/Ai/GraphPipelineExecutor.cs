@@ -2033,6 +2033,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             ("Abortar", "abort"),
             ("Reiniciar", "restart"),
             ("Editar", "edit"),
+            ("Siguiente ejecución", "next_execution"),
         ];
 
     private static string BuildExecutionSummary(ExecutionGraph graph, string? userInput)

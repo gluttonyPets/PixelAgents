@@ -117,6 +117,16 @@ al chat del proyecto pidiendo una nueva planificacion. La respuesta del usuario 
 toma cada linea como un prompt) y los encola como `PlannedPrompt` para las proximas corridas.
 Solo se abre una peticion por proyecto a la vez.
 
+### Botones de control de la interaccion (Telegram)
+
+Cuando un nodo `Interaction` pausa el pipeline ("Revisa el contenido y confirma."), el mensaje
+enviado al chat incluye los botones **Continuar**, **Abortar**, **Reiniciar**, **Editar** y
+**Siguiente ejecución** (`ControlOptions`). Al pulsar **Siguiente ejecución** (`next_execution`),
+`TelegramUpdateHandler` cancela la ejecucion actual como "cancelado por usuario"
+(`AbortFromInteractionAsync`, estado `Cancelled`) y lanza de inmediato la siguiente tematica:
+consume el siguiente `PlannedPrompt` pendiente del proyecto y arranca una nueva ejecucion con el.
+Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nueva planificacion.
+
 ---
 
 ## Modulos soportados
