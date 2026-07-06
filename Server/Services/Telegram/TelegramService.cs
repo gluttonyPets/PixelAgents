@@ -153,6 +153,21 @@ namespace Server.Services.Telegram
         }
 
         /// <summary>
+        /// Extracts the top-level <c>update_id</c> from an incoming Telegram update.
+        /// Every Update object carries this field and it is unique (and increasing) per bot,
+        /// so it is the natural key for deduplicating retried/redelivered updates.
+        /// Returns null when the field is missing or not a number.
+        /// </summary>
+        public static long? GetUpdateId(JsonElement body)
+        {
+            if (body.TryGetProperty("update_id", out var idProp)
+                && idProp.ValueKind == JsonValueKind.Number
+                && idProp.TryGetInt64(out var id))
+                return id;
+            return null;
+        }
+
+        /// <summary>
         /// Parses an incoming Telegram update. Handles both regular messages and callback_query (button presses).
         /// Returns (Text, ChatId, CallbackQueryId). CallbackQueryId is non-null for button presses.
         /// </summary>

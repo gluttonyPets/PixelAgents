@@ -167,7 +167,7 @@ Solo se abre una peticion por proyecto a la vez.
 |              | `POST /api/projects/{id}/cancel`                  | Cancela ejecucion activa                          |
 |              | `POST /api/executions/{id}/retry-from-module`     | Reintenta desde un nodo concreto del grafo        |
 |              | `GET /api/executions/{id}/logs`                   | Logs persistidos; progreso en tiempo real por SignalR |
-| Webhooks     | `POST /api/webhooks/whatsapp|telegram`            | Recepcion de respuestas externas para reanudar interacciones |
+| Webhooks     | `POST /api/webhooks/whatsapp|telegram`            | Recepcion de respuestas externas para reanudar interacciones; deduplicadas por `update_id` (`TelegramUpdateDeduplicator`) para no procesar dos veces el mismo update |
 | Schedules    | `GET|POST|PUT|DELETE /api/projects/{id}/schedule` | Cron con Cronos; timezone configurable            |
 | SignalR      | `/hubs/execution`                                 | Canal de logs y progreso de ejecucion en tiempo real |
 | Archivos     | `GET /api/executions/{id}/files/{fileId}`         | Descarga de archivos generados                    |

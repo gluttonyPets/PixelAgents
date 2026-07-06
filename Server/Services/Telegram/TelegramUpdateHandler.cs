@@ -16,6 +16,7 @@ namespace Server.Services.Telegram
         private readonly IPipelineExecutor _executor;
         private readonly TelegramService _telegram;
         private readonly IPromptPlannerService _planner;
+        private readonly TelegramUpdateDeduplicator _deduplicator;
 
         // Defaults used when the user asks for a new planning from Telegram.
         private const string PlanningModel = "gpt-4o-mini";
@@ -35,13 +36,15 @@ namespace Server.Services.Telegram
             ITenantDbContextFactory factory,
             IPipelineExecutor executor,
             TelegramService telegram,
-            IPromptPlannerService planner)
+            IPromptPlannerService planner,
+            TelegramUpdateDeduplicator deduplicator)
         {
             _coreDb = coreDb;
             _factory = factory;
             _executor = executor;
             _telegram = telegram;
             _planner = planner;
+            _deduplicator = deduplicator;
         }
 
         private class EditFlowState
@@ -64,6 +67,21 @@ namespace Server.Services.Telegram
             }
 
             var normalizedChatId = chatId.Trim();
+
+            // Idempotencia: Telegram puede entregar el mismo update dos veces (reintento del
+            // webhook cuando la respuesta 200 tarda, o reproceso en polling tras un reinicio).
+            // Sin este guard el mismo "Continuar" reanudaria el pipeline dos veces y la
+            // publicacion se enviaria duplicada al chat.
+            var updateId = TelegramService.GetUpdateId(json);
+            if (updateId is { } uid)
+            {
+                var updateKey = $"{normalizedChatId}:{uid}";
+                if (!_deduplicator.TryMarkProcessed(updateKey))
+                {
+                    Console.WriteLine($"[TG-Update] Ignored duplicate update {updateKey}");
+                    return;
+                }
+            }
 
             // Find a valid correlation, skipping stale ones whose executions are no longer waiting
             var correlation = await FindValidCorrelationAsync(normalizedChatId, messageDate, callbackQueryId);

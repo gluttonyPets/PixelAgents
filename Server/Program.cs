@@ -90,6 +90,7 @@ builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddSingleton<Server.Services.Instagram.BufferImagePoolService>();
 builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
+builder.Services.AddSingleton(new Server.Services.Telegram.TelegramUpdateDeduplicator());
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
