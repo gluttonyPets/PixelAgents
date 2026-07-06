@@ -28,6 +28,7 @@ namespace Server.Services.Telegram
             ("Abortar", "abort"),
             ("Reiniciar", "restart"),
             ("Editar", "edit"),
+            ("Siguiente ejecución", "next_execution"),
         ];
 
         public TelegramUpdateHandler(
@@ -297,6 +298,39 @@ namespace Server.Services.Telegram
                     return;
                 }
 
+                // State: waiting — "Siguiente ejecución": cancel the current review as
+                // "cancelado por usuario" and immediately launch the next planned topic.
+                if (text == "next_execution" || text.Contains("Siguiente ejecución"))
+                {
+                    var execForNext = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
+                    var projectIdForNext = execForNext?.ProjectId;
+
+                    // Cancel the paused execution (status -> "Cancelled", logged as
+                    // "Pipeline abortado por el usuario") and drop any queued interactions.
+                    await _executor.AbortFromInteractionAsync(correlation.ExecutionId, db, correlation.TenantDbName);
+                    await _executor.CancelQueuedInteractionsAsync(correlation.ExecutionId);
+                    correlation.IsResolved = true;
+                    await _coreDb.SaveChangesAsync();
+
+                    var tgConfigNext = await GetTgConfigAsync();
+                    if (tgConfigNext is not null)
+                    {
+                        try { await _telegram.SendTextMessageAsync(tgConfigNext, "🚫 Contenido cancelado por el usuario."); }
+                        catch { /* non-critical */ }
+                    }
+
+                    if (projectIdForNext is { } projectId)
+                    {
+                        await LaunchNextThemeAsync(correlation, db, projectId, tgConfigNext);
+                    }
+                    else if (tgConfigNext is not null)
+                    {
+                        try { await _telegram.SendTextMessageAsync(tgConfigNext, "⚠️ No pude identificar el proyecto para lanzar la siguiente temática."); }
+                        catch { /* non-critical */ }
+                    }
+                    return;
+                }
+
                 // State: waiting — process pipeline control buttons
                 if (text == "abort" || text.Contains("Abortar"))
                 {
@@ -480,6 +514,100 @@ namespace Server.Services.Telegram
                 try { await _telegram.SendTextMessageAsync(tgConfig, confirm); }
                 catch { /* non-critical */ }
             }
+        }
+
+        /// <summary>
+        /// Consumes the next pending <see cref="PlannedPrompt"/> for the project and starts a
+        /// fresh pipeline execution with it — the "Siguiente ejecución" action. When the queue is
+        /// empty, asks the user (via Telegram) to plan new topics, mirroring an empty scheduled run.
+        /// </summary>
+        private async Task LaunchNextThemeAsync(
+            TelegramCorrelation correlation, UserDbContext db, Guid projectId, TelegramConfig? tgConfig)
+        {
+            var nextPrompt = await db.PlannedPrompts
+                .Where(p => p.ProjectId == projectId && p.Status == PlannedPromptStatus.Pending)
+                .OrderBy(p => p.OrderIndex)
+                .ThenBy(p => p.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            if (nextPrompt is null)
+            {
+                await RequestNewPlanningAsync(projectId, correlation.TenantDbName, tgConfig);
+                return;
+            }
+
+            if (tgConfig is not null)
+            {
+                try { await _telegram.SendTextMessageAsync(tgConfig, "⏭️ Lanzando la siguiente temática..."); }
+                catch { /* non-critical */ }
+            }
+
+            ProjectExecution newExecution;
+            try
+            {
+                newExecution = await _executor.ExecuteAsync(projectId, nextPrompt.Content, db, correlation.TenantDbName);
+            }
+            catch (Exception ex)
+            {
+                if (tgConfig is not null)
+                    try { await _telegram.SendTextMessageAsync(tgConfig, $"⚠️ Error al lanzar la siguiente temática: {ex.Message}"); }
+                    catch { /* non-critical */ }
+                return;
+            }
+
+            // Only mark the prompt consumed once the run actually started.
+            nextPrompt.Status = PlannedPromptStatus.Used;
+            nextPrompt.UsedAt = DateTime.UtcNow;
+            nextPrompt.UpdatedAt = DateTime.UtcNow;
+            nextPrompt.ExecutionId = newExecution.Id;
+            await db.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Opens an "awaiting_planning" correlation and asks the user (via Telegram) for new topics
+        /// when the prompt queue is empty. Only one request per project is kept open at a time.
+        /// </summary>
+        private async Task RequestNewPlanningAsync(Guid projectId, string tenantDbName, TelegramConfig? tgConfig)
+        {
+            if (tgConfig is null) return;
+
+            var alreadyAsking = await _coreDb.TelegramCorrelations
+                .AnyAsync(c => !c.IsResolved && c.State == "awaiting_planning" && c.ProjectId == projectId);
+            if (alreadyAsking)
+            {
+                try
+                {
+                    await _telegram.SendTextMessageAsync(tgConfig,
+                        "📭 No quedan temáticas planificadas. Ya hay una petición de planificación pendiente; " +
+                        "respóndela para crear nuevos temas.");
+                }
+                catch { /* non-critical */ }
+                return;
+            }
+
+            var correlation = new TelegramCorrelation
+            {
+                Id = Guid.NewGuid(),
+                ExecutionId = Guid.Empty,
+                ProjectModuleId = Guid.Empty,
+                ProjectId = projectId,
+                TenantDbName = tenantDbName,
+                ChatId = tgConfig.ChatId,
+                CreatedAt = DateTime.UtcNow,
+                IsResolved = false,
+                State = "awaiting_planning",
+            };
+            _coreDb.TelegramCorrelations.Add(correlation);
+            await _coreDb.SaveChangesAsync();
+
+            try
+            {
+                await _telegram.SendTextMessageAsync(tgConfig,
+                    "📭 No quedan temáticas planificadas.\n\n" +
+                    "Responde a este mensaje describiendo qué temas quieres generar y crearé una nueva " +
+                    "planificación. También puedes enviar varios prompts, uno por línea.");
+            }
+            catch { /* non-critical */ }
         }
 
         /// <summary>
