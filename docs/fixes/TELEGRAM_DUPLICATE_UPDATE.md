@@ -1,85 +1,79 @@
-# Fix: publicación enviada dos veces en el chat de Telegram
+# Fix: publicación / interacción enviada dos veces en el chat de Telegram
 
-> Estado: **resuelto** · Fecha: 2026-07-06 · Área: `Server/Services/Telegram/` (`TelegramUpdateHandler`, `TelegramUpdateDeduplicator`)
+> Estado: **resuelto** · Fecha: 2026-07-06 · Área: `Server/Services/Telegram/TelegramUpdateHandler.cs`, `Server/Services/Scheduler/SchedulerBackgroundService.cs`, `Server/Program.cs`
 
 ## Problema
 
-Al pulsar **"Continuar"** (o responder) sobre un módulo de interacción, la
-publicación se enviaba **dos veces** al chat de Telegram: aparecían dos mensajes
-idénticos con el mismo contenido/imagen.
+El mensaje de interacción (texto con botones **+ la imagen**) llegaba **dos veces**
+al chat de Telegram: aparecían dos copias idénticas.
 
 ## Causa raíz
 
-El mismo `update` de Telegram se procesaba dos veces porque no había ninguna
-protección de idempotencia. Telegram reentrega el mismo `update_id` en dos
-situaciones, y ambas rutas (`webhook` y `polling`) desembocan en
-`TelegramUpdateHandler.ProcessUpdateAsync`:
+Un mismo trabajo se ejecutaba dos veces. En una sola instancia y en modo polling
+el flujo es secuencial y envía una sola vez, así que un duplicado **consistente**
+implica que dos procesos hacen el mismo trabajo. Hay dos vías:
 
-- **Webhook** (`POST /api/webhooks/telegram`): el endpoint ejecutaba
-  `ProcessUpdateAsync` completo —que **reanuda todo el pipeline**
-  (`ResumeFromInteractionAsync`) y puede tardar bastante— **antes** de devolver
-  `200 OK`. Si la respuesta no llega a tiempo, Telegram **reintenta el mismo
-  update**. El reintento llega mientras la primera ejecución aún no ha marcado la
-  correlación como resuelta, así que `FindValidCorrelationAsync` vuelve a
-  encontrarla → se reanuda otra vez → la siguiente publicación se envía duplicada.
+1. **Update de Telegram procesado dos veces** → el pipeline se reanuda por
+   duplicado y reenvía la **siguiente** interacción. Ocurre por:
+   - reintento del webhook cuando la respuesta `200 OK` tarda (reanudar el
+     pipeline puede ser lento),
+   - reproceso en polling tras un reinicio (el offset se confirma en la siguiente
+     llamada a `getUpdates`),
+   - **dos instancias** de la app (dos contenedores, o un rolling deploy
+     solapado) consumiendo el mismo update.
 
-- **Polling** (`getUpdates`): un update recibido pero aún no confirmado (el
-  offset se confirma en la siguiente llamada a `getUpdates`) puede volver a
-  devolverse tras un reinicio del contenedor y reprocesarse.
+2. **Schedule ejecutado dos veces** → el **primer** envío de la interacción se
+   duplica. El "claim" avanzaba `NextRunAt` con un `SELECT`+`UPDATE` (load-modify-save)
+   sin garantía de atomicidad, así que dos workers podían leer la misma fila
+   pendiente, avanzarla ambos y ejecutar los dos.
 
-La deduplicación por correlación (`IsResolved`) no bastaba: la correlación se
-marca resuelta **al final** del `resume`, por lo que un reintento que llega
-durante el procesado la ve todavía activa.
+Un guard **en memoria** no cubre 1: no cruza instancias ni sobrevive reinicios.
 
 ## Solución implementada
 
-Guard de idempotencia por `update_id` que garantiza que cada update se maneja
-una sola vez, independientemente del modo (webhook o polling).
+Idempotencia respaldada en la **base de datos compartida**, que es atómica y
+válida entre procesos.
 
-- **`Server/Services/Telegram/TelegramUpdateDeduplicator.cs`** (nuevo): servicio
-  singleton, thread-safe, que recuerda los `update_id` procesados recientemente.
-  Las entradas caducan a los 10 min (Telegram nunca reintenta un update tan
-  antiguo), de modo que el conjunto se mantiene pequeño sin crecer sin límite.
-  `TryMarkProcessed(key)` devuelve `true` la primera vez (procesar) y `false`
-  en repeticiones (ignorar).
+### 1. Deduplicación de updates (`TelegramUpdateHandler`)
 
-- **`TelegramService.GetUpdateId(JsonElement)`** (nuevo): extrae el `update_id`
-  de nivel superior del update.
+- Nueva tabla `ProcessedTelegramUpdates(UpdateKey text PK, ProcessedAt timestamptz)`
+  creada en el arranque (`Program.cs`, junto a las demás migraciones de CoreDb).
+- `TelegramService.GetUpdateId(JsonElement)` extrae el `update_id`.
+- `ProcessUpdateAsync` reclama el update al inicio con
+  `INSERT ... ON CONFLICT (UpdateKey) DO NOTHING`; si afecta 0 filas, el update ya
+  se procesó (otra entrega/instancia) y se ignora. La clave es `"{chatId}:{update_id}"`.
+- Poda oportunista de filas con más de 1 día (Telegram nunca reintenta un update
+  tan antiguo), así que la tabla se mantiene pequeña.
 
-- **`TelegramUpdateHandler.ProcessUpdateAsync`**: al inicio, calcula la clave
-  `"{chatId}:{update_id}"` y, si ya se procesó, ignora el update y sale antes de
-  hacer cualquier trabajo con efectos secundarios.
+### 2. Claim atómico del scheduler (`SchedulerBackgroundService`)
 
-- **`Program.cs`**: registro del singleton
-  `AddSingleton(new TelegramUpdateDeduplicator())`.
-
-La clave combina `chatId` + `update_id`: el `update_id` es único por bot, y
-añadir el `chatId` evita cualquier colisión improbable entre bots distintos.
+- El avance de `NextRunAt` pasa a un **UPDATE condicional** único:
+  `WHERE Id = @id AND NextRunAt = @previous` vía `ExecuteUpdateAsync`. Solo el
+  worker que aún ve el `NextRunAt` viejo gana (1 fila); un worker concurrente
+  encuentra la fila ya avanzada (0 filas) y salta el run. La ruta de reintento
+  transitorio también usa `ExecuteUpdateAsync` para no depender de la entidad
+  rastreada, ya desincronizada tras el claim.
 
 ## Cómo verificar el fix
 
-- **Test unitario**: `Server.Tests/NoRepetirTemas/TelegramUpdateDeduplicatorTests.cs`
-  cubre primera vez / duplicado / claves distintas / caducidad / clave vacía.
-
-  ```bash
-  dotnet test Server.Tests/Server.Tests.csproj \
-    --filter FullyQualifiedName~TelegramUpdateDeduplicatorTests
-  ```
-
-- **Manual**: pulsar "Continuar" en una interacción de Telegram y comprobar que
-  la publicación llega **una sola vez**. En los logs, un reintento aparece como
-  `[TG-Update] Ignored duplicate update {chatId}:{update_id}`.
+- **Manual**: pulsar "Continuar" en una interacción y comprobar que la siguiente
+  llega **una sola vez**; lanzar un schedule y comprobar que el primer preview
+  llega **una sola vez**. Un duplicado detectado aparece en logs como
+  `[TG-Update] Ignored duplicate update {chatId}:{update_id}` o
+  `Schedule {Id} ... already claimed by another worker; skipping`.
+- **SQL**: `SELECT count(*) FROM "ProcessedTelegramUpdates";` crece con cada
+  update distinto y se poda pasado 1 día.
 
 ## Verificación de éxito
 
-✅ Cada update se procesa una sola vez (webhook y polling)
-✅ El botón "Continuar" reanuda el pipeline una única vez
-✅ La publicación se envía **una** vez al chat
-✅ Los reintentos de Telegram se detectan y se ignoran sin efectos secundarios
+✅ Cada update se procesa una sola vez (webhook, polling y varias instancias)
+✅ Cada schedule se ejecuta una sola vez aunque haya dos workers
+✅ La interacción (mensaje de opciones + imagen) se envía **una** vez
 
-## Notas
+## Nota operativa
 
-- El deduplicador es **en memoria** y asume una única instancia de la app (misma
-  suposición que el offset en memoria de `TelegramPollingService`). Cubre el caso
-  real: reintentos de Telegram dentro de una ventana corta con la app en marcha.
-  Si en el futuro se escala a varias réplicas, habría que respaldarlo en BD.
+La causa más habitual de un duplicado **constante** es tener **dos instancias**
+de la app corriendo a la vez (p.ej. un `docker compose up` sin bajar la anterior,
+o una instancia de desarrollo con el mismo bot token). Estos cambios hacen el
+sistema idempotente frente a ello, pero conviene confirmar que solo hay **un**
+proceso activo con `docker compose ps`.

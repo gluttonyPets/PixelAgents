@@ -90,7 +90,6 @@ builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddSingleton<Server.Services.Instagram.BufferImagePoolService>();
 builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
-builder.Services.AddSingleton(new Server.Services.Telegram.TelegramUpdateDeduplicator());
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
@@ -177,6 +176,16 @@ using (var scope = app.Services.CreateScope())
         // Migration: add ProjectId column for correlations not tied to an execution (planning flow)
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""ProjectId"" uuid");
+        // Idempotencia de updates de Telegram: guard compartido para no procesar dos veces
+        // el mismo update (reintento de webhook, reproceso de polling o instancias solapadas).
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""ProcessedTelegramUpdates"" (
+                ""UpdateKey"" text NOT NULL PRIMARY KEY,
+                ""ProcessedAt"" timestamp with time zone NOT NULL
+            )");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_ProcessedTelegramUpdates_ProcessedAt""
+            ON ""ProcessedTelegramUpdates"" (""ProcessedAt"")");
     }
     catch { }
 }

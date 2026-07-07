@@ -16,7 +16,7 @@ histórica, no documentación viva del sistema.
 | [`PIPELINE_TIMEOUT_CANCELACION.md`](PIPELINE_TIMEOUT_CANCELACION.md) | Timeouts por provider + timeout de 10 min por módulo y cancelación real desde la UI. |
 | [`TEXT_MODULE_IMAGE_INPUT.md`](TEXT_MODULE_IMAGE_INPUT.md) | El módulo de texto acepta entradas de solo imagen (sin prompt de texto). |
 | [`BUFFER_HEAD_REQUEST.md`](BUFFER_HEAD_REQUEST.md) | El endpoint público de imágenes de Buffer responde a peticiones `HEAD` (evita el 405). |
-| [`TELEGRAM_DUPLICATE_UPDATE.md`](TELEGRAM_DUPLICATE_UPDATE.md) | Guard de idempotencia por `update_id` para que el mismo update de Telegram no se procese dos veces y la publicación no se envíe duplicada. |
+| [`TELEGRAM_DUPLICATE_UPDATE.md`](TELEGRAM_DUPLICATE_UPDATE.md) | Idempotencia en BD del `update_id` de Telegram + claim atómico del scheduler para que la interacción no se envíe duplicada. |
 
 ## Convención
 

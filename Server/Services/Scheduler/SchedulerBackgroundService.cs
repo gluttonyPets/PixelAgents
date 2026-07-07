@@ -93,7 +93,9 @@ namespace Server.Services.Scheduler
                 // again by:
                 //   - The next tick if the pipeline runs long enough that the
                 //     "now" captured at the start of this tick is stale.
-                //   - A second scheduler instance during a rolling deploy.
+                //   - A second scheduler instance (two containers or an
+                //     overlapping rolling deploy) processing the same due row,
+                //     which would otherwise publish/send the interaction twice.
                 // It also guarantees that the next occurrence (e.g. 18:00 when
                 // 15:00 just fired) is never skipped because we don't depend on
                 // a single "now" value reaching the next slot.
@@ -107,18 +109,32 @@ namespace Server.Services.Scheduler
                     ? prev
                     : now;
                 var nextRun = ComputeNextRun(schedule.CronExpression, schedule.TimeZone, advanceFrom);
-                schedule.LastRunAt = now;
-                schedule.NextRunAt = nextRun;
-                schedule.UpdatedAt = now;
 
+                // Atomic claim: a single conditional UPDATE that only succeeds for the
+                // worker still seeing the OLD NextRunAt. A concurrent worker finds the row
+                // already advanced (0 rows affected) and skips it, so the schedule runs once.
+                int claimed;
                 try
                 {
-                    await db.SaveChangesAsync(ct);
+                    claimed = await db.ProjectSchedules
+                        .Where(s => s.Id == schedule.Id && s.NextRunAt == previousNextRunAt)
+                        .ExecuteUpdateAsync(setters => setters
+                            .SetProperty(s => s.LastRunAt, now)
+                            .SetProperty(s => s.NextRunAt, nextRun)
+                            .SetProperty(s => s.UpdatedAt, now), ct);
                 }
                 catch (Exception saveEx)
                 {
                     _log.LogError(saveEx,
-                        "Failed to persist NextRunAt for schedule {Id} (project {ProjectId}); skipping this run",
+                        "Failed to claim NextRunAt for schedule {Id} (project {ProjectId}); skipping this run",
+                        schedule.Id, schedule.ProjectId);
+                    continue;
+                }
+
+                if (claimed == 0)
+                {
+                    _log.LogInformation(
+                        "Schedule {Id} (project {ProjectId}) already claimed by another worker; skipping this run",
                         schedule.Id, schedule.ProjectId);
                     continue;
                 }
@@ -200,9 +216,15 @@ namespace Server.Services.Scheduler
                     _log.LogWarning(ex,
                         "Schedule {Id} (project {ProjectId}): transient provider failure, rescheduling in 30 min at {RetryAt:O}",
                         schedule.Id, schedule.ProjectId, retryAt);
-                    schedule.NextRunAt = retryAt;
-                    schedule.UpdatedAt = now;
-                    try { await db.SaveChangesAsync(ct); }
+                    // Direct UPDATE (not the tracked entity, which is stale after the atomic claim).
+                    try
+                    {
+                        await db.ProjectSchedules
+                            .Where(s => s.Id == schedule.Id)
+                            .ExecuteUpdateAsync(setters => setters
+                                .SetProperty(s => s.NextRunAt, retryAt)
+                                .SetProperty(s => s.UpdatedAt, now), ct);
+                    }
                     catch (Exception saveEx)
                     {
                         _log.LogError(saveEx,

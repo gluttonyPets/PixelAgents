@@ -16,7 +16,6 @@ namespace Server.Services.Telegram
         private readonly IPipelineExecutor _executor;
         private readonly TelegramService _telegram;
         private readonly IPromptPlannerService _planner;
-        private readonly TelegramUpdateDeduplicator _deduplicator;
 
         // Defaults used when the user asks for a new planning from Telegram.
         private const string PlanningModel = "gpt-4o-mini";
@@ -36,15 +35,13 @@ namespace Server.Services.Telegram
             ITenantDbContextFactory factory,
             IPipelineExecutor executor,
             TelegramService telegram,
-            IPromptPlannerService planner,
-            TelegramUpdateDeduplicator deduplicator)
+            IPromptPlannerService planner)
         {
             _coreDb = coreDb;
             _factory = factory;
             _executor = executor;
             _telegram = telegram;
             _planner = planner;
-            _deduplicator = deduplicator;
         }
 
         private class EditFlowState
@@ -68,19 +65,17 @@ namespace Server.Services.Telegram
 
             var normalizedChatId = chatId.Trim();
 
-            // Idempotencia: Telegram puede entregar el mismo update dos veces (reintento del
-            // webhook cuando la respuesta 200 tarda, o reproceso en polling tras un reinicio).
-            // Sin este guard el mismo "Continuar" reanudaria el pipeline dos veces y la
-            // publicacion se enviaria duplicada al chat.
+            // Idempotencia: el mismo update de Telegram puede procesarse dos veces y provocar
+            // que el pipeline se reanude por duplicado (y la publicacion se envie 2 veces).
+            // Causas: reintento del webhook cuando la respuesta 200 tarda, reproceso en polling
+            // tras un reinicio, o DOS instancias/despliegue solapado consumiendo el mismo update.
+            // El guard se respalda en BD (no en memoria) para que sea atomico y compartido entre
+            // procesos: un INSERT ... ON CONFLICT DO NOTHING solo tiene exito una vez por update.
             var updateId = TelegramService.GetUpdateId(json);
-            if (updateId is { } uid)
+            if (!await TryClaimUpdateAsync(normalizedChatId, updateId))
             {
-                var updateKey = $"{normalizedChatId}:{uid}";
-                if (!_deduplicator.TryMarkProcessed(updateKey))
-                {
-                    Console.WriteLine($"[TG-Update] Ignored duplicate update {updateKey}");
-                    return;
-                }
+                Console.WriteLine($"[TG-Update] Ignored duplicate update {normalizedChatId}:{updateId}");
+                return;
             }
 
             // Find a valid correlation, skipping stale ones whose executions are no longer waiting
@@ -404,6 +399,51 @@ namespace Server.Services.Telegram
                 }
                 catch { /* non-critical */ }
             }
+        }
+
+        /// <summary>
+        /// Reclama este update de forma atomica y devuelve true solo la primera vez.
+        /// Se respalda en la BD compartida (INSERT ... ON CONFLICT DO NOTHING) para que el
+        /// guard siga valido entre reinicios y entre varias instancias del proceso. Devuelve
+        /// true cuando no hay update_id sobre el que deduplicar (no hay nada que proteger).
+        /// </summary>
+        private async Task<bool> TryClaimUpdateAsync(string chatId, long? updateId)
+        {
+            if (updateId is not { } uid)
+                return true; // sin update_id no hay nada sobre lo que deduplicar
+
+            var updateKey = $"{chatId}:{uid}";
+            var now = DateTime.UtcNow;
+
+            int inserted;
+            try
+            {
+                inserted = await _coreDb.Database.ExecuteSqlInterpolatedAsync($@"
+                    INSERT INTO ""ProcessedTelegramUpdates"" (""UpdateKey"", ""ProcessedAt"")
+                    VALUES ({updateKey}, {now})
+                    ON CONFLICT (""UpdateKey"") DO NOTHING");
+            }
+            catch (Exception ex)
+            {
+                // Si el guard falla (p.ej. la tabla aun no existe), no bloquees el update:
+                // es preferible arriesgar un duplicado a perder la interaccion del usuario.
+                Console.WriteLine($"[TG-Update] Dedup guard error (processing anyway): {ex.Message}");
+                return true;
+            }
+
+            if (inserted == 0)
+                return false; // ya procesado por otra entrega/instancia
+
+            // Poda oportunista: el volumen de updates es bajo y Telegram nunca reintenta uno
+            // antiguo, asi que la tabla se mantiene pequena sin crecer sin limite.
+            try
+            {
+                await _coreDb.Database.ExecuteSqlInterpolatedAsync($@"
+                    DELETE FROM ""ProcessedTelegramUpdates"" WHERE ""ProcessedAt"" < {now.AddDays(-1)}");
+            }
+            catch { /* poda best-effort */ }
+
+            return true;
         }
 
         /// <summary>
