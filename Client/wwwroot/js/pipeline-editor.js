@@ -510,6 +510,25 @@ window.pipelineEditor = {
             + '</div>';
     },
 
+    // Auto-scroll the execution log to the newest entry, but only while the user
+    // is already pinned to the bottom. If they scroll up to read older lines we
+    // leave their position alone until they scroll back down.
+    scrollLogToBottom: function (elementId) {
+        var el = document.getElementById(elementId);
+        if (!el) return;
+        if (!el._logScrollBound) {
+            el._logScrollBound = true;
+            el._logPinned = true;
+            el.addEventListener('scroll', function () {
+                var distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+                el._logPinned = distance < 24;
+            });
+        }
+        if (el._logPinned) {
+            el.scrollTop = el.scrollHeight;
+        }
+    },
+
     dispose: function () {
         if (this._editor) {
             this._editor.clear();

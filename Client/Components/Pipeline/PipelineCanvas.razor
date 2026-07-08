@@ -759,13 +759,32 @@
 
         @if (Executing || (ExecutionLogs is { Count: > 0 }))
         {
+            var logCount = ExecutionLogs?.Count ?? 0;
             <div class="inspector-log">
                 <div class="inspector-log-header">
-                    <span>Log</span>
-                    @if (Executing) { <span class="spinner" style="width: 0.6rem; height: 0.6rem;"></span> }
+                    <span class="inspector-log-title">Log de ejecución</span>
+                    @if (logCount > 0)
+                    {
+                        <span class="inspector-log-count">@logCount</span>
+                    }
+                    <span class="inspector-log-header-spacer"></span>
+                    @if (Executing)
+                    {
+                        <span class="inspector-log-live">
+                            <span class="inspector-log-live-dot"></span>
+                            En vivo
+                        </span>
+                    }
                 </div>
-                <div class="inspector-log-entries">
-                    @if (ExecutionLogs is not null)
+                <div class="inspector-log-entries" id="inspector-log-body-@_canvasId">
+                    @if (logCount == 0)
+                    {
+                        <div class="inspector-log-waiting">
+                            <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
+                            <span>Esperando eventos de ejecución&hellip;</span>
+                        </div>
+                    }
+                    else if (ExecutionLogs is not null)
                     {
                         @foreach (var entry in ExecutionLogs.TakeLast(80))
                         {
@@ -799,6 +818,7 @@
                             else
                             {
                                 <div class="inspector-log-entry inspector-log-@entry.Level">
+                                    <span class="inspector-log-dot"></span>
                                     <span class="inspector-log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
                                     @if (entry.ProjectModuleId.HasValue)
                                     {
@@ -806,7 +826,7 @@
                                         var logName = logPm?.StepName ?? logPm?.AiModuleName ?? entry.ModuleName;
                                         <span class="inspector-log-step">@logName</span>
                                     }
-                                    <span>@entry.Message</span>
+                                    <span class="inspector-log-msg">@entry.Message</span>
                                 </div>
                             }
                         }
@@ -1141,11 +1161,19 @@
         if (_jsInitialized)
         {
             var logCount = ExecutionLogs?.Count ?? 0;
-            if (Executing != _lastExecuting || logCount != _lastLogCount)
+            var logGrew = logCount != _lastLogCount;
+            if (Executing != _lastExecuting || logGrew)
             {
                 _lastExecuting = Executing;
                 _lastLogCount = logCount;
                 await UpdateExecutionVisualization();
+            }
+
+            // Keep the live log pinned to the newest entry (unless the user scrolled up).
+            if (logGrew)
+            {
+                try { await JS.InvokeVoidAsync("pipelineEditor.scrollLogToBottom", $"inspector-log-body-{_canvasId}"); }
+                catch { /* log element may not be rendered yet */ }
             }
         }
     }
