@@ -1000,12 +1000,16 @@ else
 
                             <!-- Right: Logs -->
                             <div style="width: 360px; min-width: 280px; overflow-y: auto; padding: 0 0.8rem 0.8rem; display: flex; flex-direction: column;">
-                                <div style="font-weight: 600; font-size: 0.85rem; padding: 0.3rem 0; position: sticky; top: 0; background: var(--bg-secondary); z-index: 1;">
-                                    Logs @(_execDetailLogs is { Count: > 0 } ? $"({_execDetailLogs.Count})" : "")
+                                <div style="font-weight: 600; font-size: 0.85rem; padding: 0.45rem 0 0.4rem; margin-bottom: 0.2rem; position: sticky; top: 0; background: var(--bg-card); border-bottom: 1px solid var(--border); z-index: 1; display: flex; align-items: center; gap: 0.4rem;">
+                                    <span>Logs</span>
+                                    @if (_execDetailLogs is { Count: > 0 })
+                                    {
+                                        <span class="inspector-log-count">@_execDetailLogs.Count</span>
+                                    }
                                 </div>
                                 @if (_execDetailLogs is { Count: > 0 })
                                 {
-                                    <div class="inspector-log-entries" style="flex: 1;">
+                                    <div class="inspector-log-entries inspector-log-full" style="flex: 1;">
                                         @foreach (var log in _execDetailLogs)
                                         {
                                             @if (log.Level == "step-start")
@@ -1037,13 +1041,16 @@ else
                                             else
                                             {
                                                 <div class="inspector-log-entry inspector-log-@log.Level">
+                                                    <span class="inspector-log-dot"></span>
                                                     <span class="inspector-log-time">@log.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
-                                                    @if (log.ProjectModuleId.HasValue)
-                                                    {
-                                                        var logModule = _project?.Modules.FirstOrDefault(m => m.Id == log.ProjectModuleId.Value);
-                                                        <span class="inspector-log-step">@(logModule?.StepName ?? logModule?.AiModuleName ?? log.ModuleName)</span>
-                                                    }
-                                                    <span>@log.Message</span>
+                                                    <div class="inspector-log-body">
+                                                        @if (log.ProjectModuleId.HasValue)
+                                                        {
+                                                            var logModule = _project?.Modules.FirstOrDefault(m => m.Id == log.ProjectModuleId.Value);
+                                                            <span class="inspector-log-step">@(logModule?.StepName ?? logModule?.AiModuleName ?? log.ModuleName)</span>
+                                                        }
+                                                        <span class="inspector-log-msg">@log.Message</span>
+                                                    </div>
                                                 </div>
                                             }
                                         }

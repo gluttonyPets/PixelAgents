@@ -820,13 +820,15 @@
                                 <div class="inspector-log-entry inspector-log-@entry.Level">
                                     <span class="inspector-log-dot"></span>
                                     <span class="inspector-log-time">@entry.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>
-                                    @if (entry.ProjectModuleId.HasValue)
-                                    {
-                                        var logPm = Modules.FirstOrDefault(m => m.Id == entry.ProjectModuleId.Value);
-                                        var logName = logPm?.StepName ?? logPm?.AiModuleName ?? entry.ModuleName;
-                                        <span class="inspector-log-step">@logName</span>
-                                    }
-                                    <span class="inspector-log-msg">@entry.Message</span>
+                                    <div class="inspector-log-body">
+                                        @if (entry.ProjectModuleId.HasValue)
+                                        {
+                                            var logPm = Modules.FirstOrDefault(m => m.Id == entry.ProjectModuleId.Value);
+                                            var logName = logPm?.StepName ?? logPm?.AiModuleName ?? entry.ModuleName;
+                                            <span class="inspector-log-step">@logName</span>
+                                        }
+                                        <span class="inspector-log-msg">@entry.Message</span>
+                                    </div>
                                 </div>
                             }
                         }

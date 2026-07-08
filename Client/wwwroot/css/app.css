@@ -3431,7 +3431,7 @@ a.link:hover { text-decoration: underline; }
     height: 6px;
     border-radius: 50%;
     flex-shrink: 0;
-    margin-top: 0.42em;
+    margin-top: 0.34em;
     background: #5a6b8c;
 }
 .inspector-log-info    .inspector-log-dot { background: #6c8cff; }
@@ -3440,25 +3440,38 @@ a.link:hover { text-decoration: underline; }
 .inspector-log-error   .inspector-log-dot { background: var(--danger);  box-shadow: 0 0 0 2px rgba(244, 67, 54, 0.20); }
 .inspector-log-success .inspector-log-dot { background: var(--success); box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.18); }
 
-.inspector-log-msg { flex: 1; min-width: 0; }
+/* Body takes the remaining width; the step badge floats inline at the start so
+   the message wraps to the FULL width instead of a narrow column beside it. */
+.inspector-log-body {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.5;
+}
+.inspector-log-msg {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
 
 .inspector-log-time {
     color: #555e6e;
     flex-shrink: 0;
     font-size: 0.6rem;
     font-variant-numeric: tabular-nums;
-    margin-top: 0.08em;
+    margin-top: 0.22em;
 }
 
 .inspector-log-step {
+    display: inline-block;
     color: var(--accent);
     font-weight: 600;
-    flex-shrink: 0;
-    opacity: 0.85;
+    opacity: 0.9;
     font-size: 0.62rem;
-    background: rgba(108,99,255,0.1);
-    padding: 0 0.3rem;
-    border-radius: 2px;
+    background: rgba(108, 99, 255, 0.12);
+    padding: 0.02rem 0.34rem;
+    border-radius: 3px;
+    margin-right: 0.4rem;
+    vertical-align: baseline;
+    white-space: nowrap;
 }
 
 .inspector-log-info  { color: var(--text); border-left-color: transparent; }
@@ -3487,8 +3500,9 @@ a.link:hover { text-decoration: underline; }
     border-top: 1px solid rgba(108, 99, 255, 0.2);
     border-bottom: 1px solid rgba(108, 99, 255, 0.12);
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.2rem 0.4rem;
     font-weight: 600;
     animation: logEntryIn 0.18s ease-out;
 }
@@ -3497,16 +3511,20 @@ a.link:hover { text-decoration: underline; }
     background: var(--accent);
     color: #fff;
     font-size: 0.57rem;
-    padding: 0.06rem 0.4rem;
+    padding: 0.1rem 0.4rem;
     border-radius: 3px;
     font-weight: 700;
     flex-shrink: 0;
     letter-spacing: 0.02em;
+    white-space: nowrap;
 }
 .inspector-log-step-name {
+    flex: 1 1 100%;
     font-size: 0.72rem;
     color: #c5bfff;
     font-weight: 600;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 /* ── Input / Output chips ── */
@@ -3539,13 +3557,24 @@ a.link:hover { text-decoration: underline; }
     color: #7ed981;
 }
 .inspector-log-io-text {
+    flex: 1;
+    min-width: 0;
     color: #9ba3b0;
     word-break: break-word;
+    overflow-wrap: anywhere;
     max-height: 4.5em;
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
+}
+
+/* Full view (execution detail modal): never truncate — show the whole message. */
+.inspector-log-full .inspector-log-io-text {
+    display: block;
+    max-height: none;
+    overflow: visible;
+    -webkit-line-clamp: initial;
 }
 
 /* ── Execution detail: step cards ── */
