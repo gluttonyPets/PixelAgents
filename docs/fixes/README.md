@@ -17,6 +17,7 @@ histórica, no documentación viva del sistema.
 | [`TEXT_MODULE_IMAGE_INPUT.md`](TEXT_MODULE_IMAGE_INPUT.md) | El módulo de texto acepta entradas de solo imagen (sin prompt de texto). |
 | [`BUFFER_HEAD_REQUEST.md`](BUFFER_HEAD_REQUEST.md) | El endpoint público de imágenes de Buffer responde a peticiones `HEAD` (evita el 405). |
 | [`TELEGRAM_DUPLICATE_UPDATE.md`](TELEGRAM_DUPLICATE_UPDATE.md) | Idempotencia en BD del `update_id` de Telegram + claim atómico del scheduler para que la interacción no se envíe duplicada. |
+| [`COSTE_EJECUCION_PRICING.md`](COSTE_EJECUCION_PRICING.md) | El gasto salía 0 (oculto) porque faltaban modelos actuales en `PricingCatalog`; la API no da coste por petición, solo tokens. |
 
 ## Convención
 
