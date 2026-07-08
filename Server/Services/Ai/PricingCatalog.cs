@@ -14,6 +14,7 @@ namespace Server.Services.Ai
                 ["gpt-5.4"]          = (2.50m,  15.00m),
                 ["gpt-5.4-pro"]      = (30.00m, 180.00m),
                 ["gpt-5.2"]          = (2.00m,  10.00m),
+                ["gpt-5.1"]          = (1.25m,  10.00m),
                 ["gpt-5"]            = (2.00m,  10.00m),
                 ["gpt-5-mini"]       = (0.50m,   2.00m),
                 ["gpt-5-nano"]       = (0.15m,   0.60m),
@@ -26,15 +27,25 @@ namespace Server.Services.Ai
                 ["o3-mini"]          = (1.10m,   4.40m),
                 ["o4-mini"]          = (1.10m,   4.40m),
 
-                // Anthropic
+                // Anthropic (las claves cortas hacen match por prefijo con los IDs con fecha,
+                // p.ej. "claude-opus-4-5-20251124" empieza por "claude-opus-4-5")
+                ["claude-opus-4-6"]             = (5.00m, 25.00m),
+                ["claude-sonnet-4-6"]           = (3.00m, 15.00m),
+                ["claude-opus-4-5"]             = (5.00m, 25.00m),
+                ["claude-sonnet-4-5"]           = (3.00m, 15.00m),
+                ["claude-haiku-4-5"]            = (1.00m,  5.00m),
+                ["claude-opus-4-1"]             = (15.00m, 75.00m),
                 ["claude-sonnet-4-20250514"]    = (3.00m, 15.00m),
-                ["claude-opus-4-20250514"]      = (5.00m, 25.00m),
+                ["claude-opus-4-20250514"]      = (15.00m, 75.00m),
                 ["claude-3-5-haiku-20241022"]   = (0.80m,  4.00m),
 
                 // Google Gemini (Gemini Developer API pricing)
-                ["gemini-2.0-flash"]   = (0.10m,  0.40m),
                 ["gemini-2.5-flash"]   = (0.30m,  2.50m),  // output includes thinking tokens
                 ["gemini-2.5-pro"]     = (1.25m, 10.00m),
+                ["gemini-2.0-flash-lite"] = (0.075m, 0.30m),  // antes que 2.0-flash para el match por prefijo
+                ["gemini-2.0-flash"]   = (0.10m,  0.40m),
+                ["gemini-1.5-pro"]     = (1.25m,  5.00m),
+                ["gemini-1.5-flash"]   = (0.075m, 0.30m),
 
                 // xAI Grok
                 ["grok-4-0709"]                 = (3.00m, 15.00m),
@@ -63,6 +74,9 @@ namespace Server.Services.Ai
                 ["gpt-image-1-mini"] = 0.015m,
 
                 // Gemini Imagen (via Gemini native image gen)
+                ["gemini-2.5-flash-image"]         = 0.039m,   // ~1290 tokens de salida por imagen
+                ["gemini-3.1-flash-image-preview"] = 0.039m,
+                ["gemini-3-pro-image-preview"]     = 0.134m,   // Gemini 3 Pro Image (1K/2K)
                 ["gemini-2.0-flash"]          = 0.039m,
                 ["gemini-2.0-flash-preview-image-generation"] = 0.039m,
                 ["imagen-3.0-generate-002"]   = 0.040m,
