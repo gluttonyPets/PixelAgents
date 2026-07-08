@@ -557,10 +557,16 @@ luego cada proyecto solo asigna cual usar (no se reintroducen por proyecto):
   y metadescripcion SEO; si se dejan vacios se generan a partir del titulo/contenido.
   El extracto y el slug son campos nativos del articulo, y el SEO se guarda como
   metafields `global.title_tag` / `global.description_tag` (requiere scope `write_content`).
+  El nodo tiene ademas un puerto de entrada opcional `input_image` (imagen destacada):
+  si conectas un modulo de Imagen, el articulo se publica con esa portada usando el
+  campo nativo `image` del articulo (Shopify descarga la URL publica del archivo y la
+  re-hostea en su CDN al crear el articulo). El texto alternativo sale del nodo, del
+  JSON (`imagen_alt`) o, en su defecto, del titulo. Si no conectas nada, se publica sin
+  imagen como antes.
   El modulo de IA anterior puede emitir el articulo ya estructurado en un unico JSON
   usando el "Formato de la conexion" del cable (hay una plantilla predefinida de
   Shopify con `titulo`, `cuerpo`, `extracto`, `slug`, `seo_titulo`, `seo_descripcion`,
-  `tags`); el nodo parsea ese JSON y reparte cada campo, sin puertos extra. Precedencia:
+  `imagen_alt`, `tags`); el nodo parsea ese JSON y reparte cada campo. Precedencia:
   config del nodo > JSON del modulo anterior > autogenerado. Si la salida no es JSON,
   todo el texto se usa como cuerpo (retrocompatible).
 - Canales de Buffer disponibles para un token: `GET /api/buffer/channels?apiKey=...`.

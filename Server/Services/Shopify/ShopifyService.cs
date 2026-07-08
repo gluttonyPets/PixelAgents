@@ -218,12 +218,15 @@ namespace Server.Services.Shopify
         /// <param name="handle">Identificador URL / slug (campo nativo "handle"). Si va vacio, Shopify lo genera a partir del titulo.</param>
         /// <param name="seoTitle">Titulo de la pagina para SEO. Se guarda como metafield global.title_tag. Opcional.</param>
         /// <param name="metaDescription">Metadescripcion para SEO. Se guarda como metafield global.description_tag. Opcional.</param>
+        /// <param name="imageUrl">URL publica de la imagen destacada (campo nativo "image"). Shopify la descarga y la re-hostea en su CDN al crear el articulo. Opcional.</param>
+        /// <param name="imageAltText">Texto alternativo de la imagen destacada (accesibilidad/SEO). Opcional.</param>
         public async Task<ShopifyArticleResult> CreateArticleAsync(
             string shopDomain, string clientId, string clientSecret, string blogId,
             string title, string bodyHtml, string? authorName, bool isPublished,
             IEnumerable<string>? tags,
             string? summary = null, string? handle = null,
             string? seoTitle = null, string? metaDescription = null,
+            string? imageUrl = null, string? imageAltText = null,
             CancellationToken ct = default)
         {
             var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
@@ -253,6 +256,17 @@ namespace Server.Services.Shopify
                 article["summary"] = summary.Trim();
             if (!string.IsNullOrWhiteSpace(handle))
                 article["handle"] = handle.Trim();
+
+            // Imagen destacada: campo nativo "image" (ArticleImageInput { url, altText }).
+            // Shopify descarga la URL y re-hostea la imagen en su CDN al crear el articulo,
+            // por lo que la URL solo necesita estar accesible durante la publicacion.
+            if (!string.IsNullOrWhiteSpace(imageUrl))
+            {
+                var image = new Dictionary<string, object?> { ["url"] = imageUrl.Trim() };
+                if (!string.IsNullOrWhiteSpace(imageAltText))
+                    image["altText"] = imageAltText.Trim();
+                article["image"] = image;
+            }
 
             // El titulo de pagina y la metadescripcion SEO no son campos nativos del
             // articulo: Shopify los expone como metafields del namespace "global"

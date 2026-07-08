@@ -84,6 +84,30 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         var handleSource = FromNodeOr("handle", structured?.Slug);
         var handle = string.IsNullOrWhiteSpace(handleSource) ? null : Slugify(handleSource);
 
+        // Imagen destacada: si hay un modulo de imagen (u otro) conectado al puerto
+        // "input_image", tomamos el primer archivo y lo exponemos como URL publica para
+        // que Shopify la descargue. El alt text sale del nodo -> JSON -> titulo.
+        string? imageUrl = null;
+        string? imageAlt = null;
+        var imageFile = ctx.GetInputFiles("input_image").FirstOrDefault();
+        if (imageFile is not null)
+        {
+            imageUrl = ctx.GetPublicFileUrl(imageFile);
+            if (!string.IsNullOrWhiteSpace(imageUrl))
+            {
+                imageAlt = FromNodeOr("imageAlt", structured?.ImageAlt);
+                if (string.IsNullOrWhiteSpace(imageAlt))
+                    imageAlt = title;
+                await ctx.LogInfoAsync($"Imagen destacada adjunta: {imageFile.FileName} → {imageUrl}");
+            }
+            else
+            {
+                await ctx.LogWarningAsync(
+                    "Hay una imagen conectada pero no se pudo generar su URL publica; " +
+                    "el articulo se publicara sin imagen destacada (revisa PublicBaseUrl).");
+            }
+        }
+
         await ctx.LogInfoAsync($"Publicando articulo en Shopify ({connection.ShopDomain}) — \"{title}\" ({(isPublished ? "publicado" : "borrador")})");
 
         ShopifyArticleResult result;
@@ -95,6 +119,7 @@ public class ShopifyBlogModuleHandler : IModuleHandler
                 isPublished, tags,
                 summary: excerpt, handle: handle,
                 seoTitle: seoTitle, metaDescription: metaDescription,
+                imageUrl: imageUrl, imageAltText: imageAlt,
                 ct: ctx.CancellationToken);
         }
         catch (OperationCanceledException)
@@ -227,6 +252,7 @@ internal sealed class StructuredArticle
     public string? SeoTitle { get; init; }
     public string? MetaDescription { get; init; }
     public string? Author { get; init; }
+    public string? ImageAlt { get; init; }
     public string[]? Tags { get; init; }
 
     private static readonly string[] TitleKeys = ["titulo", "title", "titulo_articulo"];
@@ -236,6 +262,7 @@ internal sealed class StructuredArticle
     private static readonly string[] SeoTitleKeys = ["seo_titulo", "titulo_seo", "titulo_pagina", "seo_title", "page_title", "meta_title"];
     private static readonly string[] MetaDescKeys = ["seo_descripcion", "metadescripcion", "meta_descripcion", "meta_description", "seo_description"];
     private static readonly string[] AuthorKeys = ["autor", "author"];
+    private static readonly string[] ImageAltKeys = ["imagen_alt", "image_alt", "alt", "alt_text", "texto_alternativo"];
     private static readonly string[] TagsKeys = ["tags", "etiquetas"];
 
     public static StructuredArticle? TryParse(string? raw)
@@ -266,6 +293,7 @@ internal sealed class StructuredArticle
                 SeoTitle = GetString(props, SeoTitleKeys),
                 MetaDescription = GetString(props, MetaDescKeys),
                 Author = GetString(props, AuthorKeys),
+                ImageAlt = GetString(props, ImageAltKeys),
                 Tags = GetTags(props, TagsKeys),
             };
         }
