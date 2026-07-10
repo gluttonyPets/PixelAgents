@@ -38,6 +38,37 @@ El script:
 
 ---
 
+### `cleanup_stuck_executions.sql`
+
+**Propósito:** Cerrar (marcar como `Cancelled`) ejecuciones "zombi" que se
+quedaron en `Running`/`Waiting*` sin token de cancelación vivo (colgadas antes de
+los arreglos de cancelación, o tras reiniciar el servidor). Aparecen como "En
+curso" en la UI y el botón "Cancelar" no podía cerrarlas.
+
+**Cuándo usar:**
+- Para limpiar ejecuciones que ya estaban colgadas antes del fix del endpoint
+  `/cancel` (a partir de ese fix, el botón las cierra solo).
+
+**Uso:**
+
+```bash
+# Ejecutar en CADA base de datos de tenant por separado.
+# Lanza primero el SELECT de preview que incluye el propio script.
+psql "$TENANT_DB_URL" -f tools/cleanup_stuck_executions.sql
+```
+
+Incluye un guard de 30 minutos (`CreatedAt`) para no cancelar runs recién
+lanzados que estén trabajando de verdad. Es idempotente.
+
+---
+
+### `migrate_remove_frozen_systemprompts.sql`
+
+**Propósito:** Eliminar `systemPrompt` congelado en `ProjectModule.Configuration`
+para que los cambios en `AiModule` surtan efecto. Ejecutar por tenant.
+
+---
+
 ### Otros Scripts
 
 *(Aquí se documentan los demás scripts conforme se agreguen)*
