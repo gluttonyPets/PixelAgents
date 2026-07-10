@@ -26,6 +26,10 @@ namespace Server.Services.Ai
                     _ => AiResult.Fail($"ModuleType '{context.ModuleType}' no soportado por xAI Grok")
                 };
             }
+            catch (OperationCanceledException)
+            {
+                throw; // Propagate cancellation so the executor can stop the pipeline cleanly.
+            }
             catch (Exception ex)
             {
                 return AiResult.Fail($"Error xAI Grok: {ex.Message}");
@@ -107,7 +111,7 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
                 chatOptions.MaxOutputTokenCount = Convert.ToInt32(maxTok);
 
-            var completion = await client.CompleteChatAsync(messages, chatOptions);
+            var completion = await client.CompleteChatAsync(messages, chatOptions, context.CancellationToken);
 
             var text = completion.Value.Content[0].Text;
 
@@ -181,8 +185,8 @@ namespace Server.Services.Ai
             var json = JsonSerializer.Serialize(requestBody);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            var response = await http.PostAsync($"{XaiBaseUrl}/images/generations", content);
-            var responseJson = await response.Content.ReadAsStringAsync();
+            var response = await http.PostAsync($"{XaiBaseUrl}/images/generations", content, context.CancellationToken);
+            var responseJson = await response.Content.ReadAsStringAsync(context.CancellationToken);
 
             if (!response.IsSuccessStatusCode)
                 return AiResult.Fail($"xAI Grok Image HTTP {(int)response.StatusCode}: {responseJson}");
@@ -202,7 +206,7 @@ namespace Server.Services.Ai
                 if (item.TryGetProperty("b64_json", out var b64Prop))
                     images.Add(Convert.FromBase64String(b64Prop.GetString()!));
                 else if (item.TryGetProperty("url", out var urlProp))
-                    images.Add(await http.GetByteArrayAsync(urlProp.GetString()!));
+                    images.Add(await http.GetByteArrayAsync(urlProp.GetString()!, context.CancellationToken));
             }
 
             images = images.Where(b => b.Length > 0).ToList();

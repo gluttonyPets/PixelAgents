@@ -12,12 +12,17 @@ namespace Server.Services.Scheduler
     {
         private readonly IServiceProvider _sp;
         private readonly ILogger<SchedulerBackgroundService> _log;
+        private readonly ExecutionCancellationService _cancellation;
         private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(30);
 
-        public SchedulerBackgroundService(IServiceProvider sp, ILogger<SchedulerBackgroundService> log)
+        public SchedulerBackgroundService(
+            IServiceProvider sp,
+            ILogger<SchedulerBackgroundService> log,
+            ExecutionCancellationService cancellation)
         {
             _sp = sp;
             _log = log;
+            _cancellation = cancellation;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -191,12 +196,25 @@ namespace Server.Services.Scheduler
                             schedule.Id, schedule.ProjectId);
                     }
 
-                    // Execute pipeline
+                    // Execute pipeline. Register the run in the cancellation service so the
+                    // "Cancelar" button (POST /api/projects/{id}/cancel) can actually stop a
+                    // scheduled execution — previously scheduled runs ran with the app's
+                    // stoppingToken only and were impossible to cancel from the UI. The user
+                    // token is linked with the shutdown token so either source stops the run.
                     using var execScope = _sp.CreateScope();
                     var executor = execScope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
                     await using var execDb = factory.Create(dbName);
 
-                    await executor.ExecuteAsync(schedule.ProjectId, effectiveInput, execDb, dbName, ct, schedule.UseHistory);
+                    var userToken = _cancellation.Register(schedule.ProjectId);
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userToken, ct);
+                    try
+                    {
+                        await executor.ExecuteAsync(schedule.ProjectId, effectiveInput, execDb, dbName, linkedCts.Token, schedule.UseHistory);
+                    }
+                    finally
+                    {
+                        _cancellation.Remove(schedule.ProjectId);
+                    }
 
                     if (consumedPrompt is not null)
                     {
@@ -229,6 +247,28 @@ namespace Server.Services.Scheduler
                     {
                         _log.LogError(saveEx,
                             "Failed to persist retry NextRunAt for schedule {Id}", schedule.Id);
+                    }
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // User pressed "Cancelar" (the app itself is not shutting down). Mark the
+                    // still-Running execution row as Cancelled so it doesn't linger as a phantom
+                    // running job in the UI/history.
+                    _log.LogInformation(
+                        "Schedule {Id} (project {ProjectId}) cancelled by user",
+                        schedule.Id, schedule.ProjectId);
+                    try
+                    {
+                        await db.ProjectExecutions
+                            .Where(e => e.ProjectId == schedule.ProjectId && e.Status == "Running")
+                            .ExecuteUpdateAsync(s => s
+                                .SetProperty(e => e.Status, "Cancelled")
+                                .SetProperty(e => e.CompletedAt, DateTime.UtcNow), CancellationToken.None);
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        _log.LogWarning(cleanupEx,
+                            "Failed to mark cancelled execution for schedule {Id}", schedule.Id);
                     }
                 }
                 catch (Exception ex)

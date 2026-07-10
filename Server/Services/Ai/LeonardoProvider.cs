@@ -43,6 +43,10 @@ namespace Server.Services.Ai
                     _ => AiResult.Fail($"ModuleType '{context.ModuleType}' no soportado por Leonardo AI")
                 };
             }
+            catch (OperationCanceledException)
+            {
+                throw; // Propagate cancellation so the executor can stop the pipeline cleanly.
+            }
             catch (Exception ex)
             {
                 return AiResult.Fail($"Error Leonardo AI: {ex.Message}");
@@ -161,7 +165,7 @@ namespace Server.Services.Ai
             HttpResponseMessage submitResp;
             try
             {
-                submitResp = await http.PostAsync($"{BaseUrl}/generations", content);
+                submitResp = await http.PostAsync($"{BaseUrl}/generations", content, context.CancellationToken);
             }
             catch (HttpRequestException ex)
             {
@@ -170,11 +174,11 @@ namespace Server.Services.Ai
 
             if (!submitResp.IsSuccessStatusCode)
             {
-                var errorBody = await submitResp.Content.ReadAsStringAsync();
+                var errorBody = await submitResp.Content.ReadAsStringAsync(context.CancellationToken);
                 return AiResult.Fail($"Leonardo AI rechazo la solicitud (HTTP {(int)submitResp.StatusCode}): {errorBody}");
             }
 
-            var submitJson = await submitResp.Content.ReadAsStringAsync();
+            var submitJson = await submitResp.Content.ReadAsStringAsync(context.CancellationToken);
             var submitDoc = JsonDocument.Parse(submitJson);
 
             if (!submitDoc.RootElement.TryGetProperty("sdGenerationJob", out var job)
@@ -191,13 +195,13 @@ namespace Server.Services.Ai
 
             for (var attempt = 0; attempt < maxAttempts; attempt++)
             {
-                await Task.Delay(pollIntervalMs);
+                await Task.Delay(pollIntervalMs, context.CancellationToken);
 
-                var pollResp = await http.GetAsync($"{BaseUrl}/generations/{generationId}");
+                var pollResp = await http.GetAsync($"{BaseUrl}/generations/{generationId}", context.CancellationToken);
                 if (!pollResp.IsSuccessStatusCode)
                     continue;
 
-                var pollJson = await pollResp.Content.ReadAsStringAsync();
+                var pollJson = await pollResp.Content.ReadAsStringAsync(context.CancellationToken);
                 var pollDoc = JsonDocument.Parse(pollJson);
 
                 if (!pollDoc.RootElement.TryGetProperty("generations_by_pk", out var generation))
@@ -222,9 +226,9 @@ namespace Server.Services.Ai
                         if (!img.TryGetProperty("url", out var urlEl)) continue;
                         var imgUrl = urlEl.GetString();
                         if (string.IsNullOrWhiteSpace(imgUrl)) continue;
-                        var imgResp = await dlClient.GetAsync(imgUrl);
+                        var imgResp = await dlClient.GetAsync(imgUrl, context.CancellationToken);
                         if (!imgResp.IsSuccessStatusCode) continue;
-                        imageBytesList.Add(await imgResp.Content.ReadAsByteArrayAsync());
+                        imageBytesList.Add(await imgResp.Content.ReadAsByteArrayAsync(context.CancellationToken));
                     }
 
                     if (imageBytesList.Count == 0)
