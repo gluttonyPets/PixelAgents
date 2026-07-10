@@ -687,6 +687,58 @@ public class GraphPipelineExecutor : IPipelineExecutor
         Dictionary<Guid, string> filePaths,
         CancellationToken ct)
     {
+        // Single choke point for cancellation: every entry point (Execute, Retry,
+        // Resume*) funnels through here, so marking the execution as Cancelled in one
+        // place guarantees the row never lingers as "Running" in the UI/history when the
+        // user aborts a run.
+        try
+        {
+            await RunGraphCoreAsync(graph, project, execution, db, tenantDbName,
+                workspacePath, previousSummaryContext, filePaths, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            await MarkExecutionCancelledAsync(execution, db);
+            throw;
+        }
+    }
+
+    private async Task MarkExecutionCancelledAsync(ProjectExecution execution, UserDbContext db)
+    {
+        // The ambient token is already cancelled, so persist with CancellationToken.None.
+        execution.Status = "Cancelled";
+        execution.CompletedAt = DateTime.UtcNow;
+        try
+        {
+            var runningSteps = await db.StepExecutions
+                .Where(s => s.ExecutionId == execution.Id && s.Status == "Running")
+                .ToListAsync(CancellationToken.None);
+            foreach (var step in runningSteps)
+            {
+                step.Status = "Cancelled";
+                step.CompletedAt = DateTime.UtcNow;
+            }
+            await db.SaveChangesAsync(CancellationToken.None);
+            await _logger.LogAsync(execution.ProjectId, execution.Id, "warning",
+                "Ejecucion cancelada por el usuario");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Pipeline] No se pudo persistir el estado Cancelled de la ejecucion {execution.Id}: {ex.Message}");
+        }
+    }
+
+    private async Task RunGraphCoreAsync(
+        ExecutionGraph graph,
+        Project project,
+        ProjectExecution execution,
+        UserDbContext db,
+        string tenantDbName,
+        string workspacePath,
+        string? previousSummaryContext,
+        Dictionary<Guid, string> filePaths,
+        CancellationToken ct)
+    {
         var running = new Dictionary<Task<ModuleResult>, ModuleNode>();
 
         while (true)

@@ -1590,6 +1590,14 @@ app.MapPost("/api/projects/{projectId}/execute", async (
                     .SendAsync("ExecutionCompleted", detail);
             }
         }
+        catch (OperationCanceledException)
+        {
+            // User cancelled the run. The executor already persisted the "Cancelled"
+            // status, so just tell the client to refresh — this is not an error.
+            Console.WriteLine($"[Pipeline] Execution cancelled by user for project {projectId}");
+            await hub.Clients.Group(projectId.ToString())
+                .SendAsync("ExecutionCancelled");
+        }
         catch (Exception ex)
         {
             Console.WriteLine($"[Pipeline] Execution failed for project {projectId}: {ex}");

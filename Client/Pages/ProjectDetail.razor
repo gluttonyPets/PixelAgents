@@ -1909,7 +1909,34 @@ else
             _executing = false;
             _realtimeStepStatuses.Clear();
             StopPolling();
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(async () =>
+            {
+                _executions = await Api.GetExecutionsAsync(ProjectId);
+                StateHasChanged();
+            });
+        });
+
+        _hubConnection.On("ExecutionCancelled", () =>
+        {
+            // User aborted the run. The server already persisted "Cancelled"; refresh the
+            // live view and history so nothing lingers as "En curso".
+            _execError = null;
+            _executing = false;
+            _realtimeStepStatuses.Clear();
+            _orchestratorActiveTasks = null;
+            _orchestratorTaskStatus.Clear();
+            StopPolling();
+            InvokeAsync(async () =>
+            {
+                _executions = await Api.GetExecutionsAsync(ProjectId);
+                var latest = _executions.FirstOrDefault();
+                if (latest is not null)
+                {
+                    var detail = await Api.GetExecutionDetailAsync(latest.Id);
+                    if (detail is not null) _result = detail;
+                }
+                StateHasChanged();
+            });
         });
 
         try
@@ -2670,7 +2697,18 @@ else
 
     private async Task CancelExecution()
     {
-        await Api.CancelExecutionAsync(ProjectId);
+        try
+        {
+            await Api.CancelExecutionAsync(ProjectId);
+            // The backend unwinds asynchronously and marks the run as Cancelled. Keep the
+            // polling safety net armed so the UI (live view + history) reflects the terminal
+            // state even if the SignalR notification is missed (e.g. scheduled runs).
+            if (_executing) StartPolling();
+        }
+        catch (Exception ex)
+        {
+            _execError = $"No se pudo cancelar: {ex.Message}";
+        }
     }
 
     private async Task ReviewCheckpoint(bool approved)

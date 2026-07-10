@@ -131,7 +131,24 @@ Al cancelar, la ejecución que quedaba en estado `Running` se marca como
    una ejecución manual **o programada**).
 4. El token se propaga hasta las operaciones async del provider.
 5. Las llamadas HTTP y `Task.Delay` se interrumpen → `OperationCanceledException`.
-6. El pipeline se detiene y marca el módulo/ejecución como cancelado.
+6. `GraphPipelineExecutor.RunGraphAsync` es el **único punto** por el que pasan
+   todas las rutas (Execute, Retry, Resume\*). Ahí se captura la cancelación y se
+   marca la ejecución como `Cancelled` (con `CancellationToken.None`, porque el
+   token ambiente ya está cancelado), cerrando también los steps que quedaban en
+   `Running`. Así la fila nunca se queda como "En curso" en el historial.
+7. El servidor avisa al cliente:
+   - Manual: el endpoint envía `ExecutionCancelled` por SignalR (sin banner de error).
+   - Programada: no hay SignalR, pero el *polling* del cliente detecta el estado
+     terminal y refresca vista e historial.
+
+### Persistencia del estado y refresco de la UI
+
+Antes, al cancelar, el executor lanzaba la excepción **antes** de llegar a
+`FinalizeGraphAsync`, así que la ejecución se quedaba en `Running` en la BD y
+dependía de que cada llamador la arreglara en su `catch`. Ahora el estado
+`Cancelled` se persiste de forma central en `RunGraphAsync`, y el frontend
+(`ProjectDetail.razor`) recarga ejecuciones tanto en `ExecutionCancelled` como
+en `ExecutionFailed`, y mantiene el *polling* armado tras pulsar "Cancelar".
 
 ## Configuración de timeouts
 
@@ -160,7 +177,9 @@ Server/Services/Ai/GeminiProvider.cs                (timeout 3 min + token)
 Server/Services/Ai/AnthropicProvider.cs             (timeout 3–5 min + token)
 Server/Services/Ai/GrokProvider.cs                  (propaga el token en chat/imagen)
 Server/Services/Ai/LeonardoProvider.cs              (propaga el token en submit/polling/descarga)
-Server/Services/Ai/GraphPipelineExecutor.cs         (timeout 10 min por módulo)
+Server/Services/Ai/GraphPipelineExecutor.cs         (timeout 10 min + estado Cancelled central)
 Server/Services/Ai/Handlers/*.cs                    (propagan el token al contexto)
 Server/Services/Scheduler/SchedulerBackgroundService.cs  (registra el token en runs programados)
+Server/Program.cs                                   (endpoint /execute avisa ExecutionCancelled)
+Client/Pages/ProjectDetail.razor                    (refresca UI/historial al cancelar)
 ```
