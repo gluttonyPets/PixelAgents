@@ -126,9 +126,15 @@ Al cancelar, la ejecución que quedaba en estado `Running` se marca como
 ## Flujo de cancelación completo
 
 1. El usuario pulsa "Cancelar" en la UI → `Api.CancelExecutionAsync(ProjectId)`.
-2. `POST /api/projects/{projectId}/cancel`.
-3. `ExecutionCancellationService.Cancel(projectId)` cancela el token (ya sea de
-   una ejecución manual **o programada**).
+2. `POST /api/projects/{projectId}/cancel` hace **dos cosas**:
+   - `ExecutionCancellationService.Cancel(projectId)` cancela el token (manual
+     **o programada**), interrumpiendo el trabajo en vuelo.
+   - Cierra en BD cualquier ejecución que siga `Running`/`Waiting`, **aunque no
+     haya token vivo** (runs que quedaron colgados antes de estos arreglos, o
+     tras reiniciar el servidor, cuando el token en memoria ya no existe). Sin
+     esto el botón "parecía no hacer nada" sobre un "En curso" fantasma. Luego
+     emite `ExecutionCancelled` por SignalR.
+3. El token cancelado (si lo había) llega hasta las operaciones async del provider.
 4. El token se propaga hasta las operaciones async del provider.
 5. Las llamadas HTTP y `Task.Delay` se interrumpen → `OperationCanceledException`.
 6. `GraphPipelineExecutor.RunGraphAsync` es el **único punto** por el que pasan

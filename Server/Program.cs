@@ -2040,11 +2040,57 @@ app.MapDelete("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs
 }).RequireAuthorization();
 
 // Cancel a running pipeline execution
-app.MapPost("/api/projects/{projectId}/cancel", (
-    Guid projectId, ExecutionCancellationService cancellation) =>
+app.MapPost("/api/projects/{projectId}/cancel", async (
+    Guid projectId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    ExecutionCancellationService cancellation, IHubContext<ExecutionHub> hub) =>
 {
+    // 1. Cancel the live token so any in-flight work (provider HTTP calls, polling, …)
+    //    is interrupted immediately.
     var cancelled = cancellation.Cancel(projectId);
-    return Results.Ok(new { cancelled });
+
+    // 2. Close out any execution still marked Running/Waiting in the DB — even when there
+    //    is NO live token (a run that got stuck before the cancellation fixes, or one left
+    //    over after a server restart cleared the in-memory token). Without this, the
+    //    "Cancelar" button would appear to "do nothing" on a phantom "En curso" row.
+    var dbCancelled = false;
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is not null)
+    {
+        var active = await db.ProjectExecutions
+            .Where(e => e.ProjectId == projectId
+                && (e.Status == "Running" || e.Status.StartsWith("Waiting")))
+            .ToListAsync();
+
+        if (active.Count > 0)
+        {
+            var now = DateTime.UtcNow;
+            var execIds = active.Select(e => e.Id).ToList();
+            foreach (var exec in active)
+            {
+                exec.Status = "Cancelled";
+                exec.CompletedAt = now;
+                exec.PausedAtModuleId = null;
+                exec.PausedStepData = null;
+            }
+
+            var steps = await db.StepExecutions
+                .Where(s => execIds.Contains(s.ExecutionId)
+                    && (s.Status == "Running" || s.Status.StartsWith("Waiting")))
+                .ToListAsync();
+            foreach (var s in steps)
+            {
+                s.Status = "Cancelled";
+                s.CompletedAt = now;
+            }
+
+            await db.SaveChangesAsync();
+            dbCancelled = true;
+            await hub.Clients.Group(projectId.ToString()).SendAsync("ExecutionCancelled");
+        }
+    }
+
+    return Results.Ok(new { cancelled = cancelled || dbCancelled });
 }).RequireAuthorization();
 
 // Download execution file
