@@ -4387,6 +4387,105 @@ a.link:hover { text-decoration: underline; }
     font-weight: 600;
 }
 
+/* ── Historial de versiones del prompt ── */
+.pb-history-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+.pb-history-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    border-color: var(--text-muted);
+}
+.pv-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.pv-item {
+    border: 1px solid var(--border);
+    border-radius: 0.45rem;
+    background: var(--bg);
+    padding: 0.5rem 0.6rem;
+}
+.pv-current {
+    border-color: rgba(108, 99, 255, 0.5);
+    background: rgba(108, 99, 255, 0.06);
+}
+.pv-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+.pv-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+.pv-time {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text);
+}
+.pv-badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0.08rem 0.4rem;
+    border-radius: 999px;
+}
+.pv-badge-edit {
+    background: rgba(108, 99, 255, 0.15);
+    color: var(--accent);
+}
+.pv-badge-base {
+    background: rgba(136, 136, 136, 0.2);
+    color: var(--text-muted);
+}
+.pv-badge-current {
+    background: rgba(76, 175, 80, 0.18);
+    color: #7fd18a;
+}
+.pv-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.pv-preview {
+    margin-top: 0.35rem;
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pv-detail {
+    margin-top: 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+.pv-detail-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+}
+
 /* Indicador de pasos */
 .pb-steps {
     display: flex;

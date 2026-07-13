@@ -1,0 +1,195 @@
+@* Historial de versiones del prompt de un modulo (por campo).
+   Lista las versiones guardadas (mas reciente arriba), permite ver el contenido
+   y las diferencias respecto al actual, y restaurar cualquier version al editor.
+   La restauracion solo carga el texto en el campo; se persiste al Guardar el modulo. *@
+
+@inject ApiClient Api
+
+<div class="modal-overlay pb-overlay" @onclick="Close">
+    <div class="modal-content pb-modal pb-modal-wide" @onclick:stopPropagation="true" role="dialog" aria-modal="true"
+         aria-label="Historial de versiones del prompt">
+        <div class="modal-header">
+            <h3 style="margin:0; font-size:1.05rem; flex:1;">
+                <i class="bi bi-clock-history" style="margin-right:0.35rem;"></i>Historial del prompt
+            </h3>
+            <button class="node-btn" @onclick="Close" title="Cerrar" aria-label="Cerrar">&#x2715;</button>
+        </div>
+
+        <div class="modal-body">
+            @if (_loading)
+            {
+                <div class="text-muted text-sm">Cargando historial...</div>
+            }
+            else if (_versions.Count == 0)
+            {
+                <div class="pb-alert pb-alert-warn">
+                    Aun no hay historial para este prompt. Cada vez que edites y guardes el prompt
+                    se guardara aqui una version que podras consultar y restaurar.
+                </div>
+            }
+            else
+            {
+                <ul class="pv-list">
+                    @foreach (var v in _versions)
+                    {
+                        var vid = v.Id;
+                        var isCurrent = NormalizeEq(v.Content, CurrentContent);
+                        <li class="pv-item @(isCurrent ? "pv-current" : "")">
+                            <div class="pv-head">
+                                <div class="pv-meta">
+                                    <span class="pv-time">@FormatDate(v.CreatedAt)</span>
+                                    <span class="pv-badge @SourceClass(v.Source)">@SourceLabel(v.Source)</span>
+                                    @if (isCurrent)
+                                    {
+                                        <span class="pv-badge pv-badge-current">Actual</span>
+                                    }
+                                </div>
+                                <div class="pv-actions">
+                                    <button class="btn btn-xs" @onclick="() => Toggle(vid)">
+                                        @(_expanded.Contains(vid) ? "Ocultar" : "Ver")
+                                    </button>
+                                    <button class="btn btn-xs btn-primary" @onclick="() => Restore(v.Content)" disabled="@isCurrent">
+                                        Restaurar
+                                    </button>
+                                </div>
+                            </div>
+
+                            @if (!_expanded.Contains(vid))
+                            {
+                                <div class="pv-preview">@Preview(v.Content)</div>
+                            }
+                            else
+                            {
+                                <div class="pv-detail">
+                                    <div class="pv-detail-title">Contenido de esta version</div>
+                                    <div class="spb-block-body">@v.Content</div>
+                                    @if (!isCurrent)
+                                    {
+                                        <div class="pv-detail-title">Diferencias respecto al actual</div>
+                                        <div class="pa-diff">
+                                            @foreach (var d in ComputeDiff(v.Content, CurrentContent ?? ""))
+                                            {
+                                                <div class="pa-diff-line @DiffClass(d.Kind)"><span class="pa-diff-sign">@DiffSign(d.Kind)</span><span class="pa-diff-text">@d.Text</span></div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+
+        <div class="modal-footer">
+            <div style="flex:1;"></div>
+            <button class="btn btn-sm" @onclick="Close">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid ModuleId { get; set; }
+    [Parameter] public string Field { get; set; } = "systemPrompt";
+    [Parameter] public string? CurrentContent { get; set; }
+    [Parameter] public EventCallback<string> OnRestore { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool _loading = true;
+    private List<PromptVersionResponse> _versions = new();
+    private readonly HashSet<Guid> _expanded = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        _versions = await Api.GetPromptHistoryAsync(ModuleId, Field);
+        _loading = false;
+    }
+
+    private void Toggle(Guid id)
+    {
+        if (!_expanded.Remove(id)) _expanded.Add(id);
+    }
+
+    private async Task Restore(string content)
+    {
+        await OnRestore.InvokeAsync(content);
+    }
+
+    private async Task Close() => await OnClose.InvokeAsync();
+
+    // ── Formato ──
+
+    private static string FormatDate(DateTime utc) =>
+        utc.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+
+    private static string SourceLabel(string source) => source switch
+    {
+        "baseline" => "Version previa",
+        "restore" => "Restaurada",
+        _ => "Edicion",
+    };
+
+    private static string SourceClass(string source) => source switch
+    {
+        "baseline" => "pv-badge-base",
+        _ => "pv-badge-edit",
+    };
+
+    private static string Preview(string content)
+    {
+        var oneLine = (content ?? "").Replace("\r", " ").Replace("\n", " ").Trim();
+        while (oneLine.Contains("  ")) oneLine = oneLine.Replace("  ", " ");
+        return oneLine.Length > 160 ? oneLine[..160] + "…" : oneLine;
+    }
+
+    private static bool NormalizeEq(string? a, string? b) =>
+        string.Equals(Norm(a), Norm(b), StringComparison.Ordinal);
+
+    private static string Norm(string? s) =>
+        (s ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Trim();
+
+    // ── Diff por lineas (LCS) ──
+
+    private record DiffLine(string Kind, string Text);
+
+    private static string DiffClass(string kind) => kind switch
+    {
+        "add" => "pa-diff-add",
+        "del" => "pa-diff-del",
+        _ => "pa-diff-same",
+    };
+
+    private static string DiffSign(string kind) => kind switch
+    {
+        "add" => "+",
+        "del" => "−",
+        _ => " ",
+    };
+
+    private static List<DiffLine> ComputeDiff(string oldText, string newText)
+    {
+        var a = string.IsNullOrEmpty(oldText) ? Array.Empty<string>() : SplitLines(oldText);
+        var b = string.IsNullOrEmpty(newText) ? Array.Empty<string>() : SplitLines(newText);
+        int n = a.Length, m = b.Length;
+
+        var dp = new int[n + 1, m + 1];
+        for (int i = n - 1; i >= 0; i--)
+            for (int j = m - 1; j >= 0; j--)
+                dp[i, j] = a[i] == b[j] ? dp[i + 1, j + 1] + 1 : Math.Max(dp[i + 1, j], dp[i, j + 1]);
+
+        var res = new List<DiffLine>();
+        int x = 0, y = 0;
+        while (x < n && y < m)
+        {
+            if (a[x] == b[y]) { res.Add(new DiffLine("same", a[x])); x++; y++; }
+            else if (dp[x + 1, y] >= dp[x, y + 1]) { res.Add(new DiffLine("del", a[x])); x++; }
+            else { res.Add(new DiffLine("add", b[y])); y++; }
+        }
+        while (x < n) { res.Add(new DiffLine("del", a[x])); x++; }
+        while (y < m) { res.Add(new DiffLine("add", b[y])); y++; }
+        return res;
+    }
+
+    private static string[] SplitLines(string text) =>
+        (text ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+}

@@ -66,7 +66,8 @@ almacenan el estado de interacciones externas pendientes de respuesta.
 **UserDb** (nombre dinamico, uno por cuenta) almacena todos los datos funcionales del tenant:
 `ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `ShopifyConnections`,
 `Projects`, `ProjectModules`, `ModuleConnections`, `ProjectExecutions`, `StepExecutions`,
-`ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs` y `Rules`. Las
+`ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs`, `Rules` y
+`PromptVersions` (historial de versiones del prompt de cada modulo). Las
 credenciales de redes sociales (Buffer), mensajeria (Telegram) y Shopify son conexiones
 reutilizables que los proyectos referencian por Id.
 No hay migraciones EF formales: la BD se crea con `EnsureCreated` y los cambios de
@@ -172,6 +173,7 @@ Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nue
 | ApiKeys      | `GET|POST|PUT|DELETE /api/apikeys`                | Credenciales por proveedor, almacenadas por tenant |
 | Rules        | `GET|POST|PUT|DELETE /api/rules`                  | Reglas obligatorias inyectadas en cada ejecucion  |
 | Modules      | `GET|POST|PUT|DELETE /api/modules`                | Definiciones de modulos reutilizables + archivos  |
+|              | `GET /api/modules/{id}/prompt-history`            | Historial de versiones del prompt del modulo (systemPrompt/imagePrompt); se registra una version en cada `PUT` que cambie el prompt, restaurable desde la UI |
 | Projects     | `GET|POST|PUT|DELETE /api/projects`               | Pipeline; incluye graph save y duplicar           |
 | Executions   | `POST /api/projects/{id}/execute`                 | Lanza ejecucion                                   |
 |              | `POST /api/projects/{id}/cancel`                  | Cancela ejecucion activa                          |

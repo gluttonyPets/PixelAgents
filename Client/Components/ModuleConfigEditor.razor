@@ -21,6 +21,9 @@ else if (m.ModuleType is "Text" or "Coordinator")
                 <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenTextAdd">
                     <i class="bi bi-plus-lg"></i> Anadir con IA
                 </button>
+                <button type="button" class="btn btn-xs pb-history-btn" @onclick="OpenTextHistory" title="Historial de versiones">
+                    <i class="bi bi-clock-history"></i> Historial
+                </button>
             </div>
         </div>
         <StructuredPromptEditor @bind-Value="_editSystemPrompt"
@@ -52,6 +55,9 @@ else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
                 </button>
                 <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageAdd">
                     <i class="bi bi-plus-lg"></i> Anadir con IA
+                </button>
+                <button type="button" class="btn btn-xs pb-history-btn" @onclick="OpenImageHistory" title="Historial de versiones">
+                    <i class="bi bi-clock-history"></i> Historial
                 </button>
             </div>
         </div>
@@ -93,6 +99,9 @@ else if (m.ModuleType == "Image" && m.ProviderType == "Google")
                 <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageAdd">
                     <i class="bi bi-plus-lg"></i> Anadir con IA
                 </button>
+                <button type="button" class="btn btn-xs pb-history-btn" @onclick="OpenImageHistory" title="Historial de versiones">
+                    <i class="bi bi-clock-history"></i> Historial
+                </button>
             </div>
         </div>
         <StructuredPromptEditor @bind-Value="_editImagePrompt"
@@ -131,6 +140,9 @@ else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
                 <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageAdd">
                     <i class="bi bi-plus-lg"></i> Anadir con IA
                 </button>
+                <button type="button" class="btn btn-xs pb-history-btn" @onclick="OpenImageHistory" title="Historial de versiones">
+                    <i class="bi bi-clock-history"></i> Historial
+                </button>
             </div>
         </div>
         <StructuredPromptEditor @bind-Value="_editImagePrompt"
@@ -158,6 +170,9 @@ else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
                 </button>
                 <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageAdd">
                     <i class="bi bi-plus-lg"></i> Anadir con IA
+                </button>
+                <button type="button" class="btn btn-xs pb-history-btn" @onclick="OpenImageHistory" title="Historial de versiones">
+                    <i class="bi bi-clock-history"></i> Historial
                 </button>
             </div>
         </div>
@@ -259,14 +274,25 @@ else
                      OnClose="CloseAdd" />
 }
 
+@if (_showHistory && Module is not null)
+{
+    <PromptHistoryDialog ModuleId="@Module.Id"
+                         Field="@_historyField"
+                         CurrentContent="@CurrentAddPrompt"
+                         OnRestore="RestorePromptVersion"
+                         OnClose="CloseHistory" />
+}
+
 @code {
     [Parameter] public AiModuleResponse? Module { get; set; }
 
-    // ── Asistentes "Crear/Anadir prompt con IA" ──
+    // ── Asistentes "Crear/Anadir prompt con IA" e historial ──
     private bool _showWizard;
     private bool _showAdd;
-    private string _wizardKind = "text";      // "text" | "image"
-    private string _wizardTarget = "system";  // "system" | "imagePrompt"
+    private bool _showHistory;
+    private string _wizardKind = "text";       // "text" | "image"
+    private string _wizardTarget = "system";   // "system" | "imagePrompt"
+    private string _historyField = "systemPrompt"; // "systemPrompt" | "imagePrompt"
 
     // Prompt actual del campo destino, base para "Anadir con IA".
     private string CurrentAddPrompt =>
@@ -276,6 +302,28 @@ else
     private void OpenImageWizard() => OpenWizard("image", "imagePrompt");
     private void OpenTextAdd() => OpenAdd("text", "system");
     private void OpenImageAdd() => OpenAdd("image", "imagePrompt");
+
+    private void OpenTextHistory()
+    {
+        _wizardTarget = "system";
+        _historyField = "systemPrompt";
+        _showHistory = true;
+    }
+
+    private void OpenImageHistory()
+    {
+        _wizardTarget = "imagePrompt";
+        _historyField = "imagePrompt";
+        _showHistory = true;
+    }
+
+    private void CloseHistory() => _showHistory = false;
+
+    private void RestorePromptVersion(string content)
+    {
+        SetTargetPrompt(content);
+        _showHistory = false;
+    }
 
     private void OpenWizard(string kind, string target)
     {

@@ -230,6 +230,18 @@ namespace Server.Services
                     ""UpdatedAt"" timestamp with time zone NOT NULL
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_Rules_IsActive_SortOrder"" ON ""Rules"" (""IsActive"", ""SortOrder"")", log);
+
+            // ── Historial de versiones de prompts por modulo ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""PromptVersions"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""AiModuleId"" uuid NOT NULL REFERENCES ""AiModules""(""Id"") ON DELETE CASCADE,
+                    ""Field"" varchar(50) NOT NULL,
+                    ""Content"" text NOT NULL,
+                    ""Source"" varchar(30) NOT NULL DEFAULT 'edit',
+                    ""CreatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PromptVersions_AiModuleId_Field_CreatedAt"" ON ""PromptVersions"" (""AiModuleId"", ""Field"", ""CreatedAt"")", log);
         }
 
         private static void RunSafe(UserDbContext ctx, string sql, ILogger? log = null)

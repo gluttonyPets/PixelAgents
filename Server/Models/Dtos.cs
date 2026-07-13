@@ -142,6 +142,10 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record PromptBuilderAddRequest(
         string ModelName, string TargetKind, string? CurrentPrompt, string Addition);
 
+    // ── Historial de versiones de prompts ──
+    public record PromptVersionResponse(
+        Guid Id, string Field, string Content, string Source, DateTime CreatedAt);
+
     // ── Planned Prompts ──
     public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);
     public record CreatePlannedPromptRequest(string Content);

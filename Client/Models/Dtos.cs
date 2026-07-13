@@ -158,6 +158,9 @@ public record PromptBuilderComposeResponse(string Prompt);
 public record PromptBuilderAddRequest(string ModelName, string TargetKind, string CurrentPrompt, string Addition);
 public record PromptBuilderAddResponse(string Prompt, List<string> Warnings);
 
+// ── Historial de versiones de prompts ──
+public record PromptVersionResponse(Guid Id, string Field, string Content, string Source, DateTime CreatedAt);
+
 // ── Planned Prompts ──
 public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);
 public record PlannerModelOption(string Provider, string ModelName, string DisplayName);

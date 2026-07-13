@@ -24,6 +24,7 @@ namespace Server.Data
         public DbSet<OrchestratorOutput> OrchestratorOutputs => Set<OrchestratorOutput>();
         public DbSet<Rule> Rules => Set<Rule>();
         public DbSet<PlannedPrompt> PlannedPrompts => Set<PlannedPrompt>();
+        public DbSet<PromptVersion> PromptVersions => Set<PromptVersion>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -310,6 +311,22 @@ namespace Server.Data
                 e.Property(x => x.Content).IsRequired().HasColumnType("text");
                 e.Property(x => x.IsActive).HasDefaultValue(true);
                 e.HasIndex(x => new { x.IsActive, x.SortOrder });
+            });
+
+            // ── PromptVersion ──
+            modelBuilder.Entity<PromptVersion>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Field).IsRequired().HasMaxLength(50);
+                e.Property(x => x.Content).HasColumnType("text");
+                e.Property(x => x.Source).IsRequired().HasMaxLength(30).HasDefaultValue("edit");
+
+                e.HasOne(x => x.AiModule)
+                    .WithMany()
+                    .HasForeignKey(x => x.AiModuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => new { x.AiModuleId, x.Field, x.CreatedAt });
             });
 
             // ── ModuleFile ──

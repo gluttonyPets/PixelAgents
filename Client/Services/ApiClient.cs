@@ -689,6 +689,18 @@ public class ApiClient
         return (true, result?.Prompt, result?.Warnings ?? new(), null);
     }
 
+    // ── Historial de versiones de prompts ──
+
+    public async Task<List<PromptVersionResponse>> GetPromptHistoryAsync(Guid moduleId, string? field = null)
+    {
+        var url = $"/api/modules/{moduleId}/prompt-history";
+        if (!string.IsNullOrWhiteSpace(field))
+            url += $"?field={Uri.EscapeDataString(field)}";
+        var resp = await SendAsync(HttpMethod.Get, url);
+        if (!resp.IsSuccessStatusCode) return new();
+        return await resp.Content.ReadFromJsonAsync<List<PromptVersionResponse>>() ?? new();
+    }
+
     // ── Planned Prompts ──
 
     public async Task<List<PlannerModelOption>> GetPlannerModelsAsync()

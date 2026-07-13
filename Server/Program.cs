@@ -205,6 +205,71 @@ static async Task<UserDbContext?> ResolveTenantDb(
 }
 
 /// <summary>
+/// Registra en el historial las versiones de los prompts (systemPrompt / imagePrompt)
+/// de un modulo cuando cambian respecto a su configuracion anterior. La primera vez
+/// que se registra un campo, guarda tambien el valor previo como "baseline" para
+/// poder restaurarlo. No llama a SaveChanges: las entidades se persisten con el guardado
+/// del modulo.
+/// </summary>
+static async Task RecordPromptVersionsAsync(
+    UserDbContext db, Guid moduleId, string? oldConfig, string? newConfig, CancellationToken ct)
+{
+    foreach (var field in new[] { "systemPrompt", "imagePrompt" })
+    {
+        var oldVal = ExtractConfigString(oldConfig, field) ?? "";
+        var newVal = ExtractConfigString(newConfig, field) ?? "";
+        if (oldVal == newVal) continue; // sin cambios en este campo
+
+        var now = DateTime.UtcNow;
+
+        var hasHistory = await db.PromptVersions
+            .AnyAsync(v => v.AiModuleId == moduleId && v.Field == field, ct);
+
+        // Semilla del valor previo la primera vez que se registra historial de este campo.
+        if (!hasHistory && !string.IsNullOrWhiteSpace(oldVal))
+        {
+            db.PromptVersions.Add(new PromptVersion
+            {
+                Id = Guid.NewGuid(),
+                AiModuleId = moduleId,
+                Field = field,
+                Content = oldVal,
+                Source = "baseline",
+                CreatedAt = now.AddSeconds(-1),
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(newVal))
+        {
+            db.PromptVersions.Add(new PromptVersion
+            {
+                Id = Guid.NewGuid(),
+                AiModuleId = moduleId,
+                Field = field,
+                Content = newVal,
+                Source = "edit",
+                CreatedAt = now,
+            });
+        }
+    }
+}
+
+static string? ExtractConfigString(string? config, string prop)
+{
+    if (string.IsNullOrWhiteSpace(config)) return null;
+    try
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(config);
+        if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            doc.RootElement.TryGetProperty(prop, out var v) &&
+            v.ValueKind == System.Text.Json.JsonValueKind.String)
+            return v.GetString();
+    }
+    catch { }
+    return null;
+}
+
+/// <summary>
 /// Resolves the full disk path for an execution file, trying multiple strategies
 /// to handle legacy absolute paths, relative paths, and path changes across deployments.
 /// Returns null if the file cannot be found on disk.
@@ -691,13 +756,16 @@ app.MapGet("/api/modules/{id}/usage", async (
 
 app.MapPut("/api/modules/{id}", async (
     Guid id, UpdateAiModuleRequest req, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory, CancellationToken ct) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    var m = await db.AiModules.FindAsync(id);
+    var m = await db.AiModules.FindAsync(new object?[] { id }, ct);
     if (m is null) return Results.NotFound();
+
+    // Registrar historial de versiones del prompt si cambia (antes de sobreescribir).
+    await RecordPromptVersionsAsync(db, m.Id, m.Configuration, req.Configuration, ct);
 
     m.Name = req.Name;
     m.Description = req.Description;
@@ -709,11 +777,34 @@ app.MapPut("/api/modules/{id}", async (
     m.IsEnabled = req.IsEnabled;
     m.UpdatedAt = DateTime.UtcNow;
 
-    await db.SaveChangesAsync();
+    await db.SaveChangesAsync(ct);
     return Results.Ok(new AiModuleResponse(m.Id, m.Name, m.Description,
         m.ProviderType, m.ModuleType, m.ModelName,
         m.ApiKeyId, null, m.Configuration, m.IsEnabled,
         m.CreatedAt, m.UpdatedAt));
+}).RequireAuthorization();
+
+app.MapGet("/api/modules/{id}/prompt-history", async (
+    Guid id, string? field, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var m = await db.AiModules.FindAsync(new object?[] { id }, ct);
+    if (m is null) return Results.NotFound();
+
+    var q = db.PromptVersions.Where(v => v.AiModuleId == id);
+    if (!string.IsNullOrWhiteSpace(field))
+        q = q.Where(v => v.Field == field);
+
+    var items = await q
+        .OrderByDescending(v => v.CreatedAt)
+        .Take(200)
+        .Select(v => new PromptVersionResponse(v.Id, v.Field, v.Content, v.Source, v.CreatedAt))
+        .ToListAsync(ct);
+
+    return Results.Ok(items);
 }).RequireAuthorization();
 
 app.MapDelete("/api/modules/{id}", async (
