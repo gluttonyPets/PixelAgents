@@ -1,0 +1,283 @@
+@* Editor de prompt por bloques.
+   Muestra el prompt dividido en las secciones que lo componen, detectadas por
+   sus encabezados en mayusculas (p.ej. ROL, TAREA, [ROL/CONTEXTO], RESTRICCIONES:,
+   ## TAREA). Cada bloque se ve en solo lectura; para editarlo se pulsa el lapiz,
+   que abre un popup con el texto y botones Cancelar / Guardar.
+   Two-way binding mediante @bind-Value. *@
+
+<div class="spb">
+    @if (_blocks.Count == 0)
+    {
+        <div class="spb-empty">
+            <span class="text-muted text-sm">@(_placeholderOrDefault)</span>
+            <button type="button" class="btn btn-xs" @onclick="OpenWholeEditor">
+                <i class="bi bi-pencil"></i> Escribir
+            </button>
+        </div>
+    }
+    else
+    {
+        @for (int i = 0; i < _blocks.Count; i++)
+        {
+            var idx = i;
+            var b = _blocks[idx];
+            <div class="spb-block">
+                <div class="spb-block-head">
+                    <span class="spb-block-title">@(string.IsNullOrEmpty(b.Label) ? "Prompt" : b.Label)</span>
+                    <button type="button" class="spb-edit-btn" title="Editar bloque"
+                            aria-label="Editar bloque" @onclick="() => OpenBlockEditor(idx)">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(b.Body))
+                {
+                    <div class="spb-block-body">@b.Body</div>
+                }
+                else
+                {
+                    <div class="spb-block-body spb-block-empty">(sin contenido)</div>
+                }
+            </div>
+        }
+    }
+</div>
+
+@if (_editing)
+{
+    <div class="modal-overlay pb-overlay" @onclick="CancelEdit">
+        <div class="modal-content pb-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true"
+             aria-label="Editar bloque del prompt">
+            <div class="modal-header">
+                <h3 style="margin:0; font-size:1.05rem; flex:1;">
+                    <i class="bi bi-pencil" style="margin-right:0.35rem;"></i>Editar @(_editHasLabel ? _editLabel : "prompt")
+                </h3>
+                <button class="node-btn" @onclick="CancelEdit" title="Cerrar" aria-label="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <textarea rows="12" class="pb-result" @bind="_editText" @bind:event="oninput"
+                              placeholder="@Placeholder"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-sm" @onclick="CancelEdit">Cancelar</button>
+                <div style="flex:1;"></div>
+                <button class="btn btn-primary btn-sm" @onclick="SaveEdit">Guardar</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+
+    private readonly List<Block> _blocks = new();
+    private string _lastParsed = "\0"; // centinela para forzar el primer parseo
+
+    private bool _editing;
+    private int _editIndex = -1;   // -1 => editar el prompt completo (caso vacio / sin estructura)
+    private string _editText = "";
+    private string _editLabel = "";
+    private bool _editHasLabel;
+
+    private string _placeholderOrDefault =>
+        string.IsNullOrWhiteSpace(Placeholder) ? "Sin prompt todavia." : Placeholder!;
+
+    protected override void OnParametersSet()
+    {
+        var v = Value ?? "";
+        if (v != _lastParsed)
+        {
+            _lastParsed = v;
+            Parse(v);
+        }
+    }
+
+    private sealed class Block
+    {
+        public string HeadingRaw = ""; // linea de encabezado exacta a conservar ("" para el bloque sin encabezado)
+        public string Label = "";      // etiqueta limpia para mostrar
+        public string Body = "";
+    }
+
+    // ── Popup de edicion ──
+
+    private void OpenWholeEditor()
+    {
+        _editIndex = -1;
+        _editHasLabel = false;
+        _editLabel = "";
+        _editText = Value ?? "";
+        _editing = true;
+    }
+
+    private void OpenBlockEditor(int idx)
+    {
+        if (idx < 0 || idx >= _blocks.Count) { OpenWholeEditor(); return; }
+        var b = _blocks[idx];
+        _editIndex = idx;
+        _editHasLabel = !string.IsNullOrEmpty(b.Label);
+        _editLabel = b.Label;
+        _editText = b.Body;
+        _editing = true;
+    }
+
+    private void CancelEdit() => _editing = false;
+
+    private async Task SaveEdit()
+    {
+        string newValue;
+        if (_editIndex < 0)
+        {
+            // Edicion del prompt completo: se vuelve a parsear por si el usuario
+            // ha escrito secciones nuevas.
+            newValue = _editText ?? "";
+        }
+        else if (_editIndex < _blocks.Count)
+        {
+            _blocks[_editIndex].Body = (_editText ?? "").Trim();
+            newValue = Reconstruct();
+        }
+        else
+        {
+            newValue = Value ?? "";
+        }
+
+        _editing = false;
+        _lastParsed = newValue;
+        Parse(newValue);
+        await ValueChanged.InvokeAsync(newValue);
+    }
+
+    // ── Parseo / reconstruccion ──
+
+    private void Parse(string text)
+    {
+        _blocks.Clear();
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var lines = text.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+        Block? current = null;
+        var bodyLines = new List<string>();
+
+        void Flush()
+        {
+            var body = string.Join("\n", bodyLines).Trim('\n').Trim();
+            bodyLines.Clear();
+
+            if (current is null)
+            {
+                // Texto antes del primer encabezado -> bloque sin etiqueta.
+                if (!string.IsNullOrWhiteSpace(body))
+                    _blocks.Add(new Block { HeadingRaw = "", Label = "", Body = body });
+            }
+            else
+            {
+                current.Body = body;
+                _blocks.Add(current);
+                current = null;
+            }
+        }
+
+        foreach (var line in lines)
+        {
+            if (TryHeading(line, out var headingRaw, out var label, out var inlineBody))
+            {
+                Flush();
+                current = new Block { HeadingRaw = headingRaw, Label = label };
+                if (!string.IsNullOrWhiteSpace(inlineBody))
+                    bodyLines.Add(inlineBody);
+            }
+            else
+            {
+                bodyLines.Add(line);
+            }
+        }
+        Flush();
+    }
+
+    private string Reconstruct()
+    {
+        var parts = new List<string>();
+        foreach (var b in _blocks)
+        {
+            if (!string.IsNullOrEmpty(b.HeadingRaw))
+                parts.Add(string.IsNullOrWhiteSpace(b.Body) ? b.HeadingRaw : b.HeadingRaw + "\n" + b.Body);
+            else if (!string.IsNullOrWhiteSpace(b.Body))
+                parts.Add(b.Body);
+        }
+        return string.Join("\n\n", parts);
+    }
+
+    /// <summary>
+    /// Detecta si una linea es un encabezado de seccion (todo en mayusculas, corto).
+    /// Soporta encabezados sueltos ("ROL", "## TAREA", "[ROL/CONTEXTO]", "RESTRICCIONES:")
+    /// y encabezados en linea ("ROL: eres un..."), separando en ese caso el cuerpo.
+    /// </summary>
+    private static bool TryHeading(string line, out string headingRaw, out string label, out string inlineBody)
+    {
+        headingRaw = "";
+        label = "";
+        inlineBody = "";
+
+        var raw = line.Trim();
+        if (raw.Length == 0) return false;
+
+        int colon = raw.IndexOf(':');
+        string headPart;
+        string rest = "";
+        if (colon > 0 && colon <= 45)
+        {
+            headPart = raw[..colon];
+            rest = raw[(colon + 1)..].Trim();
+        }
+        else
+        {
+            headPart = raw;
+        }
+
+        if (!IsCapsHeader(headPart, out label)) return false;
+
+        if (!string.IsNullOrEmpty(rest))
+        {
+            // Encabezado en linea: conservamos solo la parte del encabezado.
+            headingRaw = headPart.Trim();
+            inlineBody = rest;
+        }
+        else
+        {
+            // Encabezado en su propia linea: conservamos la linea tal cual (con su
+            // posible ':' o markdown) para no alterar el estilo original.
+            headingRaw = line.TrimEnd();
+            inlineBody = "";
+        }
+        return true;
+    }
+
+    private static bool IsCapsHeader(string headPart, out string label)
+    {
+        label = "";
+        var core = headPart.Trim();
+        // Quitar viñetas / markdown iniciales y corchetes/asteriscos envolventes.
+        core = core.TrimStart('#', '*', '-', '•', '>', ' ', '\t');
+        core = core.Trim('[', ']', '*', ' ', '\t');
+        core = core.Trim();
+        if (core.Length < 2 || core.Length > 45) return false;
+
+        bool hasLetter = false;
+        foreach (var c in core)
+        {
+            if (char.IsLetter(c))
+            {
+                hasLetter = true;
+                if (!char.IsUpper(c)) return false; // hay una minuscula -> no es encabezado
+            }
+        }
+        if (!hasLetter) return false;
+
+        label = core;
+        return true;
+    }
+}

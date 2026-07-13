@@ -18,7 +18,8 @@ else if (m.ModuleType is "Text" or "Coordinator")
                 <i class="bi bi-stars"></i> Crear con IA
             </button>
         </div>
-        <textarea @bind="_editSystemPrompt" rows="4" placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : "Ej: Eres un asistente experto en...")"></textarea>
+        <StructuredPromptEditor @bind-Value="_editSystemPrompt"
+                                Placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : "Ej: Eres un asistente experto en...")" />
     </div>
     <div class="form-row">
         <div class="form-group">
@@ -44,7 +45,8 @@ else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
                 <i class="bi bi-stars"></i> Crear con IA
             </button>
         </div>
-        <textarea @bind="_editImagePrompt" rows="3" placeholder="Describe la imagen que quieres generar..."></textarea>
+        <StructuredPromptEditor @bind-Value="_editImagePrompt"
+                                Placeholder="Describe la imagen que quieres generar..." />
     </div>
     <div class="form-row">
         <div class="form-group">
@@ -78,7 +80,8 @@ else if (m.ModuleType == "Image" && m.ProviderType == "Google")
                 <i class="bi bi-stars"></i> Crear con IA
             </button>
         </div>
-        <textarea @bind="_editImagePrompt" rows="3" placeholder="Describe la imagen que quieres generar..."></textarea>
+        <StructuredPromptEditor @bind-Value="_editImagePrompt"
+                                Placeholder="Describe la imagen que quieres generar..." />
     </div>
     <div class="form-row">
         <div class="form-group">
@@ -110,7 +113,8 @@ else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
                 <i class="bi bi-stars"></i> Crear con IA
             </button>
         </div>
-        <textarea @bind="_editImagePrompt" rows="3" placeholder="Describe la imagen que quieres generar..."></textarea>
+        <StructuredPromptEditor @bind-Value="_editImagePrompt"
+                                Placeholder="Describe la imagen que quieres generar..." />
     </div>
     <div class="form-row">
         <div class="form-group">
@@ -132,7 +136,8 @@ else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
                 <i class="bi bi-stars"></i> Crear con IA
             </button>
         </div>
-        <textarea @bind="_editImagePrompt" rows="3" placeholder="Describe la imagen que quieres generar..."></textarea>
+        <StructuredPromptEditor @bind-Value="_editImagePrompt"
+                                Placeholder="Describe la imagen que quieres generar..." />
     </div>
     <div class="form-row">
         <div class="form-group">

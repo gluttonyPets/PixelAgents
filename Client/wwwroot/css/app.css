@@ -4372,3 +4372,76 @@ a.link:hover { text-decoration: underline; }
     border: 1px solid rgba(255, 152, 0, 0.35);
     color: var(--warning);
 }
+
+/* ── Editor de prompt por bloques (StructuredPromptEditor) ── */
+.spb {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.spb-empty {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px dashed var(--border);
+    border-radius: 0.45rem;
+    background: var(--bg);
+}
+.spb-block {
+    border: 1px solid var(--border);
+    border-radius: 0.45rem;
+    background: var(--bg);
+    overflow: hidden;
+}
+.spb-block-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: rgba(108, 99, 255, 0.08);
+    border-bottom: 1px solid var(--border);
+}
+.spb-block-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--accent);
+    word-break: break-word;
+}
+.spb-edit-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 5px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.spb-edit-btn:hover {
+    background: rgba(108, 99, 255, 0.15);
+    border-color: rgba(108, 99, 255, 0.4);
+    color: var(--accent);
+}
+.spb-block-body {
+    padding: 0.55rem 0.7rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 16rem;
+    overflow-y: auto;
+}
+.spb-block-empty {
+    color: var(--text-muted);
+    font-style: italic;
+}
