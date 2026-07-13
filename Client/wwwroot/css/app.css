@@ -4352,6 +4352,41 @@ a.link:hover { text-decoration: underline; }
     color: #f0928a;
 }
 
+/* Avisos de conflictos / incoherencias del asistente "Anadir con IA" */
+.pa-warnings {
+    border-radius: 0.45rem;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.8rem;
+    background: rgba(255, 152, 0, 0.12);
+    border: 1px solid rgba(255, 152, 0, 0.4);
+    color: var(--warning);
+}
+.pa-warnings-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 700;
+    margin-bottom: 0.35rem;
+}
+.pa-warnings-list {
+    margin: 0;
+    padding-left: 1.1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    color: var(--text);
+}
+.pa-warnings-ok {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(76, 175, 80, 0.12);
+    border-color: rgba(76, 175, 80, 0.4);
+    color: #7fd18a;
+    font-weight: 600;
+}
+
 /* Indicador de pasos */
 .pb-steps {
     display: flex;

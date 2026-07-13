@@ -30,9 +30,10 @@ namespace Server.Services.Ai
             UserDbContext db, string modelName, string targetKind, string description,
             IReadOnlyList<PromptBuilderQa> answers, CancellationToken ct = default);
 
-        /// <summary>Integra una peticion del usuario en un prompt ya existente y
-        /// devuelve el prompt completo actualizado, conservando lo que ya habia.</summary>
-        Task<PromptBuilderComposeResult> AddAsync(
+        /// <summary>Interpreta y mejora una peticion del usuario, la integra en un prompt
+        /// ya existente conservando lo que habia, y detecta conflictos con las reglas
+        /// globales o incoherencias internas, devolviendolos como avisos.</summary>
+        Task<PromptBuilderAddResult> AddAsync(
             UserDbContext db, string modelName, string targetKind, string currentPrompt,
             string addition, CancellationToken ct = default);
     }
@@ -41,6 +42,7 @@ namespace Server.Services.Ai
     public record PromptBuilderQa(string Question, string Answer);
     public record PromptBuilderQuestionsResult(bool Success, List<string> Questions, string? Error);
     public record PromptBuilderComposeResult(bool Success, string? Prompt, string? Error);
+    public record PromptBuilderAddResult(bool Success, string? Prompt, List<string> Warnings, string? Error);
 
     public class PromptBuilderService : IPromptBuilderService
     {
@@ -124,25 +126,42 @@ namespace Server.Services.Ai
             return new(true, cleaned, null);
         }
 
-        public async Task<PromptBuilderComposeResult> AddAsync(
+        public async Task<PromptBuilderAddResult> AddAsync(
             UserDbContext db, string modelName, string targetKind, string currentPrompt,
             string addition, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(addition))
-                return new(false, null, "Describe que quieres anadir al prompt");
+                return new(false, null, new(), "Describe que quieres anadir al prompt");
 
             var setup = await ResolveModelAsync(db, modelName, ct);
-            if (setup.Error is not null) return new(false, null, setup.Error);
+            if (setup.Error is not null) return new(false, null, new(), setup.Error);
 
-            var prompt = BuildAddPrompt(NormalizeKind(targetKind), currentPrompt ?? "", addition);
-            var (ok, raw, err) = await RunAsync(setup.Provider!, setup.ModelName!, setup.ApiKey!, prompt, 3000, ct);
-            if (!ok) return new(false, null, err);
+            var rulesBlock = await LoadActiveRulesTextAsync(db, ct);
+            var prompt = BuildAddPrompt(NormalizeKind(targetKind), currentPrompt ?? "", addition, rulesBlock);
+            var (ok, raw, err) = await RunAsync(setup.Provider!, setup.ModelName!, setup.ApiKey!, prompt, 3200, ct);
+            if (!ok) return new(false, null, new(), err);
 
-            var cleaned = StripCodeFences(raw).Trim();
-            if (string.IsNullOrWhiteSpace(cleaned))
-                return new(false, null, "El modelo no devolvio ningun prompt. Prueba de nuevo.");
+            var (updated, warnings) = ParseAddOutput(raw);
+            if (string.IsNullOrWhiteSpace(updated))
+                return new(false, null, new(), "El modelo no devolvio ningun prompt. Prueba de nuevo.");
 
-            return new(true, cleaned, null);
+            return new(true, updated, warnings, null);
+        }
+
+        private static async Task<string?> LoadActiveRulesTextAsync(UserDbContext db, CancellationToken ct)
+        {
+            var rules = await db.Rules
+                .Where(r => r.IsActive)
+                .OrderBy(r => r.SortOrder).ThenBy(r => r.CreatedAt)
+                .Select(r => new { r.Title, r.Content })
+                .ToListAsync(ct);
+
+            if (rules.Count == 0) return null;
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var r in rules)
+                sb.AppendLine($"- {r.Title}: {r.Content}");
+            return sb.ToString().TrimEnd();
         }
 
         // ── Helpers de ejecucion ──
@@ -286,30 +305,100 @@ Responde UNICAMENTE con el texto del prompt final, sin markdown de bloque de cod
 sin encabezados como 'Prompt:' ni comentarios previos o posteriores.";
         }
 
-        private static string BuildAddPrompt(string kind, string current, string addition)
+        private static string BuildAddPrompt(string kind, string current, string addition, string? rulesBlock)
         {
             var kindWord = kind == "image" ? "prompt de imagen" : "system prompt";
             var currentBlock = string.IsNullOrWhiteSpace(current)
                 ? "(el prompt actual esta vacio)"
                 : current;
+            var rulesSection = string.IsNullOrWhiteSpace(rulesBlock)
+                ? "(no hay reglas globales configuradas)"
+                : rulesBlock;
 
             return
 $@"Eres un experto en ingenieria de prompts. Tienes un {kindWord} ya existente y el usuario
-quiere incorporarle algo nuevo. Integra su peticion en el prompt de forma coherente y natural:
-conserva TODO lo que ya funciona, respeta la estructura y los encabezados existentes, y anade o
-ajusta solo lo necesario para reflejar la peticion. No elimines contenido salvo que la peticion
-lo contradiga directamente.
+quiere incorporarle algo. Tu trabajo NO es pegar su peticion tal cual: interpretala, entiende
+su intencion real, MEJORALA y redactala con claridad, e integrala en el prompt de forma
+coherente. Conserva todo lo que ya funciona y respeta la estructura y los encabezados
+existentes; anade o ajusta solo lo necesario. No elimines contenido salvo que la peticion lo
+contradiga.
+
+Antes de dar el resultado, COMPRUEBA y detecta problemas:
+1. Si la peticion (o tu integracion) entra en conflicto con las REGLAS GLOBALES de abajo.
+2. Si entra en conflicto, se solapa o contradice algo que ya dice el prompt actual.
+3. Si genera alguna incoherencia interna (numeros que no cuadran, instrucciones opuestas,
+   promesas que el resto del prompt no puede cumplir, formato contradictorio, etc.).
+
+--- REGLAS GLOBALES ---
+{rulesSection}
+--- FIN REGLAS GLOBALES ---
 
 --- PROMPT ACTUAL ---
 {currentBlock}
 --- FIN DEL PROMPT ACTUAL ---
 
-Lo que el usuario quiere anadir:
+Lo que el usuario quiere anadir (interpretalo y mejoralo, no lo copies literal):
 {addition}
 
-Devuelve UNICAMENTE el prompt completo actualizado (no solo la parte anadida), en espanol,
-sin markdown de bloque de codigo, sin encabezados como 'Prompt:' ni comentarios previos o
-posteriores.";
+Responde EXACTAMENTE en dos secciones, con estos separadores literales y nada mas fuera de ellas:
+
+===PROMPT===
+(aqui el prompt COMPLETO actualizado, en espanol, sin markdown de bloque de codigo)
+
+===AVISOS===
+(una linea por cada conflicto o incoherencia detectada, empezando con ""- "". Explica el
+problema brevemente y, si aplica, como lo has resuelto. Si no hay ningun problema, escribe
+exactamente NINGUNO)";
+        }
+
+        private static (string Prompt, List<string> Warnings) ParseAddOutput(string raw)
+        {
+            var text = StripCodeFences(raw ?? "").Trim();
+            var warnings = new List<string>();
+
+            const string pMark = "===PROMPT===";
+            const string wMark = "===AVISOS===";
+            int pi = text.IndexOf(pMark, StringComparison.OrdinalIgnoreCase);
+            int wi = text.IndexOf(wMark, StringComparison.OrdinalIgnoreCase);
+
+            string promptPart;
+            string warnPart = "";
+            if (pi >= 0 && wi > pi)
+            {
+                promptPart = text.Substring(pi + pMark.Length, wi - (pi + pMark.Length)).Trim();
+                warnPart = text[(wi + wMark.Length)..].Trim();
+            }
+            else if (pi >= 0)
+            {
+                promptPart = text[(pi + pMark.Length)..].Trim();
+            }
+            else
+            {
+                // Sin marcadores: tratamos todo como el prompt (a menos que solo haya avisos).
+                if (wi >= 0)
+                {
+                    promptPart = text[..wi].Trim();
+                    warnPart = text[(wi + wMark.Length)..].Trim();
+                }
+                else
+                {
+                    promptPart = text;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(warnPart))
+            {
+                foreach (var line in warnPart.Replace("\r\n", "\n").Split('\n'))
+                {
+                    var t = line.Trim().TrimStart('-', '*', '•', ' ', '\t').Trim();
+                    if (t.Length == 0) continue;
+                    if (string.Equals(t, "NINGUNO", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (string.Equals(t, "NINGUNA", StringComparison.OrdinalIgnoreCase)) continue;
+                    warnings.Add(t);
+                }
+            }
+
+            return (promptPart, warnings);
         }
 
         // ── Parseo ──

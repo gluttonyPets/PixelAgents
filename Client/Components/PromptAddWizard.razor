@@ -49,12 +49,35 @@
                     <textarea id="pa-add" rows="4" @bind="_addition" @bind:event="oninput"
                               placeholder="Ej: anade una seccion de restricciones que prohiba usar emojis y limite el texto a 3 frases..."></textarea>
                     <p class="text-sm text-muted" style="margin-top:0.15rem;">
-                        Se tomara el prompt actual como base y se integrara tu peticion. Despues veras el cambio antes de aplicarlo.
+                        La IA interpretara y mejorara tu peticion, la integrara en el prompt actual y comprobara si
+                        rompe alguna regla ya aplicada o genera incoherencias. Despues veras el cambio y los avisos antes de aplicarlo.
                     </p>
                 </div>
             }
             else if (_step == 2)
             {
+                @if (_warnings.Count > 0)
+                {
+                    <div class="pa-warnings" role="alert">
+                        <div class="pa-warnings-title">
+                            <i class="bi bi-exclamation-triangle-fill"></i>
+                            Se detectaron @_warnings.Count posible@(_warnings.Count == 1 ? "" : "s") conflicto@(_warnings.Count == 1 ? "" : "s") o incoherencia@(_warnings.Count == 1 ? "" : "s")
+                        </div>
+                        <ul class="pa-warnings-list">
+                            @foreach (var w in _warnings)
+                            {
+                                <li>@w</li>
+                            }
+                        </ul>
+                    </div>
+                }
+                else
+                {
+                    <div class="pa-warnings pa-warnings-ok" role="status">
+                        <i class="bi bi-check-circle-fill"></i>
+                        Sin conflictos con las reglas ni incoherencias detectadas.
+                    </div>
+                }
                 <p class="text-sm text-muted" style="margin-top:0;">
                     Revisa el cambio propuesto. En verde lo anadido, en rojo lo eliminado.
                 </p>
@@ -113,6 +136,7 @@
 
     private string _proposedPrompt = "";
     private List<DiffLine> _diff = new();
+    private List<string> _warnings = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -129,7 +153,7 @@
         _error = null;
         try
         {
-            var (ok, prompt, error) = await Api.AddPromptBuilderAsync(
+            var (ok, prompt, warnings, error) = await Api.AddPromptBuilderAsync(
                 new PromptBuilderAddRequest(_modelName, TargetKind, CurrentPrompt ?? "", _addition));
             if (!ok)
             {
@@ -137,6 +161,7 @@
                 return;
             }
             _proposedPrompt = prompt ?? "";
+            _warnings = warnings ?? new();
             _diff = ComputeDiff(CurrentPrompt ?? "", _proposedPrompt);
             _step = 2;
         }

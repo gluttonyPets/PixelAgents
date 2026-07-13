@@ -2379,7 +2379,7 @@ app.MapPost("/api/prompt-builder/add", async (
     if (!result.Success)
         return Results.BadRequest(new { error = result.Error });
 
-    return Results.Ok(new { prompt = result.Prompt });
+    return Results.Ok(new { prompt = result.Prompt, warnings = result.Warnings });
 }).RequireAuthorization();
 
 app.MapGet("/api/projects/{projectId:guid}/planned-prompts", async (
