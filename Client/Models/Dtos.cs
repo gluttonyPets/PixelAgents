@@ -148,6 +148,14 @@ public record ScheduleResponse(
     DateTime? LastRunAt, DateTime? NextRunAt,
     DateTime CreatedAt, DateTime UpdatedAt);
 
+// ── Prompt Builder ──
+public record PromptBuilderModelOption(string Provider, string ModelName, string DisplayName);
+public record PromptBuilderQuestionsRequest(string ModelName, string TargetKind, string Description);
+public record PromptBuilderQuestionsResponse(List<string> Questions);
+public record PromptBuilderQaItem(string Question, string Answer);
+public record PromptBuilderComposeRequest(string ModelName, string TargetKind, string Description, List<PromptBuilderQaItem> Answers);
+public record PromptBuilderComposeResponse(string Prompt);
+
 // ── Planned Prompts ──
 public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);
 public record PlannerModelOption(string Provider, string ModelName, string DisplayName);

@@ -650,6 +650,35 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Prompt Builder ──
+
+    public async Task<List<PromptBuilderModelOption>> GetPromptBuilderModelsAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/prompt-builder/models");
+        if (!resp.IsSuccessStatusCode) return new();
+        return await resp.Content.ReadFromJsonAsync<List<PromptBuilderModelOption>>() ?? new();
+    }
+
+    public async Task<(bool Ok, List<string>? Questions, string? Error)> GeneratePromptBuilderQuestionsAsync(
+        PromptBuilderQuestionsRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/prompt-builder/questions", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<PromptBuilderQuestionsResponse>();
+        return (true, result?.Questions ?? new(), null);
+    }
+
+    public async Task<(bool Ok, string? Prompt, string? Error)> ComposePromptBuilderAsync(
+        PromptBuilderComposeRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/prompt-builder/compose", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<PromptBuilderComposeResponse>();
+        return (true, result?.Prompt, null);
+    }
+
     // ── Planned Prompts ──
 
     public async Task<List<PlannerModelOption>> GetPlannerModelsAsync()

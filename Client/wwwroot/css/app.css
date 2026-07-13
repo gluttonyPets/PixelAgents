@@ -4279,3 +4279,96 @@ a.link:hover { text-decoration: underline; }
     gap: 0.75rem;
     padding: 1rem 0 0.5rem;
 }
+
+/* ── Prompt Builder wizard ── */
+.pb-overlay { z-index: 1100; }
+.pb-modal { max-width: 620px; }
+
+/* Fila con label + boton "Crear con IA" */
+.pb-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.2rem;
+}
+.pb-label-row label { margin-bottom: 0; }
+
+.pb-assist-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+    background: rgba(108, 99, 255, 0.12);
+    color: var(--accent);
+    border: 1px solid rgba(108, 99, 255, 0.35);
+}
+.pb-assist-btn:hover {
+    background: rgba(108, 99, 255, 0.22);
+    border-color: var(--accent);
+}
+
+/* Indicador de pasos */
+.pb-steps {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+}
+.pb-step {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 1;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.pb-step span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    font-weight: 600;
+    font-size: 0.72rem;
+}
+.pb-step-active { color: var(--text); }
+.pb-step-active span {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+.pb-step-done span {
+    background: rgba(108, 99, 255, 0.18);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.pb-result {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.pb-alert {
+    border-radius: 0.4rem;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.8rem;
+    margin-bottom: 0.85rem;
+}
+.pb-alert-error {
+    background: rgba(244, 67, 54, 0.12);
+    border: 1px solid rgba(244, 67, 54, 0.35);
+    color: var(--danger);
+}
+.pb-alert-warn {
+    background: rgba(255, 152, 0, 0.12);
+    border: 1px solid rgba(255, 152, 0, 0.35);
+    color: var(--warning);
+}

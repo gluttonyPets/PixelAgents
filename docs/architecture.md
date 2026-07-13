@@ -178,6 +178,7 @@ Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nue
 |              | `POST /api/executions/{id}/retry-from-module`     | Reintenta desde un nodo concreto del grafo        |
 |              | `GET /api/executions/{id}/logs`                   | Logs persistidos; progreso en tiempo real por SignalR |
 | Webhooks     | `POST /api/webhooks/whatsapp|telegram`            | Recepcion de respuestas externas para reanudar interacciones; cada update se deduplica por `update_id` en BD (`ProcessedTelegramUpdates`) para no procesarlo dos veces |
+| PromptBuilder| `GET /api/prompt-builder/models`, `POST /api/prompt-builder/questions|compose` | Asistente que ayuda a redactar el prompt de un nodo con IA (preguntas de detalle + composicion final) |
 | Schedules    | `GET|POST|PUT|DELETE /api/projects/{id}/schedule` | Cron con Cronos; timezone configurable            |
 | SignalR      | `/hubs/execution`                                 | Canal de logs y progreso de ejecucion en tiempo real |
 | Archivos     | `GET /api/executions/{id}/files/{fileId}`         | Descarga de archivos generados                    |

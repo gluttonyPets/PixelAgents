@@ -12,7 +12,12 @@
 else if (m.ModuleType is "Text" or "Coordinator")
 {
     <div class="form-group">
-        <label>System Prompt</label>
+        <div class="pb-label-row">
+            <label>System Prompt</label>
+            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenTextWizard">
+                <i class="bi bi-stars"></i> Crear con IA
+            </button>
+        </div>
         <textarea @bind="_editSystemPrompt" rows="4" placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : "Ej: Eres un asistente experto en...")"></textarea>
     </div>
     <div class="form-row">
@@ -33,7 +38,12 @@ else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
         <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
     </div>
     <div class="form-group">
-        <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+        <div class="pb-label-row">
+            <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
+                <i class="bi bi-stars"></i> Crear con IA
+            </button>
+        </div>
         <textarea @bind="_editImagePrompt" rows="3" placeholder="Describe la imagen que quieres generar..."></textarea>
     </div>
     <div class="form-row">
@@ -62,7 +72,12 @@ else if (m.ModuleType == "Image" && m.ProviderType == "Google")
         <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
     </div>
     <div class="form-group">
-        <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+        <div class="pb-label-row">
+            <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
+                <i class="bi bi-stars"></i> Crear con IA
+            </button>
+        </div>
         <textarea @bind="_editImagePrompt" rows="3" placeholder="Describe la imagen que quieres generar..."></textarea>
     </div>
     <div class="form-row">
@@ -89,7 +104,12 @@ else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
         <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
     </div>
     <div class="form-group">
-        <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+        <div class="pb-label-row">
+            <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
+                <i class="bi bi-stars"></i> Crear con IA
+            </button>
+        </div>
         <textarea @bind="_editImagePrompt" rows="3" placeholder="Describe la imagen que quieres generar..."></textarea>
     </div>
     <div class="form-row">
@@ -106,7 +126,12 @@ else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
         <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
     </div>
     <div class="form-group">
-        <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+        <div class="pb-label-row">
+            <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
+            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
+                <i class="bi bi-stars"></i> Crear con IA
+            </button>
+        </div>
         <textarea @bind="_editImagePrompt" rows="3" placeholder="Describe la imagen que quieres generar..."></textarea>
     </div>
     <div class="form-row">
@@ -189,8 +214,41 @@ else
     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
 }
 
+@if (_showWizard)
+{
+    <PromptBuilderWizard TargetKind="@_wizardKind"
+                         OnUse="ApplyWizardPrompt"
+                         OnClose="CloseWizard" />
+}
+
 @code {
     [Parameter] public AiModuleResponse? Module { get; set; }
+
+    // ── Asistente "Crear prompt con IA" ──
+    private bool _showWizard;
+    private string _wizardKind = "text";      // "text" | "image"
+    private string _wizardTarget = "system";  // "system" | "imagePrompt"
+
+    private void OpenTextWizard() => OpenWizard("text", "system");
+    private void OpenImageWizard() => OpenWizard("image", "imagePrompt");
+
+    private void OpenWizard(string kind, string target)
+    {
+        _wizardKind = kind;
+        _wizardTarget = target;
+        _showWizard = true;
+    }
+
+    private void CloseWizard() => _showWizard = false;
+
+    private void ApplyWizardPrompt(string prompt)
+    {
+        if (_wizardTarget == "imagePrompt")
+            _editImagePrompt = prompt;
+        else
+            _editSystemPrompt = prompt;
+        _showWizard = false;
+    }
 
     // Identificador del modulo actualmente parseado, para re-parsear solo al cambiar de modulo.
     private Guid? _loadedModuleId;

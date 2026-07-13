@@ -95,6 +95,7 @@ builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingServic
 builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
 builder.Services.AddTransient<IPipelineExecutor, GraphPipelineExecutor>();
 builder.Services.AddScoped<IPromptPlannerService, PromptPlannerService>();
+builder.Services.AddScoped<IPromptBuilderService, PromptBuilderService>();
 builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
 builder.Services.AddSignalR();
@@ -2315,6 +2316,55 @@ app.MapGet("/api/planner/models", (IPromptPlannerService planner) =>
         .Select(m => new { provider = m.Provider, modelName = m.ModelName, displayName = m.DisplayName })
         .ToList();
     return Results.Ok(models);
+}).RequireAuthorization();
+
+// ── Prompt Builder (asistente para construir prompts de un modulo) ──
+
+app.MapGet("/api/prompt-builder/models", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IPromptBuilderService builderSvc, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var models = await builderSvc.GetAvailableModelsAsync(db, ct);
+    return Results.Ok(models
+        .Select(m => new { provider = m.Provider, modelName = m.ModelName, displayName = m.DisplayName })
+        .ToList());
+}).RequireAuthorization();
+
+app.MapPost("/api/prompt-builder/questions", async (
+    PromptBuilderQuestionsRequest req, HttpContext ctx, UserManager<ApplicationUser> um,
+    ITenantDbContextFactory factory, IPromptBuilderService builderSvc, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var result = await builderSvc.GenerateQuestionsAsync(
+        db, req.ModelName, req.TargetKind, req.Description, ct);
+    if (!result.Success)
+        return Results.BadRequest(new { error = result.Error });
+
+    return Results.Ok(new { questions = result.Questions });
+}).RequireAuthorization();
+
+app.MapPost("/api/prompt-builder/compose", async (
+    PromptBuilderComposeRequest req, HttpContext ctx, UserManager<ApplicationUser> um,
+    ITenantDbContextFactory factory, IPromptBuilderService builderSvc, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var answers = (req.Answers ?? new())
+        .Select(a => new PromptBuilderQa(a.Question ?? "", a.Answer ?? ""))
+        .ToList();
+
+    var result = await builderSvc.ComposeAsync(
+        db, req.ModelName, req.TargetKind, req.Description, answers, ct);
+    if (!result.Success)
+        return Results.BadRequest(new { error = result.Error });
+
+    return Results.Ok(new { prompt = result.Prompt });
 }).RequireAuthorization();
 
 app.MapGet("/api/projects/{projectId:guid}/planned-prompts", async (

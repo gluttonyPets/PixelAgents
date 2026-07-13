@@ -1,0 +1,230 @@
+@* Asistente guiado para construir un prompt con ayuda de la IA.
+   Flujo en 3 pasos:
+     1. El usuario describe que quiere que haga el modulo y elige el modelo ayudante.
+     2. La IA genera preguntas de detalle a medida y el usuario las responde.
+     3. La IA compone el prompt final estructurado, editable, y el usuario lo usa.
+   Al confirmar, invoca OnUse con el texto final para que el editor lo inserte. *@
+
+@inject ApiClient Api
+
+<div class="modal-overlay pb-overlay" @onclick="Close">
+    <div class="modal-content pb-modal" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-label="Asistente para crear prompt">
+        <div class="modal-header">
+            <h3 style="margin:0; font-size:1.05rem; flex:1;">
+                <i class="bi bi-stars" style="margin-right:0.35rem;"></i>Crear prompt con IA
+            </h3>
+            <button class="node-btn" @onclick="Close" title="Cerrar" aria-label="Cerrar">&#x2715;</button>
+        </div>
+
+        <div class="modal-body">
+            @* Indicador de pasos *@
+            <ol class="pb-steps" aria-hidden="true">
+                <li class="@StepClass(1)"><span>1</span> Idea</li>
+                <li class="@StepClass(2)"><span>2</span> Detalles</li>
+                <li class="@StepClass(3)"><span>3</span> Prompt</li>
+            </ol>
+
+            @if (_error is not null)
+            {
+                <div class="pb-alert pb-alert-error" role="alert">@_error</div>
+            }
+
+            @if (_step == 1)
+            {
+                @if (_modelsLoaded && _models.Count == 0)
+                {
+                    <div class="pb-alert pb-alert-warn">
+                        No hay ninguna API Key configurada para asistir con la creacion del prompt.
+                        Anade una en <strong>Configuracion &gt; API Keys</strong> y vuelve a intentarlo.
+                    </div>
+                }
+
+                <div class="form-group">
+                    <label for="pb-model">Modelo que te ayudara</label>
+                    <select id="pb-model" @bind="_modelName" disabled="@(_models.Count == 0)">
+                        @if (_models.Count == 0)
+                        {
+                            <option value="">-- sin modelos disponibles --</option>
+                        }
+                        @foreach (var m in _models)
+                        {
+                            <option value="@m.ModelName">@m.DisplayName (@m.Provider)</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="pb-desc">@DescriptionLabel</label>
+                    <textarea id="pb-desc" rows="4" @bind="_description" @bind:event="oninput"
+                              placeholder="@DescriptionPlaceholder"></textarea>
+                    <p class="text-sm text-muted" style="margin-top:0.15rem;">
+                        No hace falta que sea perfecto: en el siguiente paso la IA te preguntara los detalles.
+                    </p>
+                </div>
+            }
+            else if (_step == 2)
+            {
+                <p class="text-sm text-muted" style="margin-top:0;">
+                    Responde lo que puedas. Cuanto mas concretes, mejor sera el prompt.
+                    Puedes dejar preguntas en blanco.
+                </p>
+                @for (int i = 0; i < _questions.Count; i++)
+                {
+                    var idx = i;
+                    <div class="form-group">
+                        <label for="@($"pb-q{idx}")">@_questions[idx]</label>
+                        <textarea id="@($"pb-q{idx}")" rows="2"
+                                  value="@_answers[idx]"
+                                  @oninput="@(e => _answers[idx] = e.Value?.ToString() ?? string.Empty)"
+                                  placeholder="Tu respuesta (opcional)"></textarea>
+                    </div>
+                }
+            }
+            else if (_step == 3)
+            {
+                <div class="form-group">
+                    <label for="pb-result">Prompt generado <span class="text-sm text-muted">(puedes editarlo antes de usarlo)</span></label>
+                    <textarea id="pb-result" rows="14" class="pb-result" @bind="_composedPrompt" @bind:event="oninput"></textarea>
+                </div>
+            }
+        </div>
+
+        <div class="modal-footer">
+            @if (_step == 1)
+            {
+                <button class="btn btn-sm" @onclick="Close" disabled="@_busy">Cancelar</button>
+                <div style="flex:1;"></div>
+                <button class="btn btn-primary btn-sm" @onclick="GoToQuestions"
+                        disabled="@(_busy || _models.Count == 0 || string.IsNullOrWhiteSpace(_description) || string.IsNullOrWhiteSpace(_modelName))">
+                    @if (_busy) { <span class="spinner" style="width:0.7rem;height:0.7rem;"></span><span> Pensando...</span> }
+                    else { <span>Siguiente</span> }
+                </button>
+            }
+            else if (_step == 2)
+            {
+                <button class="btn btn-sm" @onclick="() => _step = 1" disabled="@_busy">Atras</button>
+                <div style="flex:1;"></div>
+                <button class="btn btn-sm" @onclick="Compose" disabled="@_busy" title="Generar sin responder mas detalles">
+                    Saltar detalles
+                </button>
+                <button class="btn btn-primary btn-sm" @onclick="Compose" disabled="@_busy">
+                    @if (_busy) { <span class="spinner" style="width:0.7rem;height:0.7rem;"></span><span> Generando...</span> }
+                    else { <span>Generar prompt</span> }
+                </button>
+            }
+            else if (_step == 3)
+            {
+                <button class="btn btn-sm" @onclick="() => _step = 2" disabled="@_busy">Atras</button>
+                <div style="flex:1;"></div>
+                <button class="btn btn-sm" @onclick="Compose" disabled="@_busy" title="Volver a generar con la misma informacion">
+                    @if (_busy) { <span class="spinner" style="width:0.7rem;height:0.7rem;"></span><span> Regenerando...</span> }
+                    else { <span><i class="bi bi-arrow-repeat"></i> Regenerar</span> }
+                </button>
+                <button class="btn btn-primary btn-sm" @onclick="Use"
+                        disabled="@(_busy || string.IsNullOrWhiteSpace(_composedPrompt))">
+                    Usar este prompt
+                </button>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>"text" (system prompt) o "image" (prompt de imagen). Ajusta textos y la generacion.</summary>
+    [Parameter] public string TargetKind { get; set; } = "text";
+    /// <summary>Se invoca con el prompt final cuando el usuario pulsa "Usar este prompt".</summary>
+    [Parameter] public EventCallback<string> OnUse { get; set; }
+    /// <summary>Se invoca al cerrar el asistente sin aplicar nada.</summary>
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private int _step = 1;
+    private bool _busy;
+    private string? _error;
+
+    private List<PromptBuilderModelOption> _models = new();
+    private bool _modelsLoaded;
+    private string _modelName = "";
+    private string _description = "";
+
+    private List<string> _questions = new();
+    private List<string> _answers = new();
+
+    private string _composedPrompt = "";
+
+    private bool IsImage => string.Equals(TargetKind, "image", StringComparison.OrdinalIgnoreCase);
+
+    private string DescriptionLabel => IsImage
+        ? "¿Que imagen quieres generar?"
+        : "¿Que quieres que haga este modulo?";
+
+    private string DescriptionPlaceholder => IsImage
+        ? "Ej: una portada para Instagram sobre alimentacion de gatos, estilo editorial premium..."
+        : "Ej: un asistente que resuma articulos largos en 5 puntos claros para redes sociales...";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _models = await Api.GetPromptBuilderModelsAsync();
+        _modelsLoaded = true;
+        if (_models.Count > 0)
+            _modelName = _models[0].ModelName;
+    }
+
+    private string StepClass(int n)
+    {
+        if (n == _step) return "pb-step pb-step-active";
+        if (n < _step) return "pb-step pb-step-done";
+        return "pb-step";
+    }
+
+    private async Task GoToQuestions()
+    {
+        if (string.IsNullOrWhiteSpace(_description) || string.IsNullOrWhiteSpace(_modelName)) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var (ok, questions, error) = await Api.GeneratePromptBuilderQuestionsAsync(
+                new PromptBuilderQuestionsRequest(_modelName, TargetKind, _description));
+            if (!ok)
+            {
+                _error = error ?? "No se pudieron generar las preguntas.";
+                return;
+            }
+            _questions = questions ?? new();
+            _answers = Enumerable.Repeat(string.Empty, _questions.Count).ToList();
+            _step = 2;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Compose()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var qa = new List<PromptBuilderQaItem>();
+            for (int i = 0; i < _questions.Count; i++)
+                qa.Add(new PromptBuilderQaItem(_questions[i], i < _answers.Count ? _answers[i] : ""));
+
+            var (ok, prompt, error) = await Api.ComposePromptBuilderAsync(
+                new PromptBuilderComposeRequest(_modelName, TargetKind, _description, qa));
+            if (!ok)
+            {
+                _error = error ?? "No se pudo generar el prompt.";
+                return;
+            }
+            _composedPrompt = prompt ?? "";
+            _step = 3;
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task Use()
+    {
+        if (string.IsNullOrWhiteSpace(_composedPrompt)) return;
+        await OnUse.InvokeAsync(_composedPrompt);
+    }
+
+    private async Task Close() => await OnClose.InvokeAsync();
+}
