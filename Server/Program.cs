@@ -2367,6 +2367,21 @@ app.MapPost("/api/prompt-builder/compose", async (
     return Results.Ok(new { prompt = result.Prompt });
 }).RequireAuthorization();
 
+app.MapPost("/api/prompt-builder/add", async (
+    PromptBuilderAddRequest req, HttpContext ctx, UserManager<ApplicationUser> um,
+    ITenantDbContextFactory factory, IPromptBuilderService builderSvc, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var result = await builderSvc.AddAsync(
+        db, req.ModelName, req.TargetKind, req.CurrentPrompt ?? "", req.Addition, ct);
+    if (!result.Success)
+        return Results.BadRequest(new { error = result.Error });
+
+    return Results.Ok(new { prompt = result.Prompt });
+}).RequireAuthorization();
+
 app.MapGet("/api/projects/{projectId:guid}/planned-prompts", async (
     Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {

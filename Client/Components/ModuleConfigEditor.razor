@@ -14,9 +14,14 @@ else if (m.ModuleType is "Text" or "Coordinator")
     <div class="form-group">
         <div class="pb-label-row">
             <label>System Prompt</label>
-            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenTextWizard">
-                <i class="bi bi-stars"></i> Crear con IA
-            </button>
+            <div class="pb-btn-group">
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenTextWizard">
+                    <i class="bi bi-stars"></i> Crear con IA
+                </button>
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenTextAdd">
+                    <i class="bi bi-plus-lg"></i> Anadir con IA
+                </button>
+            </div>
         </div>
         <StructuredPromptEditor @bind-Value="_editSystemPrompt"
                                 Placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : "Ej: Eres un asistente experto en...")" />
@@ -41,9 +46,14 @@ else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
     <div class="form-group">
         <div class="pb-label-row">
             <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
-            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
-                <i class="bi bi-stars"></i> Crear con IA
-            </button>
+            <div class="pb-btn-group">
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
+                    <i class="bi bi-stars"></i> Crear con IA
+                </button>
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageAdd">
+                    <i class="bi bi-plus-lg"></i> Anadir con IA
+                </button>
+            </div>
         </div>
         <StructuredPromptEditor @bind-Value="_editImagePrompt"
                                 Placeholder="Describe la imagen que quieres generar..." />
@@ -76,9 +86,14 @@ else if (m.ModuleType == "Image" && m.ProviderType == "Google")
     <div class="form-group">
         <div class="pb-label-row">
             <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
-            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
-                <i class="bi bi-stars"></i> Crear con IA
-            </button>
+            <div class="pb-btn-group">
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
+                    <i class="bi bi-stars"></i> Crear con IA
+                </button>
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageAdd">
+                    <i class="bi bi-plus-lg"></i> Anadir con IA
+                </button>
+            </div>
         </div>
         <StructuredPromptEditor @bind-Value="_editImagePrompt"
                                 Placeholder="Describe la imagen que quieres generar..." />
@@ -109,9 +124,14 @@ else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
     <div class="form-group">
         <div class="pb-label-row">
             <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
-            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
-                <i class="bi bi-stars"></i> Crear con IA
-            </button>
+            <div class="pb-btn-group">
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
+                    <i class="bi bi-stars"></i> Crear con IA
+                </button>
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageAdd">
+                    <i class="bi bi-plus-lg"></i> Anadir con IA
+                </button>
+            </div>
         </div>
         <StructuredPromptEditor @bind-Value="_editImagePrompt"
                                 Placeholder="Describe la imagen que quieres generar..." />
@@ -132,9 +152,14 @@ else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
     <div class="form-group">
         <div class="pb-label-row">
             <label>Prompt de imagen <span class="text-sm text-muted">(opcional, si no se indica se usa la entrada conectada)</span></label>
-            <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
-                <i class="bi bi-stars"></i> Crear con IA
-            </button>
+            <div class="pb-btn-group">
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageWizard">
+                    <i class="bi bi-stars"></i> Crear con IA
+                </button>
+                <button type="button" class="btn btn-xs pb-assist-btn" @onclick="OpenImageAdd">
+                    <i class="bi bi-plus-lg"></i> Anadir con IA
+                </button>
+            </div>
         </div>
         <StructuredPromptEditor @bind-Value="_editImagePrompt"
                                 Placeholder="Describe la imagen que quieres generar..." />
@@ -226,16 +251,31 @@ else
                          OnClose="CloseWizard" />
 }
 
+@if (_showAdd)
+{
+    <PromptAddWizard TargetKind="@_wizardKind"
+                     CurrentPrompt="@CurrentAddPrompt"
+                     OnAccept="ApplyAddedPrompt"
+                     OnClose="CloseAdd" />
+}
+
 @code {
     [Parameter] public AiModuleResponse? Module { get; set; }
 
-    // ── Asistente "Crear prompt con IA" ──
+    // ── Asistentes "Crear/Anadir prompt con IA" ──
     private bool _showWizard;
+    private bool _showAdd;
     private string _wizardKind = "text";      // "text" | "image"
     private string _wizardTarget = "system";  // "system" | "imagePrompt"
 
+    // Prompt actual del campo destino, base para "Anadir con IA".
+    private string CurrentAddPrompt =>
+        _wizardTarget == "imagePrompt" ? _editImagePrompt : _editSystemPrompt;
+
     private void OpenTextWizard() => OpenWizard("text", "system");
     private void OpenImageWizard() => OpenWizard("image", "imagePrompt");
+    private void OpenTextAdd() => OpenAdd("text", "system");
+    private void OpenImageAdd() => OpenAdd("image", "imagePrompt");
 
     private void OpenWizard(string kind, string target)
     {
@@ -244,15 +284,34 @@ else
         _showWizard = true;
     }
 
+    private void OpenAdd(string kind, string target)
+    {
+        _wizardKind = kind;
+        _wizardTarget = target;
+        _showAdd = true;
+    }
+
     private void CloseWizard() => _showWizard = false;
+    private void CloseAdd() => _showAdd = false;
 
     private void ApplyWizardPrompt(string prompt)
+    {
+        SetTargetPrompt(prompt);
+        _showWizard = false;
+    }
+
+    private void ApplyAddedPrompt(string prompt)
+    {
+        SetTargetPrompt(prompt);
+        _showAdd = false;
+    }
+
+    private void SetTargetPrompt(string prompt)
     {
         if (_wizardTarget == "imagePrompt")
             _editImagePrompt = prompt;
         else
             _editSystemPrompt = prompt;
-        _showWizard = false;
     }
 
     // Identificador del modulo actualmente parseado, para re-parsear solo al cambiar de modulo.

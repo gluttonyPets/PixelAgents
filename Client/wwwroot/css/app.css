@@ -4294,6 +4294,12 @@ a.link:hover { text-decoration: underline; }
 }
 .pb-label-row label { margin-bottom: 0; }
 
+.pb-btn-group {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+}
 .pb-assist-btn {
     display: inline-flex;
     align-items: center;
@@ -4306,6 +4312,44 @@ a.link:hover { text-decoration: underline; }
 .pb-assist-btn:hover {
     background: rgba(108, 99, 255, 0.22);
     border-color: var(--accent);
+}
+.pb-modal-wide { max-width: 760px; }
+
+/* Vista de diff del asistente "Anadir con IA" */
+.pa-diff {
+    border: 1px solid var(--border);
+    border-radius: 0.45rem;
+    background: var(--bg);
+    max-height: 48vh;
+    overflow: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    padding: 0.35rem 0;
+}
+.pa-diff-line {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0 0.6rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.pa-diff-sign {
+    flex-shrink: 0;
+    width: 1ch;
+    text-align: center;
+    opacity: 0.7;
+    user-select: none;
+}
+.pa-diff-text { flex: 1; }
+.pa-diff-same { color: var(--text-muted); }
+.pa-diff-add {
+    background: rgba(76, 175, 80, 0.14);
+    color: #7fd18a;
+}
+.pa-diff-del {
+    background: rgba(244, 67, 54, 0.14);
+    color: #f0928a;
 }
 
 /* Indicador de pasos */

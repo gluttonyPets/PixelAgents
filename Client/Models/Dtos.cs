@@ -155,6 +155,7 @@ public record PromptBuilderQuestionsResponse(List<string> Questions);
 public record PromptBuilderQaItem(string Question, string Answer);
 public record PromptBuilderComposeRequest(string ModelName, string TargetKind, string Description, List<PromptBuilderQaItem> Answers);
 public record PromptBuilderComposeResponse(string Prompt);
+public record PromptBuilderAddRequest(string ModelName, string TargetKind, string CurrentPrompt, string Addition);
 
 // ── Planned Prompts ──
 public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);

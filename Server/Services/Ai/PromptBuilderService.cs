@@ -29,6 +29,12 @@ namespace Server.Services.Ai
         Task<PromptBuilderComposeResult> ComposeAsync(
             UserDbContext db, string modelName, string targetKind, string description,
             IReadOnlyList<PromptBuilderQa> answers, CancellationToken ct = default);
+
+        /// <summary>Integra una peticion del usuario en un prompt ya existente y
+        /// devuelve el prompt completo actualizado, conservando lo que ya habia.</summary>
+        Task<PromptBuilderComposeResult> AddAsync(
+            UserDbContext db, string modelName, string targetKind, string currentPrompt,
+            string addition, CancellationToken ct = default);
     }
 
     public record PromptBuilderModelOption(string Provider, string ModelName, string DisplayName);
@@ -109,6 +115,27 @@ namespace Server.Services.Ai
 
             var prompt = BuildComposePrompt(NormalizeKind(targetKind), description, answers);
             var (ok, raw, err) = await RunAsync(setup.Provider!, setup.ModelName!, setup.ApiKey!, prompt, 2500, ct);
+            if (!ok) return new(false, null, err);
+
+            var cleaned = StripCodeFences(raw).Trim();
+            if (string.IsNullOrWhiteSpace(cleaned))
+                return new(false, null, "El modelo no devolvio ningun prompt. Prueba de nuevo.");
+
+            return new(true, cleaned, null);
+        }
+
+        public async Task<PromptBuilderComposeResult> AddAsync(
+            UserDbContext db, string modelName, string targetKind, string currentPrompt,
+            string addition, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(addition))
+                return new(false, null, "Describe que quieres anadir al prompt");
+
+            var setup = await ResolveModelAsync(db, modelName, ct);
+            if (setup.Error is not null) return new(false, null, setup.Error);
+
+            var prompt = BuildAddPrompt(NormalizeKind(targetKind), currentPrompt ?? "", addition);
+            var (ok, raw, err) = await RunAsync(setup.Provider!, setup.ModelName!, setup.ApiKey!, prompt, 3000, ct);
             if (!ok) return new(false, null, err);
 
             var cleaned = StripCodeFences(raw).Trim();
@@ -257,6 +284,32 @@ vacias. Escribe en espanol, con instrucciones especificas y accionables, sin rel
 
 Responde UNICAMENTE con el texto del prompt final, sin markdown de bloque de codigo,
 sin encabezados como 'Prompt:' ni comentarios previos o posteriores.";
+        }
+
+        private static string BuildAddPrompt(string kind, string current, string addition)
+        {
+            var kindWord = kind == "image" ? "prompt de imagen" : "system prompt";
+            var currentBlock = string.IsNullOrWhiteSpace(current)
+                ? "(el prompt actual esta vacio)"
+                : current;
+
+            return
+$@"Eres un experto en ingenieria de prompts. Tienes un {kindWord} ya existente y el usuario
+quiere incorporarle algo nuevo. Integra su peticion en el prompt de forma coherente y natural:
+conserva TODO lo que ya funciona, respeta la estructura y los encabezados existentes, y anade o
+ajusta solo lo necesario para reflejar la peticion. No elimines contenido salvo que la peticion
+lo contradiga directamente.
+
+--- PROMPT ACTUAL ---
+{currentBlock}
+--- FIN DEL PROMPT ACTUAL ---
+
+Lo que el usuario quiere anadir:
+{addition}
+
+Devuelve UNICAMENTE el prompt completo actualizado (no solo la parte anadida), en espanol,
+sin markdown de bloque de codigo, sin encabezados como 'Prompt:' ni comentarios previos o
+posteriores.";
         }
 
         // ── Parseo ──

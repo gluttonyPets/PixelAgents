@@ -679,6 +679,16 @@ public class ApiClient
         return (true, result?.Prompt, null);
     }
 
+    public async Task<(bool Ok, string? Prompt, string? Error)> AddPromptBuilderAsync(
+        PromptBuilderAddRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/prompt-builder/add", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<PromptBuilderComposeResponse>();
+        return (true, result?.Prompt, null);
+    }
+
     // ── Planned Prompts ──
 
     public async Task<List<PlannerModelOption>> GetPlannerModelsAsync()
