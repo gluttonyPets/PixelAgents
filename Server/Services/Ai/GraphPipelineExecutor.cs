@@ -914,18 +914,21 @@ public class GraphPipelineExecutor : IPipelineExecutor
         {
             "tiktok" => "tiktok",
             "pinterest" => "pinterest",
+            "threads" => "threads",
             _ => "instagram"
         };
         var platformLabel = publishPlatform switch
         {
             "tiktok" => "TikTok",
             "pinterest" => "Pinterest",
+            "threads" => "Threads",
             _ => "Instagram"
         };
         var connection = publishPlatform switch
         {
             "tiktok" => ctx.Project.TikTokConnection,
             "pinterest" => ctx.Project.PinterestConnection,
+            "threads" => ctx.Project.ThreadsConnection,
             _ => ctx.Project.InstagramConnection
         };
 
@@ -1770,6 +1773,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             .Include(p => p.InstagramConnection)
             .Include(p => p.TikTokConnection)
             .Include(p => p.PinterestConnection)
+            .Include(p => p.ThreadsConnection)
             .Include(p => p.TelegramConnection)
             .Include(p => p.ShopifyConnection)
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);

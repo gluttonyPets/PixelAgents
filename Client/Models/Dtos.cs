@@ -132,7 +132,8 @@ public record ShopifyBlogDto(string Id, string Title, string? Handle);
 
 // ── Asignacion de conexiones a un proyecto ──
 public record ProjectConnectionsDto(Guid? InstagramConnectionId, Guid? TikTokConnectionId,
-    Guid? PinterestConnectionId, Guid? TelegramConnectionId, Guid? ShopifyConnectionId);
+    Guid? PinterestConnectionId, Guid? ThreadsConnectionId, Guid? TelegramConnectionId,
+    Guid? ShopifyConnectionId);
 
 // ── Module Files ──
 public record ModuleFileResponse(

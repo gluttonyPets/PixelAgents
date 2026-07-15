@@ -1353,6 +1353,7 @@ app.MapPost("/api/projects/{id}/duplicate", async (
         InstagramConnectionId = source.InstagramConnectionId,
         TikTokConnectionId = source.TikTokConnectionId,
         PinterestConnectionId = source.PinterestConnectionId,
+        ThreadsConnectionId = source.ThreadsConnectionId,
         TelegramConnectionId = source.TelegramConnectionId,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
@@ -2795,7 +2796,7 @@ app.MapGet("/api/buffer/channels", async (
 
 // ==================== Social Connections (Redes sociales) ====================
 
-var socialPlatforms = new[] { "instagram", "tiktok", "pinterest" };
+var socialPlatforms = new[] { "instagram", "tiktok", "pinterest", "threads" };
 
 // Registra o elimina el webhook de Telegram para un bot token segun haya o no URL publica.
 async Task EnsureTelegramWebhookAsync(Server.Services.Telegram.TelegramService telegram, string botToken)
@@ -2824,6 +2825,7 @@ static async Task EnsurePublishSentinelAsync(UserDbContext db, string platform)
     {
         "tiktok" => ("TikTok Publish", "Publica contenido en TikTok (videos e imagenes) via Buffer."),
         "pinterest" => ("Pinterest Publish", "Publica contenido en Pinterest (imagenes) via Buffer."),
+        "threads" => ("Threads Publish", "Publica contenido en Threads (texto e imagenes) via Buffer."),
         _ => ("Buffer Publish", "Publica contenido en redes sociales (Instagram, etc.) via Buffer."),
     };
     if (await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == platform)) return;
@@ -2849,12 +2851,12 @@ app.MapGet("/api/social-connections", async (
 
     var conns = await db.SocialConnections.OrderByDescending(c => c.CreatedAt).ToListAsync();
     var refs = await db.Projects
-        .Select(p => new { p.InstagramConnectionId, p.TikTokConnectionId, p.PinterestConnectionId })
+        .Select(p => new { p.InstagramConnectionId, p.TikTokConnectionId, p.PinterestConnectionId, p.ThreadsConnectionId })
         .ToListAsync();
 
     var result = conns.Select(c => new SocialConnectionResponse(
         c.Id, c.Name, c.Platform, c.ChannelId, c.ChannelName, c.CreatedAt, c.UpdatedAt,
-        refs.Count(r => r.InstagramConnectionId == c.Id || r.TikTokConnectionId == c.Id || r.PinterestConnectionId == c.Id)));
+        refs.Count(r => r.InstagramConnectionId == c.Id || r.TikTokConnectionId == c.Id || r.PinterestConnectionId == c.Id || r.ThreadsConnectionId == c.Id)));
     return Results.Ok(result);
 }).RequireAuthorization();
 
@@ -2867,7 +2869,7 @@ app.MapPost("/api/social-connections", async (
 
     var platform = (req.Platform ?? "").Trim().ToLowerInvariant();
     if (!socialPlatforms.Contains(platform))
-        return Results.BadRequest(new { error = "Plataforma invalida. Usa instagram, tiktok o pinterest." });
+        return Results.BadRequest(new { error = "Plataforma invalida. Usa instagram, tiktok, pinterest o threads." });
     if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ApiKey) || string.IsNullOrWhiteSpace(req.ChannelId))
         return Results.BadRequest(new { error = "Nombre, API Key y canal son obligatorios." });
 
@@ -2902,7 +2904,7 @@ app.MapPut("/api/social-connections/{id:guid}", async (
 
     var platform = (req.Platform ?? "").Trim().ToLowerInvariant();
     if (!socialPlatforms.Contains(platform))
-        return Results.BadRequest(new { error = "Plataforma invalida. Usa instagram, tiktok o pinterest." });
+        return Results.BadRequest(new { error = "Plataforma invalida. Usa instagram, tiktok, pinterest o threads." });
     if (string.IsNullOrWhiteSpace(req.Name) || string.IsNullOrWhiteSpace(req.ChannelId))
         return Results.BadRequest(new { error = "Nombre y canal son obligatorios." });
 
@@ -3182,8 +3184,8 @@ app.MapGet("/api/projects/{projectId:guid}/connections", async (
 
     return Results.Ok(new ProjectConnectionsDto(
         project.InstagramConnectionId, project.TikTokConnectionId,
-        project.PinterestConnectionId, project.TelegramConnectionId,
-        project.ShopifyConnectionId));
+        project.PinterestConnectionId, project.ThreadsConnectionId,
+        project.TelegramConnectionId, project.ShopifyConnectionId));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId:guid}/connections", async (
@@ -3207,7 +3209,8 @@ app.MapPut("/api/projects/{projectId:guid}/connections", async (
 
     if (!await ValidSocialAsync(dto.InstagramConnectionId, "instagram")
         || !await ValidSocialAsync(dto.TikTokConnectionId, "tiktok")
-        || !await ValidSocialAsync(dto.PinterestConnectionId, "pinterest"))
+        || !await ValidSocialAsync(dto.PinterestConnectionId, "pinterest")
+        || !await ValidSocialAsync(dto.ThreadsConnectionId, "threads"))
         return Results.BadRequest(new { error = "Conexion social invalida para la plataforma." });
 
     MessagingConnection? tgConn = null;
@@ -3225,6 +3228,7 @@ app.MapPut("/api/projects/{projectId:guid}/connections", async (
     project.InstagramConnectionId = dto.InstagramConnectionId;
     project.TikTokConnectionId = dto.TikTokConnectionId;
     project.PinterestConnectionId = dto.PinterestConnectionId;
+    project.ThreadsConnectionId = dto.ThreadsConnectionId;
     project.TelegramConnectionId = dto.TelegramConnectionId;
     project.ShopifyConnectionId = dto.ShopifyConnectionId;
     project.UpdatedAt = DateTime.UtcNow;

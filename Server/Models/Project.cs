@@ -12,12 +12,14 @@ namespace Server.Models
         public Guid? InstagramConnectionId { get; set; }
         public Guid? TikTokConnectionId { get; set; }
         public Guid? PinterestConnectionId { get; set; }
+        public Guid? ThreadsConnectionId { get; set; }
         public Guid? TelegramConnectionId { get; set; }
         public Guid? ShopifyConnectionId { get; set; }
 
         public SocialConnection? InstagramConnection { get; set; }
         public SocialConnection? TikTokConnection { get; set; }
         public SocialConnection? PinterestConnection { get; set; }
+        public SocialConnection? ThreadsConnection { get; set; }
         public MessagingConnection? TelegramConnection { get; set; }
         public ShopifyConnection? ShopifyConnection { get; set; }
 

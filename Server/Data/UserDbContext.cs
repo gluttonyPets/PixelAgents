@@ -112,6 +112,10 @@ namespace Server.Data
                     .WithMany()
                     .HasForeignKey(x => x.PinterestConnectionId)
                     .OnDelete(DeleteBehavior.SetNull);
+                e.HasOne(x => x.ThreadsConnection)
+                    .WithMany()
+                    .HasForeignKey(x => x.ThreadsConnectionId)
+                    .OnDelete(DeleteBehavior.SetNull);
                 e.HasOne(x => x.TelegramConnection)
                     .WithMany()
                     .HasForeignKey(x => x.TelegramConnectionId)

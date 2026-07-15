@@ -148,7 +148,7 @@ Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nue
 | Interaction   | InteractionModuleHandler   | Pausa el pipeline y espera respuesta humana (Telegram/WA)  |
 | Checkpoint    | CheckpointModuleHandler    | Pausa para revision humana antes de continuar              |
 | Design        | DesignModuleHandler        | Genera disenos via proveedor grafico (Canva, etc.)         |
-| Publish       | PublishModuleHandler       | Publica contenido en Instagram o TikTok via Buffer API     |
+| Publish       | PublishModuleHandler       | Publica contenido en Instagram, TikTok, Pinterest o Threads via Buffer API |
 | ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug, SEO e imagen destacada via `input_image`) |
 
 ---

@@ -31,7 +31,7 @@ public static class SystemModuleCatalog
             "checkpoint"),
         new(
             "Publicar",
-            "Publica contenido en redes sociales (Instagram, TikTok, Pinterest)",
+            "Publica contenido en redes sociales (Instagram, TikTok, Pinterest, Threads)",
             "Publish",
             "publish"),
     ];

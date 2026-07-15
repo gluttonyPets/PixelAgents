@@ -79,6 +79,7 @@ namespace Server.Services
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""InstagramConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""TikTokConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""PinterestConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""ThreadsConnectionId"" uuid REFERENCES ""SocialConnections""(""Id"") ON DELETE SET NULL", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""TelegramConnectionId"" uuid REFERENCES ""MessagingConnections""(""Id"") ON DELETE SET NULL", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""ShopifyConnectionId"" uuid REFERENCES ""ShopifyConnections""(""Id"") ON DELETE SET NULL", log);
 

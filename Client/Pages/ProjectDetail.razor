@@ -27,7 +27,7 @@ else
             <!-- Integration status pills -->
             <div class="integration-pills">
                 <span class="pill @(string.IsNullOrWhiteSpace(_telegramConnSel) ? "pill-off" : "pill-on")" title="Telegram">TG</span>
-                <span class="pill @(string.IsNullOrWhiteSpace(_instagramConnSel) && string.IsNullOrWhiteSpace(_tiktokConnSel) && string.IsNullOrWhiteSpace(_pinterestConnSel) ? "pill-off" : "pill-on")" title="Buffer">BF</span>
+                <span class="pill @(string.IsNullOrWhiteSpace(_instagramConnSel) && string.IsNullOrWhiteSpace(_tiktokConnSel) && string.IsNullOrWhiteSpace(_pinterestConnSel) && string.IsNullOrWhiteSpace(_threadsConnSel) ? "pill-off" : "pill-on")" title="Buffer">BF</span>
                 @if (_schedule is not null && _schedule.IsEnabled)
                 {
                     <span class="pill pill-on" title="Programacion activa">&#x23f0;</span>
@@ -1191,6 +1191,16 @@ else
                                     }
                                 </select>
                             </div>
+                            <div class="form-group">
+                                <label>Threads</label>
+                                <select @bind="_threadsConnSel">
+                                    <option value="">-- Sin asignar --</option>
+                                    @foreach (var c in _socialConnections.Where(c => c.Platform == "threads"))
+                                    {
+                                        <option value="@c.Id">@c.Name (@(string.IsNullOrWhiteSpace(c.ChannelName) ? c.ChannelId : c.ChannelName))</option>
+                                    }
+                                </select>
+                            </div>
 
                             @if (_socialConnections.Count == 0)
                             {
@@ -1773,6 +1783,7 @@ else
     private string _instagramConnSel = "";
     private string _tiktokConnSel = "";
     private string _pinterestConnSel = "";
+    private string _threadsConnSel = "";
     private string _telegramConnSel = "";
     private string _shopifyConnSel = "";
     private string? _connError;
@@ -2087,6 +2098,7 @@ else
                 _instagramConnSel = conns.InstagramConnectionId?.ToString() ?? "";
                 _tiktokConnSel = conns.TikTokConnectionId?.ToString() ?? "";
                 _pinterestConnSel = conns.PinterestConnectionId?.ToString() ?? "";
+                _threadsConnSel = conns.ThreadsConnectionId?.ToString() ?? "";
                 _telegramConnSel = conns.TelegramConnectionId?.ToString() ?? "";
                 _shopifyConnSel = conns.ShopifyConnectionId?.ToString() ?? "";
             }
@@ -2213,6 +2225,7 @@ else
                 Parse(_instagramConnSel),
                 Parse(_tiktokConnSel),
                 Parse(_pinterestConnSel),
+                Parse(_threadsConnSel),
                 Parse(_telegramConnSel),
                 Parse(_shopifyConnSel));
             var (ok, error) = await Api.SaveProjectConnectionsAsync(ProjectId, dto);

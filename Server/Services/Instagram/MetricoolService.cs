@@ -107,6 +107,10 @@ namespace Server.Services.Instagram
             {
                 metadataBlock = "metadata: { pinterest: {} }";
             }
+            else if (platform == "threads")
+            {
+                metadataBlock = "metadata: { threads: {} }";
+            }
             else
             {
                 // Instagram metadata

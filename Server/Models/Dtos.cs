@@ -115,7 +115,8 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
 
     // ── Asignacion de conexiones a un proyecto ──
     public record ProjectConnectionsDto(Guid? InstagramConnectionId, Guid? TikTokConnectionId,
-        Guid? PinterestConnectionId, Guid? TelegramConnectionId, Guid? ShopifyConnectionId);
+        Guid? PinterestConnectionId, Guid? ThreadsConnectionId, Guid? TelegramConnectionId,
+        Guid? ShopifyConnectionId);
 
     // ── Module Files ──
     // Los archivos pertenecen a la INSTANCIA (ProjectModule), no al catalogo.

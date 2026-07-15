@@ -10,7 +10,7 @@ namespace Server.Models
         public Guid Id { get; set; }
         public string Name { get; set; } = default!;
 
-        /// <summary>Plataforma destino: "instagram", "tiktok" o "pinterest".</summary>
+        /// <summary>Plataforma destino: "instagram", "tiktok", "pinterest" o "threads".</summary>
         public string Platform { get; set; } = default!;
 
         /// <summary>Token de la API de Buffer.</summary>
