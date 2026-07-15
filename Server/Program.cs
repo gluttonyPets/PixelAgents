@@ -2818,31 +2818,6 @@ async Task EnsureTelegramWebhookAsync(Server.Services.Telegram.TelegramService t
     }
 }
 
-// Asegura que el modulo sentinel (catalogo) exista para una plataforma de publicacion.
-static async Task EnsurePublishSentinelAsync(UserDbContext db, string platform)
-{
-    var (name, desc) = platform switch
-    {
-        "tiktok" => ("TikTok Publish", "Publica contenido en TikTok (videos e imagenes) via Buffer."),
-        "pinterest" => ("Pinterest Publish", "Publica contenido en Pinterest (imagenes) via Buffer."),
-        "threads" => ("Threads Publish", "Publica contenido en Threads (texto e imagenes) via Buffer."),
-        _ => ("Buffer Publish", "Publica contenido en redes sociales (Instagram, etc.) via Buffer."),
-    };
-    if (await db.AiModules.AnyAsync(m => m.ModuleType == "Publish" && m.ModelName == platform)) return;
-    db.AiModules.Add(new AiModule
-    {
-        Id = Guid.NewGuid(),
-        Name = name,
-        Description = desc,
-        ProviderType = "System",
-        ModuleType = "Publish",
-        ModelName = platform,
-        IsEnabled = true,
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow,
-    });
-}
-
 app.MapGet("/api/social-connections", async (
     HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
@@ -2885,7 +2860,6 @@ app.MapPost("/api/social-connections", async (
         UpdatedAt = DateTime.UtcNow,
     };
     db.SocialConnections.Add(conn);
-    await EnsurePublishSentinelAsync(db, platform);
     await db.SaveChangesAsync();
 
     return Results.Created($"/api/social-connections/{conn.Id}", new SocialConnectionResponse(
@@ -2916,7 +2890,6 @@ app.MapPut("/api/social-connections/{id:guid}", async (
         conn.ApiKey = req.ApiKey.Trim();
     conn.UpdatedAt = DateTime.UtcNow;
 
-    await EnsurePublishSentinelAsync(db, platform);
     await db.SaveChangesAsync();
     return Results.Ok(new { message = "Conexion actualizada" });
 }).RequireAuthorization();
