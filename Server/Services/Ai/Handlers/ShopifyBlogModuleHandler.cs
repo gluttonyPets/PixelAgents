@@ -164,8 +164,9 @@ public class ShopifyBlogModuleHandler : IModuleHandler
     }
 
     /// <summary>
-    /// Si el texto ya parece HTML lo deja tal cual; si es texto plano lo convierte
-    /// en parrafos (doble salto de linea = parrafo, salto simple = &lt;br&gt;).
+    /// Si el texto ya parece HTML lo deja tal cual (incluyendo estilos CSS inline,
+    /// bloques &lt;style&gt; y cualquier etiqueta HTML valida); si es texto plano lo
+    /// convierte en parrafos (doble salto de linea = parrafo, salto simple = &lt;br&gt;).
     /// </summary>
     private static string ToHtml(string text)
     {
@@ -183,13 +184,18 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         return sb.ToString();
     }
 
-    private static bool LooksLikeHtml(string s) =>
-        s.Contains("<p", StringComparison.OrdinalIgnoreCase)
-        || s.Contains("<h1", StringComparison.OrdinalIgnoreCase)
-        || s.Contains("<h2", StringComparison.OrdinalIgnoreCase)
-        || s.Contains("<br", StringComparison.OrdinalIgnoreCase)
-        || s.Contains("<div", StringComparison.OrdinalIgnoreCase)
-        || s.Contains("<ul", StringComparison.OrdinalIgnoreCase);
+    // Detecta cualquier etiqueta HTML de apertura, cierre o auto-cerrada con un nombre
+    // de etiqueta valido (<p>, <div>, <style>, <table>, <span style="...">, <br/>, ...).
+    // Exige un nombre de etiqueta que empiece por letra, por lo que expresiones de
+    // texto plano como "5 < 10" no se confunden con HTML. Basta con una sola etiqueta
+    // para tratar TODO el contenido como HTML y enviarlo a Shopify sin escapar, de modo
+    // que el CSS (inline o en <style>) llega intacto.
+    private static readonly System.Text.RegularExpressions.Regex HtmlTagRegex = new(
+        @"<\s*/?\s*[a-zA-Z][a-zA-Z0-9]*(\s[^<>]*?)?/?>",
+        System.Text.RegularExpressions.RegexOptions.Compiled |
+        System.Text.RegularExpressions.RegexOptions.Singleline);
+
+    private static bool LooksLikeHtml(string s) => HtmlTagRegex.IsMatch(s);
 
     private static string Escape(string s) =>
         s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
