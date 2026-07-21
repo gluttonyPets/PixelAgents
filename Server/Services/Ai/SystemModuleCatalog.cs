@@ -35,6 +35,11 @@ public static class SystemModuleCatalog
             "Publica contenido en redes sociales (Instagram, TikTok, Pinterest, Threads)",
             "Publish",
             "publish"),
+        new(
+            "Sub-proyecto",
+            "Ejecuta un proyecto completo como un unico modulo dentro de este pipeline",
+            "SubProject",
+            "subproject"),
     ];
 
     public static bool TryGetDefinition(string? providerType, string? moduleType, out SystemModuleDefinition definition)

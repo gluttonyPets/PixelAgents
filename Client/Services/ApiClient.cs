@@ -324,6 +324,14 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // Inserta un proyecto entero como nodo "SubProject" del pipeline actual.
+    public async Task<(bool Ok, string? Error)> AddSubProjectAsync(Guid projectId, AddSubProjectRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/subprojects", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Executions ──
 
     public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput, bool useHistory = true)

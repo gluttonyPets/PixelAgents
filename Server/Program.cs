@@ -85,6 +85,7 @@ builder.Services.AddTransient<IModuleHandler, InteractionModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, DesignModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, PublishModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, ShopifyBlogModuleHandler>();
+builder.Services.AddTransient<IModuleHandler, SubProjectModuleHandler>();
 builder.Services.AddHttpClient<Server.Services.Shopify.ShopifyService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
@@ -202,6 +203,38 @@ static async Task<UserDbContext?> ResolveTenantDb(
     var dbName = claims.FirstOrDefault(c => c.Type == "db_name")?.Value;
     if (dbName is null) return null;
     return factory.Create(dbName);
+}
+
+/// <summary>
+/// Determina si insertar <paramref name="targetProjectId"/> como sub-proyecto de
+/// <paramref name="parentProjectId"/> generaria un ciclo. Recorre en anchura las
+/// referencias SubProjectId a partir del objetivo; si alcanza el proyecto padre,
+/// hay recursion.
+/// </summary>
+static async Task<bool> WouldCreateSubProjectCycleAsync(
+    UserDbContext db, Guid parentProjectId, Guid targetProjectId)
+{
+    var visited = new HashSet<Guid>();
+    var queue = new Queue<Guid>();
+    queue.Enqueue(targetProjectId);
+
+    while (queue.Count > 0)
+    {
+        var current = queue.Dequeue();
+        if (current == parentProjectId)
+            return true;
+        if (!visited.Add(current))
+            continue;
+
+        var childRefs = await db.ProjectModules
+            .Where(pm => pm.ProjectId == current && pm.SubProjectId != null)
+            .Select(pm => pm.SubProjectId!.Value)
+            .ToListAsync();
+        foreach (var r in childRefs)
+            queue.Enqueue(r);
+    }
+
+    return false;
 }
 
 /// <summary>
@@ -663,6 +696,9 @@ app.MapGet("/api/modules", async (
 
     modules = modules
         .Where(m => !(m.ProviderType == "System" && m.ModuleType == "Scene"))
+        // El modulo de sistema "SubProject" no se anade desde el palette "+ Modulo";
+        // se inserta con el boton "+ Sub-proyecto" (endpoint dedicado).
+        .Where(m => !(m.ProviderType == "System" && m.ModuleType == "SubProject"))
         .GroupBy(m => m.ProviderType == "System" && m.ModuleType is "FileUpload" or "StaticText"
             ? $"System:{m.ModuleType}"
             : m.Id.ToString())
@@ -1102,6 +1138,31 @@ app.MapGet("/api/projects/{id}", async (
         project.ProjectModules.Add(startPm);
     }
 
+    // Resumen de cada proyecto insertado (nodos "SubProject") para pintar la
+    // tarjeta grande con sus pasos internos, sin cargar la definicion completa.
+    var subProjectIds = project.ProjectModules
+        .Where(pm => pm.SubProjectId != null)
+        .Select(pm => pm.SubProjectId!.Value)
+        .Distinct()
+        .ToList();
+    var subProjectSummaries = new Dictionary<Guid, SubProjectSummaryDto>();
+    if (subProjectIds.Count > 0)
+    {
+        var subProjects = await db.Projects
+            .Where(p => subProjectIds.Contains(p.Id))
+            .Include(p => p.ProjectModules)
+                .ThenInclude(pm => pm.AiModule)
+            .ToListAsync();
+        foreach (var sp in subProjects)
+        {
+            var steps = sp.ProjectModules
+                .Where(pm => pm.IsActive && pm.AiModule.ModuleType != "Start")
+                .Select(pm => new SubProjectStepDto(pm.StepName ?? pm.AiModule.Name, pm.AiModule.ModuleType))
+                .ToList();
+            subProjectSummaries[sp.Id] = new SubProjectSummaryDto(sp.Id, sp.Name, steps);
+        }
+    }
+
     var modules = project.ProjectModules.Select(pm =>
     {
         // Resolve effective model: inspector override takes precedence over module default
@@ -1118,6 +1179,9 @@ app.MapGet("/api/projects/{id}", async (
             }
             catch { }
         }
+        SubProjectSummaryDto? subSummary = null;
+        if (pm.SubProjectId is { } spId)
+            subProjectSummaries.TryGetValue(spId, out subSummary);
         return new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
             pm.AiModule.ModuleType, effectiveModel, pm.StepName,
             pm.Configuration, pm.IsActive,
@@ -1125,7 +1189,8 @@ app.MapGet("/api/projects/{id}", async (
             pm.AiModule.ModuleType == "Orchestrator"
                 ? pm.OrchestratorOutputs.Select(o => new OrchestratorOutputResponse(
                     o.Id, o.OutputKey, o.Label, o.Prompt, o.DataType, o.SortOrder)).ToList()
-                : null);
+                : null,
+            pm.SubProjectId, subSummary);
     }).ToList();
 
     var connections = await db.ModuleConnections
@@ -1516,6 +1581,63 @@ app.MapPost("/api/projects/{projectId}/modules", async (
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
             module.ModuleType, addEffectiveModel, pm.StepName,
             pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
+}).RequireAuthorization();
+
+// Inserta un proyecto entero como un unico nodo "SubProject" dentro de otro
+// pipeline. La entrada del nodo alimenta el Inicio del proyecto insertado y su
+// salida terminal vuelve al pipeline padre. Se rechaza cualquier referencia que
+// genere recursion (directa o indirecta).
+app.MapPost("/api/projects/{projectId}/subprojects", async (
+    Guid projectId, AddSubProjectRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (req.SubProjectId == projectId)
+        return Results.BadRequest(new { error = "Un proyecto no puede insertarse a si mismo." });
+
+    var target = await db.Projects.FindAsync(req.SubProjectId);
+    if (target is null)
+        return Results.BadRequest(new { error = "El proyecto a insertar no existe." });
+
+    // Recursion indirecta: si el proyecto insertado ya depende (transitivamente)
+    // del proyecto actual, insertarlo crearia un ciclo.
+    if (await WouldCreateSubProjectCycleAsync(db, projectId, req.SubProjectId))
+        return Results.BadRequest(new { error = "No se puede insertar: generaria una referencia ciclica entre proyectos." });
+
+    // Modulo de sistema compartido que da tipo "SubProject" al nodo.
+    var subProjectModule = await SystemModuleCatalog.EnsureModuleAsync(
+        db, SystemModuleCatalog.DefaultModules.First(d => d.ModuleType == "SubProject"));
+
+    var pm = new ProjectModule
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = projectId,
+        AiModuleId = subProjectModule.Id,
+        SubProjectId = req.SubProjectId,
+        StepName = string.IsNullOrWhiteSpace(req.StepName) ? target.Name : req.StepName,
+        IsActive = true,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+    db.ProjectModules.Add(pm);
+    await db.SaveChangesAsync();
+
+    var steps = await db.ProjectModules
+        .Where(x => x.ProjectId == req.SubProjectId && x.IsActive && x.AiModule.ModuleType != "Start")
+        .Select(x => new SubProjectStepDto(x.StepName ?? x.AiModule.Name, x.AiModule.ModuleType))
+        .ToListAsync();
+    var summary = new SubProjectSummaryDto(target.Id, target.Name, steps);
+
+    return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
+        new ProjectModuleResponse(pm.Id, pm.AiModuleId, subProjectModule.Name,
+            subProjectModule.ModuleType, subProjectModule.ModelName, pm.StepName,
+            pm.Configuration, pm.IsActive, pm.PosX, pm.PosY, null,
+            pm.SubProjectId, summary));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/modules/{id}", async (

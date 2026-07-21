@@ -14,6 +14,9 @@
             <button class="toolbar-btn toolbar-btn-primary" @onclick="ToggleModulePanel" title="Agregar modulo">
                 <span class="toolbar-btn-icon">&#x2795;</span> Modulo
             </button>
+            <button class="toolbar-btn" @onclick="ToggleSubProjectPanel" title="Insertar un proyecto entero como modulo">
+                <span class="toolbar-btn-icon">&#x2795;</span> Sub-proyecto
+            </button>
         </div>
 
         <!-- Floating module selector panel -->
@@ -90,6 +93,51 @@
             </div>
         }
 
+        <!-- Floating sub-project selector panel -->
+        @if (_showSubProjectPanel)
+        {
+            <div class="module-panel-backdrop" @onclick="CloseSubProjectPanel"></div>
+            <div class="module-panel">
+                <div class="module-panel-header">
+                    <span>Insertar sub-proyecto</span>
+                    <button class="node-btn" @onclick="CloseSubProjectPanel">&#x2715;</button>
+                </div>
+                <div class="module-panel-search">
+                    <input type="text" placeholder="Buscar proyecto..." @bind="_subProjectFilter" @bind:event="oninput" />
+                </div>
+                <div class="module-panel-body">
+                    @{
+                        var selectable = SelectableSubProjects;
+                    }
+                    @if (selectable.Count == 0)
+                    {
+                        <div class="module-category-items">
+                            <div class="palette-item-type" style="padding: 0.5rem;">
+                                No hay otros proyectos disponibles para insertar.
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="module-category-items">
+                            @foreach (var p in selectable)
+                            {
+                                <div class="palette-item" @onclick="() => AddSubProjectFromPalette(p)">
+                                    <div class="palette-item-icon" style="background: @ModulePortRegistry.GetModuleColor("SubProject");">
+                                        <i class="bi @ModulePortRegistry.GetModuleIcon("SubProject")"></i>
+                                    </div>
+                                    <div class="palette-item-info">
+                                        <div class="palette-item-name">@p.Name</div>
+                                        <div class="palette-item-type">Proyecto completo como modulo</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
         @if (Modules.Count == 0 && _jsInitialized)
         {
             <div class="canvas-empty-overlay">
@@ -148,6 +196,30 @@
                             }
                         </div>
                     </div>
+
+                    @if (sel.ModuleType == "SubProject" && sel.SubProject is not null)
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Proyecto insertado</div>
+                            <div class="inspector-field">
+                                <label>Nombre</label>
+                                <input type="text" value="@sel.SubProject.Name" readonly />
+                            </div>
+                            <div class="inspector-field">
+                                <label>Pasos (@sel.SubProject.Steps.Count)</label>
+                                <ol style="margin: 0; padding-left: 1.1rem; font-size: 0.75rem; line-height: 1.5;">
+                                    @foreach (var s in sel.SubProject.Steps)
+                                    {
+                                        <li>@s.Name <span style="opacity:0.5;">(@s.ModuleType)</span></li>
+                                    }
+                                </ol>
+                            </div>
+                            <div class="inspector-field" style="font-size: 0.72rem; opacity: 0.7;">
+                                Se ejecuta como un modulo unico: la entrada alimenta su inicio y su salida vuelve al pipeline.
+                                <a href="/projects/@sel.SubProject.Id" target="_blank">Abrir proyecto</a>
+                            </div>
+                        </div>
+                    }
 
                     <div class="inspector-section">
                         <div class="inspector-field">
@@ -978,10 +1050,14 @@
     [Parameter] public Guid ProjectId { get; set; }
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
     [Parameter] public List<AiModuleResponse> AvailableModules { get; set; } = [];
+    // Proyectos que se pueden insertar como sub-proyecto (el padre filtra el actual).
+    [Parameter] public List<ProjectResponse> AvailableProjects { get; set; } = [];
     [Parameter] public List<ModuleConnectionResponse> Connections { get; set; } = [];
     [Parameter] public List<RuleResponse> TenantRules { get; set; } = [];
     [Parameter] public RenderFragment? TopPanel { get; set; }
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
+    // Notifica al padre que el usuario quiere insertar el proyecto con ese Id como sub-proyecto.
+    [Parameter] public EventCallback<Guid> OnAddSubProject { get; set; }
     [Parameter] public EventCallback<Guid> OnRemoveModule { get; set; }
     [Parameter] public EventCallback<SaveGraphRequest> OnSaveGraph { get; set; }
     // Avisa al padre de que la lista de modulos o el modulo de algun nodo cambio,
@@ -1071,6 +1147,10 @@
     private bool _showModulePanel;
     private HashSet<string> _expandedCategories = new() { "ai" };
 
+    // Sub-project panel state
+    private bool _showSubProjectPanel;
+    private string _subProjectFilter = "";
+
     // FileUpload inspector state
     private const long MaxUploadFileSize = 512L * 1024 * 1024;
     private List<ModuleFileResponse> _fileUploadFiles = [];
@@ -1088,11 +1168,44 @@
         new("control", "bi-sliders", "Control y Salida", ["Scene", "Checkpoint", "Publish", "ShopifyBlog", "Coordinator"]),
     ];
 
-    private void ToggleModulePanel() => _showModulePanel = !_showModulePanel;
+    private void ToggleModulePanel()
+    {
+        _showModulePanel = !_showModulePanel;
+        if (_showModulePanel) _showSubProjectPanel = false;
+    }
     private void CloseModulePanel()
     {
         _showModulePanel = false;
         _searchFilter = "";
+    }
+
+    // ── Sub-project panel ──
+
+    private void ToggleSubProjectPanel()
+    {
+        _showSubProjectPanel = !_showSubProjectPanel;
+        if (_showSubProjectPanel) _showModulePanel = false;
+    }
+    private void CloseSubProjectPanel()
+    {
+        _showSubProjectPanel = false;
+        _subProjectFilter = "";
+    }
+
+    // Proyectos insertables: todos menos el actual, filtrados por el buscador.
+    // La proteccion frente a ciclos indirectos la aplica el servidor al insertar.
+    private List<ProjectResponse> SelectableSubProjects => AvailableProjects
+        .Where(p => p.Id != ProjectId)
+        .Where(p => string.IsNullOrWhiteSpace(_subProjectFilter)
+            || p.Name.Contains(_subProjectFilter, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(p => p.Name)
+        .ToList();
+
+    private async Task AddSubProjectFromPalette(ProjectResponse project)
+    {
+        _showSubProjectPanel = false;
+        _subProjectFilter = "";
+        await OnAddSubProject.InvokeAsync(project.Id);
     }
     private void ToggleCategory(string key)
     {
@@ -1228,6 +1341,12 @@
             var isSkipped = GetModuleConfigBool(pm.Id, "skipped", false);
             var activeRulesCount = GetActiveRules(pm).Count;
 
+            // Para nodos de sub-proyecto, serializa los pasos del proyecto insertado
+            // para pintarlos dentro de la tarjeta grande.
+            var subStepsJson = pm.ModuleType == "SubProject" && pm.SubProject is not null
+                ? JsonSerializer.Serialize(pm.SubProject.Steps.Select(s => new { name = s.Name, moduleType = s.ModuleType }))
+                : null;
+
             await JS.InvokeVoidAsync("pipelineEditor.addNode",
                 pm.Id.ToString(),
                 pm.StepName ?? pm.AiModuleName,
@@ -1238,10 +1357,11 @@
                 JsonSerializer.Serialize(outputs),
                 pos.X, pos.Y,
                 stepLabel,
-                pm.ModelName,
+                pm.ModuleType == "SubProject" ? "" : pm.ModelName,
                 warning,
                 isSkipped,
-                activeRulesCount);
+                activeRulesCount,
+                subStepsJson);
 
             idx++;
         }

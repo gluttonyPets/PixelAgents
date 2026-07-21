@@ -49,7 +49,15 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
         string? StepName, string? Configuration, bool IsActive,
         double PosX = 0, double PosY = 0,
-        List<OrchestratorOutputResponse>? OrchestratorOutputs = null);
+        List<OrchestratorOutputResponse>? OrchestratorOutputs = null,
+        Guid? SubProjectId = null, SubProjectSummaryDto? SubProject = null);
+
+    // ── Sub-proyectos encadenados ──
+    // Un nodo "SubProject" ejecuta un proyecto entero como un unico modulo.
+    public record AddSubProjectRequest(Guid SubProjectId, string? StepName);
+    // Resumen del proyecto insertado para pintar la "tarjeta grande" con sus pasos.
+    public record SubProjectSummaryDto(Guid Id, string Name, List<SubProjectStepDto> Steps);
+    public record SubProjectStepDto(string Name, string ModuleType);
 
     // ── ModuleConnection ──
     public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort, string? Format = null);

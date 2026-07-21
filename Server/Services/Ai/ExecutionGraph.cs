@@ -243,6 +243,7 @@ public class ExecutionGraph
             "Interaction" => ("output_response", "text"),
             "Design" => ("output_file", "file"),
             "Publish" => ("output_result", "text"),
+            "SubProject" => ("output", "any"),
             "Embeddings" => ("output_embedding", "file"),
             "Checkpoint" => ("output_1", "any"),
             _ => ("output_data", "any"),

@@ -52,7 +52,13 @@ public record ProjectModuleResponse(
     Guid Id, Guid AiModuleId, string AiModuleName, string ModuleType, string ModelName,
     string? StepName, string? Configuration, bool IsActive,
     double PosX = 0, double PosY = 0,
-    List<OrchestratorOutputResponse>? OrchestratorOutputs = null);
+    List<OrchestratorOutputResponse>? OrchestratorOutputs = null,
+    Guid? SubProjectId = null, SubProjectSummaryDto? SubProject = null);
+
+// ── Sub-proyectos encadenados ──
+public record AddSubProjectRequest(Guid SubProjectId, string? StepName);
+public record SubProjectSummaryDto(Guid Id, string Name, List<SubProjectStepDto> Steps);
+public record SubProjectStepDto(string Name, string ModuleType);
 
 // ── ModuleConnection ──
 public record ModuleConnectionResponse(Guid Id, Guid FromModuleId, string FromPort, Guid ToModuleId, string ToPort, string? Format = null);

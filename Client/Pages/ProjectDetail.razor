@@ -105,9 +105,11 @@ else
                             ProjectId="_project.Id"
                             Modules="_project.Modules.ToList()"
                             AvailableModules="_modules"
+                            AvailableProjects="_allProjects"
                             Connections="_projectConnections"
                             TenantRules="_tenantRules"
                             OnAddModule="AddModuleFromCanvas"
+                            OnAddSubProject="AddSubProjectFromCanvas"
                             OnRemoveModule="RemoveModuleFromCanvas"
                             OnModulesChanged="LoadAll"
                             OnSaveGraph="SaveGraph"
@@ -1600,6 +1602,7 @@ else
 
     private ProjectDetailResponse? _project;
     private List<AiModuleResponse> _modules = [];
+    private List<ProjectResponse> _allProjects = [];
     private List<ExecutionResponse> _executions = [];
     private List<RuleResponse> _tenantRules = [];
     private ExecutionDetailResponse? _result;
@@ -2051,6 +2054,7 @@ else
             // Immediately grab connections so they're available on first render
             _projectConnections = _project?.Connections ?? new();
             _modules = await Api.GetModulesAsync();
+            try { _allProjects = await Api.GetProjectsAsync(); } catch { _allProjects = []; }
             _executions = await Api.GetExecutionsAsync(ProjectId);
             try { _tenantRules = await Api.GetRulesAsync(); } catch { _tenantRules = []; }
             // Check if latest execution is running, waiting for checkpoint, or waiting for orchestrator review
@@ -2133,6 +2137,22 @@ else
         {
             var req = new AddProjectModuleRequest(moduleId, null, null);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
+            if (ok) await LoadAll();
+            else _editError = error;
+        }
+        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
+        _loading = false;
+    }
+
+    private async Task AddSubProjectFromCanvas(Guid subProjectId)
+    {
+        _stepError = null;
+        _editError = null;
+        _loading = true;
+        try
+        {
+            var req = new AddSubProjectRequest(subProjectId, null);
+            var (ok, error) = await Api.AddSubProjectAsync(ProjectId, req);
             if (ok) await LoadAll();
             else _editError = error;
         }

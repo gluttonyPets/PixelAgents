@@ -2601,6 +2601,66 @@ a.link:hover { text-decoration: underline; }
     text-overflow: ellipsis;
 }
 
+/* ── Sub-proyecto: tarjeta grande con los pasos del proyecto insertado ── */
+.drawflow .drawflow-node.df-type-subproject {
+    width: 240px;
+}
+.df-subproject-card {
+    padding: 0.2rem 0.35rem 0.35rem;
+}
+.df-subproject-steps {
+    margin-top: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+.df-subproject-step {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.68rem;
+    line-height: 1.3;
+    padding: 0.15rem 0.3rem;
+    border-radius: 4px;
+    background: rgba(63, 81, 181, 0.08);
+    border: 1px solid rgba(63, 81, 181, 0.18);
+}
+.df-subproject-step-index {
+    flex: 0 0 auto;
+    min-width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55rem;
+    font-weight: 700;
+    border-radius: 50%;
+    background: #3f51b5;
+    color: #fff;
+}
+.df-subproject-step-name {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+}
+.df-subproject-step-type {
+    flex: 0 0 auto;
+    font-size: 0.55rem;
+    opacity: 0.55;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+.df-subproject-empty {
+    font-size: 0.68rem;
+    opacity: 0.6;
+    font-style: italic;
+    padding: 0.2rem 0.3rem;
+}
+
 /* ── Node port summary (on card) ── */
 .df-node-ports-summary {
     display: flex;

@@ -863,6 +863,12 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (node.ModuleType == "Publish")
             return await ExecutePublishNodeAsync(ctx);
 
+        // Un sub-proyecto ejecuta un pipeline entero: no se le aplica el timeout
+        // de 10 min por modulo (cada modulo interno ya tiene el suyo). Solo respeta
+        // la cancelacion del usuario, que se propaga por ct via ctx.CancellationToken.
+        if (node.ModuleType == "SubProject")
+            return await handler.ExecuteAsync(ctx);
+
         if (node.ModuleType == "Start")
         {
             var summaryMsg = string.IsNullOrWhiteSpace(previousSummaryContext)

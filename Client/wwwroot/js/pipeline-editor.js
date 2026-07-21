@@ -173,11 +173,13 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
-        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0);
+        var subSteps = [];
+        if (subStepsJson) { try { subSteps = JSON.parse(subStepsJson) || []; } catch (e) { subSteps = []; } }
+        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps);
         var cssClass = 'df-type-' + moduleType.toLowerCase();
         if (skipped) cssClass += ' df-state-skipped';
         var nodeId = this._editor.addNode(
@@ -478,7 +480,44 @@ window.pipelineEditor = {
         });
     },
 
-    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount, activeRulesCount) {
+    _escapeHtml: function (s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    },
+
+    _buildSubProjectSteps: function (subSteps) {
+        // Tarjeta grande: lista los pasos internos del proyecto insertado para
+        // que se vea de un vistazo que hace ese proyecto.
+        if (!subSteps || subSteps.length === 0) {
+            return '<div class="df-subproject-steps df-subproject-empty">Proyecto sin pasos</div>';
+        }
+        var self = this;
+        var rows = subSteps.map(function (s, i) {
+            return '<div class="df-subproject-step">'
+                + '<span class="df-subproject-step-index">' + (i + 1) + '</span>'
+                + '<i class="bi ' + self._moduleIcon(s.moduleType) + '"></i>'
+                + '<span class="df-subproject-step-name">' + self._escapeHtml(s.name) + '</span>'
+                + '<span class="df-subproject-step-type">' + self._escapeHtml(s.moduleType) + '</span>'
+                + '</div>';
+        }).join('');
+        return '<div class="df-subproject-steps">' + rows + '</div>';
+    },
+
+    // Iconos por tipo, en paralelo a ModulePortRegistry.GetModuleIcon del cliente.
+    _moduleIcon: function (type) {
+        var map = {
+            Text: 'bi-chat-left-text', Image: 'bi-image', Audio: 'bi-volume-up',
+            Transcription: 'bi-mic', Orchestrator: 'bi-diagram-3', Design: 'bi-palette',
+            Interaction: 'bi-chat-dots', Publish: 'bi-send', ShopifyBlog: 'bi-shop',
+            Embeddings: 'bi-grid-3x3', Checkpoint: 'bi-check-circle', FileUpload: 'bi-paperclip',
+            Scene: 'bi-layers', StaticText: 'bi-fonts', Start: 'bi-play-circle',
+            SubProject: 'bi-diagram-2'
+        };
+        return map[type] || 'bi-gear';
+    },
+
+    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount, activeRulesCount, subSteps) {
         var orderBadge = stepLabel
             ? '<span class="df-order-badge">' + stepLabel + '</span>'
             : '<span class="df-order-badge" style="display:none"></span>';
@@ -491,6 +530,18 @@ window.pipelineEditor = {
         var warningLine = warning
             ? '<div class="df-node-warning">' + warning + '</div>'
             : '';
+
+        // Nodo de sub-proyecto: tarjeta grande con los pasos del proyecto insertado.
+        if (type === 'SubProject') {
+            return '<div class="df-node-content df-subproject-card" style="border-left: 3px solid ' + color + ';">'
+                + '<div class="df-node-overlay-spinner"></div>'
+                + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + this._escapeHtml(name) + rulesBadge + '</div>'
+                + '<div class="df-node-type">Sub-proyecto</div>'
+                + this._buildSubProjectSteps(subSteps)
+                + warningLine
+                + '</div>';
+        }
+
         var portSummary = '';
         if ((inputCount || 0) > 0 || (outputCount || 0) > 0) {
             portSummary = '<div class="df-node-ports-summary">';

@@ -252,6 +252,13 @@ public static class ModulePortRegistry
                 ports.Add(new("output_prompt", "Prompt", PortDataType.Text, isInput: false));
                 break;
 
+            case "SubProject":
+                // Un unico puerto de entrada (alimenta el Inicio del proyecto insertado)
+                // y un unico puerto de salida (la salida terminal de ese proyecto).
+                ports.Add(new("input", "Entrada", PortDataType.Any, isInput: true, isRequired: true, allowMultiple: true));
+                ports.Add(new("output", "Salida", PortDataType.Any, isInput: false));
+                break;
+
             default:
                 ports.Add(new("input_data", "Entrada", PortDataType.Any, isInput: true));
                 ports.Add(new("output_data", "Salida", PortDataType.Any, isInput: false));
@@ -278,6 +285,7 @@ public static class ModulePortRegistry
         "Scene" => "bi-layers",
         "StaticText" => "bi-fonts",
         "Start" => "bi-play-circle",
+        "SubProject" => "bi-diagram-2",
         _ => "bi-gear"
     };
 
@@ -298,6 +306,7 @@ public static class ModulePortRegistry
         "Scene" => "#ff7043",
         "StaticText" => "#5c6bc0",
         "Start" => "#43a047",
+        "SubProject" => "#3f51b5",
         _ => "#888"
     };
 }

@@ -189,6 +189,12 @@ namespace Server.Services
             RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosX"" double precision NOT NULL DEFAULT 0", log);
             RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""PosY"" double precision NOT NULL DEFAULT 0", log);
 
+            // ── Sub-proyectos encadenados: un nodo "SubProject" referencia otro Project
+            //    que se ejecuta completo como un unico modulo. ON DELETE SET NULL para
+            //    que borrar el proyecto insertado deje el nodo huerfano (fallara con un
+            //    mensaje claro) en vez de arrastrar el pipeline padre. ──
+            RunSafe(ctx, @"ALTER TABLE ""ProjectModules"" ADD COLUMN IF NOT EXISTS ""SubProjectId"" uuid REFERENCES ""Projects""(""Id"") ON DELETE SET NULL", log);
+
             // ── Visual graph: dedicated connections table ──
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ModuleConnections"" (
