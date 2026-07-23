@@ -97,6 +97,9 @@ builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundS
 builder.Services.AddTransient<IPipelineExecutor, GraphPipelineExecutor>();
 builder.Services.AddScoped<IPromptPlannerService, PromptPlannerService>();
 builder.Services.AddScoped<IPromptBuilderService, PromptBuilderService>();
+// Analista de aprendizaje: self-contained (crea su propio DbContext), singleton para
+// poder dispararlo en segundo plano tras un abort sin depender del scope de la petición.
+builder.Services.AddSingleton<ILearningAnalysisService, LearningAnalysisService>();
 builder.Services.AddSingleton<ExecutionCancellationService>();
 builder.Services.AddSingleton<IExecutionLogger, SignalRExecutionLogger>();
 builder.Services.AddSignalR();
@@ -1938,6 +1941,95 @@ app.MapGet("/api/executions/{executionId}/feedback", async (
         .ToListAsync();
 
     return Results.Ok(feedback);
+}).RequireAuthorization();
+
+// ── Aprendizaje: config del modelo analista, documento vivo e histórico ──
+
+// Modelos disponibles para el analista (texto, filtrados por API keys), con flag multimodal.
+app.MapGet("/api/analyst/models", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IPromptBuilderService builderSvc, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var models = await builderSvc.GetAvailableModelsAsync(db, ct);
+    return Results.Ok(models
+        .Select(m => new AnalystModelOption(m.Provider, m.ModelName, m.DisplayName,
+            Server.Services.Ai.VisionCapability.IsVisionCapable(m.Provider, m.ModelName)))
+        .ToList());
+}).RequireAuthorization();
+
+app.MapGet("/api/projects/{projectId}/learning-config", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var p = await db.Projects.FindAsync(projectId);
+    if (p is null) return Results.NotFound();
+
+    var multimodal = !string.IsNullOrWhiteSpace(p.AnalystModelProvider)
+        && !string.IsNullOrWhiteSpace(p.AnalystModelName)
+        && Server.Services.Ai.VisionCapability.IsVisionCapable(p.AnalystModelProvider!, p.AnalystModelName!);
+
+    return Results.Ok(new LearningConfigResponse(p.LearningEnabled, p.AnalystModelProvider, p.AnalystModelName, multimodal));
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId}/learning-config", async (
+    Guid projectId, UpdateLearningConfigRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var p = await db.Projects.FindAsync(projectId);
+    if (p is null) return Results.NotFound();
+
+    p.LearningEnabled = req.Enabled;
+    p.AnalystModelProvider = string.IsNullOrWhiteSpace(req.Provider) ? null : req.Provider;
+    p.AnalystModelName = string.IsNullOrWhiteSpace(req.ModelName) ? null : req.ModelName;
+    p.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    var multimodal = !string.IsNullOrWhiteSpace(p.AnalystModelProvider)
+        && !string.IsNullOrWhiteSpace(p.AnalystModelName)
+        && Server.Services.Ai.VisionCapability.IsVisionCapable(p.AnalystModelProvider!, p.AnalystModelName!);
+    return Results.Ok(new LearningConfigResponse(p.LearningEnabled, p.AnalystModelProvider, p.AnalystModelName, multimodal));
+}).RequireAuthorization();
+
+app.MapGet("/api/projects/{projectId}/learning", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var doc = await db.ProjectLearningDocs.FirstOrDefaultAsync(d => d.ProjectId == projectId);
+    var entries = await db.LearningEntries
+        .Where(e => e.ProjectId == projectId)
+        .OrderByDescending(e => e.CreatedAt)
+        .Take(100)
+        .Select(e => new LearningEntryResponse(
+            e.Id, e.ExecutionId, e.AnalystModel, e.UserComment,
+            e.AttributionsJson, e.ImageCritique, e.Conclusion,
+            e.DocAction, e.DocChange, e.Status, e.Error, e.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(new LearningDocResponse(
+        doc?.Content ?? "", doc?.ActiveLearningsJson, doc?.UpdatedAt, entries));
+}).RequireAuthorization();
+
+// Descarga del documento vivo como texto plano (markdown).
+app.MapGet("/api/projects/{projectId}/learning/download", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var doc = await db.ProjectLearningDocs.FirstOrDefaultAsync(d => d.ProjectId == projectId);
+    var content = doc?.Content ?? "# Aprendizaje del proyecto\n\n(todavía no hay aprendizajes registrados)";
+    var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+    return Results.File(bytes, "text/markdown; charset=utf-8", $"aprendizaje-{projectId}.md");
 }).RequireAuthorization();
 
 // Get persisted logs for an execution

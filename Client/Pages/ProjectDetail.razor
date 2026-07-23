@@ -855,6 +855,13 @@ else
                                                                     <div class="exec-io-block">@inputParsed.MandatoryRules</div>
                                                                 </div>
                                                             }
+                                                            @if (!string.IsNullOrWhiteSpace(inputParsed.PastExecutionsLearning))
+                                                            {
+                                                                <div class="exec-io-section exec-io-learning">
+                                                                    <div class="exec-io-title exec-io-learning-title">🧠 Aprendizaje de ejecuciones pasadas</div>
+                                                                    <div class="exec-io-block">@inputParsed.PastExecutionsLearning</div>
+                                                                </div>
+                                                            }
                                                             @if (inputParsed.SystemPrompt is not null)
                                                             {
                                                                 <div class="exec-io-section">
@@ -1128,6 +1135,10 @@ else
                     <button class="settings-tab @(_settingsTab == "schedule" ? "settings-tab-active" : "")"
                             @onclick='() => _settingsTab = "schedule"'>
                         Programacion
+                    </button>
+                    <button class="settings-tab @(_settingsTab == "learning" ? "settings-tab-active" : "")"
+                            @onclick="OpenLearningTab">
+                        Aprendizaje
                     </button>
                 </div>
 
@@ -1460,6 +1471,123 @@ else
                             </div>
                         </div>
                     }
+
+                    <!-- APRENDIZAJE TAB -->
+                    @if (_settingsTab == "learning")
+                    {
+                        <div class="settings-block">
+                            <div class="settings-block-header">
+                                <strong>Analista de aprendizaje</strong>
+                                @if (_learningEnabled && !string.IsNullOrWhiteSpace(_analystModelSel))
+                                {
+                                    <span class="badge badge-success">Activo</span>
+                                }
+                            </div>
+                            <p class="text-sm text-muted">
+                                Cuando abortes una ejecución desde Telegram y dejes un comentario, este modelo analiza
+                                qué falló, a qué módulo culpar y destila el aprendizaje en el documento vivo del proyecto.
+                                Ese aprendizaje se inyecta luego —como capa aparte, sin tocar tus prompts— en las
+                                siguientes ejecuciones.
+                            </p>
+
+                            @if (_learningMsg is not null)
+                            {
+                                <div class="alert alert-success">@_learningMsg</div>
+                            }
+
+                            <label class="execute-history-toggle" title="Activa el análisis automático de los abortos con comentario">
+                                <input type="checkbox" @bind="_learningEnabled" />
+                                <span>Activar aprendizaje automático</span>
+                            </label>
+
+                            <div class="form-group">
+                                <label>Modelo analista</label>
+                                <select @bind="_analystModelSel">
+                                    <option value="">-- Sin asignar --</option>
+                                    @foreach (var m in _analystModels)
+                                    {
+                                        <option value="@($"{m.Provider}|{m.ModelName}")">
+                                            @m.DisplayName (@m.Provider)@(m.Multimodal ? "" : " · sin visión")
+                                        </option>
+                                    }
+                                </select>
+                                @if (_analystModels.Count == 0)
+                                {
+                                    <span class="text-sm text-muted">No hay modelos de texto disponibles. Configura una API Key en <a href="/apikeys">API Keys</a>.</span>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(_analystModelSel) && !SelectedAnalystIsMultimodal())
+                                {
+                                    <span class="text-sm" style="color:#b45309;">⚠️ Este modelo no puede analizar imágenes. Para criticar imágenes generadas, elige uno multimodal (Claude, Gemini, GPT‑4o/5…).</span>
+                                }
+                            </div>
+
+                            <button class="btn btn-primary btn-sm" @onclick="SaveLearningConfig" disabled="@_learningSaving">
+                                @(_learningSaving ? "Guardando..." : "Guardar")
+                            </button>
+                        </div>
+
+                        <div class="settings-block">
+                            <div class="settings-block-header">
+                                <strong>Documento vivo del proyecto</strong>
+                                @if (_learningDoc is not null && !string.IsNullOrWhiteSpace(_learningDoc.Content))
+                                {
+                                    <a class="btn btn-secondary btn-sm" href="@($"{_apiBase}/api/projects/{ProjectId}/learning/download")" target="_blank">
+                                        Descargar .md
+                                    </a>
+                                }
+                            </div>
+                            @if (_learningDoc is null || string.IsNullOrWhiteSpace(_learningDoc.Content))
+                            {
+                                <p class="text-sm text-muted">Todavía no hay aprendizajes registrados. Aparecerán aquí cuando abortes ejecuciones con comentario.</p>
+                            }
+                            else
+                            {
+                                @if (_learningDoc.UpdatedAt is not null)
+                                {
+                                    <p class="text-sm text-muted">Última actualización: @_learningDoc.UpdatedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</p>
+                                }
+                                <pre class="exec-io-block" style="max-height: 320px; overflow:auto; white-space: pre-wrap;">@_learningDoc.Content</pre>
+                            }
+                        </div>
+
+                        @if (_learningDoc is not null && _learningDoc.Entries.Count > 0)
+                        {
+                            <div class="settings-block">
+                                <div class="settings-block-header">
+                                    <strong>Histórico de conclusiones (@_learningDoc.Entries.Count)</strong>
+                                </div>
+                                @foreach (var en in _learningDoc.Entries)
+                                {
+                                    <div class="hc-feedback-item @(en.Status == "error" ? "hc-feedback-negative" : "")" style="margin-bottom:0.5rem;">
+                                        <div class="hc-feedback-head">
+                                            <span class="hc-feedback-icon">@(en.Status == "error" ? "⚠️" : "🧠")</span>
+                                            <span class="hc-feedback-source">@LearningActionLabel(en.DocAction)</span>
+                                            <span class="hc-feedback-time">@en.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</span>
+                                        </div>
+                                        @if (en.Status == "error")
+                                        {
+                                            <div class="hc-feedback-comment">Error: @en.Error</div>
+                                        }
+                                        else
+                                        {
+                                            @if (!string.IsNullOrWhiteSpace(en.UserComment))
+                                            {
+                                                <div class="text-sm text-muted" style="margin-bottom:0.2rem;">Comentario: “@en.UserComment”</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(en.Conclusion))
+                                            {
+                                                <div class="hc-feedback-comment">@en.Conclusion</div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(en.ImageCritique))
+                                            {
+                                                <div class="text-sm" style="margin-top:0.2rem;">🖼 @en.ImageCritique</div>
+                                            }
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
                 </div>
             </div>
         </div>
@@ -1636,6 +1764,14 @@ else
     private List<ProjectResponse> _allProjects = [];
     private List<ExecutionResponse> _executions = [];
     private List<ExecutionFeedbackResponse> _projectFeedback = [];
+
+    // ── Aprendizaje ──
+    private List<AnalystModelOption> _analystModels = [];
+    private bool _learningEnabled;
+    private string _analystModelSel = "";
+    private bool _learningSaving;
+    private string? _learningMsg;
+    private LearningDocResponse? _learningDoc;
     private List<RuleResponse> _tenantRules = [];
     private ExecutionDetailResponse? _result;
 
@@ -2890,6 +3026,70 @@ else
         _ => source
     };
 
+    private static string LearningActionLabel(string action) => action switch
+    {
+        "added" => "Aprendizaje añadido",
+        "reinforced" => "Aprendizaje reforzado",
+        "updated" => "Aprendizaje actualizado",
+        "skipped_duplicate" => "Ya conocido (omitido)",
+        "resolved_contradiction" => "Contradicción resuelta",
+        "none" => "Sin cambios",
+        _ => action
+    };
+
+    private bool SelectedAnalystIsMultimodal()
+    {
+        if (string.IsNullOrWhiteSpace(_analystModelSel)) return false;
+        var parts = _analystModelSel.Split('|');
+        if (parts.Length != 2) return false;
+        return _analystModels.Any(m => m.Provider == parts[0] && m.ModelName == parts[1] && m.Multimodal);
+    }
+
+    private async Task OpenLearningTab()
+    {
+        _settingsTab = "learning";
+        _learningMsg = null;
+        try
+        {
+            _analystModels = await Api.GetAnalystModelsAsync();
+            var cfg = await Api.GetLearningConfigAsync(ProjectId);
+            if (cfg is not null)
+            {
+                _learningEnabled = cfg.Enabled;
+                _analystModelSel = (!string.IsNullOrWhiteSpace(cfg.Provider) && !string.IsNullOrWhiteSpace(cfg.ModelName))
+                    ? $"{cfg.Provider}|{cfg.ModelName}" : "";
+            }
+            _learningDoc = await Api.GetLearningAsync(ProjectId);
+        }
+        catch { /* keep UI usable on transient failure */ }
+    }
+
+    private async Task SaveLearningConfig()
+    {
+        _learningSaving = true;
+        _learningMsg = null;
+        try
+        {
+            string? provider = null, modelName = null;
+            if (!string.IsNullOrWhiteSpace(_analystModelSel))
+            {
+                var parts = _analystModelSel.Split('|');
+                if (parts.Length == 2) { provider = parts[0]; modelName = parts[1]; }
+            }
+            var cfg = await Api.UpdateLearningConfigAsync(ProjectId,
+                new UpdateLearningConfigRequest(_learningEnabled, provider, modelName));
+            if (cfg is not null)
+            {
+                _learningEnabled = cfg.Enabled;
+                _analystModelSel = (!string.IsNullOrWhiteSpace(cfg.Provider) && !string.IsNullOrWhiteSpace(cfg.ModelName))
+                    ? $"{cfg.Provider}|{cfg.ModelName}" : "";
+                _learningMsg = "Guardado correctamente";
+            }
+        }
+        catch { _learningMsg = "No se pudo guardar. Inténtalo de nuevo."; }
+        finally { _learningSaving = false; }
+    }
+
     private async Task ToggleHistoryCard(Guid id)
     {
         if (_expandedExecId == id)
@@ -3268,7 +3468,7 @@ else
         catch { return raw; }
     }
 
-    private record ParsedInputData(string? SystemPrompt, string? MandatoryRules, string? ProjectContext, List<string> Prompts, string RawJson);
+    private record ParsedInputData(string? SystemPrompt, string? MandatoryRules, string? ProjectContext, List<string> Prompts, string RawJson, string? PastExecutionsLearning);
 
     private record CheckpointEntry(string Label, string Value);
 
@@ -3337,6 +3537,10 @@ else
             if (root.TryGetProperty("mandatoryRules", out var mrEl) && mrEl.ValueKind == JsonValueKind.String)
                 mandatoryRules = mrEl.GetString();
 
+            string? pastLearning = null;
+            if (root.TryGetProperty("pastExecutionsLearning", out var plEl) && plEl.ValueKind == JsonValueKind.String)
+                pastLearning = plEl.GetString();
+
             // Single prompt
             if (root.TryGetProperty("prompt", out var promptEl) && promptEl.ValueKind == JsonValueKind.String)
             {
@@ -3357,7 +3561,7 @@ else
             // Pretty-print the raw JSON for fallback/non-AI steps
             var rawJson = JsonSerializer.Serialize(doc.RootElement, PrettyJsonOptions);
 
-            return new ParsedInputData(systemPrompt, mandatoryRules, projectContext, prompts, rawJson);
+            return new ParsedInputData(systemPrompt, mandatoryRules, projectContext, prompts, rawJson, pastLearning);
         }
         catch { return null; }
     }

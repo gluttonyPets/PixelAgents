@@ -16,6 +16,7 @@ namespace Server.Services.Telegram
         private readonly IPipelineExecutor _executor;
         private readonly TelegramService _telegram;
         private readonly IPromptPlannerService _planner;
+        private readonly ILearningAnalysisService _learning;
 
         // Defaults used when the user asks for a new planning from Telegram.
         private const string PlanningModel = "gpt-4o-mini";
@@ -36,13 +37,15 @@ namespace Server.Services.Telegram
             ITenantDbContextFactory factory,
             IPipelineExecutor executor,
             TelegramService telegram,
-            IPromptPlannerService planner)
+            IPromptPlannerService planner,
+            ILearningAnalysisService learning)
         {
             _coreDb = coreDb;
             _factory = factory;
             _executor = executor;
             _telegram = telegram;
             _planner = planner;
+            _learning = learning;
         }
 
         private class EditFlowState
@@ -199,7 +202,7 @@ namespace Server.Services.Telegram
                     {
                         try
                         {
-                            db.ExecutionFeedbacks.Add(new ExecutionFeedback
+                            var fb = new ExecutionFeedback
                             {
                                 Id = Guid.NewGuid(),
                                 ExecutionId = correlation.ExecutionId,
@@ -208,8 +211,15 @@ namespace Server.Services.Telegram
                                 Comment = comment,
                                 Source = "telegram_abort",
                                 CreatedAt = DateTime.UtcNow,
-                            });
+                            };
+                            db.ExecutionFeedbacks.Add(fb);
                             await db.SaveChangesAsync();
+
+                            // Dispara el analista de aprendizaje en segundo plano (self-contained:
+                            // crea su propio DbContext, así que no depende de este scope). Fire-and-forget.
+                            var tenantForLearning = correlation.TenantDbName;
+                            var feedbackId = fb.Id;
+                            _ = Task.Run(() => _learning.AnalyzeAbortAsync(tenantForLearning, feedbackId));
                         }
                         catch (Exception ex)
                         {

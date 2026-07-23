@@ -358,6 +358,34 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ExecutionFeedbackResponse>>() ?? [];
     }
 
+    public async Task<List<AnalystModelOption>> GetAnalystModelsAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/analyst/models");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<AnalystModelOption>>() ?? [];
+    }
+
+    public async Task<LearningConfigResponse?> GetLearningConfigAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/learning-config");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<LearningConfigResponse>();
+    }
+
+    public async Task<LearningConfigResponse?> UpdateLearningConfigAsync(Guid projectId, UpdateLearningConfigRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/learning-config", req);
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<LearningConfigResponse>();
+    }
+
+    public async Task<LearningDocResponse?> GetLearningAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/learning");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<LearningDocResponse>();
+    }
+
     public async Task<ExecutionDetailResponse?> GetExecutionDetailAsync(Guid id)
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/executions/{id}");

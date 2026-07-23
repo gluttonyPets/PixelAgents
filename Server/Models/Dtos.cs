@@ -98,6 +98,17 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         Guid Id, Guid ExecutionId, Guid? StepExecutionId, Guid? ProjectModuleId,
         string Rating, string? Comment, string Source, DateTime CreatedAt);
 
+    // ── Aprendizaje ──
+    public record AnalystModelOption(string Provider, string ModelName, string DisplayName, bool Multimodal);
+    public record LearningConfigResponse(bool Enabled, string? Provider, string? ModelName, bool Multimodal);
+    public record UpdateLearningConfigRequest(bool Enabled, string? Provider, string? ModelName);
+    public record LearningDocResponse(string Content, string? ActiveLearningsJson, DateTime? UpdatedAt,
+        List<LearningEntryResponse> Entries);
+    public record LearningEntryResponse(
+        Guid Id, Guid ExecutionId, string AnalystModel, string? UserComment,
+        string? AttributionsJson, string? ImageCritique, string? Conclusion,
+        string DocAction, string? DocChange, string Status, string? Error, DateTime CreatedAt);
+
 
     // ── Conexiones de redes sociales (Buffer) reutilizables ──
     public record SocialConnectionResponse(Guid Id, string Name, string Platform,

@@ -103,6 +103,17 @@ public record ExecutionFeedbackResponse(
     Guid Id, Guid ExecutionId, Guid? StepExecutionId, Guid? ProjectModuleId,
     string Rating, string? Comment, string Source, DateTime CreatedAt);
 
+// ── Aprendizaje ──
+public record AnalystModelOption(string Provider, string ModelName, string DisplayName, bool Multimodal);
+public record LearningConfigResponse(bool Enabled, string? Provider, string? ModelName, bool Multimodal);
+public record UpdateLearningConfigRequest(bool Enabled, string? Provider, string? ModelName);
+public record LearningDocResponse(string Content, string? ActiveLearningsJson, DateTime? UpdatedAt,
+    List<LearningEntryResponse> Entries);
+public record LearningEntryResponse(
+    Guid Id, Guid ExecutionId, string AnalystModel, string? UserComment,
+    string? AttributionsJson, string? ImageCritique, string? Conclusion,
+    string DocAction, string? DocChange, string Status, string? Error, DateTime CreatedAt);
+
 // ── Execution Logs ──
 public record ExecutionLogResponse(
     string Level, string Message, Guid? ProjectModuleId, string? ModuleName, DateTime Timestamp);
