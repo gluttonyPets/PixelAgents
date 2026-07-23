@@ -263,6 +263,43 @@ namespace Server.Services
                     ""CreatedAt"" timestamp with time zone NOT NULL
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ExecutionFeedbacks_ExecutionId"" ON ""ExecutionFeedbacks"" (""ExecutionId"")", log);
+
+            // ── Config del modelo analista por proyecto ──
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""LearningEnabled"" boolean NOT NULL DEFAULT false", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""AnalystModelProvider"" varchar(100)", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""AnalystModelName"" varchar(200)", log);
+
+            // ── Documento vivo de aprendizaje (uno por proyecto) ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ProjectLearningDocs"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
+                    ""Content"" text NOT NULL DEFAULT '',
+                    ""ActiveLearningsJson"" text,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectLearningDocs_ProjectId"" ON ""ProjectLearningDocs"" (""ProjectId"")", log);
+
+            // ── Histórico de análisis de aprendizaje (append-only) ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""LearningEntries"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ProjectId"" uuid NOT NULL,
+                    ""ExecutionId"" uuid NOT NULL,
+                    ""FeedbackId"" uuid,
+                    ""AnalystModel"" varchar(200) NOT NULL DEFAULT '',
+                    ""UserComment"" text,
+                    ""AttributionsJson"" text,
+                    ""ImageCritique"" text,
+                    ""Conclusion"" text,
+                    ""DocAction"" varchar(40) NOT NULL DEFAULT 'none',
+                    ""DocChange"" text,
+                    ""Status"" varchar(20) NOT NULL DEFAULT 'ok',
+                    ""Error"" text,
+                    ""CreatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_LearningEntries_ProjectId"" ON ""LearningEntries"" (""ProjectId"")", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_LearningEntries_ExecutionId"" ON ""LearningEntries"" (""ExecutionId"")", log);
         }
 
         private static void RunSafe(UserDbContext ctx, string sql, ILogger? log = null)

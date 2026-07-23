@@ -86,6 +86,8 @@ namespace Server.Services.Ai
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
             if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
                 systemParts.Add(context.PreviousExecutionsSummary);
+            if (!string.IsNullOrWhiteSpace(context.PastExecutionsLearning))
+                systemParts.Add(context.PastExecutionsLearning!);
             messages.Add(new SystemChatMessage(string.Join("\n\n", systemParts)));
 
             if (context.InputFiles is { Count: > 0 })

@@ -13,6 +13,10 @@ namespace Server.Models
         /// into the system prompt of every AI call so the model always honours
         /// the global rules configured in /rules.</summary>
         public string? MandatoryRules { get; set; }
+        /// <summary>Bloque etiquetado "Aprendizaje de ejecuciones pasadas", inyectado como
+        /// capa aparte en el system prompt. NUNCA modifica el prompt del usuario: se añade
+        /// como bloque adicional. Lo produce el analista de aprendizaje a partir de abortos.</summary>
+        public string? PastExecutionsLearning { get; set; }
         public Dictionary<string, object> Configuration { get; set; } = new();
         public List<byte[]>? InputFiles { get; set; }
         /// <summary>

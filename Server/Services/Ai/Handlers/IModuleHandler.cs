@@ -53,6 +53,10 @@ public class ModuleExecutionContext
     public string? PreviousSummaryContext { get; init; }
     /// <summary>Pre-joined mandatory rules from the tenant Rules table.</summary>
     public string? MandatoryRules { get; init; }
+    /// <summary>Bloque etiquetado de "Aprendizaje de ejecuciones pasadas" que aplica a este
+    /// módulo (aprendizajes generales + los específicos del módulo). Se inyecta como capa
+    /// aparte; nunca modifica el prompt configurado por el usuario.</summary>
+    public string? PastExecutionsLearning { get; init; }
     // Changed from 'init' to 'set' to allow timeout/cancellation token updates in GraphPipelineExecutor
     public CancellationToken CancellationToken { get; set; }
 

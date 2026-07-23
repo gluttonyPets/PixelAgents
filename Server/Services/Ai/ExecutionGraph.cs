@@ -18,6 +18,10 @@ public class ExecutionGraph
     /// into every AI provider call.</summary>
     public string? MandatoryRules { get; set; }
 
+    /// <summary>Aprendizajes activos del proyecto en JSON (ProjectLearningDoc.ActiveLearningsJson).
+    /// Se carga una vez por ejecución; cada nodo filtra los que le aplican para inyectarlos.</summary>
+    public string? ActiveLearningsJson { get; set; }
+
     /// <summary>
     /// Build the execution graph from DB entities.
     /// </summary>

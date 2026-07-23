@@ -53,6 +53,7 @@ public static class StepPayloadBuilder
             ["moduleType"] = aiCtx.ModuleType,
             ["systemPrompt"] = systemPrompt,
             ["mandatoryRules"] = string.IsNullOrWhiteSpace(aiCtx.MandatoryRules) ? null : aiCtx.MandatoryRules,
+            ["pastExecutionsLearning"] = string.IsNullOrWhiteSpace(aiCtx.PastExecutionsLearning) ? null : aiCtx.PastExecutionsLearning,
             ["projectContext"] = string.IsNullOrWhiteSpace(aiCtx.ProjectContext) ? null : aiCtx.ProjectContext,
             ["previousExecutionsSummary"] = string.IsNullOrWhiteSpace(aiCtx.PreviousExecutionsSummary) ? null : aiCtx.PreviousExecutionsSummary,
             ["prompt"] = aiCtx.Input,
@@ -80,6 +81,7 @@ public static class StepPayloadBuilder
     {
         aiCtx.Input                     = NormalizeText(aiCtx.Input) ?? aiCtx.Input;
         aiCtx.MandatoryRules            = NormalizeText(aiCtx.MandatoryRules);
+        aiCtx.PastExecutionsLearning    = NormalizeText(aiCtx.PastExecutionsLearning);
         aiCtx.ProjectContext            = NormalizeText(aiCtx.ProjectContext);
         aiCtx.PreviousExecutionsSummary = NormalizeText(aiCtx.PreviousExecutionsSummary);
 

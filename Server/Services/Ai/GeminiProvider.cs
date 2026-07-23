@@ -99,6 +99,8 @@ namespace Server.Services.Ai
                 systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
             if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
                 systemParts.Add(context.PreviousExecutionsSummary);
+            if (!string.IsNullOrWhiteSpace(context.PastExecutionsLearning))
+                systemParts.Add(context.PastExecutionsLearning!);
 
             var config = new GenerateContentConfig
             {

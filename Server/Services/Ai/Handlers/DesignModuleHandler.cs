@@ -33,6 +33,7 @@ public class DesignModuleHandler : IModuleHandler
             Input = prompt,
             ProjectContext = ctx.Project.Context,
             MandatoryRules = ctx.MandatoryRules,
+            PastExecutionsLearning = ctx.PastExecutionsLearning,
             Configuration = ctx.Config,
             CancellationToken = ctx.CancellationToken,
         };

@@ -54,6 +54,7 @@ public class ImageModuleHandler : IModuleHandler
             ProjectContext = ctx.Project.Context,
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
             MandatoryRules = ctx.MandatoryRules,
+            PastExecutionsLearning = ctx.PastExecutionsLearning,
             Configuration = ctx.Config,
             InputFiles = inputFiles,
             CancellationToken = ctx.CancellationToken,

@@ -8,6 +8,14 @@ namespace Server.Models
         public string? Context { get; set; }
         public string? GraphLayout { get; set; }
 
+        // ── Aprendizaje: modelo "analista" que procesa el feedback de abortos ──
+        /// <summary>Si está activo, cada abort con comentario dispara el analista de aprendizaje.</summary>
+        public bool LearningEnabled { get; set; }
+        /// <summary>Proveedor del modelo analista (OpenAI, Anthropic, Google, xAI).</summary>
+        public string? AnalystModelProvider { get; set; }
+        /// <summary>Nombre del modelo analista (debe ser multimodal para analizar imágenes).</summary>
+        public string? AnalystModelName { get; set; }
+
         // ── Conexiones asignadas (credenciales reutilizables definidas globalmente) ──
         public Guid? InstagramConnectionId { get; set; }
         public Guid? TikTokConnectionId { get; set; }

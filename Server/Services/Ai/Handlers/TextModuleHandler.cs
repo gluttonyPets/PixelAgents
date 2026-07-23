@@ -98,6 +98,7 @@ public class TextModuleHandler : IModuleHandler
             ProjectContext = ctx.Project.Context,
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
             MandatoryRules = ctx.MandatoryRules,
+            PastExecutionsLearning = ctx.PastExecutionsLearning,
             Configuration = ctx.Config,
             InputFiles = inputFiles.Count > 0 ? inputFiles : null,
             InputFileMetas = inputFileMetas.Count > 0 ? inputFileMetas : null,

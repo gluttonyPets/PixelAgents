@@ -26,6 +26,8 @@ namespace Server.Data
         public DbSet<PlannedPrompt> PlannedPrompts => Set<PlannedPrompt>();
         public DbSet<PromptVersion> PromptVersions => Set<PromptVersion>();
         public DbSet<ExecutionFeedback> ExecutionFeedbacks => Set<ExecutionFeedback>();
+        public DbSet<ProjectLearningDoc> ProjectLearningDocs => Set<ProjectLearningDoc>();
+        public DbSet<LearningEntry> LearningEntries => Set<LearningEntry>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -347,6 +349,32 @@ namespace Server.Data
                     .HasForeignKey(x => x.ExecutionId)
                     .OnDelete(DeleteBehavior.Cascade);
 
+                e.HasIndex(x => x.ExecutionId);
+            });
+
+            // ── ProjectLearningDoc ──
+            modelBuilder.Entity<ProjectLearningDoc>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Content).HasColumnType("text");
+                e.Property(x => x.ActiveLearningsJson).HasColumnType("text");
+                e.HasIndex(x => x.ProjectId).IsUnique();
+            });
+
+            // ── LearningEntry ──
+            modelBuilder.Entity<LearningEntry>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.AnalystModel).HasMaxLength(200);
+                e.Property(x => x.UserComment).HasColumnType("text");
+                e.Property(x => x.AttributionsJson).HasColumnType("text");
+                e.Property(x => x.ImageCritique).HasColumnType("text");
+                e.Property(x => x.Conclusion).HasColumnType("text");
+                e.Property(x => x.DocAction).IsRequired().HasMaxLength(40).HasDefaultValue("none");
+                e.Property(x => x.DocChange).HasColumnType("text");
+                e.Property(x => x.Status).IsRequired().HasMaxLength(20).HasDefaultValue("ok");
+                e.Property(x => x.Error).HasColumnType("text");
+                e.HasIndex(x => x.ProjectId);
                 e.HasIndex(x => x.ExecutionId);
             });
 

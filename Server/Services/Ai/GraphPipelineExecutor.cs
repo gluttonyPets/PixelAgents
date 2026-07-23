@@ -101,6 +101,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var modules = project.ProjectModules.Where(pm => pm.IsActive).ToList();
         var graph = BuildGraph(projectId, execution, userInput, modules, connections);
         graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
+        graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         graph.MarkInitialReadyNodes();
         var previousSummaryContext = useHistory
             ? await BuildPreviousSummaryContextAsync(db, projectId, executionId, ct)
@@ -150,6 +151,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var connections = await LoadConnectionsAsync(project.Id, db, ct);
         var graph = BuildGraph(project.Id, execution, execution.UserInput, modules, connections);
         graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
+        graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
         Directory.CreateDirectory(workspacePath);
 
@@ -844,6 +846,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
             PublicBaseUrl = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/'),
             PreviousSummaryContext = previousSummaryContext,
             MandatoryRules = graph.MandatoryRules,
+            PastExecutionsLearning = LearningInjection.BuildBlock(
+                graph.ActiveLearningsJson, node.AiModule.Name, node.ProjectModule.StepName),
             CancellationToken = ct,
             InputsByPort = node.InputPorts.ToDictionary(p => p.PortId, p => p.ReceivedData.ToList()),
             Config = MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration),
@@ -1746,6 +1750,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var connections = await LoadConnectionsAsync(project.Id, db, ct);
         var graph = BuildGraph(project.Id, execution, state.UserInput ?? execution.UserInput, modules, connections);
         graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
+        graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         state.RestoreInto(graph);
 
         var stepExecutions = await db.StepExecutions
@@ -2207,6 +2212,15 @@ public class GraphPipelineExecutor : IPipelineExecutor
         foreach (var r in rules)
             sb.AppendLine($"- {r.Title}: {r.Content}");
         return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>Carga los aprendizajes activos del proyecto (JSON) para inyectarlos por módulo.</summary>
+    private static async Task<string?> LoadActiveLearningsAsync(UserDbContext db, Guid projectId, CancellationToken ct)
+    {
+        return await db.ProjectLearningDocs
+            .Where(d => d.ProjectId == projectId)
+            .Select(d => d.ActiveLearningsJson)
+            .FirstOrDefaultAsync(ct);
     }
 
     private static async Task<string?> BuildPreviousSummaryContextAsync(
