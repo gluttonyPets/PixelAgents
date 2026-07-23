@@ -21,6 +21,7 @@ namespace Server.Models
         /// Tracks the correlation state: "waiting" (default), "awaiting_restart" (waiting for restart clarification text),
         /// "edit_select_model" (waiting for the user to pick a model for an edit),
         /// "edit_awaiting_prompt" (waiting for the user's edit prompt text),
+        /// "awaiting_abort_feedback" (pipeline abortado; esperando el comentario del usuario sobre qué ha ido mal),
         /// "awaiting_planning" (a scheduled run had no prompt and is waiting for the user to describe a new planning),
         /// "queued" (message not yet sent — waiting for a prior interaction to resolve first).
         /// </summary>

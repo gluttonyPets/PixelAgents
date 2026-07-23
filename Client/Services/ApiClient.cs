@@ -351,6 +351,13 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ExecutionResponse>>() ?? [];
     }
 
+    public async Task<List<ExecutionFeedbackResponse>> GetProjectFeedbackAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/feedback");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ExecutionFeedbackResponse>>() ?? [];
+    }
+
     public async Task<ExecutionDetailResponse?> GetExecutionDetailAsync(Guid id)
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/executions/{id}");

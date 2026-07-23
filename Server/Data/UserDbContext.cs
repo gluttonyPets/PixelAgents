@@ -25,6 +25,7 @@ namespace Server.Data
         public DbSet<Rule> Rules => Set<Rule>();
         public DbSet<PlannedPrompt> PlannedPrompts => Set<PlannedPrompt>();
         public DbSet<PromptVersion> PromptVersions => Set<PromptVersion>();
+        public DbSet<ExecutionFeedback> ExecutionFeedbacks => Set<ExecutionFeedback>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -331,6 +332,22 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.Cascade);
 
                 e.HasIndex(x => new { x.AiModuleId, x.Field, x.CreatedAt });
+            });
+
+            // ── ExecutionFeedback ──
+            modelBuilder.Entity<ExecutionFeedback>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Rating).IsRequired().HasMaxLength(20).HasDefaultValue("negative");
+                e.Property(x => x.Comment).HasColumnType("text");
+                e.Property(x => x.Source).IsRequired().HasMaxLength(40).HasDefaultValue("telegram_abort");
+
+                e.HasOne(x => x.Execution)
+                    .WithMany()
+                    .HasForeignKey(x => x.ExecutionId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                e.HasIndex(x => x.ExecutionId);
             });
 
             // ── ModuleFile ──

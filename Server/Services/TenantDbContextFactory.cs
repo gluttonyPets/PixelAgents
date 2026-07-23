@@ -249,6 +249,20 @@ namespace Server.Services
                     ""CreatedAt"" timestamp with time zone NOT NULL
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PromptVersions_AiModuleId_Field_CreatedAt"" ON ""PromptVersions"" (""AiModuleId"", ""Field"", ""CreatedAt"")", log);
+
+            // ── Feedback humano sobre ejecuciones (base del bucle de aprendizaje) ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ExecutionFeedbacks"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ExecutionId"" uuid NOT NULL REFERENCES ""ProjectExecutions""(""Id"") ON DELETE CASCADE,
+                    ""StepExecutionId"" uuid,
+                    ""ProjectModuleId"" uuid,
+                    ""Rating"" varchar(20) NOT NULL DEFAULT 'negative',
+                    ""Comment"" text,
+                    ""Source"" varchar(40) NOT NULL DEFAULT 'telegram_abort',
+                    ""CreatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ExecutionFeedbacks_ExecutionId"" ON ""ExecutionFeedbacks"" (""ExecutionId"")", log);
         }
 
         private static void RunSafe(UserDbContext ctx, string sql, ILogger? log = null)

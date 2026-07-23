@@ -94,6 +94,9 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record ExecutionFileResponse(
         Guid Id, string FileName, string ContentType, string FilePath,
         string Direction, long FileSize, DateTime CreatedAt);
+    public record ExecutionFeedbackResponse(
+        Guid Id, Guid ExecutionId, Guid? StepExecutionId, Guid? ProjectModuleId,
+        string Rating, string? Comment, string Source, DateTime CreatedAt);
 
 
     // ── Conexiones de redes sociales (Buffer) reutilizables ──

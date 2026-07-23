@@ -542,6 +542,15 @@ else
                                         {
                                             <span class="hc-cost">~$@e.TotalEstimatedCost.ToString("F4")</span>
                                         }
+                                        @{
+                                            var hdrFeedback = FeedbackFor(e.Id);
+                                        }
+                                        @if (hdrFeedback.Count > 0)
+                                        {
+                                            <span class="hc-feedback-badge" title="Hay feedback del usuario sobre esta ejecución">
+                                                💬 Feedback@(hdrFeedback.Count > 1 ? $" ({hdrFeedback.Count})" : "")
+                                            </span>
+                                        }
                                     </div>
                                     <div class="history-card-prompt">
                                         @if (!string.IsNullOrWhiteSpace(e.UserInput))
@@ -569,6 +578,28 @@ else
                                     .OrderBy(s => s.CreatedAt)
                                     .ToList();
                                 <div class="history-card-body">
+                                    @{
+                                        var bodyFeedback = FeedbackFor(e.Id);
+                                    }
+                                    @if (bodyFeedback.Count > 0)
+                                    {
+                                        <div class="hc-feedback-block">
+                                            @foreach (var fb in bodyFeedback)
+                                            {
+                                                <div class="hc-feedback-item @(fb.Rating == "positive" ? "hc-feedback-positive" : "hc-feedback-negative")">
+                                                    <div class="hc-feedback-head">
+                                                        <span class="hc-feedback-icon">@(fb.Rating == "positive" ? "👍" : "👎")</span>
+                                                        <span class="hc-feedback-source">@FeedbackSourceLabel(fb.Source)</span>
+                                                        <span class="hc-feedback-time">@fb.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</span>
+                                                    </div>
+                                                    @if (!string.IsNullOrWhiteSpace(fb.Comment))
+                                                    {
+                                                        <div class="hc-feedback-comment">@fb.Comment</div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
                                     @if (outputSteps.Count == 0)
                                     {
                                         <p class="text-sm text-muted" style="margin:0;">Sin pasos registrados.</p>
@@ -1604,6 +1635,7 @@ else
     private List<AiModuleResponse> _modules = [];
     private List<ProjectResponse> _allProjects = [];
     private List<ExecutionResponse> _executions = [];
+    private List<ExecutionFeedbackResponse> _projectFeedback = [];
     private List<RuleResponse> _tenantRules = [];
     private ExecutionDetailResponse? _result;
 
@@ -2056,6 +2088,7 @@ else
             _modules = await Api.GetModulesAsync();
             try { _allProjects = await Api.GetProjectsAsync(); } catch { _allProjects = []; }
             _executions = await Api.GetExecutionsAsync(ProjectId);
+            try { _projectFeedback = await Api.GetProjectFeedbackAsync(ProjectId); } catch { _projectFeedback = []; }
             try { _tenantRules = await Api.GetRulesAsync(); } catch { _tenantRules = []; }
             // Check if latest execution is running, waiting for checkpoint, or waiting for orchestrator review
             var latestExec = _executions.FirstOrDefault();
@@ -2836,6 +2869,7 @@ else
         try
         {
             _executions = await Api.GetExecutionsAsync(ProjectId);
+            _projectFeedback = await Api.GetProjectFeedbackAsync(ProjectId);
         }
         catch { /* keep previously loaded list on transient failure */ }
 
@@ -2844,6 +2878,17 @@ else
         _historyStatusFilter = "all";
         _historyPageSize = 20;
     }
+
+    private List<ExecutionFeedbackResponse> FeedbackFor(Guid execId) =>
+        _projectFeedback.Where(f => f.ExecutionId == execId).ToList();
+
+    private static string FeedbackSourceLabel(string source) => source switch
+    {
+        "telegram_abort" => "Telegram · aborto",
+        "telegram" => "Telegram",
+        "web" => "Web",
+        _ => source
+    };
 
     private async Task ToggleHistoryCard(Guid id)
     {

@@ -2174,6 +2174,60 @@ a.link:hover { text-decoration: underline; }
     border-radius: 4px;
 }
 
+.hc-feedback-badge {
+    font-size: 0.7rem;
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.14);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.hc-feedback-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.hc-feedback-item {
+    border-radius: 8px;
+    padding: 0.5rem 0.65rem;
+    border-left: 3px solid var(--border, #ccc);
+    background: var(--bg-input);
+}
+.hc-feedback-negative {
+    border-left-color: #dc2626;
+    background: rgba(220, 38, 38, 0.07);
+}
+.hc-feedback-positive {
+    border-left-color: #16a34a;
+    background: rgba(22, 163, 74, 0.07);
+}
+.hc-feedback-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-bottom: 0.2rem;
+}
+.hc-feedback-source {
+    font-weight: 600;
+}
+.hc-feedback-time {
+    margin-left: auto;
+    font-family: monospace;
+}
+.hc-feedback-comment {
+    font-size: 0.85rem;
+    color: var(--text);
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
 .history-card-prompt {
     min-width: 0;
 }

@@ -183,6 +183,55 @@ namespace Server.Services.Telegram
                     return;
                 }
 
+                // State: awaiting_abort_feedback — el pipeline ya se abortó y estamos esperando
+                // el comentario del usuario sobre qué ha ido mal. Se guarda como feedback negativo
+                // de la ejecución (base del bucle de aprendizaje) y se cierra la correlación.
+                if (correlation.State == "awaiting_abort_feedback")
+                {
+                    var comment = text.Trim();
+                    var skipped = comment.Length == 0
+                        || comment is "-" or "."
+                        || string.Equals(comment, "omitir", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(comment, "skip", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(comment, "no", StringComparison.OrdinalIgnoreCase);
+
+                    if (!skipped)
+                    {
+                        try
+                        {
+                            db.ExecutionFeedbacks.Add(new ExecutionFeedback
+                            {
+                                Id = Guid.NewGuid(),
+                                ExecutionId = correlation.ExecutionId,
+                                ProjectModuleId = correlation.ProjectModuleId == Guid.Empty ? null : correlation.ProjectModuleId,
+                                Rating = "negative",
+                                Comment = comment,
+                                Source = "telegram_abort",
+                                CreatedAt = DateTime.UtcNow,
+                            });
+                            await db.SaveChangesAsync();
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[TG-Update] Failed to save abort feedback for execution {correlation.ExecutionId}: {ex.Message}");
+                        }
+                    }
+
+                    correlation.IsResolved = true;
+                    await _coreDb.SaveChangesAsync();
+
+                    var tgConfigFb = await GetTgConfigAsync();
+                    if (tgConfigFb is not null)
+                    {
+                        var msg = skipped
+                            ? "👍 Ok, sin comentario. Ejecución abortada."
+                            : "✅ Comentario guardado. Lo usaré para afinar las próximas ejecuciones. Gracias.";
+                        try { await _telegram.SendTextMessageAsync(tgConfigFb, msg); }
+                        catch { /* non-critical */ }
+                    }
+                    return;
+                }
+
                 // State: edit_select_provider — user is choosing which provider to use for the edit
                 if (correlation.State == "edit_select_provider")
                 {
@@ -349,13 +398,20 @@ namespace Server.Services.Telegram
                 {
                     await _executor.AbortFromInteractionAsync(correlation.ExecutionId, db, correlation.TenantDbName);
                     await _executor.CancelQueuedInteractionsAsync(correlation.ExecutionId);
-                    correlation.IsResolved = true;
+
+                    // No cerramos la correlación todavía: pedimos un comentario de qué ha ido mal
+                    // para guardarlo como feedback y que el sistema aprenda (bucle de aprendizaje).
+                    correlation.State = "awaiting_abort_feedback";
                     await _coreDb.SaveChangesAsync();
 
                     var tgConfig = await GetTgConfigAsync();
                     if (tgConfig is not null)
                     {
-                        try { await _telegram.SendTextMessageAsync(tgConfig, "❌ Pipeline abortado. Interacciones pendientes canceladas."); }
+                        try
+                        {
+                            await _telegram.SendTextMessageAsync(tgConfig,
+                                "❌ Pipeline abortado. ¿Qué ha ido mal? Escribe un comentario y lo usaré para afinar las próximas ejecuciones (o envía \"-\" para omitir).");
+                        }
                         catch { /* non-critical */ }
                     }
                     return;
@@ -700,7 +756,7 @@ namespace Server.Services.Telegram
                 }
 
                 // For these out-of-band states, the execution may not be in WaitingForInput — that's OK
-                if (candidate.State is "awaiting_restart" or "edit_select_provider" or "edit_select_model" or "edit_awaiting_prompt" or "awaiting_planning")
+                if (candidate.State is "awaiting_restart" or "awaiting_abort_feedback" or "edit_select_provider" or "edit_select_model" or "edit_awaiting_prompt" or "awaiting_planning")
                     return candidate;
 
                 // Verify the execution is actually still waiting for input

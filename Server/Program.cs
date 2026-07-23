@@ -1899,6 +1899,47 @@ app.MapGet("/api/executions/{id}", async (
         exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
 }).RequireAuthorization();
 
+// Feedback (humano) de todas las ejecuciones de un proyecto, para pintarlo en el historial.
+app.MapGet("/api/projects/{projectId}/feedback", async (
+    Guid projectId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var feedback = await db.ExecutionFeedbacks
+        .Where(f => db.ProjectExecutions
+            .Where(e => e.ProjectId == projectId)
+            .Select(e => e.Id)
+            .Contains(f.ExecutionId))
+        .OrderByDescending(f => f.CreatedAt)
+        .Select(f => new ExecutionFeedbackResponse(
+            f.Id, f.ExecutionId, f.StepExecutionId, f.ProjectModuleId,
+            f.Rating, f.Comment, f.Source, f.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(feedback);
+}).RequireAuthorization();
+
+// Feedback de una ejecucion concreta.
+app.MapGet("/api/executions/{executionId}/feedback", async (
+    Guid executionId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var feedback = await db.ExecutionFeedbacks
+        .Where(f => f.ExecutionId == executionId)
+        .OrderByDescending(f => f.CreatedAt)
+        .Select(f => new ExecutionFeedbackResponse(
+            f.Id, f.ExecutionId, f.StepExecutionId, f.ProjectModuleId,
+            f.Rating, f.Comment, f.Source, f.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(feedback);
+}).RequireAuthorization();
+
 // Get persisted logs for an execution
 app.MapGet("/api/executions/{executionId}/logs", async (
     Guid executionId, HttpContext ctx,
