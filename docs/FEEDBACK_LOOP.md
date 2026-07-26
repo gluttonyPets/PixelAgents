@@ -57,6 +57,12 @@ multimodales). Se guarda en `Project`: `LearningEnabled`, `AnalystModelProvider`
 `AnalystModelName`. Endpoints: `GET/PUT /api/projects/{id}/learning-config` y
 `GET /api/analyst/models`.
 
+**Por defecto viene activado.** Si un proyecto no tiene modelo configurado, se usa
+uno por defecto (`AnalystDefaults`): **gpt-4o-mini** de OpenAI si hay API Key de
+OpenAI; si no, el primer multimodal disponible (Claude Haiku, luego Gemini Flash).
+La columna `LearningEnabled` nace en `true`, así que los proyectos existentes
+arrancan con aprendizaje automático; el usuario puede desactivarlo por proyecto.
+
 ### Qué hace (`LearningAnalysisService`, self-contained, singleton)
 1. **Atribución**: identifica el/los módulo(s) culpables (puede ser aguas arriba),
    por nombre. Se guarda en `LearningEntry.AttributionsJson`.

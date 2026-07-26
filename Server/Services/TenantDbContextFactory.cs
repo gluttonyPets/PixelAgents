@@ -265,7 +265,10 @@ namespace Server.Services
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ExecutionFeedbacks_ExecutionId"" ON ""ExecutionFeedbacks"" (""ExecutionId"")", log);
 
             // ── Config del modelo analista por proyecto ──
-            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""LearningEnabled"" boolean NOT NULL DEFAULT false", log);
+            // Activado por defecto: al crearse la columna, todos los proyectos existentes
+            // arrancan con aprendizaje automático. El usuario puede desactivarlo por proyecto.
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""LearningEnabled"" boolean NOT NULL DEFAULT true", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ALTER COLUMN ""LearningEnabled"" SET DEFAULT true", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""AnalystModelProvider"" varchar(100)", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""AnalystModelName"" varchar(200)", log);
 

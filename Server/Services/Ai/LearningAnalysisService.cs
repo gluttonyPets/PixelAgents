@@ -60,14 +60,41 @@ namespace Server.Services.Ai
                 var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == exec.ProjectId, ct);
                 if (project is null) return;
 
-                // Config del analista: si está desactivado o sin modelo, no hacemos nada.
-                if (!project.LearningEnabled
-                    || string.IsNullOrWhiteSpace(project.AnalystModelProvider)
-                    || string.IsNullOrWhiteSpace(project.AnalystModelName))
+                // Config del analista: si está desactivado, no hacemos nada.
+                if (!project.LearningEnabled)
                     return;
 
-                var providerType = project.AnalystModelProvider!;
-                var modelName = project.AnalystModelName!;
+                string providerType;
+                string modelName;
+
+                // Sin modelo configurado -> modelo por defecto (gpt-4o-mini si hay key de OpenAI,
+                // si no el primer multimodal disponible). Así el aprendizaje funciona sin setup.
+                if (string.IsNullOrWhiteSpace(project.AnalystModelProvider)
+                    || string.IsNullOrWhiteSpace(project.AnalystModelName))
+                {
+                    var providersWithKeys = await db.ApiKeys
+                        .Where(k => k.EncryptedKey != null && k.EncryptedKey != "")
+                        .Select(k => k.ProviderType)
+                        .Distinct()
+                        .ToListAsync(ct);
+
+                    var def = AnalystDefaults.Resolve(providersWithKeys);
+                    if (def is null)
+                    {
+                        await RecordEntryAsync(db, project.Id, exec.Id, feedback, "(por defecto)",
+                            status: "error",
+                            error: "No hay API Key de ningún proveedor con modelo analista por defecto (OpenAI, Anthropic o Google).",
+                            ct: ct);
+                        return;
+                    }
+                    providerType = def.Value.Provider;
+                    modelName = def.Value.Model;
+                }
+                else
+                {
+                    providerType = project.AnalystModelProvider!;
+                    modelName = project.AnalystModelName!;
+                }
 
                 var apiKey = await db.ApiKeys
                     .Where(k => k.ProviderType == providerType)
