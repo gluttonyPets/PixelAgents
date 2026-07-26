@@ -9,8 +9,9 @@ namespace Server.Models
         public string? GraphLayout { get; set; }
 
         // ── Aprendizaje: modelo "analista" que procesa el feedback de abortos ──
-        /// <summary>Si está activo, cada abort con comentario dispara el analista de aprendizaje.</summary>
-        public bool LearningEnabled { get; set; }
+        /// <summary>Si está activo, cada abort con comentario dispara el analista de aprendizaje.
+        /// Activado por defecto: sin configurar nada, el aprendizaje funciona con un modelo por defecto.</summary>
+        public bool LearningEnabled { get; set; } = true;
         /// <summary>Proveedor del modelo analista (OpenAI, Anthropic, Google, xAI).</summary>
         public string? AnalystModelProvider { get; set; }
         /// <summary>Nombre del modelo analista (debe ser multimodal para analizar imágenes).</summary>

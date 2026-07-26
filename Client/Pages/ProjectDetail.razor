@@ -1487,7 +1487,8 @@ else
                                 Cuando abortes una ejecución desde Telegram y dejes un comentario, este modelo analiza
                                 qué falló, a qué módulo culpar y destila el aprendizaje en el documento vivo del proyecto.
                                 Ese aprendizaje se inyecta luego —como capa aparte, sin tocar tus prompts— en las
-                                siguientes ejecuciones.
+                                siguientes ejecuciones. Viene <strong>activado por defecto</strong> con
+                                <strong>GPT‑4o mini</strong>; puedes cambiar el modelo o desactivarlo aquí.
                             </p>
 
                             @if (_learningMsg is not null)
@@ -1515,7 +1516,11 @@ else
                                 {
                                     <span class="text-sm text-muted">No hay modelos de texto disponibles. Configura una API Key en <a href="/apikeys">API Keys</a>.</span>
                                 }
-                                else if (!string.IsNullOrWhiteSpace(_analystModelSel) && !SelectedAnalystIsMultimodal())
+                                else if (_learningIsDefault && !string.IsNullOrWhiteSpace(_analystModelSel))
+                                {
+                                    <span class="text-sm text-muted">Usando el modelo por defecto. Guarda para fijarlo o elige otro.</span>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_analystModelSel) && !SelectedAnalystIsMultimodal())
                                 {
                                     <span class="text-sm" style="color:#b45309;">⚠️ Este modelo no puede analizar imágenes. Para criticar imágenes generadas, elige uno multimodal (Claude, Gemini, GPT‑4o/5…).</span>
                                 }
@@ -1771,6 +1776,7 @@ else
     private string _analystModelSel = "";
     private bool _learningSaving;
     private string? _learningMsg;
+    private bool _learningIsDefault;
     private LearningDocResponse? _learningDoc;
     private List<RuleResponse> _tenantRules = [];
     private ExecutionDetailResponse? _result;
@@ -3056,6 +3062,7 @@ else
             if (cfg is not null)
             {
                 _learningEnabled = cfg.Enabled;
+                _learningIsDefault = cfg.IsDefault;
                 _analystModelSel = (!string.IsNullOrWhiteSpace(cfg.Provider) && !string.IsNullOrWhiteSpace(cfg.ModelName))
                     ? $"{cfg.Provider}|{cfg.ModelName}" : "";
             }
@@ -3081,6 +3088,7 @@ else
             if (cfg is not null)
             {
                 _learningEnabled = cfg.Enabled;
+                _learningIsDefault = cfg.IsDefault;
                 _analystModelSel = (!string.IsNullOrWhiteSpace(cfg.Provider) && !string.IsNullOrWhiteSpace(cfg.ModelName))
                     ? $"{cfg.Provider}|{cfg.ModelName}" : "";
                 _learningMsg = "Guardado correctamente";

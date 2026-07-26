@@ -105,7 +105,7 @@ public record ExecutionFeedbackResponse(
 
 // ── Aprendizaje ──
 public record AnalystModelOption(string Provider, string ModelName, string DisplayName, bool Multimodal);
-public record LearningConfigResponse(bool Enabled, string? Provider, string? ModelName, bool Multimodal);
+public record LearningConfigResponse(bool Enabled, string? Provider, string? ModelName, bool Multimodal, bool IsDefault);
 public record UpdateLearningConfigRequest(bool Enabled, string? Provider, string? ModelName);
 public record LearningDocResponse(string Content, string? ActiveLearningsJson, DateTime? UpdatedAt,
     List<LearningEntryResponse> Entries);

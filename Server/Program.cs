@@ -1969,11 +1969,33 @@ app.MapGet("/api/projects/{projectId}/learning-config", async (
     var p = await db.Projects.FindAsync(projectId);
     if (p is null) return Results.NotFound();
 
-    var multimodal = !string.IsNullOrWhiteSpace(p.AnalystModelProvider)
-        && !string.IsNullOrWhiteSpace(p.AnalystModelName)
-        && Server.Services.Ai.VisionCapability.IsVisionCapable(p.AnalystModelProvider!, p.AnalystModelName!);
+    var provider = p.AnalystModelProvider;
+    var modelName = p.AnalystModelName;
+    var isDefault = false;
 
-    return Results.Ok(new LearningConfigResponse(p.LearningEnabled, p.AnalystModelProvider, p.AnalystModelName, multimodal));
+    // Sin modelo configurado -> mostramos el modelo por defecto (efectivo) para que la
+    // UI lo refleje preseleccionado. gpt-4o-mini si hay key de OpenAI, si no otro multimodal.
+    if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(modelName))
+    {
+        var providersWithKeys = await db.ApiKeys
+            .Where(k => k.EncryptedKey != null && k.EncryptedKey != "")
+            .Select(k => k.ProviderType)
+            .Distinct()
+            .ToListAsync();
+        var def = Server.Services.Ai.AnalystDefaults.Resolve(providersWithKeys);
+        if (def is not null)
+        {
+            provider = def.Value.Provider;
+            modelName = def.Value.Model;
+            isDefault = true;
+        }
+    }
+
+    var multimodal = !string.IsNullOrWhiteSpace(provider)
+        && !string.IsNullOrWhiteSpace(modelName)
+        && Server.Services.Ai.VisionCapability.IsVisionCapable(provider!, modelName!);
+
+    return Results.Ok(new LearningConfigResponse(p.LearningEnabled, provider, modelName, multimodal, isDefault));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId}/learning-config", async (
@@ -1995,7 +2017,7 @@ app.MapPut("/api/projects/{projectId}/learning-config", async (
     var multimodal = !string.IsNullOrWhiteSpace(p.AnalystModelProvider)
         && !string.IsNullOrWhiteSpace(p.AnalystModelName)
         && Server.Services.Ai.VisionCapability.IsVisionCapable(p.AnalystModelProvider!, p.AnalystModelName!);
-    return Results.Ok(new LearningConfigResponse(p.LearningEnabled, p.AnalystModelProvider, p.AnalystModelName, multimodal));
+    return Results.Ok(new LearningConfigResponse(p.LearningEnabled, p.AnalystModelProvider, p.AnalystModelName, multimodal, false));
 }).RequireAuthorization();
 
 app.MapGet("/api/projects/{projectId}/learning", async (

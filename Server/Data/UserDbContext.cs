@@ -102,6 +102,7 @@ namespace Server.Data
                 e.Property(x => x.Description).HasMaxLength(2000);
                 e.Property(x => x.Context).HasColumnType("text");
                 e.Property(x => x.GraphLayout).HasColumnType("text");
+                e.Property(x => x.LearningEnabled).HasDefaultValue(true);
 
                 e.HasOne(x => x.InstagramConnection)
                     .WithMany()
