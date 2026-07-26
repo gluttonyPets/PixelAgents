@@ -92,19 +92,31 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         var imageFile = ctx.GetInputFiles("input_image").FirstOrDefault();
         if (imageFile is not null)
         {
-            imageUrl = ctx.GetPublicFileUrl(imageFile);
-            if (!string.IsNullOrWhiteSpace(imageUrl))
+            var candidateUrl = ctx.GetPublicFileUrl(imageFile);
+            if (IsPubliclyReachableImageUrl(candidateUrl))
             {
+                imageUrl = candidateUrl;
                 imageAlt = FromNodeOr("imageAlt", structured?.ImageAlt);
                 if (string.IsNullOrWhiteSpace(imageAlt))
                     imageAlt = title;
                 await ctx.LogInfoAsync($"Imagen destacada adjunta: {imageFile.FileName} → {imageUrl}");
             }
-            else
+            else if (string.IsNullOrWhiteSpace(candidateUrl))
             {
                 await ctx.LogWarningAsync(
                     "Hay una imagen conectada pero no se pudo generar su URL publica; " +
-                    "el articulo se publicara sin imagen destacada (revisa PublicBaseUrl).");
+                    "el articulo se publicara sin imagen destacada (revisa BaseUrl/PublicBaseUrl).");
+            }
+            else
+            {
+                // Shopify descarga la imagen desde esta URL al crear el articulo. Si la URL
+                // es relativa o apunta a localhost/red privada, Shopify la rechaza con
+                // "Image upload failed. Invalid URL provided." y con ella todo el articulo.
+                // Preferimos publicar SIN imagen antes que perder el articulo entero.
+                await ctx.LogWarningAsync(
+                    $"La imagen conectada genero una URL no accesible desde internet ({candidateUrl}); " +
+                    "Shopify no podria descargarla, asi que el articulo se publicara SIN imagen destacada. " +
+                    "Configura 'BaseUrl' con la URL publica del servidor (https, no localhost) para adjuntar imagenes.");
             }
         }
 
@@ -147,6 +159,56 @@ public class ShopifyBlogModuleHandler : IModuleHandler
             output.Metadata["handle"] = result.Handle;
 
         return ModuleResult.Completed(output);
+    }
+
+    /// <summary>
+    /// Comprueba que la URL de la imagen sea una URL absoluta http/https con un host
+    /// accesible desde internet. Shopify descarga la imagen destacada desde esta URL al
+    /// crear el articulo; una URL relativa (PublicBaseUrl sin configurar) o que apunte a
+    /// localhost/red privada la rechaza con "Image upload failed. Invalid URL provided.".
+    /// </summary>
+    private static bool IsPubliclyReachableImageUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
+        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
+
+        var host = uri.Host;
+        if (string.IsNullOrWhiteSpace(host)) return false;
+
+        switch (uri.HostNameType)
+        {
+            case UriHostNameType.IPv4:
+            case UriHostNameType.IPv6:
+                // IdnHost devuelve la IP sin corchetes ([::1] -> ::1), como espera IPAddress.
+                if (!System.Net.IPAddress.TryParse(uri.IdnHost, out var ip)) return false;
+                if (System.Net.IPAddress.IsLoopback(ip)) return false;
+                if (ip.Equals(System.Net.IPAddress.Any) || ip.Equals(System.Net.IPAddress.IPv6Any)) return false;
+                return !IsPrivateOrLinkLocal(ip);
+            case UriHostNameType.Dns:
+                if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)) return false;
+                // Hostname sin punto (p. ej. "servidor-interno") no es resoluble desde internet.
+                return host.Contains('.');
+            default:
+                return false;
+        }
+    }
+
+    private static bool IsPrivateOrLinkLocal(System.Net.IPAddress ip)
+    {
+        switch (ip.AddressFamily)
+        {
+            case System.Net.Sockets.AddressFamily.InterNetwork:
+                var b = ip.GetAddressBytes();
+                return b[0] == 10                                   // 10.0.0.0/8
+                    || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)    // 172.16.0.0/12
+                    || (b[0] == 192 && b[1] == 168)                 // 192.168.0.0/16
+                    || (b[0] == 169 && b[1] == 254);                // 169.254.0.0/16 link-local
+            case System.Net.Sockets.AddressFamily.InterNetworkV6:
+                return ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal;
+            default:
+                return false;
+        }
     }
 
     private static string? FirstInputTitle(ModuleExecutionContext ctx)

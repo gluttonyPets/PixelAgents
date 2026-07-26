@@ -2489,10 +2489,13 @@ app.MapGet("/api/executions/{executionId}/files/{fileId}", async (
     return Results.File(bytes, file.ContentType, file.FileName);
 }).RequireAuthorization();
 
-// Public file endpoint for external services (e.g., Buffer) that cannot authenticate
-app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async (
+// Public file endpoint for external services (e.g., Buffer, Shopify) that cannot
+// authenticate. Supports GET and HEAD: Shopify (and other URL validators) issue a
+// HEAD request to check the featured-image URL before downloading it, so a GET-only
+// route makes them reject the image with "Invalid URL provided".
+app.MapMethods("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", new[] { "GET", "HEAD" }, async (
     string tenant, Guid executionId, Guid fileId, string fileName,
-    ITenantDbContextFactory factory, IWebHostEnvironment env, ILogger<Program> logger) =>
+    ITenantDbContextFactory factory, IWebHostEnvironment env, ILogger<Program> logger, HttpContext httpContext) =>
 {
     UserDbContext db;
     try { db = factory.Create(tenant); }
@@ -2514,7 +2517,9 @@ app.MapGet("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", async
         if (fullPath is null) return Results.NotFound();
 
         var bytes = await File.ReadAllBytesAsync(fullPath);
-        return Results.File(bytes, file.ContentType, file.FileName);
+        // Serve inline (not as an attachment) so external image validators accept it.
+        httpContext.Response.Headers.ContentDisposition = "inline";
+        return Results.File(bytes, file.ContentType);
     }
 });
 
