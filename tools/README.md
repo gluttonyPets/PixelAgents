@@ -38,6 +38,46 @@ El script:
 
 ---
 
+### `diagnose_deploy.sh`
+
+**Propósito:** Inventario de **solo lectura** del despliegue en una máquina.
+Responde a "¿qué hay instalado aquí que despliegue esto, y por qué no corre?".
+No modifica nada: solo lee systemd, cron, docker y git.
+
+**Cuándo usar:**
+- Cuando un cambio subido al repo no aparece en producción.
+- Cuando no sabes qué servicios de despliegue hay instalados en el servidor.
+- Antes de tocar nada, para saber si el auto-deploy está vivo y qué rama vigila.
+
+**Uso:**
+
+```bash
+cd /ruta/a/PixelAgents
+./tools/diagnose_deploy.sh          # básico
+sudo ./tools/diagnose_deploy.sh     # incluye el journal completo de systemd
+```
+
+Comprueba, en orden:
+
+1. Unidades systemd (`pixelagents-deploy.timer/.service`,
+   `pixelagents-leantime-worker.service`, `pixelagents-log-server.service`).
+2. Próximo disparo del timer de auto-deploy.
+3. Rama configurada en `PA_DEPLOY_BRANCH`.
+4. Journal de los últimos intentos de deploy.
+5. `automation/logs/deploy.log`.
+6. Entradas de cron relacionadas.
+7. Estado del checkout git: rama, tree limpio y divergencia con el remoto
+   (los tres motivos por los que `deploy_develop.sh` aborta: exit 2, 3 y 4).
+8. Docker: daemon, contenedores y antigüedad de la imagen construida.
+9. Busy file del worker y lock de deploy.
+
+**Importante:** recuerda que `deploy_develop.sh` (el que corre por timer) solo
+hace fast-forward de git y reinicia el worker y el log-server. **No compila ni
+reconstruye la imagen Docker.** La compilación y despliegue de la app es
+`deploy.sh`, que se lanza a mano.
+
+---
+
 ### `cleanup_stuck_executions.sql`
 
 **Propósito:** Cerrar (marcar como `Cancelled`) ejecuciones "zombi" que se
