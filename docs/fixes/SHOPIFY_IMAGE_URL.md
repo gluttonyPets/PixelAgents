@@ -51,6 +51,32 @@ Así **Shopify ya no descarga nada de nuestro servidor**: funciona aunque esté 
 > enviarlo el destino firma una política con `content-length-range` que puede provocar
 > `SignatureDoesNotMatch`.
 
+#### El cuerpo multipart debe imitar a `curl -F` (`Malformed multipart body`)
+
+El destino del staged upload es Google Cloud Storage y su parser de POST es estricto. Con
+los valores por defecto de `MultipartFormDataContent` la subida fallaba con:
+
+```
+No se pudo subir la imagen destacada a Shopify: Fallo la subida de la imagen (400): Malformed multipart body.
+```
+
+Causa: **.NET entrecomilla el boundary** en la cabecera
+(`multipart/form-data; boundary="----abc"`). Las comillas son legales según RFC 2046, pero
+el parser del destino no las quita y busca `--"----abc"` como separador, que nunca aparece
+en el cuerpo → *"Malformed multipart body"*.
+
+`ShopifyService.BuildStagedUploadContent` construye el cuerpo a mano para que sea idéntico
+al de `curl -F`:
+
+1. Boundary propio y cabecera reescrita **sin comillas**
+   (`form.Headers.TryAddWithoutValidation`).
+2. `Content-Disposition` con el nombre **entrecomillado** (`name="key"`); .NET lo emite
+   como token pelado (`name=key`) cuando no necesita comillas.
+3. Los campos de texto **no declaran `Content-Type`** (`StringContent` añade
+   `text/plain; charset=utf-8`).
+4. El campo `file` va el último, después de los parámetros firmados, con
+   `Content-Disposition` antes de `Content-Type`.
+
 ### 2. Nunca perder el artículo por culpa de la imagen
 
 Si `articleCreate` devuelve `userErrors` que solo afectan a la imagen, se reintenta
@@ -86,5 +112,9 @@ publica sin imagen.
 4. Si falta `write_files`, el artículo se publica igualmente y el log avisa de qué scope
    añadir, en lugar de fallar con *"Invalid URL provided"*.
 
-Tests: `Server.Tests/ShopifyBlogHtml/ShopifyImageUrlTests.cs` cubre el filtro de URLs de
-respaldo (incluido el caso `http://IP:8080` del docker-compose).
+Tests:
+
+- `Server.Tests/ShopifyBlogHtml/ShopifyImageUrlTests.cs` cubre el filtro de URLs de
+  respaldo (incluido el caso `http://IP:8080` del docker-compose).
+- `Server.Tests/ShopifyBlogHtml/ShopifyStagedUploadTests.cs` cubre el cuerpo multipart del
+  staged upload (boundary sin comillas, nombres entrecomillados, `file` el último).

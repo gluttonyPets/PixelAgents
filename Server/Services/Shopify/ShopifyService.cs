@@ -285,17 +285,7 @@ namespace Server.Services.Shopify
             using var timeoutCts = new CancellationTokenSource(Timeout);
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
 
-            // El destino (Google Cloud Storage) exige que los parametros firmados vayan
-            // ANTES del campo "file"; si se altera el orden responde SignatureDoesNotMatch.
-            using var form = new MultipartFormDataContent();
-            foreach (var (name, value) in formParams)
-                if (!string.IsNullOrEmpty(name))
-                    form.Add(new StringContent(value), name);
-
-            var fileContent = new ByteArrayContent(data);
-            if (MediaTypeHeaderValue.TryParse(mimeType, out var parsedType))
-                fileContent.Headers.ContentType = parsedType;
-            form.Add(fileContent, "file", fileName);
+            using var form = BuildStagedUploadContent(formParams, data, fileName, mimeType);
 
             // Peticion sin la cabecera de Shopify: el destino de subida es externo.
             HttpResponseMessage uploadResponse;
@@ -317,6 +307,72 @@ namespace Server.Services.Shopify
 
             return resourceUrl;
         }
+
+        /// <summary>
+        /// Construye el cuerpo multipart/form-data del staged upload tal y como lo espera
+        /// el destino de Shopify (Google Cloud Storage).
+        ///
+        /// El objetivo es emitir exactamente el mismo cuerpo que `curl -F`, porque los
+        /// valores por defecto de .NET se desvian en tres puntos que ese parser no tolera:
+        ///
+        /// 1. El boundary NO puede ir entrecomillado. <see cref="MultipartFormDataContent"/>
+        ///    genera "multipart/form-data; boundary=\"abc\"" (comillas legales segun RFC 2046),
+        ///    pero el parser del destino no las quita y responde
+        ///    400 "Malformed multipart body". Por eso se fija un boundary propio y se
+        ///    reescribe la cabecera sin comillas.
+        /// 2. Los nombres de campo van entrecomillados en Content-Disposition. .NET los
+        ///    emite como token pelado (name=key) cuando no necesitan comillas.
+        /// 3. Los campos de texto no declaran Content-Type (StringContent pone
+        ///    "text/plain; charset=utf-8").
+        ///
+        /// Y una exigencia propia de la politica firmada: los parametros van ANTES del
+        /// campo "file"; si se altera el orden el destino responde SignatureDoesNotMatch.
+        /// </summary>
+        private static MultipartFormDataContent BuildStagedUploadContent(
+            IEnumerable<(string Name, string Value)> formParams,
+            byte[] data, string fileName, string mimeType)
+        {
+            var boundary = $"----PixelAgents{Guid.NewGuid():N}";
+            var form = new MultipartFormDataContent(boundary);
+            form.Headers.Remove("Content-Type");
+            form.Headers.TryAddWithoutValidation("Content-Type", $"multipart/form-data; boundary={boundary}");
+
+            foreach (var (name, value) in formParams)
+            {
+                if (string.IsNullOrEmpty(name)) continue;
+                var field = new StringContent(value ?? "");
+                field.Headers.ContentType = null;
+                SetContentDisposition(field, name, null);
+                form.Add(field);
+            }
+
+            // Content-Disposition primero y Content-Type despues, en el mismo orden que `curl -F`.
+            var fileContent = new ByteArrayContent(data);
+            SetContentDisposition(fileContent, "file", fileName);
+            if (MediaTypeHeaderValue.TryParse(mimeType, out var parsedType))
+                fileContent.Headers.ContentType = parsedType;
+            form.Add(fileContent);
+
+            return form;
+        }
+
+        /// <summary>
+        /// Escribe Content-Disposition con nombre (y nombre de fichero) entrecomillados,
+        /// como hace `curl -F`. Se anade sin validar para que .NET no reescriba las
+        /// comillas ni convierta el filename a la forma extendida (filename*=utf-8'').
+        /// </summary>
+        private static void SetContentDisposition(HttpContent content, string name, string? fileName)
+        {
+            var header = $"form-data; name=\"{SanitizeHeaderValue(name)}\"";
+            if (fileName is not null)
+                header += $"; filename=\"{SanitizeHeaderValue(fileName)}\"";
+            content.Headers.ContentDisposition = null;
+            content.Headers.TryAddWithoutValidation("Content-Disposition", header);
+        }
+
+        /// <summary>Evita romper la cabecera con comillas o saltos de linea del nombre de fichero.</summary>
+        private static string SanitizeHeaderValue(string value) =>
+            value.Replace("\"", "").Replace("\r", "").Replace("\n", "");
 
         /// <summary>Crea un articulo de blog. Devuelve el id/handle o un error legible.</summary>
         /// <param name="summary">Extracto del articulo (campo nativo "summary"). Opcional.</param>
