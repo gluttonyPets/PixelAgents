@@ -1,3 +1,4 @@
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Server.Models;
@@ -213,13 +214,120 @@ namespace Server.Services.Shopify
             return scopes;
         }
 
+        /// <summary>
+        /// Sube los bytes de una imagen a Shopify mediante "staged upload" y devuelve la
+        /// resourceUrl resultante, valida como imagen destacada del articulo.
+        ///
+        /// Es el camino fiable: Shopify NO tiene que descargar nada de nuestro servidor,
+        /// asi que funciona aunque el servidor no sea accesible desde internet o publique
+        /// en http/IP/puerto no estandar (caso en el que Shopify responde
+        /// "Image upload failed. Invalid URL provided.").
+        /// </summary>
+        private async Task<string> StageImageUploadAsync(
+            string shopDomain, string token,
+            byte[] data, string fileName, string mimeType, CancellationToken ct)
+        {
+            const string mutation = @"mutation StageUpload($input: [StagedUploadInput!]!) {
+  stagedUploadsCreate(input: $input) {
+    stagedTargets { url resourceUrl parameters { name value } }
+    userErrors { field message }
+  }
+}";
+            // fileSize solo es obligatorio para VIDEO y MODEL_3D. En imagenes se omite a
+            // proposito: al enviarlo, el destino firma una politica con content-length-range
+            // y cualquier desajuste responde SignatureDoesNotMatch.
+            var input = new[]
+            {
+                new
+                {
+                    filename = fileName,
+                    mimeType,
+                    resource = "IMAGE",
+                    httpMethod = "POST",
+                }
+            };
+
+            string uploadUrl;
+            string resourceUrl;
+            var formParams = new List<(string Name, string Value)>();
+
+            using (var doc = await PostGraphQlAsync(
+                shopDomain, token, new { query = mutation, variables = new { input } }, ct))
+            {
+                var node = doc.RootElement.GetProperty("data").GetProperty("stagedUploadsCreate");
+
+                if (node.TryGetProperty("userErrors", out var errs) &&
+                    errs.ValueKind == JsonValueKind.Array && errs.GetArrayLength() > 0)
+                {
+                    var messages = string.Join("; ", errs.EnumerateArray()
+                        .Select(e => e.TryGetProperty("message", out var m) ? m.GetString() : null)
+                        .Where(m => !string.IsNullOrWhiteSpace(m)));
+                    throw new HttpRequestException($"stagedUploadsCreate: {messages}");
+                }
+
+                if (!node.TryGetProperty("stagedTargets", out var targets) ||
+                    targets.ValueKind != JsonValueKind.Array || targets.GetArrayLength() == 0)
+                    throw new HttpRequestException("Shopify no devolvio un destino de subida (stagedTargets vacio).");
+
+                var target = targets[0];
+                uploadUrl = target.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+                resourceUrl = target.TryGetProperty("resourceUrl", out var r) ? r.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(uploadUrl) || string.IsNullOrWhiteSpace(resourceUrl))
+                    throw new HttpRequestException("Shopify devolvio un destino de subida incompleto.");
+
+                if (target.TryGetProperty("parameters", out var pars) && pars.ValueKind == JsonValueKind.Array)
+                    foreach (var p in pars.EnumerateArray())
+                        formParams.Add((
+                            p.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "",
+                            p.TryGetProperty("value", out var v) ? v.GetString() ?? "" : ""));
+            }
+
+            using var timeoutCts = new CancellationTokenSource(Timeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+
+            // El destino (Google Cloud Storage) exige que los parametros firmados vayan
+            // ANTES del campo "file"; si se altera el orden responde SignatureDoesNotMatch.
+            using var form = new MultipartFormDataContent();
+            foreach (var (name, value) in formParams)
+                if (!string.IsNullOrEmpty(name))
+                    form.Add(new StringContent(value), name);
+
+            var fileContent = new ByteArrayContent(data);
+            if (MediaTypeHeaderValue.TryParse(mimeType, out var parsedType))
+                fileContent.Headers.ContentType = parsedType;
+            form.Add(fileContent, "file", fileName);
+
+            // Peticion sin la cabecera de Shopify: el destino de subida es externo.
+            HttpResponseMessage uploadResponse;
+            try
+            {
+                uploadResponse = await _http.PostAsync(uploadUrl, form, linkedCts.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new TimeoutException("La subida de la imagen a Shopify supero el tiempo limite.");
+            }
+
+            if (!uploadResponse.IsSuccessStatusCode)
+            {
+                var body = await uploadResponse.Content.ReadAsStringAsync(linkedCts.Token);
+                throw new HttpRequestException(
+                    $"Fallo la subida de la imagen ({(int)uploadResponse.StatusCode}): {Truncate(body)}");
+            }
+
+            return resourceUrl;
+        }
+
         /// <summary>Crea un articulo de blog. Devuelve el id/handle o un error legible.</summary>
         /// <param name="summary">Extracto del articulo (campo nativo "summary"). Opcional.</param>
         /// <param name="handle">Identificador URL / slug (campo nativo "handle"). Si va vacio, Shopify lo genera a partir del titulo.</param>
         /// <param name="seoTitle">Titulo de la pagina para SEO. Se guarda como metafield global.title_tag. Opcional.</param>
         /// <param name="metaDescription">Metadescripcion para SEO. Se guarda como metafield global.description_tag. Opcional.</param>
-        /// <param name="imageUrl">URL publica de la imagen destacada (campo nativo "image"). Shopify la descarga y la re-hostea en su CDN al crear el articulo. Opcional.</param>
+        /// <param name="imageUrl">URL publica de la imagen destacada. Solo se usa como respaldo si no se pasan <paramref name="imageBytes"/>; Shopify tiene que poder descargarla desde internet. Opcional.</param>
         /// <param name="imageAltText">Texto alternativo de la imagen destacada (accesibilidad/SEO). Opcional.</param>
+        /// <param name="imageBytes">Bytes de la imagen destacada. Via preferente: se suben a Shopify con un "staged upload", sin depender de que nuestro servidor sea accesible desde internet. Opcional.</param>
+        /// <param name="imageFileName">Nombre de archivo de la imagen destacada (para el staged upload). Opcional.</param>
+        /// <param name="imageContentType">Content-Type de la imagen destacada (para el staged upload). Opcional.</param>
         public async Task<ShopifyArticleResult> CreateArticleAsync(
             string shopDomain, string clientId, string clientSecret, string blogId,
             string title, string bodyHtml, string? authorName, bool isPublished,
@@ -227,9 +335,38 @@ namespace Server.Services.Shopify
             string? summary = null, string? handle = null,
             string? seoTitle = null, string? metaDescription = null,
             string? imageUrl = null, string? imageAltText = null,
+            byte[]? imageBytes = null, string? imageFileName = null, string? imageContentType = null,
             CancellationToken ct = default)
         {
             var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
+
+            // Resolucion de la imagen destacada. Preferimos SIEMPRE subir los bytes a
+            // Shopify: es lo unico que no depende de que nuestro servidor sea alcanzable
+            // desde internet (con http/IP/puerto raro Shopify responde
+            // "Image upload failed. Invalid URL provided.").
+            string? warning = null;
+            var resolvedImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
+
+            if (imageBytes is { Length: > 0 })
+            {
+                try
+                {
+                    resolvedImageUrl = await StageImageUploadAsync(
+                        shopDomain, token, imageBytes,
+                        string.IsNullOrWhiteSpace(imageFileName) ? "imagen.png" : imageFileName.Trim(),
+                        string.IsNullOrWhiteSpace(imageContentType) ? "image/png" : imageContentType.Trim(),
+                        ct);
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    warning = $"No se pudo subir la imagen destacada a Shopify: {ex.Message}";
+                    if (ex.Message.Contains("access denied", StringComparison.OrdinalIgnoreCase) ||
+                        ex.Message.Contains("not approved", StringComparison.OrdinalIgnoreCase))
+                        warning += ". Anade el scope 'write_files' a la app de Shopify y reinstalala.";
+                    // Se intentara con la URL publica si se aporto una.
+                }
+            }
 
             const string mutation = @"mutation CreateArticle($article: ArticleCreateInput!) {
   articleCreate(article: $article) {
@@ -258,11 +395,11 @@ namespace Server.Services.Shopify
                 article["handle"] = handle.Trim();
 
             // Imagen destacada: campo nativo "image" (ArticleImageInput { url, altText }).
-            // Shopify descarga la URL y re-hostea la imagen en su CDN al crear el articulo,
-            // por lo que la URL solo necesita estar accesible durante la publicacion.
-            if (!string.IsNullOrWhiteSpace(imageUrl))
+            // resolvedImageUrl es la resourceUrl del staged upload (via preferente) o, en
+            // su defecto, la URL publica que Shopify tendra que descargar.
+            if (!string.IsNullOrWhiteSpace(resolvedImageUrl))
             {
-                var image = new Dictionary<string, object?> { ["url"] = imageUrl.Trim() };
+                var image = new Dictionary<string, object?> { ["url"] = resolvedImageUrl };
                 if (!string.IsNullOrWhiteSpace(imageAltText))
                     image["altText"] = imageAltText.Trim();
                 article["image"] = image;
@@ -291,34 +428,63 @@ namespace Server.Services.Shopify
             if (metafields.Count > 0)
                 article["metafields"] = metafields;
 
-            var payload = new { query = mutation, variables = new { article } };
-            using var doc = await PostGraphQlAsync(shopDomain, token, payload, ct);
+            var (result, imageError) = await TryCreateAsync(article);
 
-            var createNode = doc.RootElement.GetProperty("data").GetProperty("articleCreate");
-
-            if (createNode.TryGetProperty("userErrors", out var userErrors) &&
-                userErrors.ValueKind == JsonValueKind.Array && userErrors.GetArrayLength() > 0)
+            // Si lo unico que Shopify rechaza es la imagen, no tiramos el articulo entero:
+            // reintentamos sin imagen destacada y avisamos.
+            if (imageError is not null && article.Remove("image"))
             {
-                var messages = userErrors.EnumerateArray()
-                    .Select(e => e.TryGetProperty("message", out var m) ? m.GetString() : null)
-                    .Where(m => !string.IsNullOrWhiteSpace(m));
-                return new ShopifyArticleResult(false, null, null, string.Join("; ", messages));
+                warning = warning is null
+                    ? $"Shopify rechazo la imagen destacada ({imageError}); el articulo se publico SIN imagen."
+                    : $"{warning}. Ademas Shopify rechazo la imagen ({imageError}); el articulo se publico SIN imagen.";
+                (result, _) = await TryCreateAsync(article);
             }
 
-            if (createNode.TryGetProperty("article", out var articleNode) &&
-                articleNode.ValueKind == JsonValueKind.Object)
-            {
-                var id = articleNode.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
-                var createdHandle = articleNode.TryGetProperty("handle", out var hEl) ? hEl.GetString() : null;
-                return new ShopifyArticleResult(true, id, createdHandle, null);
-            }
+            return result with { Warning = warning };
 
-            return new ShopifyArticleResult(false, null, null, "Shopify no devolvio el articulo creado.");
+            // Envia la mutacion y separa el caso "solo falla la imagen" del resto.
+            async Task<(ShopifyArticleResult Result, string? ImageError)> TryCreateAsync(
+                Dictionary<string, object?> articleInput)
+            {
+                var payload = new { query = mutation, variables = new { article = articleInput } };
+                using var doc = await PostGraphQlAsync(shopDomain, token, payload, ct);
+
+                var createNode = doc.RootElement.GetProperty("data").GetProperty("articleCreate");
+
+                if (createNode.TryGetProperty("userErrors", out var userErrors) &&
+                    userErrors.ValueKind == JsonValueKind.Array && userErrors.GetArrayLength() > 0)
+                {
+                    var errorList = userErrors.EnumerateArray()
+                        .Select(e => e.TryGetProperty("message", out var m) ? m.GetString() : null)
+                        .Where(m => !string.IsNullOrWhiteSpace(m))
+                        .ToList();
+                    var joined = string.Join("; ", errorList);
+
+                    var onlyImageFailed = articleInput.ContainsKey("image")
+                        && errorList.Count > 0
+                        && errorList.All(m => m!.Contains("image", StringComparison.OrdinalIgnoreCase));
+
+                    return (new ShopifyArticleResult(false, null, null, joined),
+                            onlyImageFailed ? joined : null);
+                }
+
+                if (createNode.TryGetProperty("article", out var articleNode) &&
+                    articleNode.ValueKind == JsonValueKind.Object)
+                {
+                    var id = articleNode.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                    var createdHandle = articleNode.TryGetProperty("handle", out var hEl) ? hEl.GetString() : null;
+                    return (new ShopifyArticleResult(true, id, createdHandle, null), null);
+                }
+
+                return (new ShopifyArticleResult(false, null, null, "Shopify no devolvio el articulo creado."), null);
+            }
         }
 
         private static string Truncate(string s, int max = 300) =>
             string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max];
     }
 
-    public record ShopifyArticleResult(bool Success, string? ArticleId, string? Handle, string? Error);
+    /// <summary><paramref name="Warning"/> reporta incidencias no fatales (p. ej. el articulo se publico sin imagen destacada).</summary>
+    public record ShopifyArticleResult(
+        bool Success, string? ArticleId, string? Handle, string? Error, string? Warning = null);
 }

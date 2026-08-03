@@ -16,7 +16,7 @@ histórica, no documentación viva del sistema.
 | [`PIPELINE_TIMEOUT_CANCELACION.md`](PIPELINE_TIMEOUT_CANCELACION.md) | Timeouts por provider + timeout de 10 min por módulo y cancelación real desde la UI. |
 | [`TEXT_MODULE_IMAGE_INPUT.md`](TEXT_MODULE_IMAGE_INPUT.md) | El módulo de texto acepta entradas de solo imagen (sin prompt de texto). |
 | [`BUFFER_HEAD_REQUEST.md`](BUFFER_HEAD_REQUEST.md) | El endpoint público de imágenes de Buffer responde a peticiones `HEAD` (evita el 405). |
-| [`SHOPIFY_IMAGE_URL.md`](SHOPIFY_IMAGE_URL.md) | La imagen destacada de Shopify fallaba con "Invalid URL provided": se validan URLs públicas y el endpoint de archivos responde a `HEAD`. |
+| [`SHOPIFY_IMAGE_URL.md`](SHOPIFY_IMAGE_URL.md) | La imagen destacada fallaba con "Invalid URL provided" porque Shopify no podía descargarla de `http://IP:8080`; ahora se sube directa a Shopify con `stagedUploadsCreate`. |
 | [`TELEGRAM_DUPLICATE_UPDATE.md`](TELEGRAM_DUPLICATE_UPDATE.md) | Idempotencia en BD del `update_id` de Telegram + claim atómico del scheduler para que la interacción no se envíe duplicada. |
 | [`COSTE_EJECUCION_PRICING.md`](COSTE_EJECUCION_PRICING.md) | El gasto salía 0 (oculto) porque faltaban modelos actuales en `PricingCatalog`; la API no da coste por petición, solo tokens. |
 

@@ -85,39 +85,49 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         var handle = string.IsNullOrWhiteSpace(handleSource) ? null : Slugify(handleSource);
 
         // Imagen destacada: si hay un modulo de imagen (u otro) conectado al puerto
-        // "input_image", tomamos el primer archivo y lo exponemos como URL publica para
-        // que Shopify la descargue. El alt text sale del nodo -> JSON -> titulo.
+        // "input_image", tomamos el primer archivo y enviamos sus BYTES a Shopify, que los
+        // sube a su CDN (staged upload). La URL publica queda solo como respaldo.
+        // El alt text sale del nodo -> JSON -> titulo.
         string? imageUrl = null;
         string? imageAlt = null;
+        byte[]? imageBytes = null;
+        string? imageFileName = null;
+        string? imageContentType = null;
+
         var imageFile = ctx.GetInputFiles("input_image").FirstOrDefault();
         if (imageFile is not null)
         {
-            var candidateUrl = ctx.GetPublicFileUrl(imageFile);
-            if (IsPubliclyReachableImageUrl(candidateUrl))
+            imageAlt = FromNodeOr("imageAlt", structured?.ImageAlt);
+            if (string.IsNullOrWhiteSpace(imageAlt))
+                imageAlt = title;
+
+            // Via preferente: subir los bytes a Shopify (staged upload). No depende de que
+            // nuestro servidor sea accesible desde internet, que es justo lo que rompia la
+            // publicacion con "Image upload failed. Invalid URL provided.".
+            imageBytes = await ctx.ReadOutputFileBytesAsync(imageFile);
+            if (imageBytes is { Length: > 0 })
             {
-                imageUrl = candidateUrl;
-                imageAlt = FromNodeOr("imageAlt", structured?.ImageAlt);
-                if (string.IsNullOrWhiteSpace(imageAlt))
-                    imageAlt = title;
-                await ctx.LogInfoAsync($"Imagen destacada adjunta: {imageFile.FileName} → {imageUrl}");
-            }
-            else if (string.IsNullOrWhiteSpace(candidateUrl))
-            {
-                await ctx.LogWarningAsync(
-                    "Hay una imagen conectada pero no se pudo generar su URL publica; " +
-                    "el articulo se publicara sin imagen destacada (revisa BaseUrl/PublicBaseUrl).");
+                imageFileName = imageFile.FileName;
+                imageContentType = imageFile.ContentType;
+                await ctx.LogInfoAsync(
+                    $"Imagen destacada: {imageFile.FileName} ({imageFile.ContentType}, {imageBytes.Length} bytes) " +
+                    "se subira directamente a Shopify.");
             }
             else
             {
-                // Shopify descarga la imagen desde esta URL al crear el articulo. Si la URL
-                // es relativa o apunta a localhost/red privada, Shopify la rechaza con
-                // "Image upload failed. Invalid URL provided." y con ella todo el articulo.
-                // Preferimos publicar SIN imagen antes que perder el articulo entero.
                 await ctx.LogWarningAsync(
-                    $"La imagen conectada genero una URL no accesible desde internet ({candidateUrl}); " +
-                    "Shopify no podria descargarla, asi que el articulo se publicara SIN imagen destacada. " +
-                    "Configura 'BaseUrl' con la URL publica del servidor (https, no localhost) para adjuntar imagenes.");
+                    $"No se pudieron leer los bytes de la imagen conectada ({imageFile.FileName}); " +
+                    "se intentara con su URL publica.");
             }
+
+            // Respaldo: solo sirve si Shopify puede descargarla desde internet.
+            var candidateUrl = ctx.GetPublicFileUrl(imageFile);
+            if (IsPubliclyReachableImageUrl(candidateUrl))
+                imageUrl = candidateUrl;
+            else if (imageBytes is null or { Length: 0 })
+                await ctx.LogWarningAsync(
+                    $"La URL publica de la imagen no es descargable por Shopify ({candidateUrl ?? "vacia"}); " +
+                    "el articulo se publicara sin imagen destacada. Configura 'BaseUrl' con una URL https publica.");
         }
 
         await ctx.LogInfoAsync($"Publicando articulo en Shopify ({connection.ShopDomain}) — \"{title}\" ({(isPublished ? "publicado" : "borrador")})");
@@ -132,6 +142,8 @@ public class ShopifyBlogModuleHandler : IModuleHandler
                 summary: excerpt, handle: handle,
                 seoTitle: seoTitle, metaDescription: metaDescription,
                 imageUrl: imageUrl, imageAltText: imageAlt,
+                imageBytes: imageBytes, imageFileName: imageFileName,
+                imageContentType: imageContentType,
                 ct: ctx.CancellationToken);
         }
         catch (OperationCanceledException)
@@ -145,6 +157,9 @@ public class ShopifyBlogModuleHandler : IModuleHandler
 
         if (!result.Success)
             return ModuleResult.Failed($"Shopify rechazo el articulo: {result.Error}");
+
+        if (!string.IsNullOrWhiteSpace(result.Warning))
+            await ctx.LogWarningAsync(result.Warning);
 
         var output = new StepOutput
         {
@@ -162,16 +177,19 @@ public class ShopifyBlogModuleHandler : IModuleHandler
     }
 
     /// <summary>
-    /// Comprueba que la URL de la imagen sea una URL absoluta http/https con un host
-    /// accesible desde internet. Shopify descarga la imagen destacada desde esta URL al
-    /// crear el articulo; una URL relativa (PublicBaseUrl sin configurar) o que apunte a
-    /// localhost/red privada la rechaza con "Image upload failed. Invalid URL provided.".
+    /// Comprueba que la URL sirva como respaldo para la imagen destacada: Shopify tiene
+    /// que poder descargarla desde sus servidores. Exige https absoluto con host publico.
+    /// Se descartan las URLs relativas (PublicBaseUrl sin configurar), http plano,
+    /// localhost y las redes privadas: en todos esos casos Shopify responde
+    /// "Image upload failed. Invalid URL provided.". La via principal no usa esto: los
+    /// bytes se suben directamente a Shopify con un staged upload.
     /// </summary>
     private static bool IsPubliclyReachableImageUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return false;
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
-        if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) return false;
+        // http plano: Shopify no lo descarga de forma fiable.
+        if (uri.Scheme != Uri.UriSchemeHttps) return false;
 
         var host = uri.Host;
         if (string.IsNullOrWhiteSpace(host)) return false;

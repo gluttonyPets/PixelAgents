@@ -105,8 +105,9 @@ public class NextExecutionHandlerTests
             .ReturnsAsync(new ProjectExecution { Id = newExecutionId, ProjectId = projectId, Status = "Running", WorkspacePath = "/tmp/ws2" });
 
         var planner = new Mock<IPromptPlannerService>();
+        var learning = new Mock<ILearningAnalysisService>();
         var telegram = new TelegramService(new HttpClient(new OkHandler()));
-        var handler = new TelegramUpdateHandler(coreDb, factory.Object, executor.Object, telegram, planner.Object);
+        var handler = new TelegramUpdateHandler(coreDb, factory.Object, executor.Object, telegram, planner.Object, learning.Object);
 
         // Act
         await handler.ProcessUpdateAsync(CallbackUpdate("next_execution", ChatId));
@@ -193,8 +194,9 @@ public class NextExecutionHandlerTests
         executor.Setup(e => e.CancelQueuedInteractionsAsync(executionId)).Returns(Task.CompletedTask);
 
         var planner = new Mock<IPromptPlannerService>();
+        var learning = new Mock<ILearningAnalysisService>();
         var telegram = new TelegramService(new HttpClient(new OkHandler()));
-        var handler = new TelegramUpdateHandler(coreDb, factory.Object, executor.Object, telegram, planner.Object);
+        var handler = new TelegramUpdateHandler(coreDb, factory.Object, executor.Object, telegram, planner.Object, learning.Object);
 
         // Act
         await handler.ProcessUpdateAsync(CallbackUpdate("next_execution", ChatId));
