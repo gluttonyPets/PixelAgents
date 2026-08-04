@@ -149,7 +149,7 @@ Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nue
 | Checkpoint    | CheckpointModuleHandler    | Pausa para revision humana antes de continuar              |
 | Design        | DesignModuleHandler        | Genera disenos via proveedor grafico (Canva, etc.)         |
 | Publish       | PublishModuleHandler       | Publica contenido en Instagram, TikTok, Pinterest o Threads via Buffer API |
-| ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug, SEO e imagen destacada via `input_image`, que se sube a Shopify con `stagedUploadsCreate` y requiere el scope `write_files`). El cuerpo acepta HTML con CSS (inline o `<style>`): si el contenido contiene cualquier etiqueta HTML se envia intacto sin escapar; el texto plano se convierte en parrafos |
+| ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug, SEO e imagen destacada via `input_image`, que se sube a Shopify con `stagedUploadsCreate` y requiere el scope `write_files`). El cuerpo acepta HTML con CSS (inline o `<style>`): si el contenido contiene cualquier etiqueta HTML se envia intacto sin escapar; el texto plano se convierte en parrafos. Devuelve en la salida y en `metadata` la URL del articulo en el admin (`adminUrl`, sirve para borradores) y la URL publica de la tienda (`publicUrl`) |
 
 ---
 

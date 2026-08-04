@@ -161,17 +161,35 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         if (!string.IsNullOrWhiteSpace(result.Warning))
             await ctx.LogWarningAsync(result.Warning);
 
+        // Enlaces para revisar el resultado. Shopify no expone por API la vista previa de
+        // un borrador (el "preview_key" lo genera su admin), asi que en borrador el enlace
+        // util es el del admin y la URL publica es la que tendra al publicarse.
+        var lines = new List<string> { $"Articulo creado en Shopify: {result.Handle ?? result.ArticleId}" };
+        if (!string.IsNullOrWhiteSpace(result.AdminUrl))
+            lines.Add($"Vista previa (admin): {result.AdminUrl}");
+        if (!string.IsNullOrWhiteSpace(result.PublicUrl))
+            lines.Add(isPublished
+                ? $"URL publica: {result.PublicUrl}"
+                : $"URL publica (cuando se publique): {result.PublicUrl}");
+
+        foreach (var line in lines.Skip(1))
+            await ctx.LogInfoAsync(line);
+
         var output = new StepOutput
         {
             Type = "text",
             Title = title,
-            Content = $"Articulo creado en Shopify: {result.Handle ?? result.ArticleId}",
+            Content = string.Join("\n", lines),
             Summary = isPublished ? "Articulo publicado" : "Articulo guardado como borrador",
         };
         if (!string.IsNullOrWhiteSpace(result.ArticleId))
             output.Metadata["articleId"] = result.ArticleId;
         if (!string.IsNullOrWhiteSpace(result.Handle))
             output.Metadata["handle"] = result.Handle;
+        if (!string.IsNullOrWhiteSpace(result.AdminUrl))
+            output.Metadata["adminUrl"] = result.AdminUrl;
+        if (!string.IsNullOrWhiteSpace(result.PublicUrl))
+            output.Metadata["publicUrl"] = result.PublicUrl;
 
         return ModuleResult.Completed(output);
     }

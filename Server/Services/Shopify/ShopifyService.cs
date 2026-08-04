@@ -401,6 +401,9 @@ namespace Server.Services.Shopify
             // desde internet (con http/IP/puerto raro Shopify responde
             // "Image upload failed. Invalid URL provided.").
             string? warning = null;
+            // Handle del blog: lo devuelve la propia mutacion y hace falta para componer
+            // la URL publica del articulo (/blogs/{blog}/{articulo}).
+            string? blogHandle = null;
             var resolvedImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
 
             if (imageBytes is { Length: > 0 })
@@ -426,7 +429,7 @@ namespace Server.Services.Shopify
 
             const string mutation = @"mutation CreateArticle($article: ArticleCreateInput!) {
   articleCreate(article: $article) {
-    article { id title handle }
+    article { id title handle blog { handle } }
     userErrors { field message }
   }
 }";
@@ -496,7 +499,18 @@ namespace Server.Services.Shopify
                 (result, _) = await TryCreateAsync(article);
             }
 
-            return result with { Warning = warning };
+            if (!result.Success)
+                return result with { Warning = warning };
+
+            // URLs para revisar el articulo. La del admin siempre vale; la publica solo
+            // responde si el articulo esta publicado.
+            var storeUrl = await TryGetOnlineStoreUrlAsync(shopDomain, token, ct);
+            return result with
+            {
+                Warning = warning,
+                AdminUrl = BuildAdminUrl(shopDomain, result.ArticleId),
+                PublicUrl = BuildPublicUrl(storeUrl, blogHandle, result.Handle),
+            };
 
             // Envia la mutacion y separa el caso "solo falla la imagen" del resto.
             async Task<(ShopifyArticleResult Result, string? ImageError)> TryCreateAsync(
@@ -529,6 +543,10 @@ namespace Server.Services.Shopify
                 {
                     var id = articleNode.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
                     var createdHandle = articleNode.TryGetProperty("handle", out var hEl) ? hEl.GetString() : null;
+                    if (articleNode.TryGetProperty("blog", out var blogNode) &&
+                        blogNode.ValueKind == JsonValueKind.Object &&
+                        blogNode.TryGetProperty("handle", out var bhEl))
+                        blogHandle = bhEl.GetString();
                     return (new ShopifyArticleResult(true, id, createdHandle, null), null);
                 }
 
@@ -536,11 +554,83 @@ namespace Server.Services.Shopify
             }
         }
 
+        /// <summary>
+        /// URL del dominio publico de la tienda (p. ej. "https://gluttony.es"). Es
+        /// "best effort": si la consulta falla se cae al dominio myshopify, que tambien
+        /// sirve la tienda. Nunca hace fallar la publicacion.
+        /// </summary>
+        private async Task<string> TryGetOnlineStoreUrlAsync(string shopDomain, string token, CancellationToken ct)
+        {
+            var fallback = $"https://{NormalizeDomain(shopDomain)}";
+            try
+            {
+                const string query = "query { shop { url } }";
+                using var doc = await PostGraphQlAsync(
+                    shopDomain, token, new { query }, ct, throwOnGraphQlErrors: false);
+
+                if (doc.RootElement.TryGetProperty("data", out var data) &&
+                    data.ValueKind == JsonValueKind.Object &&
+                    data.TryGetProperty("shop", out var shop) &&
+                    shop.ValueKind == JsonValueKind.Object &&
+                    shop.TryGetProperty("url", out var urlEl) &&
+                    urlEl.GetString() is { Length: > 0 } url)
+                    return url.TrimEnd('/');
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch { /* la URL es un extra: no puede tumbar una publicacion ya hecha */ }
+
+            return fallback;
+        }
+
+        /// <summary>
+        /// URL del articulo en el admin de Shopify. Vale tanto para borradores como para
+        /// publicados: es la unica forma de revisar un borrador, porque Shopify NO expone
+        /// por API la vista previa de un articulo sin publicar (el "preview_key" lo genera
+        /// el propio admin al pulsar "Vista previa").
+        /// </summary>
+        private static string? BuildAdminUrl(string shopDomain, string? articleGid)
+        {
+            var numericId = ExtractNumericId(articleGid);
+            if (numericId is null) return null;
+
+            var domain = NormalizeDomain(shopDomain);
+            const string suffix = ".myshopify.com";
+            return domain.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+                ? $"https://admin.shopify.com/store/{domain[..^suffix.Length]}/articles/{numericId}"
+                : $"https://{domain}/admin/articles/{numericId}";
+        }
+
+        /// <summary>
+        /// URL publica del articulo en la tienda. Solo responde si el articulo esta
+        /// publicado; en un borrador es la URL que tendra al publicarse.
+        /// </summary>
+        private static string? BuildPublicUrl(string? storeUrl, string? blogHandle, string? articleHandle) =>
+            string.IsNullOrWhiteSpace(storeUrl) ||
+            string.IsNullOrWhiteSpace(blogHandle) ||
+            string.IsNullOrWhiteSpace(articleHandle)
+                ? null
+                : $"{storeUrl.TrimEnd('/')}/blogs/{blogHandle}/{articleHandle}";
+
+        /// <summary>Extrae el id numerico de un GID ("gid://shopify/Article/123" -> "123").</summary>
+        private static string? ExtractNumericId(string? gid)
+        {
+            if (string.IsNullOrWhiteSpace(gid)) return null;
+            var last = gid.Split('/')[^1];
+            // Puede traer parametros de contexto: gid://shopify/Article/123?locale=es
+            var clean = last.Split('?')[0];
+            return clean.Length > 0 && clean.All(char.IsAsciiDigit) ? clean : null;
+        }
+
         private static string Truncate(string s, int max = 300) =>
             string.IsNullOrEmpty(s) || s.Length <= max ? s : s[..max];
     }
 
-    /// <summary><paramref name="Warning"/> reporta incidencias no fatales (p. ej. el articulo se publico sin imagen destacada).</summary>
+    /// <summary>
+    /// <paramref name="Warning"/> reporta incidencias no fatales (p. ej. el articulo se publico sin imagen destacada).
+    /// <paramref name="AdminUrl"/> abre el articulo en el admin de Shopify (unica forma de revisar un borrador).
+    /// <paramref name="PublicUrl"/> es la URL en la tienda: activa si el articulo esta publicado, futura si es borrador.
+    /// </summary>
     public record ShopifyArticleResult(
-        bool Success, string? ArticleId, string? Handle, string? Error, string? Warning = null);
+        bool Success, string? ArticleId, string? Handle, string? Error, string? Warning = null,
+        string? AdminUrl = null, string? PublicUrl = null);
 }
