@@ -53,7 +53,9 @@ public class ShopifyBlogModuleHandler : IModuleHandler
             title = "Sin titulo";
 
         var author = FromNodeOr("author", structured?.Author);
-        var isPublished = ctx.GetConfigBool("published", false);
+        // Por defecto el articulo sale VISIBLE en la tienda: hay que desmarcar "Publicar"
+        // en el nodo para dejarlo como borrador.
+        var isPublished = ctx.GetConfigBool("published", true);
 
         // Tags: config (coma-separados) -> JSON.
         var tagsConfig = ctx.GetConfig("tags");

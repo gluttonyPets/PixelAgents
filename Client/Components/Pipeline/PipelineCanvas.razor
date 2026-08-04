@@ -725,9 +725,9 @@
 
                             <div class="inspector-field">
                                 <label class="inspector-checkbox">
-                                    <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "published", false)"
+                                    <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "published", true)"
                                            @onchange="@(e => SetModuleConfig(sel.Id, "published", ((bool)(e.Value ?? false)).ToString().ToLower()))" />
-                                    <span>Publicar (si no, se guarda como borrador)</span>
+                                    <span>Publicar (activado por defecto; desmarcalo para guardar como borrador)</span>
                                 </label>
                             </div>
                         </div>

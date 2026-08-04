@@ -18,6 +18,7 @@ histórica, no documentación viva del sistema.
 | [`BUFFER_HEAD_REQUEST.md`](BUFFER_HEAD_REQUEST.md) | El endpoint público de imágenes de Buffer responde a peticiones `HEAD` (evita el 405). |
 | [`SHOPIFY_IMAGE_URL.md`](SHOPIFY_IMAGE_URL.md) | La imagen destacada fallaba con "Invalid URL provided" porque Shopify no podía descargarla de `http://IP:8080`; ahora se sube directa a Shopify con `stagedUploadsCreate`. |
 | [`TELEGRAM_DUPLICATE_UPDATE.md`](TELEGRAM_DUPLICATE_UPDATE.md) | Idempotencia en BD del `update_id` de Telegram + claim atómico del scheduler para que la interacción no se envíe duplicada. |
+| [`CONFIG_CASILLAS_BOOLEANAS.md`](CONFIG_CASILLAS_BOOLEANAS.md) | Las casillas del inspector se guardan como cadena y `GetConfigBool` solo leía booleanos JSON: "Publicar" no se aplicaba. ShopifyBlog publica visible por defecto. |
 | [`COSTE_EJECUCION_PRICING.md`](COSTE_EJECUCION_PRICING.md) | El gasto salía 0 (oculto) porque faltaban modelos actuales en `PricingCatalog`; la API no da coste por petición, solo tokens. |
 
 ## Convención

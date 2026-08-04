@@ -226,12 +226,32 @@ public class ModuleExecutionContext
     }
 
     /// <summary>Get a config value as bool.</summary>
-    public bool GetConfigBool(string key, bool fallback = false)
+    public bool GetConfigBool(string key, bool fallback = false) =>
+        Config.TryGetValue(key, out var val) ? ParseConfigBool(val, fallback) : fallback;
+
+    /// <summary>
+    /// Interpreta un valor de configuracion como bool.
+    ///
+    /// El editor guarda las casillas como CADENA ("true"/"false"), no como booleano JSON,
+    /// asi que un <see cref="System.Text.Json.JsonElement"/> de tipo String hay que
+    /// parsearlo. Tratar solo <c>JsonValueKind.True</c> hacia que cualquier casilla
+    /// marcada se leyera como false (p. ej. "Publicar" del nodo ShopifyBlog, que dejaba
+    /// el articulo en borrador aunque estuviese marcada).
+    /// </summary>
+    private static bool ParseConfigBool(object? val, bool fallback)
     {
-        if (!Config.TryGetValue(key, out var val)) return fallback;
         if (val is bool b) return b;
         if (val is System.Text.Json.JsonElement je)
-            return je.ValueKind == System.Text.Json.JsonValueKind.True;
+            return je.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.True => true,
+                System.Text.Json.JsonValueKind.False => false,
+                System.Text.Json.JsonValueKind.String =>
+                    bool.TryParse(je.GetString(), out var fromString) ? fromString : fallback,
+                System.Text.Json.JsonValueKind.Number =>
+                    je.TryGetDouble(out var n) ? n != 0 : fallback,
+                _ => fallback,
+            };
         return bool.TryParse(val?.ToString(), out var parsed) ? parsed : fallback;
     }
 }
