@@ -154,6 +154,21 @@
                         <input type="number" min="1" max="200000" @bind="_maxTokens" />
                     </div>
                 </div>
+                @if (AiModuleOptions.SupportsReasoningEffort(_provider, _model))
+                {
+                    <div class="form-group">
+                        <label>
+                            Esfuerzo de razonamiento
+                            <span class="text-sm text-muted">(los tokens de razonamiento se facturan como salida)</span>
+                        </label>
+                        <select @bind="_reasoningEffort">
+                            @foreach (var (value, label) in AiModuleOptions.ReasoningEffortOptions)
+                            {
+                                <option value="@value">@label</option>
+                            }
+                        </select>
+                    </div>
+                }
             }
             else if (_moduleType == "Image" && _provider == "OpenAI")
             {
@@ -171,13 +186,18 @@
                             }
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label>Calidad</label>
-                        <select @bind="_imageQuality">
-                            <option value="standard">Standard</option>
-                            <option value="hd">HD</option>
-                        </select>
-                    </div>
+                    @if (AiModuleOptions.SupportsQuality(_model))
+                    {
+                        <div class="form-group">
+                            <label>Calidad</label>
+                            <select @bind="_imageQuality">
+                                @foreach (var (value, label) in AiModuleOptions.GetImageQualitiesForModel(_model))
+                                {
+                                    <option value="@value">@label</option>
+                                }
+                            </select>
+                        </div>
+                    }
                 </div>
                 @if (IsGptImage())
                 {
@@ -488,6 +508,21 @@
                                             <input type="number" min="1" max="200000" @bind="_editMaxTokens" />
                                         </div>
                                     </div>
+                                    @if (AiModuleOptions.SupportsReasoningEffort(m.ProviderType, m.ModelName))
+                                    {
+                                        <div class="form-group">
+                                            <label>
+                                                Esfuerzo de razonamiento
+                                                <span class="text-sm text-muted">(los tokens de razonamiento se facturan como salida)</span>
+                                            </label>
+                                            <select @bind="_editReasoningEffort">
+                                                @foreach (var (value, label) in AiModuleOptions.ReasoningEffortOptions)
+                                                {
+                                                    <option value="@value">@label</option>
+                                                }
+                                            </select>
+                                        </div>
+                                    }
                                 }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
                                 {
@@ -505,13 +540,18 @@
                                                 }
                                             </select>
                                         </div>
-                                        <div class="form-group">
-                                            <label>Calidad</label>
-                                            <select @bind="_editImageQuality">
-                                                <option value="standard">Standard</option>
-                                                <option value="hd">HD</option>
-                                            </select>
-                                        </div>
+                                        @if (AiModuleOptions.SupportsQuality(m.ModelName))
+                                        {
+                                            <div class="form-group">
+                                                <label>Calidad</label>
+                                                <select @bind="_editImageQuality">
+                                                    @foreach (var (value, label) in AiModuleOptions.GetImageQualitiesForModel(m.ModelName))
+                                                    {
+                                                        <option value="@value">@label</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        }
                                     </div>
                                 }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "Google")
@@ -806,7 +846,8 @@ else
     private double _editTemperature = 0.7;
     private int _editMaxTokens = 4096;
     private string _editImageSize = "1024x1024";
-    private string _editImageQuality = "standard";
+    private string _editImageQuality = AiModuleOptions.DefaultImageQuality;
+    private string _editReasoningEffort = "";
     private string _editTtsVoice = "alloy";
     private double _editTtsSpeed = 1.0;
     private int _editLeoWidth = 1024;
@@ -820,7 +861,8 @@ else
 
     // ── Form: image config (OpenAI) ──
     private string _imageSize = "1024x1024";
-    private string _imageQuality = "standard";
+    private string _imageQuality = AiModuleOptions.DefaultImageQuality;
+    private string _reasoningEffort = "";
     private int _imageCount = 1;
 
     // ── Form: embeddings ──
@@ -1065,6 +1107,9 @@ else
         // Set size default based on model: gpt-image defaults to "auto" (preserves input dimensions)
         var sizes = GetImageSizesForModel(_model);
         _imageSize = sizes[0];
+        // Cada familia usa un vocabulario de calidad distinto: reencuadrar el valor
+        // evita guardar uno que el modelo nuevo no entiende.
+        _imageQuality = AiModuleOptions.NormalizeQualityForModel(_imageQuality, _model);
     }
 
     private void ResetConfig()
@@ -1073,7 +1118,8 @@ else
         _temperature = 0.7;
         _maxTokens = 4096;
         _imageSize = "1024x1024";
-        _imageQuality = "standard";
+        _imageQuality = AiModuleOptions.DefaultQualityForModel(_model);
+        _reasoningEffort = "";
         _imageCount = 1;
         _embeddingDimensions = null;
         _leoWidth = 1024;
@@ -1106,6 +1152,9 @@ else
                 parts.Add($"\"temperature\":{_temperature}");
             if (_maxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_maxTokens}");
+            if (AiModuleOptions.SupportsReasoningEffort(_provider, _model)
+                && !string.IsNullOrWhiteSpace(_reasoningEffort))
+                parts.Add($"\"reasoningEffort\":\"{_reasoningEffort}\"");
         }
         else if (_moduleType == "Image" && _provider == "Google")
         {
@@ -1140,7 +1189,9 @@ else
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
             if (_imageSize != "1024x1024")
                 parts.Add($"\"size\":\"{_imageSize}\"");
-            if (_imageQuality != "standard")
+            // La calidad se escribe siempre: si se omite, la API aplica "auto",
+            // que en gpt-image resuelve al tramo mas caro (high).
+            if (_provider == "OpenAI" && AiModuleOptions.SupportsQuality(_model))
                 parts.Add($"\"quality\":\"{_imageQuality}\"");
             if (IsGptImage() && _imageCount != 1)
                 parts.Add($"\"n\":{_imageCount}");
@@ -1280,7 +1331,8 @@ else
         _editTemperature = 0.7;
         _editMaxTokens = 4096;
         _editImageSize = "1024x1024";
-        _editImageQuality = "standard";
+        _editImageQuality = AiModuleOptions.DefaultQualityForModel(module.ModelName);
+        _editReasoningEffort = "";
         _editTtsVoice = "alloy";
         _editTtsSpeed = 1.0;
         _editLeoWidth = 1024;
@@ -1303,7 +1355,9 @@ else
                 if (root.TryGetProperty("temperature", out var t)) _editTemperature = t.GetDouble();
                 if (root.TryGetProperty("maxTokens", out var mt)) _editMaxTokens = mt.GetInt32();
                 if (root.TryGetProperty("size", out var sz)) _editImageSize = sz.GetString() ?? "1024x1024";
-                if (root.TryGetProperty("quality", out var q)) _editImageQuality = q.GetString() ?? "standard";
+                if (root.TryGetProperty("quality", out var q))
+                    _editImageQuality = AiModuleOptions.NormalizeQualityForModel(q.GetString(), module.ModelName);
+                if (root.TryGetProperty("reasoningEffort", out var re)) _editReasoningEffort = re.GetString() ?? "";
                 if (root.TryGetProperty("voice", out var v)) _editTtsVoice = v.GetString() ?? "alloy";
                 if (root.TryGetProperty("speed", out var spd)) _editTtsSpeed = spd.GetDouble();
                 if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
@@ -1391,7 +1445,7 @@ else
 
         try
         {
-            var config = BuildEditConfigJson(module.ModuleType, module.ProviderType);
+            var config = BuildEditConfigJson(module.ModuleType, module.ProviderType, module.ModelName);
             var (ok, error) = await Api.UpdateModuleConfigAsync(module.Id, module, config);
             if (ok)
             {
@@ -1407,7 +1461,7 @@ else
         _editConfigSaving = false;
     }
 
-    private string? BuildEditConfigJson(string moduleType, string providerType)
+    private string? BuildEditConfigJson(string moduleType, string providerType, string modelName)
     {
         var parts = new List<string>();
 
@@ -1419,6 +1473,9 @@ else
                 parts.Add($"\"temperature\":{_editTemperature}");
             if (_editMaxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_editMaxTokens}");
+            if (AiModuleOptions.SupportsReasoningEffort(providerType, modelName)
+                && !string.IsNullOrWhiteSpace(_editReasoningEffort))
+                parts.Add($"\"reasoningEffort\":\"{_editReasoningEffort}\"");
         }
         else if (moduleType == "Image" && providerType == "Google")
         {
@@ -1453,7 +1510,9 @@ else
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
             if (_editImageSize != "1024x1024")
                 parts.Add($"\"size\":\"{_editImageSize}\"");
-            if (_editImageQuality != "standard")
+            // La calidad se escribe siempre: si se omite, la API aplica "auto",
+            // que en gpt-image resuelve al tramo mas caro (high).
+            if (providerType == "OpenAI" && AiModuleOptions.SupportsQuality(modelName))
                 parts.Add($"\"quality\":\"{_editImageQuality}\"");
         }
         else if (moduleType == "Audio")

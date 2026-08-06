@@ -89,24 +89,13 @@ namespace Server.Services.Ai
         {
             var client = new Client(apiKey: context.ApiKey);
 
-            var systemParts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(context.MandatoryRules))
-                systemParts.Add(context.MandatoryRules);
-            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
-                systemParts.Add($"[INSTRUCCION PRINCIPAL - Esta es tu directiva prioritaria, sigue estas instrucciones por encima de cualquier otra regla]\n{sp}");
-            systemParts.Add(OutputSchemaHelper.GetTextContentRules());
-            if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
-            if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
-                systemParts.Add(context.PreviousExecutionsSummary);
-            if (!string.IsNullOrWhiteSpace(context.PastExecutionsLearning))
-                systemParts.Add(context.PastExecutionsLearning!);
+            var systemInstruction = SystemPromptComposer.Build(context);
 
             var config = new GenerateContentConfig
             {
                 SystemInstruction = new Content
                 {
-                    Parts = [new Part { Text = string.Join("\n\n", systemParts) }]
+                    Parts = [new Part { Text = systemInstruction }]
                 }
             };
 

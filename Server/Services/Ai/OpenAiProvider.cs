@@ -61,19 +61,7 @@ namespace Server.Services.Ai
 
             var messages = new List<ChatMessage>();
 
-            var systemParts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(context.MandatoryRules))
-                systemParts.Add(context.MandatoryRules);
-            if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt) && sysPrompt is string sp)
-                systemParts.Add($"[INSTRUCCION PRINCIPAL - Esta es tu directiva prioritaria, sigue estas instrucciones por encima de cualquier otra regla]\n{sp}");
-            systemParts.Add(OutputSchemaHelper.GetTextContentRules());
-            if (!string.IsNullOrWhiteSpace(context.ProjectContext))
-                systemParts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
-            if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
-                systemParts.Add(context.PreviousExecutionsSummary);
-            if (!string.IsNullOrWhiteSpace(context.PastExecutionsLearning))
-                systemParts.Add(context.PastExecutionsLearning!);
-            messages.Add(new SystemChatMessage(string.Join("\n\n", systemParts)));
+            messages.Add(new SystemChatMessage(SystemPromptComposer.Build(context)));
 
             if (context.InputFiles is { Count: > 0 })
             {
@@ -98,12 +86,29 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
                 options.MaxOutputTokenCount = Convert.ToInt32(maxTok);
 
+            // Los modelos de razonamiento facturan como salida los tokens que gastan
+            // "pensando", asi que el esfuerzo es la palanca de coste mas directa en
+            // gpt-5.x / serie o. Solo se envia a modelos que lo aceptan: el resto
+            // devuelve 400 si recibe el parametro.
+            if (SupportsReasoningEffort(context.ModelName)
+                && context.Configuration.TryGetValue("reasoningEffort", out var effort)
+                && effort is string effortStr
+                && !string.IsNullOrWhiteSpace(effortStr))
+            {
+#pragma warning disable OPENAI001 // ReasoningEffortLevel sigue marcado como experimental en el SDK.
+                options.ReasoningEffortLevel = new ChatReasoningEffortLevel(effortStr.Trim().ToLowerInvariant());
+#pragma warning restore OPENAI001
+            }
+
             var completion = await client.CompleteChatAsync(messages, options, ct);
 
             var text = completion.Value.Content[0].Text;
 
-            var inputTokens = completion.Value.Usage.InputTokenCount;
-            var outputTokens = completion.Value.Usage.OutputTokenCount;
+            var usage = completion.Value.Usage;
+            var inputTokens = usage.InputTokenCount;
+            var outputTokens = usage.OutputTokenCount;
+            var cachedTokens = usage.InputTokenDetails?.CachedTokenCount ?? 0;
+            var reasoningTokens = usage.OutputTokenDetails?.ReasoningTokenCount ?? 0;
 
             return new AiResult
             {
@@ -115,8 +120,28 @@ namespace Server.Services.Ai
                     ["model"] = context.ModelName,
                     ["inputTokens"] = inputTokens,
                     ["outputTokens"] = outputTokens,
+                    // Sin estos dos no hay forma de saber si el cache de prompt esta
+                    // funcionando ni cuanto se va en razonamiento: los dos conceptos
+                    // que mas mueven la factura y los dos que no se veian en la UI.
+                    ["cachedInputTokens"] = cachedTokens,
+                    ["reasoningTokens"] = reasoningTokens,
                 }
             };
+        }
+
+        /// <summary>
+        /// gpt-5.x y la serie o aceptan reasoning_effort. gpt-5-chat es la variante
+        /// sin razonamiento y lo rechaza, igual que gpt-4.x y anteriores.
+        /// </summary>
+        private static bool SupportsReasoningEffort(string modelName)
+        {
+            if (string.IsNullOrWhiteSpace(modelName)) return false;
+            if (modelName.Contains("chat", StringComparison.OrdinalIgnoreCase)) return false;
+
+            return modelName.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase)
+                || modelName.StartsWith("o1", StringComparison.OrdinalIgnoreCase)
+                || modelName.StartsWith("o3", StringComparison.OrdinalIgnoreCase)
+                || modelName.StartsWith("o4", StringComparison.OrdinalIgnoreCase);
         }
 
         public async Task<(bool Valid, string? Error)> ValidateKeyAsync(string apiKey)
@@ -142,6 +167,9 @@ namespace Server.Services.Ai
                 return (false, $"Error al validar OpenAI: {msg}");
             }
         }
+
+        private static GeneratedImageQuality NormalizeGptImageQuality(string? configured)
+            => new GeneratedImageQuality(GptImageOptions.NormalizeQuality(configured));
 
         private async Task<AiResult> GenerateImageAsync(AiExecutionContext context)
         {
@@ -202,22 +230,21 @@ namespace Server.Services.Ai
             }
 
             // Quality: dall-e-2 doesn't support quality; gpt-image uses different values
-            if (!isDallE2 && context.Configuration.TryGetValue("quality", out var quality) && quality is string q)
+            if (!isDallE2)
             {
+                context.Configuration.TryGetValue("quality", out var quality);
+                var q = quality as string;
+
                 if (isGptImage)
                 {
-                    // gpt-image: low, medium, high, auto
-                    options.Quality = q switch
-                    {
-                        "low" => new GeneratedImageQuality("low"),
-                        "medium" => new GeneratedImageQuality("medium"),
-                        "high" => GeneratedImageQuality.High,
-                        "auto" => new GeneratedImageQuality("auto"),
-                        "hd" => GeneratedImageQuality.High,
-                        _ => GeneratedImageQuality.High
-                    };
+                    // gpt-image factura la imagen como tokens de salida y el salto de
+                    // calidad es brutal: a 1024x1536 son 1.584 tokens en medium contra
+                    // 6.240 en high (4x). Si no se manda nada la API aplica "auto", que
+                    // resuelve a high — el tramo mas caro. Por eso aqui se fija medium
+                    // de forma explicita en vez de dejar que decida la API.
+                    options.Quality = NormalizeGptImageQuality(q);
                 }
-                else
+                else if (q is not null)
                 {
                     // dall-e-3: standard, hd
                     options.Quality = q switch
@@ -287,7 +314,9 @@ namespace Server.Services.Ai
                         "OpenAI image POST /v1/images/edits model={Model} size={Size} image_bytes={Bytes} prompt_chars={Chars} n={N}",
                         context.ModelName, sizeStr, context.InputFiles[0].Length, prompt.Length, batchN);
                     using var imageStream = new MemoryStream(context.InputFiles[0]);
-                    var editOptions = new ImageEditOptions { Size = options.Size };
+                    // Quality tambien aqui: sin ella la edicion se factura a high
+                    // aunque el modulo tenga configurado otro tramo.
+                    var editOptions = new ImageEditOptions { Size = options.Size, Quality = options.Quality };
                     if (batchN > 1)
                     {
                         var editResult = await client.GenerateImageEditsAsync(
@@ -526,8 +555,10 @@ namespace Server.Services.Ai
             if (n > 1)
                 form.Add(new StringContent(n.ToString()), "n");
 
-            if (config.TryGetValue("quality", out var q) && q is string qs && !string.IsNullOrWhiteSpace(qs))
-                form.Add(new StringContent(qs), "quality");
+            // Mismo criterio que en /v1/images/generations: si no se manda "quality"
+            // la API aplica "auto" -> high, el tramo mas caro. Se manda siempre.
+            config.TryGetValue("quality", out var q);
+            form.Add(new StringContent(GptImageOptions.NormalizeQuality(q as string)), "quality");
 
             var imageContent = new ByteArrayContent(inputImage);
             imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");

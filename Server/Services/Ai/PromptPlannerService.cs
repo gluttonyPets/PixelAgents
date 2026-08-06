@@ -87,13 +87,16 @@ namespace Server.Services.Ai
 
             var systemPrompt = BuildPlannerPrompt(count, instructions, project.Context);
 
+            // OJO: el contexto del proyecto ya va embebido en el prompt que construye
+            // BuildPlannerPrompt. Si ademas se pasara por ProjectContext, el provider
+            // lo volveria a inyectar en el system prompt y se pagaria el mismo texto
+            // dos veces en cada llamada.
             var aiContext = new AiExecutionContext
             {
                 ModuleType = "Text",
                 ModelName = modelOption.ModelName,
                 ApiKey = apiKeyEntity.EncryptedKey,
                 Input = systemPrompt,
-                ProjectContext = project.Context,
                 Configuration = new(),
             };
 

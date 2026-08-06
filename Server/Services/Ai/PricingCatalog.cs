@@ -165,16 +165,22 @@ namespace Server.Services.Ai
         /// </summary>
         public static decimal EstimateImageCost(string modelName, Dictionary<string, object>? config = null)
         {
-            var size = "1024x1024";
-            var quality = "standard";
+            // rawSize/rawQuality conservan "no configurado" (null) por separado del
+            // default de DALL-E: para gpt-image la ausencia de size NO significa
+            // 1024x1024, significa "auto", que la API resuelve a retrato.
+            string? rawSize = null;
+            string? rawQuality = null;
 
             if (config is not null)
             {
                 if (config.TryGetValue("size", out var s) && s is string sStr)
-                    size = sStr;
+                    rawSize = sStr;
                 if (config.TryGetValue("quality", out var q) && q is string qStr)
-                    quality = qStr;
+                    rawQuality = qStr;
             }
+
+            var size = rawSize ?? "1024x1024";
+            var quality = rawQuality ?? "standard";
 
             // DALL-E 3 detailed
             if (modelName.Equals("dall-e-3", StringComparison.OrdinalIgnoreCase))
@@ -193,24 +199,22 @@ namespace Server.Services.Ai
                 return 0.020m;
             }
 
-            // gpt-image-1-mini detailed
-            if (modelName.Equals("gpt-image-1-mini", StringComparison.OrdinalIgnoreCase))
+            // gpt-image: se normaliza con el mismo criterio que usa el provider al
+            // construir la peticion, para que el coste estimado no discrepe del real.
+            // Antes "standard" y "auto" se resolvian aqui de forma distinta a como
+            // los interpretaba la API, y el tamano se asumia cuadrado cuando "auto"
+            // devuelve retrato: el estimado salia por debajo de lo facturado.
+            if (GptImageOptions.IsGptImage(modelName))
             {
-                if (quality == "hd") quality = "high";
-                if (quality == "auto") quality = "medium";
-                var key = $"{quality}-{size}";
-                if (GptImageMiniDetailed.TryGetValue(key, out var price))
-                    return price;
-                return 0.015m;
-            }
+                var key = $"{GptImageOptions.NormalizeQuality(rawQuality)}-{GptImageOptions.NormalizeSizeForPricing(rawSize)}";
 
-            // gpt-image detailed (gpt-image-1, gpt-image-1.5, etc.)
-            if (modelName.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase))
-            {
-                // Map "hd" quality alias to "high"
-                if (quality == "hd") quality = "high";
-                if (quality == "auto") quality = "medium";
-                var key = $"{quality}-{size}";
+                if (modelName.Equals("gpt-image-1-mini", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (GptImageMiniDetailed.TryGetValue(key, out var miniPrice))
+                        return miniPrice;
+                    return 0.015m;
+                }
+
                 if (GptImageDetailed.TryGetValue(key, out var price))
                     return price;
                 return 0.042m;
