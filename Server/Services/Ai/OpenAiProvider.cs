@@ -316,7 +316,9 @@ namespace Server.Services.Ai
                     using var imageStream = new MemoryStream(context.InputFiles[0]);
                     // Quality tambien aqui: sin ella la edicion se factura a high
                     // aunque el modulo tenga configurado otro tramo.
+#pragma warning disable OPENAI001 // ImageEditOptions.Quality sigue marcado como experimental en el SDK.
                     var editOptions = new ImageEditOptions { Size = options.Size, Quality = options.Quality };
+#pragma warning restore OPENAI001
                     if (batchN > 1)
                     {
                         var editResult = await client.GenerateImageEditsAsync(
