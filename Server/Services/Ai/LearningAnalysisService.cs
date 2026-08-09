@@ -28,6 +28,7 @@ namespace Server.Services.Ai
         private readonly ITenantDbContextFactory _factory;
         private readonly IAiProviderRegistry _registry;
         private readonly ILogger<LearningAnalysisService> _log;
+        private readonly string _mediaRoot;
 
         private const int MaxImages = 4;
         private const int MaxOutputChars = 1500;
@@ -35,12 +36,18 @@ namespace Server.Services.Ai
         public LearningAnalysisService(
             ITenantDbContextFactory factory,
             IAiProviderRegistry registry,
+            IWebHostEnvironment env,
             ILogger<LearningAnalysisService> log)
         {
             _factory = factory;
             _registry = registry;
             _log = log;
+            // Misma raíz que GraphPipelineExecutor para resolver los ficheros generados.
+            _mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
         }
+
+        private string ResolveWorkspacePath(string storedPath) =>
+            Path.IsPathRooted(storedPath) ? storedPath : Path.Combine(_mediaRoot, storedPath);
 
         public async Task AnalyzeAbortAsync(string tenantDbName, Guid feedbackId, CancellationToken ct = default)
         {
@@ -127,7 +134,7 @@ namespace Server.Services.Ai
                     .ToList();
 
                 var stepsText = BuildStepsText(steps);
-                var images = LoadImages(steps, providerType, modelName, tenantDbName, exec.WorkspacePath);
+                var images = LoadImages(steps, providerType, modelName, exec.WorkspacePath);
 
                 var existingDoc = await db.ProjectLearningDocs
                     .FirstOrDefaultAsync(d => d.ProjectId == project.Id, ct);
@@ -138,7 +145,6 @@ namespace Server.Services.Ai
                     moduleNames: moduleNames,
                     stepsText: stepsText,
                     hasImages: images.Count > 0,
-                    currentDoc: existingDoc?.Content ?? "",
                     currentActiveLearnings: existingDoc?.ActiveLearningsJson ?? "[]");
 
                 // ── Llamar al modelo analista ──
@@ -181,26 +187,26 @@ namespace Server.Services.Ai
                 }
 
                 // ── Persistir documento vivo + histórico ──
-                if (!string.IsNullOrWhiteSpace(parsed.UpdatedDoc))
+                // El markdown lo generamos NOSOTROS desde los aprendizajes activos (agrupado por
+                // módulo), no el modelo: así queda limpio y sin marcadores repetidos.
+                var content = BuildMarkdown(parsed.ActiveLearningsJson);
+                if (existingDoc is null)
                 {
-                    if (existingDoc is null)
+                    existingDoc = new ProjectLearningDoc
                     {
-                        existingDoc = new ProjectLearningDoc
-                        {
-                            Id = Guid.NewGuid(),
-                            ProjectId = project.Id,
-                            Content = parsed.UpdatedDoc!.Trim(),
-                            ActiveLearningsJson = parsed.ActiveLearningsJson,
-                            UpdatedAt = DateTime.UtcNow,
-                        };
-                        db.ProjectLearningDocs.Add(existingDoc);
-                    }
-                    else
-                    {
-                        existingDoc.Content = parsed.UpdatedDoc!.Trim();
-                        existingDoc.ActiveLearningsJson = parsed.ActiveLearningsJson;
-                        existingDoc.UpdatedAt = DateTime.UtcNow;
-                    }
+                        Id = Guid.NewGuid(),
+                        ProjectId = project.Id,
+                        Content = content,
+                        ActiveLearningsJson = parsed.ActiveLearningsJson,
+                        UpdatedAt = DateTime.UtcNow,
+                    };
+                    db.ProjectLearningDocs.Add(existingDoc);
+                }
+                else
+                {
+                    existingDoc.Content = content;
+                    existingDoc.ActiveLearningsJson = parsed.ActiveLearningsJson;
+                    existingDoc.UpdatedAt = DateTime.UtcNow;
                 }
 
                 await RecordEntryAsync(db, project.Id, exec.Id, feedback, $"{providerType}/{modelName}",
@@ -275,12 +281,12 @@ namespace Server.Services.Ai
         }
 
         private List<byte[]> LoadImages(List<StepExecution> steps, string providerType, string modelName,
-            string tenantDbName, string workspacePath)
+            string storedWorkspacePath)
         {
             if (!VisionCapability.IsVisionCapable(providerType, modelName)) return new();
 
             var images = new List<byte[]>();
-            var mediaRoot = Path.Combine(Directory.GetCurrentDirectory(), "GeneratedMedia");
+            var workspacePath = ResolveWorkspacePath(storedWorkspacePath);
 
             foreach (var s in steps)
             {
@@ -288,31 +294,33 @@ namespace Server.Services.Ai
                              .Where(f => f.ContentType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true))
                 {
                     if (images.Count >= MaxImages) return images;
-                    var bytes = TryReadFile(mediaRoot, workspacePath, tenantDbName, f.FilePath);
+                    var bytes = TryReadFile(workspacePath, f.FilePath);
                     if (bytes is not null) images.Add(bytes);
                 }
             }
             return images;
         }
 
-        private static byte[]? TryReadFile(string mediaRoot, string workspacePath, string tenantDbName, string filePath)
+        /// <summary>
+        /// Resuelve un fichero de salida. FilePath es relativo al workspace de la ejecución
+        /// (p.ej. "module_xxx/imagen.png"). Se prueban varias raíces por robustez.
+        /// </summary>
+        private byte[]? TryReadFile(string workspacePath, string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath)) return null;
             var candidates = new List<string>
             {
-                Path.Combine(mediaRoot, filePath),
-                Path.Combine(mediaRoot, tenantDbName, filePath),
-                Path.Combine(workspacePath, filePath),
-                filePath,
+                Path.Combine(workspacePath, filePath),  // caso normal: workspace + ruta relativa
+                Path.Combine(_mediaRoot, filePath),     // fallback: bajo GeneratedMedia
+                filePath,                                // ruta absoluta legacy
             };
-            if (!Path.IsPathRooted(workspacePath))
-                candidates.Insert(0, Path.Combine(mediaRoot, workspacePath, filePath));
 
             foreach (var c in candidates)
             {
                 try { if (File.Exists(c)) return File.ReadAllBytes(c); }
                 catch { /* siguiente candidato */ }
             }
+            _log.LogWarning("LearningAnalysis: no se encontró la imagen {FilePath} (workspace {Workspace})", filePath, workspacePath);
             return null;
         }
 
@@ -321,7 +329,7 @@ namespace Server.Services.Ai
 
         private static string BuildAnalysisPrompt(
             string userComment, string? userInput, List<string> moduleNames, string stepsText,
-            bool hasImages, string currentDoc, string currentActiveLearnings)
+            bool hasImages, string currentActiveLearnings)
         {
             var modulesList = moduleNames.Count > 0
                 ? string.Join(", ", moduleNames.Select(m => $"\"{m}\""))
@@ -336,8 +344,8 @@ para ajustarse a su gusto (rellena ""imageCritique"")."
             return
 $@"Eres un ANALISTA DE APRENDIZAJE de un sistema de generación de contenido por pipelines.
 El usuario ha ABORTADO una ejecución y ha dejado un comentario de qué ha ido mal. Tu trabajo es
-entender el fallo, atribuirlo al/los módulo(s) responsable(s), y DESTILAR el aprendizaje en el
-documento vivo del proyecto, sin duplicar ni contradecir lo que ya existe.
+entender el fallo, atribuirlo al/los módulo(s) responsable(s) y DESTILAR el aprendizaje, sin duplicar
+ni contradecir lo que ya existe.
 
 COMENTARIO DEL USUARIO (qué ha ido mal):
 ""{userComment}""
@@ -352,38 +360,80 @@ LO QUE PRODUJO CADA PASO:
 
 {imageInstruction}
 
-DOCUMENTO VIVO ACTUAL DEL PROYECTO (markdown; puede estar vacío):
----INICIO DOC---
-{(string.IsNullOrWhiteSpace(currentDoc) ? "(vacío)" : currentDoc)}
----FIN DOC---
-
-APRENDIZAJES ACTIVOS ACTUALES (JSON):
+APRENDIZAJES ACTIVOS ACTUALES (JSON, [] si está vacío):
 {currentActiveLearnings}
 
 INSTRUCCIONES:
 1. Atribuye la culpa al/los módulo(s). El fallo puede estar AGUAS ARRIBA (p.ej. una imagen mala
    porque el módulo de texto escribió mal el prompt de imagen). Usa los nombres EXACTOS de la lista.
 2. Destila UNA conclusión accionable y concreta (no genérica) que evite que vuelva a pasar.
-3. Reconcilia con el documento: si ya está dicho -> ""reinforced"" o ""skipped_duplicate""; si contradice
-   algo escrito -> ""resolved_contradiction"" (actualiza la nota vieja); si es nuevo -> ""added"";
+3. Reconcilia con los aprendizajes actuales: si ya está dicho -> ""reinforced"" o ""skipped_duplicate"";
+   si contradice algo -> ""resolved_contradiction"" (sustituye la nota vieja); si es nuevo -> ""added"";
    si mejora una nota existente -> ""updated"".
-4. Devuelve el documento COMPLETO actualizado (markdown, en español, conciso y consolidado; NO acumules
-   ejemplos sin fin: agrupa y resume). Organiza por secciones (p.ej. Texto/Caption, Imágenes, Hashtags,
-   Estilo general).
-5. Devuelve la lista de aprendizajes activos consolidada, cada uno etiquetado con el módulo al que aplica
-   (usa el nombre exacto) o ""general"". Mantenla ACOTADA: fusiona/elimina lo redundante.
+4. Devuelve la lista COMPLETA de aprendizajes activos ya consolidada (la actual con tu cambio aplicado):
+   cada aprendizaje con el módulo EXACTO al que aplica, o ""general"" si aplica a todos los módulos.
+   Un aprendizaje etiquetado con un módulo SOLO se le inyectará a ese módulo; ""general"" se inyecta a todos.
+   Mantén la lista ACOTADA: fusiona/elimina lo redundante, no acumules sin fin. Texto conciso y accionable.
 
-Responde EXCLUSIVAMENTE con un único objeto JSON válido, sin texto fuera del JSON y sin markdown, con esta forma EXACTA:
+Responde EXCLUSIVAMENTE con un único objeto JSON válido, sin texto fuera del JSON, sin markdown y SIN
+marcadores como ---INICIO DOC---. Forma EXACTA:
 {{
   ""attributions"": [{{ ""module"": ""<nombre>"", ""reason"": ""<por qué>"", ""confidence"": 0.0 }}],
   ""imageCritique"": ""<texto o null>"",
   ""conclusion"": ""<conclusión destilada>"",
   ""docAction"": ""added|reinforced|updated|skipped_duplicate|resolved_contradiction"",
   ""docChange"": ""<qué añadiste/cambiaste o por qué lo descartaste>"",
-  ""updatedDoc"": ""<documento markdown COMPLETO actualizado>"",
-  ""activeLearnings"": [{{ ""module"": ""<nombre>|general"", ""text"": ""<aprendizaje conciso>"" }}]
+  ""activeLearnings"": [{{ ""module"": ""<nombre exacto>|general"", ""text"": ""<aprendizaje conciso>"" }}]
 }}";
         }
+
+        /// <summary>
+        /// Genera el documento markdown (legible/descargable) a partir de los aprendizajes activos,
+        /// agrupados por módulo. Lo generamos NOSOTROS (no el modelo) para que sea limpio, muestre
+        /// claramente qué es general y qué es de cada módulo, y no acumule marcadores ni ruido.
+        /// </summary>
+        private static string BuildMarkdown(string? activeLearningsJson)
+        {
+            var learnings = LearningInjection.Parse(activeLearningsJson);
+            var sb = new StringBuilder();
+            sb.AppendLine("# Aprendizaje del proyecto");
+            sb.AppendLine();
+            sb.AppendLine($"_Actualizado: {DateTime.UtcNow:yyyy-MM-dd HH:mm} UTC_");
+            sb.AppendLine();
+
+            if (learnings.Count == 0)
+            {
+                sb.AppendLine("(todavía no hay aprendizajes registrados)");
+                return sb.ToString().TrimEnd();
+            }
+
+            // Generales primero, luego por módulo.
+            var general = learnings.Where(l => IsGeneralScope(l.Module)).ToList();
+            if (general.Count > 0)
+            {
+                sb.AppendLine("## General (todos los módulos)");
+                foreach (var l in general) sb.AppendLine($"- {l.Text.Trim()}");
+                sb.AppendLine();
+            }
+
+            foreach (var group in learnings
+                         .Where(l => !IsGeneralScope(l.Module))
+                         .GroupBy(l => l.Module.Trim(), StringComparer.OrdinalIgnoreCase)
+                         .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"## Módulo: {group.Key}");
+                foreach (var l in group) sb.AppendLine($"- {l.Text.Trim()}");
+                sb.AppendLine();
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static bool IsGeneralScope(string module) =>
+            string.IsNullOrWhiteSpace(module)
+            || string.Equals(module, "general", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(module, "all", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(module, "todos", StringComparison.OrdinalIgnoreCase);
 
         private sealed class AnalysisResult
         {
@@ -392,7 +442,6 @@ Responde EXCLUSIVAMENTE con un único objeto JSON válido, sin texto fuera del J
             public string? Conclusion { get; set; }
             public string? DocAction { get; set; }
             public string? DocChange { get; set; }
-            public string? UpdatedDoc { get; set; }
             public string? ActiveLearningsJson { get; set; }
         }
 
@@ -408,7 +457,7 @@ Responde EXCLUSIVAMENTE con un único objeto JSON válido, sin texto fuera del J
 
                 // Tolerancia: algunos modelos envuelven la salida en {"content": "..."}.
                 if (root.ValueKind == JsonValueKind.Object
-                    && !root.TryGetProperty("updatedDoc", out _)
+                    && !root.TryGetProperty("activeLearnings", out _)
                     && root.TryGetProperty("content", out var inner)
                     && inner.ValueKind == JsonValueKind.String)
                 {
@@ -447,7 +496,6 @@ Responde EXCLUSIVAMENTE con un único objeto JSON válido, sin texto fuera del J
                 Conclusion = Str("conclusion"),
                 DocAction = Str("docAction"),
                 DocChange = Str("docChange"),
-                UpdatedDoc = Str("updatedDoc"),
                 ActiveLearningsJson = RawArray("activeLearnings"),
             };
         }
