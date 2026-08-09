@@ -76,11 +76,20 @@ Todo es **autónomo**: no requiere aprobación humana. Nunca toca los prompts de
 usuario ni las Reglas globales (que siguen siendo humanas).
 
 ### El documento vivo y su histórico
-- `ProjectLearningDoc` (uno por proyecto): `Content` markdown descargable
-  (`GET /api/projects/{id}/learning/download`) + `ActiveLearningsJson` (aprendizajes
-  activos etiquetados por módulo, lo que se inyecta).
+- `ProjectLearningDoc` (uno por proyecto): `ActiveLearningsJson` es la fuente de
+  verdad (lista de aprendizajes etiquetados por módulo, lo que se inyecta). El
+  `Content` markdown descargable (`GET /api/projects/{id}/learning/download`) lo
+  **genera el servidor** a partir de esa lista, agrupado por **General** y por
+  **Módulo: &lt;nombre&gt;** — así se ve claramente qué aplica a todos y qué a cada
+  módulo. El modelo NO redacta el markdown (evita ruido y marcadores repetidos).
 - `LearningEntry` (append-only): una fila por análisis, con atribución, conclusión,
   crítica de imagen, acción sobre el documento y errores. Visible en la web.
+
+### Cómo se decide "un módulo" vs "todos"
+Cada aprendizaje lleva una etiqueta `module`. Si es el **nombre exacto de un módulo**
+(el `AiModule.Name`), solo se inyecta en ese módulo; si es `general`, se inyecta en
+todos. El filtrado en ejecución lo hace `LearningInjection.BuildBlock` comparando la
+etiqueta con el nombre/StepName del módulo que va a ejecutarse.
 
 ### Cómo se cierra el bucle (capa de inyección)
 Los aprendizajes activos se inyectan como una **capa aparte y etiquetada**
