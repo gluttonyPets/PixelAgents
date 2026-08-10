@@ -84,6 +84,10 @@ usuario ni las Reglas globales (que siguen siendo humanas).
   módulo. El modelo NO redacta el markdown (evita ruido y marcadores repetidos).
 - `LearningEntry` (append-only): una fila por análisis, con atribución, conclusión,
   crítica de imagen, acción sobre el documento y errores. Visible en la web.
+- **Restablecer aprendizaje**: botón en la pestaña Aprendizaje (con confirmación)
+  que llama a `DELETE /api/projects/{id}/learning` y borra el `ProjectLearningDoc` y
+  todos los `LearningEntry` del proyecto para empezar de 0. No toca el feedback de
+  ejecuciones (historial) ni la configuración del analista.
 
 ### Cómo se decide "un módulo" vs "todos"
 Cada aprendizaje lleva una etiqueta `module`. Si es el **nombre exacto de un módulo**

@@ -2054,6 +2054,24 @@ app.MapGet("/api/projects/{projectId}/learning/download", async (
     return Results.File(bytes, "text/markdown; charset=utf-8", $"aprendizaje-{projectId}.md");
 }).RequireAuthorization();
 
+// Restablecer el aprendizaje: borra el documento vivo y el histórico de conclusiones del
+// proyecto para empezar de 0. NO toca el feedback de ejecuciones (historial) ni la config.
+app.MapDelete("/api/projects/{projectId}/learning", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var docs = await db.ProjectLearningDocs.Where(d => d.ProjectId == projectId).ToListAsync();
+    if (docs.Count > 0) db.ProjectLearningDocs.RemoveRange(docs);
+
+    var entries = await db.LearningEntries.Where(e => e.ProjectId == projectId).ToListAsync();
+    if (entries.Count > 0) db.LearningEntries.RemoveRange(entries);
+
+    await db.SaveChangesAsync();
+    return Results.Ok(new { cleared = true });
+}).RequireAuthorization();
+
 // Get persisted logs for an execution
 app.MapGet("/api/executions/{executionId}/logs", async (
     Guid executionId, HttpContext ctx,

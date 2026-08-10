@@ -1532,15 +1532,43 @@ else
                         </div>
 
                         <div class="settings-block">
+                            @{
+                                var hasLearning = _learningDoc is not null
+                                    && (!string.IsNullOrWhiteSpace(_learningDoc.Content) || _learningDoc.Entries.Count > 0);
+                            }
                             <div class="settings-block-header">
                                 <strong>Documento vivo del proyecto</strong>
-                                @if (_learningDoc is not null && !string.IsNullOrWhiteSpace(_learningDoc.Content))
-                                {
-                                    <a class="btn btn-secondary btn-sm" href="@($"{_apiBase}/api/projects/{ProjectId}/learning/download")" target="_blank">
-                                        Descargar .md
-                                    </a>
-                                }
+                                <div style="display:flex; gap:0.4rem;">
+                                    @if (_learningDoc is not null && !string.IsNullOrWhiteSpace(_learningDoc.Content))
+                                    {
+                                        <a class="btn btn-secondary btn-sm" href="@($"{_apiBase}/api/projects/{ProjectId}/learning/download")" target="_blank">
+                                            Descargar .md
+                                        </a>
+                                    }
+                                    @if (hasLearning && !_confirmResetLearning)
+                                    {
+                                        <button class="btn btn-danger btn-sm" @onclick="() => { _confirmResetLearning = true; _learningMsg = null; }">
+                                            Restablecer aprendizaje
+                                        </button>
+                                    }
+                                </div>
                             </div>
+
+                            @if (_confirmResetLearning)
+                            {
+                                <div class="alert alert-error" style="display:flex; flex-direction:column; gap:0.5rem;">
+                                    <span>¿Seguro que quieres <strong>restablecer el aprendizaje</strong>? Se borrará el documento vivo y todo el histórico de conclusiones para empezar de 0. Esta acción <strong>no se puede deshacer</strong> (no afecta al feedback del historial de ejecuciones).</span>
+                                    <div style="display:flex; gap:0.5rem;">
+                                        <button class="btn btn-danger btn-sm" @onclick="ResetLearning" disabled="@_learningResetting">
+                                            @(_learningResetting ? "Borrando..." : "Sí, borrar todo")
+                                        </button>
+                                        <button class="btn btn-secondary btn-sm" @onclick="() => _confirmResetLearning = false" disabled="@_learningResetting">
+                                            Cancelar
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+
                             @if (_learningDoc is null || string.IsNullOrWhiteSpace(_learningDoc.Content))
                             {
                                 <p class="text-sm text-muted">Todavía no hay aprendizajes registrados. Aparecerán aquí cuando abortes ejecuciones con comentario.</p>
@@ -1778,6 +1806,8 @@ else
     private string? _learningMsg;
     private bool _learningIsDefault;
     private LearningDocResponse? _learningDoc;
+    private bool _confirmResetLearning;
+    private bool _learningResetting;
     private List<RuleResponse> _tenantRules = [];
     private ExecutionDetailResponse? _result;
 
@@ -3055,6 +3085,7 @@ else
     {
         _settingsTab = "learning";
         _learningMsg = null;
+        _confirmResetLearning = false;
         try
         {
             _analystModels = await Api.GetAnalystModelsAsync();
@@ -3096,6 +3127,31 @@ else
         }
         catch { _learningMsg = "No se pudo guardar. Inténtalo de nuevo."; }
         finally { _learningSaving = false; }
+    }
+
+    private async Task ResetLearning()
+    {
+        _learningResetting = true;
+        _learningMsg = null;
+        try
+        {
+            var ok = await Api.ResetLearningAsync(ProjectId);
+            if (ok)
+            {
+                _learningDoc = new LearningDocResponse("", null, null, new());
+                _learningMsg = "Aprendizaje restablecido. Se ha empezado de 0.";
+            }
+            else
+            {
+                _learningMsg = "No se pudo restablecer. Inténtalo de nuevo.";
+            }
+        }
+        catch { _learningMsg = "No se pudo restablecer. Inténtalo de nuevo."; }
+        finally
+        {
+            _learningResetting = false;
+            _confirmResetLearning = false;
+        }
     }
 
     private async Task ToggleHistoryCard(Guid id)

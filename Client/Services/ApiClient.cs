@@ -386,6 +386,12 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<LearningDocResponse>();
     }
 
+    public async Task<bool> ResetLearningAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/learning");
+        return resp.IsSuccessStatusCode;
+    }
+
     public async Task<ExecutionDetailResponse?> GetExecutionDetailAsync(Guid id)
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/executions/{id}");
