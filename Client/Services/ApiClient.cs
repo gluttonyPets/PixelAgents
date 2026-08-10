@@ -58,6 +58,14 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ModelLifecycleResponse>>() ?? [];
     }
 
+    /// <summary>Tarifas de todos los modelos de texto e imagen del catalogo.</summary>
+    public async Task<List<ModelPriceResponse>> GetModelPricingAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/models/pricing");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ModelPriceResponse>>() ?? [];
+    }
+
     // ── ApiKeys ──
 
     public async Task<List<ApiKeyResponse>> GetApiKeysAsync()

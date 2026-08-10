@@ -4780,3 +4780,103 @@ a.link:hover { text-decoration: underline; }
 }
 
 .model-lifecycle-notice.is-retired strong { color: var(--danger); }
+
+/* ── Pantalla de precios de modelos ── */
+.pricing-lede {
+    max-width: 68ch;
+    margin-bottom: 1.25rem;
+}
+
+.pricing-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.pricing-tokens {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem;
+}
+
+.pricing-tokens label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.pricing-tokens input {
+    width: 8rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.pricing-section-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin: 2rem 0 0.75rem;
+    font-size: 1.05rem;
+}
+
+.pricing-section-note {
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+/* Los precios se comparan en vertical, asi que van alineados a la derecha y con
+   cifras de ancho fijo: si no, el ojo no puede leer la columna de un vistazo. */
+.pricing-table .num {
+    text-align: right;
+    white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.pricing-table thead th.num { text-align: right; }
+.pricing-table .num-strong { color: var(--text); font-weight: 600; }
+
+.pricing-id {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+}
+
+.pricing-provider {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.pricing-flat {
+    font-family: inherit;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.pricing-bar-col { width: 160px; min-width: 110px; }
+
+.pricing-bar {
+    display: block;
+    height: 7px;
+    border-radius: 0 4px 4px 0;
+    background: var(--accent);
+}
+
+.pricing-footnote {
+    max-width: 68ch;
+    margin-top: 1.75rem;
+    font-size: 0.82rem;
+}
+
+@media (max-width: 820px) {
+    .pricing-bar-col { display: none; }
+}

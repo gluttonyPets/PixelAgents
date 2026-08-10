@@ -125,7 +125,10 @@ todo modelo retirado indica un sustituto que sigue vivo.
 
 ---
 
-## 6. Endpoint
+## 6. Endpoints y pantalla de precios
+
+Los dos endpoints los sirve `ModelCatalogService`, que une catálogo, tarifas y ciclo
+de vida y los resuelve contra las API keys del tenant.
 
 `GET /api/models/lifecycle` devuelve, para cada modelo del catálogo del servidor:
 
@@ -145,3 +148,19 @@ todo modelo retirado indica un sustituto que sigue vivo.
 
 Lo consume `Client/Components/ModelLifecycleBadge.razor`, que pinta la etiqueta
 compacta en las tablas y el aviso completo bajo el modelo seleccionado.
+
+`GET /api/models/pricing` añade a lo anterior las tarifas de los modelos de texto e
+imagen (los de embeddings y audio no entran). Alimenta la pantalla **Precios**
+(`/precios`, `Client/Pages/ModelPricing.razor`).
+
+El servidor manda las tarifas **por millón de tokens**, no el coste por ejecución: es
+el cliente quien multiplica, para que el usuario pueda cambiar los tokens de entrada y
+salida y ver la tabla recalcularse. Por defecto asume 10.000 de entrada y 2.000 de
+salida —un artículo corto con su prompt de sistema— porque el precio por millón es
+difícil de traducir a dinero real de un vistazo.
+
+La barra de la tabla es **logarítmica**, y está etiquetada como tal: entre el modelo
+más barato y el más caro hay tres órdenes de magnitud, y en escala lineal todo lo que
+no fuese un modelo Pro sería una barra invisible. La escala se calcula sobre los
+modelos visibles, así que al filtrar por proveedor las barras se reajustan a ese
+conjunto.

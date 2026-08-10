@@ -1,0 +1,226 @@
+@page "/precios"
+@inject ApiClient Api
+
+<div class="apikeys-page-header">
+    <h2>Precios de modelos</h2>
+</div>
+
+@if (_loading)
+{
+    <p class="text-muted">Cargando tarifas...</p>
+}
+else if (_models.Count == 0)
+{
+    <p class="text-muted">No se han podido cargar las tarifas.</p>
+}
+else
+{
+    var providers = _models.Select(m => m.Provider).Distinct().OrderBy(p => p).ToList();
+
+    var visible = _models
+        .Where(m => _filterProvider is null || m.Provider == _filterProvider)
+        .ToList();
+
+    var text = visible
+        .Where(m => m.Kind == "text")
+        .OrderBy(m => m.CostFor(_inputTokens, _outputTokens))
+        .ToList();
+
+    var image = visible
+        .Where(m => m.Kind == "image")
+        .OrderBy(m => m.ImageMedium ?? 0m)
+        .ToList();
+
+    <p class="text-muted pricing-lede">
+        Tarifas de los @_models.Count modelos del catalogo. Los importes salen del mismo
+        <code>PricingCatalog</code> que usa la app para estimar el gasto de cada ejecucion,
+        asi que lo que ves aqui es lo que se te va a cobrar en el inspector.
+    </p>
+
+    <div class="pricing-toolbar">
+        @* Los campos se recalculan al salir del campo, no en cada tecla: con binding a
+           int, el instante en que el campo queda vacio al reescribirlo es un error de
+           parseo y Blazor revierte el valor delante del usuario. *@
+        <div class="pricing-tokens">
+            <label>
+                Tokens de entrada
+                <input type="number" min="0" step="500" @bind="_inputTokens" />
+            </label>
+            <label>
+                Tokens de salida
+                <input type="number" min="0" step="500" @bind="_outputTokens" />
+            </label>
+            <button class="btn btn-sm btn-secondary" @onclick="ResetTokens">Restablecer</button>
+        </div>
+
+        <div class="apikeys-filters">
+            <button class="filter-pill @(_filterProvider is null ? "active" : "")"
+                    @onclick="() => _filterProvider = null">
+                Todos <span class="filter-count">@_models.Count</span>
+            </button>
+            @foreach (var p in providers)
+            {
+                var count = _models.Count(m => m.Provider == p);
+                <button class="filter-pill @(_filterProvider == p ? "active" : "")"
+                        @onclick="() => _filterProvider = p">
+                    @p <span class="filter-count">@count</span>
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (text.Count > 0)
+    {
+        @* El coste por ejecucion es lo que de verdad se pregunta el usuario al montar
+           un pipeline; el precio por millon de tokens es dificil de traducir a dinero
+           real de un vistazo. *@
+        <h3 class="pricing-section-title">
+            Texto
+            <span class="pricing-section-note">
+                coste de una ejecucion de @_inputTokens.ToString("N0") tokens de entrada
+                y @_outputTokens.ToString("N0") de salida
+            </span>
+        </h3>
+
+        <table class="data-table pricing-table">
+            <thead>
+                <tr>
+                    <th>Modelo</th>
+                    <th class="num">$ / 1M entrada</th>
+                    <th class="num">$ / 1M salida</th>
+                    <th class="num">Por ejecucion</th>
+                    <th class="pricing-bar-col">Escala log.</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    // La escala se calcula una vez con los tokens que el usuario tiene
+                    // puestos, no con los del defecto: si no, al cambiarlos las barras
+                    // dejarian de corresponderse con la columna de coste.
+                    var costs = text.Select(m => m.CostFor(_inputTokens, _outputTokens)).ToList();
+                    var lo = costs.Min();
+                    var hi = costs.Max();
+                }
+                @foreach (var m in text)
+                {
+                    var cost = m.CostFor(_inputTokens, _outputTokens);
+                    <tr>
+                        <td>
+                            <span class="pricing-id">@m.Id</span>
+                            <span class="pricing-provider">@m.Provider</span>
+                        </td>
+                        <td class="num">@Money(m.InputPerMTok, 3)</td>
+                        <td class="num">@Money(m.OutputPerMTok, 2)</td>
+                        <td class="num num-strong">@Money(cost, 4)</td>
+                        <td class="pricing-bar-col">
+                            <span class="pricing-bar" style="width:@BarWidth(cost, lo, hi)"></span>
+                        </td>
+                        <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (image.Count > 0)
+    {
+        <h3 class="pricing-section-title">
+            Imagen
+            <span class="pricing-section-note">coste por imagen de 1024x1024</span>
+        </h3>
+
+        <table class="data-table pricing-table">
+            <thead>
+                <tr>
+                    <th>Modelo</th>
+                    <th class="num">Baja</th>
+                    <th class="num">Media</th>
+                    <th class="num">Alta</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in image)
+                {
+                    <tr>
+                        <td>
+                            <span class="pricing-id">@m.Id</span>
+                            <span class="pricing-provider">@m.Provider</span>
+                        </td>
+                        @if (m.ImageLow == m.ImageMedium && m.ImageMedium == m.ImageHigh)
+                        {
+                            @* Fuera de gpt-image la calidad no cambia el precio: repetir
+                               tres veces la misma cifra solo invita a leerla mal. *@
+                            <td class="num" colspan="3">
+                                @Money(m.ImageMedium, 4) <span class="pricing-flat">precio unico</span>
+                            </td>
+                        }
+                        else
+                        {
+                            <td class="num">@Money(m.ImageLow, 4)</td>
+                            <td class="num">@Money(m.ImageMedium, 4)</td>
+                            <td class="num num-strong">@Money(m.ImageHigh, 4)</td>
+                        }
+                        <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <p class="text-muted pricing-footnote">
+        Ningun proveedor publica sus tarifas por API, asi que estan en una tabla revisada
+        a mano (<code>Server/Services/Ai/PricingCatalog.cs</code>). El coste real depende de
+        los tokens que gaste cada ejecucion, y en los modelos de razonamiento el pensar se
+        factura como salida.
+    </p>
+}
+
+@code {
+    private List<ModelPriceResponse> _models = [];
+    private bool _loading = true;
+    private string? _filterProvider;
+
+    // Un paso de texto tipico del pipeline: un articulo corto con su prompt de sistema.
+    private const int DefaultInputTokens = 10_000;
+    private const int DefaultOutputTokens = 2_000;
+
+    private int _inputTokens = DefaultInputTokens;
+    private int _outputTokens = DefaultOutputTokens;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { _models = await Api.GetModelPricingAsync(); }
+        catch { }
+        _loading = false;
+    }
+
+    private void ResetTokens()
+    {
+        _inputTokens = DefaultInputTokens;
+        _outputTokens = DefaultOutputTokens;
+    }
+
+    private static string Money(decimal? value, int decimals) =>
+        value is null ? "—" : "$" + value.Value.ToString("N" + decimals);
+
+    /// <summary>
+    /// Ancho de la barra en escala logaritmica, entre el modelo mas barato
+    /// (<paramref name="lo"/>) y el mas caro (<paramref name="hi"/>) de los visibles.
+    /// Entre uno y otro hay tres ordenes de magnitud: en escala lineal, todo lo que no
+    /// fuese un modelo Pro seria una barra invisible.
+    /// </summary>
+    private static string BarWidth(decimal cost, decimal lo, decimal hi)
+    {
+        // Con un solo modelo, o si todos cuestan lo mismo, no hay escala que aplicar.
+        // Tambien cubre el caso de poner 0 tokens en los dos campos.
+        if (cost <= 0 || lo <= 0 || hi <= lo) return "100%";
+
+        var ratio = (Math.Log10((double)cost) - Math.Log10((double)lo))
+                  / (Math.Log10((double)hi) - Math.Log10((double)lo));
+        var pct = 2 + 98 * Math.Clamp(ratio, 0, 1);
+
+        return pct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+}

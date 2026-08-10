@@ -100,6 +100,7 @@ builder.Services.AddScoped<IPromptBuilderService, PromptBuilderService>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IModelAvailabilityService, ModelAvailabilityService>();
+builder.Services.AddScoped<IModelCatalogService, ModelCatalogService>();
 // Analista de aprendizaje: self-contained (crea su propio DbContext), singleton para
 // poder dispararlo en segundo plano tras un abort sin depender del scope de la petición.
 builder.Services.AddSingleton<ILearningAnalysisService, LearningAnalysisService>();
@@ -1953,50 +1954,24 @@ app.MapGet("/api/executions/{executionId}/feedback", async (
 // key del tenant. La UI lo usa para avisar sin quitar nunca un modelo de la lista.
 app.MapGet("/api/models/lifecycle", async (
     HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
-    IModelAvailabilityService availabilitySvc, CancellationToken ct) =>
+    IModelCatalogService catalogSvc, CancellationToken ct) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    return Results.Ok(await catalogSvc.GetLifecycleAsync(db, ct));
+}).RequireAuthorization();
 
-    var keys = await db.ApiKeys
-        .Where(k => k.EncryptedKey != null && k.EncryptedKey != "")
-        .Select(k => new { k.ProviderType, k.EncryptedKey })
-        .ToListAsync(ct);
+// Lo mismo mas las tarifas. Alimenta la pantalla de precios, que calcula el coste
+// por ejecucion en el cliente para que el usuario pueda ajustar los tokens en vivo.
+app.MapGet("/api/models/pricing", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IModelCatalogService catalogSvc, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
 
-    var availableByProvider = new Dictionary<string, IReadOnlySet<string>?>(StringComparer.OrdinalIgnoreCase);
-    foreach (var group in keys.GroupBy(k => k.ProviderType, StringComparer.OrdinalIgnoreCase))
-    {
-        availableByProvider[group.Key] =
-            await availabilitySvc.GetAvailableModelIdsAsync(group.Key, group.First().EncryptedKey, ct);
-    }
-
-    var response = Server.Services.Ai.ModelCatalog.AllModels.Select(m =>
-    {
-        var lifecycle = Server.Services.Ai.ModelLifecycle.Resolve(m.Id, today);
-
-        bool? available = availableByProvider.TryGetValue(m.Provider, out var ids) && ids is not null
-            ? ids.Contains(m.Id)
-            : null;
-
-        bool? priceIsExact = m.Types.Contains("Text", StringComparer.OrdinalIgnoreCase)
-            ? Server.Services.Ai.PricingCatalog.HasExactTextPrice(m.Id)
-            : null;
-
-        return new ModelLifecycleResponse(
-            m.Id,
-            m.Provider,
-            lifecycle.Status.ToString().ToLowerInvariant(),
-            lifecycle.ShutdownDate?.ToString("yyyy-MM-dd"),
-            lifecycle.DaysUntilShutdown(today),
-            lifecycle.ReplacementId,
-            lifecycle.Note,
-            available,
-            priceIsExact);
-    }).ToList();
-
-    return Results.Ok(response);
+    return Results.Ok(await catalogSvc.GetPricingAsync(db, ct));
 }).RequireAuthorization();
 
 // ── Aprendizaje: config del modelo analista, documento vivo e histórico ──

@@ -23,6 +23,22 @@ public record ModelLifecycleResponse(
     int? DaysUntilShutdown, string? ReplacementId, string? Note,
     bool? Available, bool? PriceIsExact);
 
+/// <summary>
+/// Tarifa de un modelo. <paramref name="Kind"/> ("text" o "image") dice qué campos
+/// vienen rellenos: los de tokens o los de coste por imagen.
+/// </summary>
+public record ModelPriceResponse(
+    string Id, string DisplayName, string Provider, string Kind,
+    decimal? InputPerMTok, decimal? OutputPerMTok,
+    decimal? ImageLow, decimal? ImageMedium, decimal? ImageHigh,
+    ModelLifecycleResponse Lifecycle)
+{
+    /// <summary>Coste de una ejecución con los tokens indicados.</summary>
+    public decimal CostFor(int inputTokens, int outputTokens) =>
+        (InputPerMTok ?? 0m) * inputTokens / 1_000_000m
+        + (OutputPerMTok ?? 0m) * outputTokens / 1_000_000m;
+}
+
 // ── Rule ──
 public record CreateRuleRequest(string Title, string Content, bool IsActive = true, int SortOrder = 0);
 public record UpdateRuleRequest(string Title, string Content, bool IsActive, int SortOrder);

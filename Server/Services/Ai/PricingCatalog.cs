@@ -216,6 +216,14 @@ namespace Server.Services.Ai
             TryResolveTextPrice(modelName, out _, out var exact) && exact;
 
         /// <summary>
+        /// Tarifa por millon de tokens, o null si no hay ninguna aplicable. Es lo que
+        /// necesita la pantalla de precios para mostrar el coste sin tener que estimar
+        /// sobre un millon de tokens ficticios.
+        /// </summary>
+        public static (decimal InputPerMTok, decimal OutputPerMTok)? GetTextRate(string modelName) =>
+            TryResolveTextPrice(modelName, out var prices, out _) ? prices : null;
+
+        /// <summary>
         /// Resuelve la tarifa de un modelo de texto: match exacto, luego el mismo id sin
         /// sufijo de snapshot y, como ultimo recurso, la clave mas larga que sea prefijo.
         ///

@@ -113,6 +113,15 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         int? DaysUntilShutdown, string? ReplacementId, string? Note,
         bool? Available, bool? PriceIsExact);
 
+    /// <param name="Kind">"text" o "image": determina qué campos de tarifa vienen rellenos.</param>
+    /// <param name="InputPerMTok">USD por millón de tokens de entrada. null en modelos de imagen.</param>
+    /// <param name="ImageMedium">USD por imagen de 1024x1024. null en modelos de texto.</param>
+    public record ModelPriceResponse(
+        string Id, string DisplayName, string Provider, string Kind,
+        decimal? InputPerMTok, decimal? OutputPerMTok,
+        decimal? ImageLow, decimal? ImageMedium, decimal? ImageHigh,
+        ModelLifecycleResponse Lifecycle);
+
     // ── Aprendizaje ──
     public record AnalystModelOption(string Provider, string ModelName, string DisplayName, bool Multimodal);
     public record LearningConfigResponse(bool Enabled, string? Provider, string? ModelName, bool Multimodal, bool IsDefault);
