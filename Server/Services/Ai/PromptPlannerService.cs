@@ -26,8 +26,14 @@ namespace Server.Services.Ai
     {
         private const string PlannerProvider = "OpenAI";
 
+        // Los modelos actuales van primero: el primero de la lista es el que la UI
+        // preselecciona, y hasta ahora era GPT-4o con la generacion 5.6 ya publicada.
         private static readonly IReadOnlyList<PromptPlannerModelOption> _availableModels = new List<PromptPlannerModelOption>
         {
+            new(PlannerProvider, "gpt-5.6-terra", "GPT-5.6 Terra"),
+            new(PlannerProvider, "gpt-5.6-luna", "GPT-5.6 Luna"),
+            new(PlannerProvider, "gpt-5.6-sol", "GPT-5.6 Sol"),
+            new(PlannerProvider, "gpt-5.4", "GPT-5.4"),
             new(PlannerProvider, "gpt-4o", "GPT-4o"),
             new(PlannerProvider, "gpt-4o-mini", "GPT-4o mini"),
             new(PlannerProvider, "gpt-4-turbo", "GPT-4 Turbo"),

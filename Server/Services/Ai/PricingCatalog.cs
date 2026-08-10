@@ -10,22 +10,36 @@ namespace Server.Services.Ai
         private static readonly Dictionary<string, (decimal InputPerMTok, decimal OutputPerMTok)> TextPrices =
             new(StringComparer.OrdinalIgnoreCase)
             {
-                // OpenAI
+                // OpenAI — revisado contra developers.openai.com/api/docs/pricing el 2026-08-10.
+                ["gpt-5.6"]          = (5.00m,  30.00m),   // alias: resuelve a Sol y factura como Sol
+                ["gpt-5.6-sol"]      = (5.00m,  30.00m),
+                ["gpt-5.6-terra"]    = (2.00m,  12.00m),
+                ["gpt-5.6-luna"]     = (0.20m,   1.20m),
+                ["gpt-5.5"]          = (5.00m,  30.00m),
+                ["gpt-5.5-pro"]      = (30.00m, 180.00m),
                 ["gpt-5.4"]          = (2.50m,  15.00m),
                 ["gpt-5.4-pro"]      = (30.00m, 180.00m),
-                ["gpt-5.2"]          = (2.00m,  10.00m),
+                ["gpt-5.4-mini"]     = (0.75m,   4.50m),
+                ["gpt-5.4-nano"]     = (0.20m,   1.25m),
+                ["gpt-5.3"]          = (1.75m,  14.00m),
+                ["gpt-5.2"]          = (1.75m,  14.00m),
                 ["gpt-5.1"]          = (1.25m,  10.00m),
-                ["gpt-5"]            = (2.00m,  10.00m),
-                ["gpt-5-mini"]       = (0.50m,   2.00m),
-                ["gpt-5-nano"]       = (0.15m,   0.60m),
-                ["gpt-4o"]           = (5.00m,  15.00m),
-                ["gpt-4o-mini"]      = (0.25m,   1.00m),
+                ["gpt-5-pro"]        = (15.00m, 120.00m),
+                ["gpt-5"]            = (1.25m,  10.00m),
+                ["gpt-5-mini"]       = (0.25m,   2.00m),
+                ["gpt-5-nano"]       = (0.05m,   0.40m),
+                ["gpt-4o"]           = (2.50m,  10.00m),
+                ["gpt-4o-2024-05-13"]= (5.00m,  15.00m),   // el snapshot antiguo sí cuesta 5/15
+                ["gpt-4o-mini"]      = (0.15m,   0.60m),
                 ["gpt-4.1"]          = (2.00m,   8.00m),
                 ["gpt-4.1-mini"]     = (0.40m,   1.60m),
                 ["gpt-4.1-nano"]     = (0.10m,   0.40m),
                 ["o3"]               = (2.00m,   8.00m),
+                ["o3-pro"]           = (20.00m, 80.00m),
                 ["o3-mini"]          = (1.10m,   4.40m),
                 ["o4-mini"]          = (1.10m,   4.40m),
+                ["o1"]               = (15.00m, 60.00m),
+                ["o1-pro"]           = (150.00m, 600.00m),
 
                 // Anthropic (las claves cortas hacen match por prefijo con los IDs con fecha,
                 // p.ej. "claude-opus-4-5-20251124" empieza por "claude-opus-4-5")
@@ -72,6 +86,9 @@ namespace Server.Services.Ai
                 ["gpt-image-1"] = 0.042m,
                 // gpt-image-1-mini (medium quality 1024x1024 approx)
                 ["gpt-image-1-mini"] = 0.015m,
+                // gpt-image-1.5 / gpt-image-2 (medium quality 1024x1024 approx)
+                ["gpt-image-1.5"] = 0.034m,
+                ["gpt-image-2"] = 0.032m,
 
                 // Gemini Imagen (via Gemini native image gen)
                 ["gemini-2.5-flash-image"]         = 0.039m,   // ~1290 tokens de salida por imagen
@@ -128,6 +145,42 @@ namespace Server.Services.Ai
                 ["high-1536x1024"]   = 0.248m,
             };
 
+        // ── gpt-image-1.5 y gpt-image-2 detailed pricing by quality+size ──
+        // gpt-image factura la imagen como tokens de salida, y los tokens por
+        // calidad+tamaño son fijos y publicados: 1024x1024 = 272/1056/4160 tokens
+        // (low/medium/high), 1024x1536 = 408/1584/6240, 1536x1024 = 400/1568/6208.
+        // El coste por imagen es esos tokens por la tarifa de salida del modelo,
+        // que es lo unico que cambia entre versiones: $40/1M en gpt-image-1,
+        // $32/1M en gpt-image-1.5 y $30/1M en gpt-image-2. Las tablas de abajo son
+        // ese producto ya resuelto, igual que la de gpt-image-1.
+        private static readonly Dictionary<string, decimal> GptImage15Detailed =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["low-1024x1024"]    = 0.0087m,
+                ["low-1024x1536"]    = 0.0131m,
+                ["low-1536x1024"]    = 0.0128m,
+                ["medium-1024x1024"] = 0.0338m,
+                ["medium-1024x1536"] = 0.0507m,
+                ["medium-1536x1024"] = 0.0502m,
+                ["high-1024x1024"]   = 0.1331m,
+                ["high-1024x1536"]   = 0.1997m,
+                ["high-1536x1024"]   = 0.1987m,
+            };
+
+        private static readonly Dictionary<string, decimal> GptImage2Detailed =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["low-1024x1024"]    = 0.0082m,
+                ["low-1024x1536"]    = 0.0122m,
+                ["low-1536x1024"]    = 0.0120m,
+                ["medium-1024x1024"] = 0.0317m,
+                ["medium-1024x1536"] = 0.0475m,
+                ["medium-1536x1024"] = 0.0470m,
+                ["high-1024x1024"]   = 0.1248m,
+                ["high-1024x1536"]   = 0.1872m,
+                ["high-1536x1024"]   = 0.1862m,
+            };
+
         // ── gpt-image-1-mini detailed pricing by quality+size ──
         private static readonly Dictionary<string, decimal> GptImageMiniDetailed =
             new(StringComparer.OrdinalIgnoreCase)
@@ -148,16 +201,61 @@ namespace Server.Services.Ai
         /// </summary>
         public static decimal EstimateTextCost(string modelName, int inputTokens, int outputTokens)
         {
-            // Try exact match first, then prefix match
-            if (!TextPrices.TryGetValue(modelName, out var prices))
-            {
-                var key = TextPrices.Keys.FirstOrDefault(k => modelName.StartsWith(k, StringComparison.OrdinalIgnoreCase));
-                if (key is null) return 0m;
-                prices = TextPrices[key];
-            }
+            if (!TryResolveTextPrice(modelName, out var prices, out _)) return 0m;
 
             return (inputTokens / 1_000_000m * prices.InputPerMTok)
                  + (outputTokens / 1_000_000m * prices.OutputPerMTok);
+        }
+
+        /// <summary>
+        /// True si el modelo tiene tarifa propia en el catalogo. False significa que el
+        /// coste que devuelve <see cref="EstimateTextCost"/> viene de un modelo pariente
+        /// (o es 0 porque no hay ninguno), y por tanto es orientativo.
+        /// </summary>
+        public static bool HasExactTextPrice(string modelName) =>
+            TryResolveTextPrice(modelName, out _, out var exact) && exact;
+
+        /// <summary>
+        /// Resuelve la tarifa de un modelo de texto: match exacto, luego el mismo id sin
+        /// sufijo de snapshot y, como ultimo recurso, la clave mas larga que sea prefijo.
+        ///
+        /// El prefijo mas largo importa: buscar el primero que encajase hacia que cada
+        /// modelo nuevo de una familia heredase la tarifa del miembro mas antiguo
+        /// (gpt-5.5 y gpt-5.6-sol cobraban como gpt-5, tres veces por debajo de lo real
+        /// en salida, y gpt-5.6-luna diez veces por encima).
+        /// </summary>
+        private static bool TryResolveTextPrice(
+            string modelName,
+            out (decimal InputPerMTok, decimal OutputPerMTok) prices,
+            out bool exact)
+        {
+            prices = default;
+            exact = false;
+            if (string.IsNullOrWhiteSpace(modelName)) return false;
+
+            if (TextPrices.TryGetValue(modelName, out prices))
+            {
+                exact = true;
+                return true;
+            }
+
+            var withoutSnapshot = ModelLifecycle.StripSnapshotSuffix(modelName);
+            if (!ReferenceEquals(withoutSnapshot, modelName)
+                && TextPrices.TryGetValue(withoutSnapshot, out prices))
+            {
+                exact = true;
+                return true;
+            }
+
+            var key = TextPrices.Keys
+                .Where(k => modelName.StartsWith(k, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(k => k.Length)
+                .FirstOrDefault();
+
+            if (key is null) return false;
+
+            prices = TextPrices[key];
+            return true;
         }
 
         /// <summary>
@@ -208,16 +306,18 @@ namespace Server.Services.Ai
             {
                 var key = $"{GptImageOptions.NormalizeQuality(rawQuality)}-{GptImageOptions.NormalizeSizeForPricing(rawSize)}";
 
-                if (modelName.Equals("gpt-image-1-mini", StringComparison.OrdinalIgnoreCase))
+                // Cada version de gpt-image tiene su propia tarifa de salida. Antes solo
+                // se distinguia el mini y el resto caia en la tabla de gpt-image-1, asi
+                // que gpt-image-1.5 se estimaba un 25% mas caro de lo que factura.
+                var (table, fallback) = modelName.ToLowerInvariant() switch
                 {
-                    if (GptImageMiniDetailed.TryGetValue(key, out var miniPrice))
-                        return miniPrice;
-                    return 0.015m;
-                }
+                    "gpt-image-2"      => (GptImage2Detailed,    0.032m),
+                    "gpt-image-1.5"    => (GptImage15Detailed,   0.034m),
+                    "gpt-image-1-mini" => (GptImageMiniDetailed, 0.015m),
+                    _                  => (GptImageDetailed,     0.042m),
+                };
 
-                if (GptImageDetailed.TryGetValue(key, out var price))
-                    return price;
-                return 0.042m;
+                return table.TryGetValue(key, out var price) ? price : fallback;
             }
 
             // Generic fallback

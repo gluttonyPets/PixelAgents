@@ -97,6 +97,9 @@ builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundS
 builder.Services.AddTransient<IPipelineExecutor, GraphPipelineExecutor>();
 builder.Services.AddScoped<IPromptPlannerService, PromptPlannerService>();
 builder.Services.AddScoped<IPromptBuilderService, PromptBuilderService>();
+builder.Services.AddHttpClient();
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<IModelAvailabilityService, ModelAvailabilityService>();
 // Analista de aprendizaje: self-contained (crea su propio DbContext), singleton para
 // poder dispararlo en segundo plano tras un abort sin depender del scope de la petición.
 builder.Services.AddSingleton<ILearningAnalysisService, LearningAnalysisService>();
@@ -1941,6 +1944,59 @@ app.MapGet("/api/executions/{executionId}/feedback", async (
         .ToListAsync();
 
     return Results.Ok(feedback);
+}).RequireAuthorization();
+
+// ── Ciclo de vida del catálogo de modelos ──
+
+// Estado de cada modelo del catálogo: retirada anunciada (tabla local, porque ningún
+// proveedor la expone por API) y disponibilidad real consultada al proveedor con la
+// key del tenant. La UI lo usa para avisar sin quitar nunca un modelo de la lista.
+app.MapGet("/api/models/lifecycle", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IModelAvailabilityService availabilitySvc, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+    var keys = await db.ApiKeys
+        .Where(k => k.EncryptedKey != null && k.EncryptedKey != "")
+        .Select(k => new { k.ProviderType, k.EncryptedKey })
+        .ToListAsync(ct);
+
+    var availableByProvider = new Dictionary<string, IReadOnlySet<string>?>(StringComparer.OrdinalIgnoreCase);
+    foreach (var group in keys.GroupBy(k => k.ProviderType, StringComparer.OrdinalIgnoreCase))
+    {
+        availableByProvider[group.Key] =
+            await availabilitySvc.GetAvailableModelIdsAsync(group.Key, group.First().EncryptedKey, ct);
+    }
+
+    var response = Server.Services.Ai.ModelCatalog.AllModels.Select(m =>
+    {
+        var lifecycle = Server.Services.Ai.ModelLifecycle.Resolve(m.Id, today);
+
+        bool? available = availableByProvider.TryGetValue(m.Provider, out var ids) && ids is not null
+            ? ids.Contains(m.Id)
+            : null;
+
+        bool? priceIsExact = m.Types.Contains("Text", StringComparer.OrdinalIgnoreCase)
+            ? Server.Services.Ai.PricingCatalog.HasExactTextPrice(m.Id)
+            : null;
+
+        return new ModelLifecycleResponse(
+            m.Id,
+            m.Provider,
+            lifecycle.Status.ToString().ToLowerInvariant(),
+            lifecycle.ShutdownDate?.ToString("yyyy-MM-dd"),
+            lifecycle.DaysUntilShutdown(today),
+            lifecycle.ReplacementId,
+            lifecycle.Note,
+            available,
+            priceIsExact);
+    }).ToList();
+
+    return Results.Ok(response);
 }).RequireAuthorization();
 
 // ── Aprendizaje: config del modelo analista, documento vivo e histórico ──

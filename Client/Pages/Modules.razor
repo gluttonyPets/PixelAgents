@@ -100,6 +100,7 @@
                         <span class="badge badge-success">@cap</span>
                     }
                 </div>
+                <ModelLifecycleBadge Info="@GetLifecycle(selectedModel.Id)" />
             }
         </div>
 
@@ -446,6 +447,7 @@
                                     <option value="@model.Id">@model.DisplayName</option>
                                 }
                             </select>
+                            <ModelLifecycleBadge Info="@GetLifecycle(m.ModelName)" Compact="true" />
                         }
                     </td>
                     <td>
@@ -919,9 +921,23 @@ else
 
     private static readonly ModelInfo[] AllModels =
     [
+        // ─── OpenAI: Chat / Text (GPT-5.6) ───
+        // Nomenclatura nueva: el numero es la generacion y Sol/Terra/Luna son niveles
+        // de capacidad que avanzan por su cuenta. El alias "gpt-5.6" resuelve a Sol.
+        new("gpt-5.6-sol",      "GPT-5.6 Sol",       "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Flagship actual. Razonamiento profundo, trabajo agentico largo y codigo.", "1M"),
+        new("gpt-5.6-terra",    "GPT-5.6 Terra",     "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Equilibrado: rinde como GPT-5.5 a una fraccion del coste.", "1M"),
+        new("gpt-5.6-luna",     "GPT-5.6 Luna",      "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "El mas rapido y economico de la generacion 5.6.", "1M"),
+
+        // ─── OpenAI: Chat / Text (GPT-5.5) ───
+        new("gpt-5.5",          "GPT-5.5",           "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Generacion anterior. Flagship hasta GPT-5.6.", "1M"),
+        new("gpt-5.5-pro",      "GPT-5.5 Pro",       "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Version Pro de 5.5. Razonamiento extendido, salida cara.", "1M"),
+
         // ─── OpenAI: Chat / Text (GPT-5.x) ───
-        new("gpt-5.4",          "GPT-5.4",           "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Ultimo modelo flagship. 1M contexto. Razonamiento multi-nivel.", "1M"),
+        new("gpt-5.4",          "GPT-5.4",           "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Flagship de la generacion 5.4. 1M contexto.", "1M"),
         new("gpt-5.4-pro",      "GPT-5.4 Pro",       "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Version Pro. Mas preciso, usa mas compute para pensar.", "1M"),
+        new("gpt-5.4-mini",     "GPT-5.4 Mini",      "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "GPT-5.4 rapido y economico.", "1M"),
+        new("gpt-5.4-nano",     "GPT-5.4 Nano",      "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "GPT-5.4 ultra rapido. El mas barato de su familia.", "1M"),
+        new("gpt-5.3",          "GPT-5.3",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Generacion intermedia entre 5.2 y 5.4.", "400K"),
         new("gpt-5.2",          "GPT-5.2",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo anterior. Razonamiento avanzado multi-nivel.", "400K"),
         new("gpt-5.1",          "GPT-5.1",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5.1 con vision y razonamiento.", "400K"),
         new("gpt-5",            "GPT-5",             "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Modelo GPT-5 potente y versatil.", "400K"),
@@ -943,7 +959,8 @@ else
         new("o4-mini",          "o4 Mini",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Razonamiento con vision, version compacta.", "200K"),
 
         // ─── OpenAI: Image Generation ───
-        new("gpt-image-1.5",    "GPT Image 1.5",     "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Ultimo modelo de generacion de imagenes. Soporta edicion imagen-a-imagen."),
+        new("gpt-image-2",      "GPT Image 2",       "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Ultimo modelo de imagen. Planifica la composicion antes de generar y acierta el texto en cualquier alfabeto."),
+        new("gpt-image-1.5",    "GPT Image 1.5",     "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion anterior. Soporta edicion imagen-a-imagen."),
         new("gpt-image-1",      "GPT Image 1",       "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion de imagenes de alta calidad. Soporta edicion imagen-a-imagen."),
         new("gpt-image-1-mini", "GPT Image 1 Mini",  "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion de imagenes rapida y economica. Soporta edicion imagen-a-imagen."),
         new("dall-e-3",         "DALL-E 3",          "OpenAI", ["Image"],       ["image-generation"],                  "Generacion de imagenes con prompts detallados."),
@@ -1245,6 +1262,28 @@ else
         }
         catch { }
         _loading = false;
+
+        // Despues de pintar: consultar el estado de los modelos implica llamar al
+        // proveedor, y no merece retrasar la pantalla por unas etiquetas de aviso.
+        await LoadLifecycleAsync();
+    }
+
+    // ── Ciclo de vida de modelos ──
+
+    private Dictionary<string, ModelLifecycleResponse> _lifecycle = new(StringComparer.OrdinalIgnoreCase);
+
+    private ModelLifecycleResponse? GetLifecycle(string? modelId) =>
+        !string.IsNullOrWhiteSpace(modelId) && _lifecycle.TryGetValue(modelId!, out var lc) ? lc : null;
+
+    private async Task LoadLifecycleAsync()
+    {
+        try
+        {
+            var entries = await Api.GetModelLifecycleAsync();
+            _lifecycle = entries.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
+            StateHasChanged();
+        }
+        catch { }
     }
 
     private async Task Create()

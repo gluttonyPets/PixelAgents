@@ -45,6 +45,19 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<AuthResponse>();
     }
 
+    // ── Ciclo de vida de modelos ──
+
+    /// <summary>
+    /// Estado de retirada y disponibilidad real de cada modelo del catalogo. Devuelve
+    /// lista vacia si falla: es informacion para avisar, nunca para bloquear la pantalla.
+    /// </summary>
+    public async Task<List<ModelLifecycleResponse>> GetModelLifecycleAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/models/lifecycle");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ModelLifecycleResponse>>() ?? [];
+    }
+
     // ── ApiKeys ──
 
     public async Task<List<ApiKeyResponse>> GetApiKeysAsync()

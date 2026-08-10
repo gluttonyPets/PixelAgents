@@ -98,6 +98,21 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         Guid Id, Guid ExecutionId, Guid? StepExecutionId, Guid? ProjectModuleId,
         string Rating, string? Comment, string Source, DateTime CreatedAt);
 
+    // ── Ciclo de vida de modelos ──
+    /// <param name="Status">"active", "deprecated" o "retired".</param>
+    /// <param name="Available">
+    /// Si el proveedor lista el modelo para la API key del tenant. null = no se ha
+    /// podido comprobar (sin key o sin red), que no es lo mismo que "no disponible".
+    /// </param>
+    /// <param name="PriceIsExact">
+    /// Si la estimación de coste usa la tarifa propia del modelo. false = se está
+    /// usando la de un modelo pariente. null para los que no son de texto.
+    /// </param>
+    public record ModelLifecycleResponse(
+        string Id, string Provider, string Status, string? ShutdownDate,
+        int? DaysUntilShutdown, string? ReplacementId, string? Note,
+        bool? Available, bool? PriceIsExact);
+
     // ── Aprendizaje ──
     public record AnalystModelOption(string Provider, string ModelName, string DisplayName, bool Multimodal);
     public record LearningConfigResponse(bool Enabled, string? Provider, string? ModelName, bool Multimodal, bool IsDefault);

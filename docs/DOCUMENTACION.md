@@ -15,6 +15,7 @@ documentación esté **limpia, vigente y sin basura**: solo lo que aporta valor.
 /docs/                   Documentación viva del proyecto:
   DOCUMENTACION.md       esta guía
   architecture.md        arquitectura, capas, modelo de datos
+  CATALOGO_MODELOS.md    alta de modelos, tarifas y avisos de retirada
   *_SETUP.md             guías de configuración (Buffer, Leantime MCP, ...)
   MIGRATION_*.md         planes y progreso de migraciones en curso
 

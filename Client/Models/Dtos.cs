@@ -13,6 +13,16 @@ public record CreateApiKeyRequest(string Name, string ProviderType, string Key);
 public record UpdateApiKeyRequest(string Name, string ProviderType, string? Key);
 public record ApiKeyResponse(Guid Id, string Name, string ProviderType, DateTime CreatedAt, DateTime UpdatedAt, int ModulesCount);
 
+/// <summary>
+/// Estado de un modelo del catalogo. <paramref name="Status"/> es "active",
+/// "deprecated" o "retired"; <paramref name="Available"/> es null cuando no se ha
+/// podido preguntar al proveedor, que no es lo mismo que "no disponible".
+/// </summary>
+public record ModelLifecycleResponse(
+    string Id, string Provider, string Status, string? ShutdownDate,
+    int? DaysUntilShutdown, string? ReplacementId, string? Note,
+    bool? Available, bool? PriceIsExact);
+
 // ── Rule ──
 public record CreateRuleRequest(string Title, string Content, bool IsActive = true, int SortOrder = 0);
 public record UpdateRuleRequest(string Title, string Content, bool IsActive, int SortOrder);

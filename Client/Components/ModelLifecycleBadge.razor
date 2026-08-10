@@ -1,0 +1,83 @@
+@* Aviso de retirada de un modelo.
+
+   Los modelos nunca desaparecen del catalogo, ni cuando el proveedor los apaga: este
+   componente es lo que distingue "vigente" de "te queda un mes" de "ya no responde",
+   sin que el usuario tenga que descubrirlo por una ejecucion fallida.
+
+   Uso compacto (junto a un desplegable):  <ModelLifecycleBadge Info="@lc" Compact="true" />
+   Uso completo (bajo el modelo elegido):  <ModelLifecycleBadge Info="@lc" />
+*@
+
+@if (Info is not null && (IsRetired || IsDeprecated || IsUnavailable))
+{
+    @if (Compact)
+    {
+        <span class="badge @BadgeClass" title="@FullText">@ShortText</span>
+    }
+    else
+    {
+        <div class="model-lifecycle-notice @NoticeClass">
+            <strong>@ShortText</strong>
+            <span>@FullText</span>
+        </div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public ModelLifecycleResponse? Info { get; set; }
+
+    /// <summary>Solo la etiqueta, para listas y tablas.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private bool IsRetired => Info?.Status == "retired";
+    private bool IsDeprecated => Info?.Status == "deprecated";
+
+    // Solo se avisa cuando el proveedor dice explicitamente que no lo tiene. Available
+    // null significa que no se ha podido preguntar, y eso no es motivo de alarma.
+    private bool IsUnavailable => Info?.Available == false && !IsRetired;
+
+    private string ShortText =>
+        IsRetired      ? "Retirado"
+        : IsDeprecated ? (Info!.DaysUntilShutdown is { } d ? $"Se retira en {d} d" : "Se retira")
+        : "No disponible";
+
+    private string BadgeClass =>
+        IsRetired ? "badge-danger" : IsDeprecated ? "badge-warning" : "badge-muted";
+
+    private string NoticeClass =>
+        IsRetired ? "is-retired" : IsDeprecated ? "is-deprecated" : "is-unavailable";
+
+    private string FullText
+    {
+        get
+        {
+            if (Info is null) return "";
+
+            var parts = new List<string>();
+
+            if (IsRetired)
+            {
+                parts.Add($"El proveedor apago este modelo el {Info.ShutdownDate}. Las ejecuciones que lo usen fallaran.");
+            }
+            else if (IsDeprecated)
+            {
+                parts.Add($"El proveedor lo retira el {Info.ShutdownDate}. Despues dejara de responder.");
+            }
+            else if (IsUnavailable)
+            {
+                parts.Add("Tu API key no lista este modelo: puede que la cuenta no tenga acceso o que ya no exista.");
+            }
+
+            if (!string.IsNullOrWhiteSpace(Info.ReplacementId))
+                parts.Add($"Sustituto recomendado: {Info.ReplacementId}.");
+
+            if (!string.IsNullOrWhiteSpace(Info.Note))
+                parts.Add(Info.Note!);
+
+            if (Info.PriceIsExact == false)
+                parts.Add("El coste estimado usa la tarifa de un modelo pariente, no la suya.");
+
+            return string.Join(" ", parts);
+        }
+    }
+}

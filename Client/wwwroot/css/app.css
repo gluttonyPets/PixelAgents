@@ -4747,3 +4747,36 @@ a.link:hover { text-decoration: underline; }
     color: var(--text-muted);
     font-style: italic;
 }
+
+/* ── Aviso de ciclo de vida de modelos ── */
+/* Los modelos retirados o proximos a retirarse siguen en el catalogo: el aviso es
+   lo unico que separa "funciona" de "va a dejar de funcionar". */
+.model-lifecycle-notice {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.7rem;
+    border-radius: 6px;
+    border-left: 3px solid var(--text-muted);
+    background: rgba(136, 136, 136, 0.08);
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+
+.model-lifecycle-notice strong { color: var(--text); }
+.model-lifecycle-notice span { color: var(--text-muted); }
+
+.model-lifecycle-notice.is-deprecated {
+    border-left-color: var(--warning);
+    background: rgba(255, 152, 0, 0.08);
+}
+
+.model-lifecycle-notice.is-deprecated strong { color: var(--warning); }
+
+.model-lifecycle-notice.is-retired {
+    border-left-color: var(--danger);
+    background: rgba(244, 67, 54, 0.08);
+}
+
+.model-lifecycle-notice.is-retired strong { color: var(--danger); }

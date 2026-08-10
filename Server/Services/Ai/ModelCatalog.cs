@@ -8,6 +8,11 @@ namespace Server.Services.Ai;
 ///
 /// Keep in sync with the client catalog. When a new model is added in the
 /// Razor page, mirror it here.
+///
+/// Los modelos no se borran nunca de este catálogo, ni siquiera cuando el
+/// proveedor los retira: su estado vive en <see cref="ModelLifecycle"/> y la UI
+/// lo señala. Borrarlos dejaría módulos guardados apuntando a un id que no
+/// aparece en ninguna lista, sin forma de saber qué pasó.
 /// </summary>
 public static class ModelCatalog
 {
@@ -16,8 +21,16 @@ public static class ModelCatalog
     public static readonly CatalogModel[] AllModels =
     [
         // ─── OpenAI: Text ───
+        new("gpt-5.6-sol",      "GPT-5.6 Sol",      "OpenAI", ["Text","Orchestrator","Coordinator"]),
+        new("gpt-5.6-terra",    "GPT-5.6 Terra",    "OpenAI", ["Text","Orchestrator","Coordinator"]),
+        new("gpt-5.6-luna",     "GPT-5.6 Luna",     "OpenAI", ["Text","Orchestrator","Coordinator"]),
+        new("gpt-5.5",          "GPT-5.5",          "OpenAI", ["Text","Orchestrator","Coordinator"]),
+        new("gpt-5.5-pro",      "GPT-5.5 Pro",      "OpenAI", ["Text"]),
         new("gpt-5.4",          "GPT-5.4",          "OpenAI", ["Text","Orchestrator","Coordinator"]),
         new("gpt-5.4-pro",      "GPT-5.4 Pro",      "OpenAI", ["Text"]),
+        new("gpt-5.4-mini",     "GPT-5.4 Mini",     "OpenAI", ["Text","Orchestrator","Coordinator"]),
+        new("gpt-5.4-nano",     "GPT-5.4 Nano",     "OpenAI", ["Text"]),
+        new("gpt-5.3",          "GPT-5.3",          "OpenAI", ["Text"]),
         new("gpt-5.2",          "GPT-5.2",          "OpenAI", ["Text"]),
         new("gpt-5.1",          "GPT-5.1",          "OpenAI", ["Text"]),
         new("gpt-5",            "GPT-5",            "OpenAI", ["Text"]),
@@ -33,6 +46,7 @@ public static class ModelCatalog
         new("o4-mini",          "o4 Mini",          "OpenAI", ["Text"]),
 
         // ─── OpenAI: Image ───
+        new("gpt-image-2",      "GPT Image 2",      "OpenAI", ["Image"]),
         new("gpt-image-1.5",    "GPT Image 1.5",    "OpenAI", ["Image"]),
         new("gpt-image-1",      "GPT Image 1",      "OpenAI", ["Image"]),
         new("gpt-image-1-mini", "GPT Image 1 Mini", "OpenAI", ["Image"]),

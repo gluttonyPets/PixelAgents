@@ -19,7 +19,7 @@ histórica, no documentación viva del sistema.
 | [`SHOPIFY_IMAGE_URL.md`](SHOPIFY_IMAGE_URL.md) | La imagen destacada fallaba con "Invalid URL provided" porque Shopify no podía descargarla de `http://IP:8080`; ahora se sube directa a Shopify con `stagedUploadsCreate`. |
 | [`TELEGRAM_DUPLICATE_UPDATE.md`](TELEGRAM_DUPLICATE_UPDATE.md) | Idempotencia en BD del `update_id` de Telegram + claim atómico del scheduler para que la interacción no se envíe duplicada. |
 | [`CONFIG_CASILLAS_BOOLEANAS.md`](CONFIG_CASILLAS_BOOLEANAS.md) | Las casillas del inspector se guardan como cadena y `GetConfigBool` solo leía booleanos JSON: "Publicar" no se aplicaba. ShopifyBlog publica visible por defecto. |
-| [`COSTE_EJECUCION_PRICING.md`](COSTE_EJECUCION_PRICING.md) | El gasto salía 0 (oculto) porque faltaban modelos actuales en `PricingCatalog`; la API no da coste por petición, solo tokens. |
+| [`COSTE_EJECUCION_PRICING.md`](COSTE_EJECUCION_PRICING.md) | El gasto salía 0 (oculto) porque faltaban modelos actuales en `PricingCatalog`; después, el que sí salía usaba la tarifa del hermano más antiguo de la familia. La API no da coste por petición, solo tokens. |
 | [`COSTE_TOKENS_OPENAI.md`](COSTE_TOKENS_OPENAI.md) | Las imágenes gpt-image salían siempre en `high` (90 % de la factura) porque la UI ofrecía valores de DALL-E y nunca escribía `quality`; + contexto duplicado en el planner, orden del system prompt anti-caché y `reasoning_effort` inexistente. |
 
 ## Convención
