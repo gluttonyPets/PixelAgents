@@ -48,26 +48,47 @@ public class ModelCatalogService : IModelCatalogService
             var isText = m.Types.Contains("Text", StringComparer.OrdinalIgnoreCase);
             var isImage = m.Types.Contains("Image", StringComparer.OrdinalIgnoreCase);
 
-            // Un modelo puede declarar varios tipos, pero solo texto e imagen tienen
-            // tarifa; el resto (embeddings, audio) no entra en esta pantalla.
-            if (!isText && !isImage) continue;
+            // Texto e imagen tienen tabla propia; embeddings, audio, transcripcion y
+            // diseño caen en "other", donde cada uno trae su unidad de facturacion.
+            // Ninguno se descarta: un modelo que no aparece aqui es indistinguible de
+            // uno que no existe, y esa confusion ya costo un rato de busqueda.
+            var kind = isText ? "text" : isImage ? "image" : "other";
 
             var rate = isText ? PricingCatalog.GetTextRate(m.Id) : null;
+            var aux = kind == "other" ? PricingCatalog.GetAuxiliaryRate(m.Id) : null;
 
             result.Add(new ModelPriceResponse(
                 m.Id,
                 m.DisplayName,
                 m.Provider,
-                isText ? "text" : "image",
+                kind,
                 rate?.InputPerMTok,
                 rate?.OutputPerMTok,
                 isImage ? ImageCost(m.Id, "low") : null,
                 isImage ? ImageCost(m.Id, "medium") : null,
                 isImage ? ImageCost(m.Id, "high") : null,
+                aux?.Amount,
+                aux?.Unit,
+                aux?.Note,
+                PrimaryModuleType(m),
                 BuildLifecycle(m, today, available)));
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Tipo de modulo con el que se etiqueta el modelo en la pantalla de precios.
+    /// Un modelo puede servir para varios (Text tambien vale de Orchestrator), pero
+    /// aqui interesa el que define como se factura.
+    /// </summary>
+    private static string PrimaryModuleType(ModelCatalog.CatalogModel model)
+    {
+        string[] order = ["Text", "Image", "Embeddings", "Audio", "Transcription", "Design"];
+
+        return order.FirstOrDefault(t => model.Types.Contains(t, StringComparer.OrdinalIgnoreCase))
+               ?? model.Types.FirstOrDefault()
+               ?? "Text";
     }
 
     private static decimal ImageCost(string modelId, string quality) =>

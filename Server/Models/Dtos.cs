@@ -113,13 +113,22 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         int? DaysUntilShutdown, string? ReplacementId, string? Note,
         bool? Available, bool? PriceIsExact);
 
-    /// <param name="Kind">"text" o "image": determina qué campos de tarifa vienen rellenos.</param>
-    /// <param name="InputPerMTok">USD por millón de tokens de entrada. null en modelos de imagen.</param>
-    /// <param name="ImageMedium">USD por imagen de 1024x1024. null en modelos de texto.</param>
+    /// <param name="Kind">
+    /// "text", "image" u "other" (embeddings, audio, transcripción, diseño): determina
+    /// qué campos de tarifa vienen rellenos.
+    /// </param>
+    /// <param name="InputPerMTok">USD por millón de tokens de entrada. Solo en "text".</param>
+    /// <param name="ImageMedium">USD por imagen de 1024x1024. Solo en "image".</param>
+    /// <param name="AuxAmount">
+    /// Importe de los modelos que no se facturan por tokens ni por imagen, con su unidad
+    /// en <paramref name="AuxUnit"/>. null cuando el modelo no tiene coste por uso.
+    /// </param>
     public record ModelPriceResponse(
         string Id, string DisplayName, string Provider, string Kind,
         decimal? InputPerMTok, decimal? OutputPerMTok,
         decimal? ImageLow, decimal? ImageMedium, decimal? ImageHigh,
+        decimal? AuxAmount, string? AuxUnit, string? AuxNote,
+        string ModuleType,
         ModelLifecycleResponse Lifecycle);
 
     // ── Aprendizaje ──

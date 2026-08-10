@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Server.Models;
 using Server.Services.Ai;
 using Xunit;
@@ -59,22 +60,118 @@ public class ModelPricingEndpointTests
         // trajese precios de imagen (o al revés), la tabla mezclaría unidades.
         var texto = new ModelPriceResponse(
             "gpt-5.6-sol", "GPT-5.6 Sol", "OpenAI", "text",
-            5.00m, 30.00m, null, null, null,
+            5.00m, 30.00m, null, null, null, null, null, null, "Text",
             new ModelLifecycleResponse("gpt-5.6-sol", "OpenAI", "active",
                 null, null, null, null, null, true));
 
         Assert.Equal("text", texto.Kind);
         Assert.NotNull(texto.InputPerMTok);
         Assert.Null(texto.ImageMedium);
+        Assert.Null(texto.AuxAmount);
 
         var imagen = new ModelPriceResponse(
             "gpt-image-2", "GPT Image 2", "OpenAI", "image",
-            null, null, 0.0082m, 0.0317m, 0.1248m,
+            null, null, 0.0082m, 0.0317m, 0.1248m, null, null, null, "Image",
             new ModelLifecycleResponse("gpt-image-2", "OpenAI", "active",
                 null, null, null, null, null, null));
 
         Assert.Equal("image", imagen.Kind);
         Assert.Null(imagen.InputPerMTok);
         Assert.NotNull(imagen.ImageMedium);
+
+        var audio = new ModelPriceResponse(
+            "tts-1", "TTS-1", "OpenAI", "other",
+            null, null, null, null, null, 15.00m, "1M caracteres", null, "Audio",
+            new ModelLifecycleResponse("tts-1", "OpenAI", "active",
+                null, null, null, null, null, null));
+
+        Assert.Equal("other", audio.Kind);
+        Assert.Null(audio.InputPerMTok);
+        Assert.Null(audio.ImageMedium);
+        Assert.Equal("1M caracteres", audio.AuxUnit);
+    }
+
+    [Fact]
+    public void ElCatalogoDelServidorTieneLosMismosModelosQueElDelCliente()
+    {
+        // Los dos catalogos se mantienen a mano y se desincronizaron: el del servidor
+        // no tenia los modelos de embeddings, audio, transcripcion ni Canva, asi que
+        // no salian en la pantalla de precios ni los ofrecia el bot de Telegram. Un
+        // modelo que no aparece en ningun sitio es indistinguible de uno que no existe.
+        var razor = File.ReadAllText(RutaDelCatalogoDelCliente());
+
+        var enElCliente = Regex
+            .Matches(razor, @"new\(""(?<id>[^""]+)"",\s*""[^""]+"",\s*""(?<provider>[^""]+)""")
+            .Select(m => m.Groups["id"].Value)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Si el parseo deja de encontrar modelos, el test dejaria de comprobar nada.
+        Assert.True(enElCliente.Count > 50,
+            $"solo se han parseado {enElCliente.Count} modelos del catalogo del cliente");
+
+        var enElServidor = ModelCatalog.AllModels
+            .Select(m => m.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var faltanEnElServidor = enElCliente.Except(enElServidor, StringComparer.OrdinalIgnoreCase).ToList();
+        var faltanEnElCliente = enElServidor.Except(enElCliente, StringComparer.OrdinalIgnoreCase).ToList();
+
+        Assert.True(faltanEnElServidor.Count == 0,
+            "en ModelCatalog.cs faltan: " + string.Join(", ", faltanEnElServidor));
+        Assert.True(faltanEnElCliente.Count == 0,
+            "en Modules.razor faltan: " + string.Join(", ", faltanEnElCliente));
+    }
+
+    private static string RutaDelCatalogoDelCliente()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Client", "Pages", "Modules.razor")))
+            dir = dir.Parent;
+
+        Assert.NotNull(dir);
+        return Path.Combine(dir!.FullName, "Client", "Pages", "Modules.razor");
+    }
+
+    [Theory]
+    [InlineData("text-embedding-3-small", 0.02, "1M tokens")]
+    [InlineData("text-embedding-3-large", 0.13, "1M tokens")]
+    [InlineData("tts-1", 15.00, "1M caracteres")]
+    [InlineData("tts-1-hd", 30.00, "1M caracteres")]
+    [InlineData("whisper-1", 0.006, "minuto")]
+    [InlineData("gpt-4o-transcribe", 0.006, "minuto")]
+    [InlineData("gpt-4o-mini-transcribe", 0.003, "minuto")]
+    public void LosModelosQueNoVanPorTokensTraenSuPropiaUnidad(
+        string modelo, double importe, string unidad)
+    {
+        // Mostrar un TTS que cobra por caracter como si cobrase por token seria
+        // equivocarse por tres ordenes de magnitud.
+        var rate = PricingCatalog.GetAuxiliaryRate(modelo);
+
+        Assert.NotNull(rate);
+        Assert.Equal((decimal)importe, rate!.Amount);
+        Assert.Equal(unidad, rate.Unit);
+    }
+
+    [Fact]
+    public void TodoModeloDelCatalogoTieneTarifaOSeSabePorQueNo()
+    {
+        // Canva se paga por suscripcion, no por llamada: es el unico caso legitimo
+        // de modelo sin tarifa. Cualquier otro sin precio es un olvido.
+        foreach (var model in ModelCatalog.AllModels)
+        {
+            if (model.Types.Contains("Text", StringComparer.OrdinalIgnoreCase)
+                || model.Types.Contains("Image", StringComparer.OrdinalIgnoreCase))
+                continue;
+
+            if (string.Equals(model.Provider, "Canva", StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.Null(PricingCatalog.GetAuxiliaryRate(model.Id));
+                continue;
+            }
+
+            Assert.True(PricingCatalog.GetAuxiliaryRate(model.Id) is not null,
+                $"{model.Id} esta en el catalogo y no tiene tarifa ni motivo para no tenerla");
+        }
     }
 }

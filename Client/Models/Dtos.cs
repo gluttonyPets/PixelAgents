@@ -31,12 +31,29 @@ public record ModelPriceResponse(
     string Id, string DisplayName, string Provider, string Kind,
     decimal? InputPerMTok, decimal? OutputPerMTok,
     decimal? ImageLow, decimal? ImageMedium, decimal? ImageHigh,
+    decimal? AuxAmount, string? AuxUnit, string? AuxNote,
+    string ModuleType,
     ModelLifecycleResponse Lifecycle)
 {
     /// <summary>Coste de una ejecución con los tokens indicados.</summary>
     public decimal CostFor(int inputTokens, int outputTokens) =>
         (InputPerMTok ?? 0m) * inputTokens / 1_000_000m
         + (OutputPerMTok ?? 0m) * outputTokens / 1_000_000m;
+
+    /// <summary>
+    /// Familia a la que pertenece el modelo, para no separar hermanos al ordenar.
+    /// Se queda con los segmentos iniciales del id que no llevan dígitos:
+    /// <c>gpt-image-1-mini</c> y <c>gpt-image-2</c> caen los dos en <c>gpt-image</c>.
+    /// </summary>
+    public string Family
+    {
+        get
+        {
+            var parts = Id.Split('-');
+            var head = parts.TakeWhile(p => !p.Any(char.IsDigit)).ToList();
+            return head.Count > 0 ? string.Join('-', head) : Id;
+        }
+    }
 }
 
 // ── Rule ──

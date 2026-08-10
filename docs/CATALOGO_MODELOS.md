@@ -14,8 +14,12 @@ La lista está **duplicada a propósito** en dos sitios, y hay que tocar los dos
 | `Client/Pages/Modules.razor` → `AllModels` | Alta de módulos en la UI | id, nombre, tipos, capacidades, descripción, contexto |
 | `Server/Services/Ai/ModelCatalog.cs` → `AllModels` | Todo lo que no pasa por la UI (bot de Telegram, ejecutor, endpoints) | id, nombre, proveedor, tipos |
 
-El del servidor es un espejo reducido del cliente. Si solo añades uno de los dos,
-el modelo aparece en la UI pero el bot de Telegram no lo ofrece, o al revés.
+Los dos tienen que contener **exactamente los mismos ids**. Si solo añades uno, el
+modelo aparece en la UI pero el bot de Telegram no lo ofrece y no sale en la pantalla
+de precios, o al revés. Ya pasó: el catálogo del servidor arrastraba diez modelos de
+menos (embeddings, audio, transcripción y Canva) y nadie se enteró hasta que la
+pantalla de precios los expuso. Hay un test que compara los dos ficheros
+(`ModelPricingEndpointTests.ElCatalogoDelServidorTieneLosMismosModelosQueElDelCliente`).
 
 Alrededor hay tres tablas más que se sincronizan con estas:
 
@@ -108,6 +112,16 @@ El coste por imagen es esos tokens por la tarifa de salida del modelo, que es lo
 `gpt-image-1.5`, $30/1M en `gpt-image-2`). Cada versión tiene su tabla ya resuelta
 en `PricingCatalog`.
 
+### Embeddings, audio y transcripción
+
+No comparten unidad de facturación, así que van en `AuxiliaryPrices` con la suya:
+embeddings por millón de tokens, `tts-1`/`tts-1-hd` por millón de **caracteres**, y
+las transcripciones por **minuto** de audio. Forzarlos todos a "$/1M tokens" sería
+equivocarse por tres órdenes de magnitud en dos de los tres casos.
+
+Canva no tiene entrada: se paga por suscripción, no por llamada. La UI lo muestra
+como "sin coste por uso", que es distinto de un precio que falta.
+
 ---
 
 ## 5. Añadir un modelo nuevo
@@ -164,3 +178,10 @@ más barato y el más caro hay tres órdenes de magnitud, y en escala lineal tod
 no fuese un modelo Pro sería una barra invisible. La escala se calcula sobre los
 modelos visibles, así que al filtrar por proveedor las barras se reajustan a ese
 conjunto.
+
+Las filas se agrupan **por proveedor y, dentro, por familia**. Ordenar solo por precio
+separaba a los hermanos: `gpt-image-1-mini` acababa seis filas por encima de
+`gpt-image-2`, con Leonardo y DALL-E en medio, y parecía que faltaba del catálogo. La
+familia sale del id (`ModelPriceResponse.Family`: los segmentos iniciales sin dígitos,
+así que `gpt-image-1-mini` y `gpt-image-2` caen los dos en `gpt-image`), y las familias
+se ordenan entre sí por su miembro más barato para no perder la lectura de precio.

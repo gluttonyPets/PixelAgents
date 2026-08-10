@@ -16,20 +16,7 @@ else if (_models.Count == 0)
 else
 {
     var providers = _models.Select(m => m.Provider).Distinct().OrderBy(p => p).ToList();
-
-    var visible = _models
-        .Where(m => _filterProvider is null || m.Provider == _filterProvider)
-        .ToList();
-
-    var text = visible
-        .Where(m => m.Kind == "text")
-        .OrderBy(m => m.CostFor(_inputTokens, _outputTokens))
-        .ToList();
-
-    var image = visible
-        .Where(m => m.Kind == "image")
-        .OrderBy(m => m.ImageMedium ?? 0m)
-        .ToList();
+    var visible = _models.Where(Matches).ToList();
 
     <p class="text-muted pricing-lede">
         Tarifas de los @_models.Count modelos del catalogo. Los importes salen del mismo
@@ -53,21 +40,35 @@ else
             <button class="btn btn-sm btn-secondary" @onclick="ResetTokens">Restablecer</button>
         </div>
 
-        <div class="apikeys-filters">
-            <button class="filter-pill @(_filterProvider is null ? "active" : "")"
-                    @onclick="() => _filterProvider = null">
-                Todos <span class="filter-count">@_models.Count</span>
-            </button>
-            @foreach (var p in providers)
-            {
-                var count = _models.Count(m => m.Provider == p);
-                <button class="filter-pill @(_filterProvider == p ? "active" : "")"
-                        @onclick="() => _filterProvider = p">
-                    @p <span class="filter-count">@count</span>
-                </button>
-            }
+        <div class="pricing-search-wrap">
+            <input class="apikeys-search" type="text" @bind="_search" @bind:event="oninput"
+                   placeholder="🔍 Buscar modelo..." />
         </div>
     </div>
+
+    <div class="apikeys-filters pricing-provider-filters">
+        <button class="filter-pill @(_filterProvider is null ? "active" : "")"
+                @onclick="() => _filterProvider = null">
+            Todos <span class="filter-count">@_models.Count</span>
+        </button>
+        @foreach (var p in providers)
+        {
+            var count = _models.Count(m => m.Provider == p);
+            <button class="filter-pill @(_filterProvider == p ? "active" : "")"
+                    @onclick="() => _filterProvider = p">
+                @p <span class="filter-count">@count</span>
+            </button>
+        }
+    </div>
+
+    @if (visible.Count == 0)
+    {
+        <p class="text-muted">Ningun modelo coincide con la busqueda.</p>
+    }
+
+    var text = visible.Where(m => m.Kind == "text").ToList();
+    var image = visible.Where(m => m.Kind == "image").ToList();
+    var other = visible.Where(m => m.Kind == "other").ToList();
 
     @if (text.Count > 0)
     {
@@ -82,6 +83,13 @@ else
             </span>
         </h3>
 
+        // La escala se calcula con los tokens que el usuario tiene puestos, no con
+        // los del defecto: si no, al cambiarlos las barras dejarian de corresponderse
+        // con la columna de coste.
+        var costs = text.Select(m => m.CostFor(_inputTokens, _outputTokens)).ToList();
+        var lo = costs.Min();
+        var hi = costs.Max();
+
         <table class="data-table pricing-table">
             <thead>
                 <tr>
@@ -94,30 +102,28 @@ else
                 </tr>
             </thead>
             <tbody>
-                @{
-                    // La escala se calcula una vez con los tokens que el usuario tiene
-                    // puestos, no con los del defecto: si no, al cambiarlos las barras
-                    // dejarian de corresponderse con la columna de coste.
-                    var costs = text.Select(m => m.CostFor(_inputTokens, _outputTokens)).ToList();
-                    var lo = costs.Min();
-                    var hi = costs.Max();
-                }
-                @foreach (var m in text)
+                @foreach (var group in GroupByProvider(text))
                 {
-                    var cost = m.CostFor(_inputTokens, _outputTokens);
-                    <tr>
-                        <td>
-                            <span class="pricing-id">@m.Id</span>
-                            <span class="pricing-provider">@m.Provider</span>
-                        </td>
-                        <td class="num">@Money(m.InputPerMTok, 3)</td>
-                        <td class="num">@Money(m.OutputPerMTok, 2)</td>
-                        <td class="num num-strong">@Money(cost, 4)</td>
-                        <td class="pricing-bar-col">
-                            <span class="pricing-bar" style="width:@BarWidth(cost, lo, hi)"></span>
-                        </td>
-                        <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                    <tr class="pricing-group-row">
+                        <td colspan="6">@group.Key <span class="pricing-group-count">@group.Count() modelos</span></td>
                     </tr>
+                    @foreach (var m in group)
+                    {
+                        var cost = m.CostFor(_inputTokens, _outputTokens);
+                        <tr>
+                            <td>
+                                <span class="pricing-id">@m.Id</span>
+                                <span class="pricing-provider">@m.DisplayName</span>
+                            </td>
+                            <td class="num">@Money(m.InputPerMTok, 3)</td>
+                            <td class="num">@Money(m.OutputPerMTok, 2)</td>
+                            <td class="num num-strong">@Money(cost, 4)</td>
+                            <td class="pricing-bar-col">
+                                <span class="pricing-bar" style="width:@BarWidth(cost, lo, hi)"></span>
+                            </td>
+                            <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>
@@ -141,29 +147,93 @@ else
                 </tr>
             </thead>
             <tbody>
-                @foreach (var m in image)
+                @foreach (var group in GroupByProvider(image))
                 {
-                    <tr>
-                        <td>
-                            <span class="pricing-id">@m.Id</span>
-                            <span class="pricing-provider">@m.Provider</span>
-                        </td>
-                        @if (m.ImageLow == m.ImageMedium && m.ImageMedium == m.ImageHigh)
-                        {
-                            @* Fuera de gpt-image la calidad no cambia el precio: repetir
-                               tres veces la misma cifra solo invita a leerla mal. *@
-                            <td class="num" colspan="3">
-                                @Money(m.ImageMedium, 4) <span class="pricing-flat">precio unico</span>
-                            </td>
-                        }
-                        else
-                        {
-                            <td class="num">@Money(m.ImageLow, 4)</td>
-                            <td class="num">@Money(m.ImageMedium, 4)</td>
-                            <td class="num num-strong">@Money(m.ImageHigh, 4)</td>
-                        }
-                        <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                    <tr class="pricing-group-row">
+                        <td colspan="5">@group.Key <span class="pricing-group-count">@group.Count() modelos</span></td>
                     </tr>
+                    @foreach (var m in group)
+                    {
+                        <tr>
+                            <td>
+                                <span class="pricing-id">@m.Id</span>
+                                <span class="pricing-provider">@m.DisplayName</span>
+                            </td>
+                            @if (m.ImageLow == m.ImageMedium && m.ImageMedium == m.ImageHigh)
+                            {
+                                @* Fuera de gpt-image la calidad no cambia el precio: repetir
+                                   tres veces la misma cifra solo invita a leerla mal. *@
+                                <td class="num" colspan="3">
+                                    @Money(m.ImageMedium, 4) <span class="pricing-flat">precio unico</span>
+                                </td>
+                            }
+                            else
+                            {
+                                <td class="num">@Money(m.ImageLow, 4)</td>
+                                <td class="num">@Money(m.ImageMedium, 4)</td>
+                                <td class="num num-strong">@Money(m.ImageHigh, 4)</td>
+                            }
+                            <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (other.Count > 0)
+    {
+        @* Embeddings, audio y transcripcion no comparten unidad de facturacion entre
+           si, asi que cada fila trae la suya en vez de forzarlas a una columna comun. *@
+        <h3 class="pricing-section-title">
+            Embeddings, audio y diseno
+            <span class="pricing-section-note">cada uno con su unidad de facturacion</span>
+        </h3>
+
+        <table class="data-table pricing-table">
+            <thead>
+                <tr>
+                    <th>Modelo</th>
+                    <th>Tipo</th>
+                    <th class="num">Precio</th>
+                    <th>Unidad</th>
+                    <th>Estado</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var group in GroupByProvider(other))
+                {
+                    <tr class="pricing-group-row">
+                        <td colspan="5">@group.Key <span class="pricing-group-count">@group.Count() modelos</span></td>
+                    </tr>
+                    @foreach (var m in group)
+                    {
+                        <tr>
+                            <td>
+                                <span class="pricing-id">@m.Id</span>
+                                <span class="pricing-provider">@m.DisplayName</span>
+                            </td>
+                            <td class="pricing-kind">@ModuleTypeLabel(m.ModuleType)</td>
+                            <td class="num num-strong">
+                                @(m.AuxAmount is null ? "—" : Money(m.AuxAmount, m.AuxAmount < 1m ? 4 : 2))
+                            </td>
+                            <td class="pricing-unit">
+                                @if (m.AuxUnit is not null)
+                                {
+                                    <span>por @m.AuxUnit</span>
+                                }
+                                else
+                                {
+                                    <span class="pricing-flat">sin coste por uso</span>
+                                }
+                                @if (m.AuxNote is not null)
+                                {
+                                    <span class="pricing-aux-note">@m.AuxNote</span>
+                                }
+                            </td>
+                            <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                        </tr>
+                    }
                 }
             </tbody>
         </table>
@@ -181,6 +251,7 @@ else
     private List<ModelPriceResponse> _models = [];
     private bool _loading = true;
     private string? _filterProvider;
+    private string _search = "";
 
     // Un paso de texto tipico del pipeline: un articulo corto con su prompt de sistema.
     private const int DefaultInputTokens = 10_000;
@@ -201,6 +272,51 @@ else
         _inputTokens = DefaultInputTokens;
         _outputTokens = DefaultOutputTokens;
     }
+
+    private bool Matches(ModelPriceResponse m) =>
+        (_filterProvider is null || m.Provider == _filterProvider)
+        && (string.IsNullOrWhiteSpace(_search)
+            || m.Id.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || m.DisplayName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Agrupa por proveedor y, dentro de cada uno, mantiene juntas las familias.
+    ///
+    /// Ordenar solo por precio separaba a los hermanos: gpt-image-1-mini acababa seis
+    /// filas por encima de gpt-image-2, con Leonardo y DALL-E en medio, y parecia que
+    /// faltaba del catalogo. Las familias se ordenan entre si por su miembro mas
+    /// barato, asi que sigue leyendose de mas barato a mas caro.
+    /// </summary>
+    private IEnumerable<IGrouping<string, ModelPriceResponse>> GroupByProvider(
+        List<ModelPriceResponse> models)
+    {
+        decimal Cost(ModelPriceResponse m) => m.Kind switch
+        {
+            "text"  => m.CostFor(_inputTokens, _outputTokens),
+            "image" => m.ImageMedium ?? 0m,
+            _       => m.AuxAmount ?? 0m,
+        };
+
+        var familyFloor = models
+            .GroupBy(m => m.Family)
+            .ToDictionary(g => g.Key, g => g.Min(Cost));
+
+        return models
+            .OrderBy(m => m.Provider)
+            .ThenBy(m => familyFloor[m.Family])
+            .ThenBy(m => m.Family)
+            .ThenBy(Cost)
+            .GroupBy(m => m.Provider);
+    }
+
+    private static string ModuleTypeLabel(string moduleType) => moduleType switch
+    {
+        "Embeddings"    => "Embeddings",
+        "Audio"         => "Audio (TTS)",
+        "Transcription" => "Transcripcion",
+        "Design"        => "Diseno",
+        _               => moduleType,
+    };
 
     private static string Money(decimal? value, int decimals) =>
         value is null ? "—" : "$" + value.Value.ToString("N" + decimals);

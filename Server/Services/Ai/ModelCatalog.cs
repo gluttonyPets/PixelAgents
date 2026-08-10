@@ -53,6 +53,25 @@ public static class ModelCatalog
         new("dall-e-3",         "DALL-E 3",         "OpenAI", ["Image"]),
         new("dall-e-2",         "DALL-E 2",         "OpenAI", ["Image"]),
 
+        // ─── OpenAI: Embeddings ───
+        new("text-embedding-3-large", "Embedding 3 Large", "OpenAI", ["Embeddings"]),
+        new("text-embedding-3-small", "Embedding 3 Small", "OpenAI", ["Embeddings"]),
+
+        // ─── OpenAI: Audio (TTS) ───
+        new("gpt-4o-mini-tts",  "GPT-4o Mini TTS",  "OpenAI", ["Audio"]),
+        new("tts-1",            "TTS-1",            "OpenAI", ["Audio"]),
+        new("tts-1-hd",         "TTS-1 HD",         "OpenAI", ["Audio"]),
+
+        // ─── OpenAI: Transcripción (STT) ───
+        new("gpt-transcribe",         "GPT Transcribe",         "OpenAI", ["Transcription"]),
+        new("gpt-4o-transcribe",      "GPT-4o Transcribe",      "OpenAI", ["Transcription"]),
+        new("gpt-4o-mini-transcribe", "GPT-4o Mini Transcribe", "OpenAI", ["Transcription"]),
+        new("whisper-1",              "Whisper",                "OpenAI", ["Transcription"]),
+
+        // ─── Canva: Diseño ───
+        new("canva-design",   "Canva Diseño",   "Canva", ["Design"]),
+        new("canva-autofill", "Canva Autofill", "Canva", ["Design"]),
+
         // ─── Anthropic: Text ───
         new("claude-opus-4-6",             "Claude Opus 4.6",   "Anthropic", ["Text"]),
         new("claude-sonnet-4-6",           "Claude Sonnet 4.6", "Anthropic", ["Text","Orchestrator","Coordinator"]),

@@ -74,6 +74,49 @@ namespace Server.Services.Ai
                 ["grok-2-vision"]      = (2.00m, 10.00m),
             };
 
+        /// <summary>
+        /// Tarifa de los modelos que no se facturan ni por tokens de texto ni por
+        /// imagen. Cada uno lleva su unidad porque no comparten ninguna: los TTS
+        /// clasicos cobran por caracter, las transcripciones por minuto de audio y
+        /// los embeddings por token. Mostrarlos todos como "$/1M tokens" seria
+        /// mentir en dos de los tres casos.
+        /// </summary>
+        public record AuxiliaryRate(decimal Amount, string Unit, string? Note = null);
+
+        private static readonly Dictionary<string, AuxiliaryRate> AuxiliaryPrices =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                // Embeddings
+                ["text-embedding-3-small"] = new(0.02m, "1M tokens"),
+                ["text-embedding-3-large"] = new(0.13m, "1M tokens"),
+                ["text-embedding-ada-002"] = new(0.10m, "1M tokens"),
+
+                // Audio (TTS)
+                ["tts-1"]    = new(15.00m, "1M caracteres"),
+                ["tts-1-hd"] = new(30.00m, "1M caracteres"),
+                ["gpt-4o-mini-tts"] = new(12.00m, "1M tokens de audio",
+                    "Mas $0,60 por 1M de tokens de texto de entrada."),
+
+                // Transcripcion (STT). OpenAI publica el precio por minuto de audio,
+                // que es la unidad en la que se piensa al transcribir, aunque por
+                // debajo tambien tenga equivalencia en tokens.
+                ["gpt-transcribe"]         = new(0.0045m, "minuto"),
+                ["whisper-1"]              = new(0.006m, "minuto"),
+                ["gpt-4o-transcribe"]      = new(0.006m, "minuto"),
+                ["gpt-4o-mini-transcribe"] = new(0.003m, "minuto"),
+            };
+
+        /// <summary>
+        /// Tarifa de un modelo de embeddings, audio o transcripcion. null cuando el
+        /// modelo no se factura por uso —Canva se paga por suscripcion, no por
+        /// llamada— o cuando no hay tarifa conocida.
+        /// </summary>
+        public static AuxiliaryRate? GetAuxiliaryRate(string modelName)
+        {
+            if (string.IsNullOrWhiteSpace(modelName)) return null;
+            return AuxiliaryPrices.TryGetValue(modelName, out var rate) ? rate : null;
+        }
+
         // ── Image models: fixed price per image ──
         private static readonly Dictionary<string, decimal> ImageFixedPrices =
             new(StringComparer.OrdinalIgnoreCase)

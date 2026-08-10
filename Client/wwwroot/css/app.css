@@ -4880,3 +4880,38 @@ a.link:hover { text-decoration: underline; }
 @media (max-width: 820px) {
     .pricing-bar-col { display: none; }
 }
+
+/* Cabecera de proveedor dentro de las tablas de precios. Agrupar evita que ordenar
+   por precio separe a los modelos de una misma familia. */
+.pricing-group-row td {
+    background: var(--surface);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    padding-top: 0.7rem;
+    padding-bottom: 0.35rem;
+}
+
+.pricing-group-count {
+    margin-left: 0.5rem;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    opacity: 0.7;
+}
+
+.pricing-search-wrap { flex: 1 1 220px; max-width: 320px; }
+
+.pricing-provider-filters { margin-bottom: 1.5rem; }
+
+.pricing-kind { font-size: 0.8rem; color: var(--text-muted); }
+
+.pricing-unit { font-size: 0.8rem; }
+
+.pricing-aux-note {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
