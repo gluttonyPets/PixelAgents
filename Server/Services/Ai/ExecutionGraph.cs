@@ -118,10 +118,19 @@ public class ExecutionGraph
     public void CompleteNodeAndPrepareDownstream(ModuleNode completedNode)
     {
         PortDataResolver.ResolveOutputPorts(completedNode);
+        ApplyConditionalBranching(completedNode);
 
         var touchedTargets = new HashSet<ModuleNode>();
         foreach (var outputPort in completedNode.OutputPorts)
         {
+            // Rama descartada: sus aristas quedan muertas y no entregan datos.
+            if (completedNode.BlockedOutputPorts.Contains(outputPort.PortId))
+            {
+                foreach (var conn in outputPort.Connections)
+                    conn.IsDead = true;
+                continue;
+            }
+
             if (outputPort.Data is null) continue;
 
             foreach (var conn in outputPort.Connections)
@@ -135,6 +144,58 @@ public class ExecutionGraph
 
         foreach (var target in touchedTargets)
             MarkReadyIfSatisfied(target);
+    }
+
+    /// <summary>
+    /// Recupera la rama viva de un nodo Condicional cuando el executor no ha
+    /// pasado los puertos bloqueados: pasa al reconstruir un grafo pausado o
+    /// reintentado, donde el nodo ya viene completo desde la BD y lo unico que
+    /// queda del veredicto es el metadato de su salida.
+    /// </summary>
+    private static void ApplyConditionalBranching(ModuleNode node)
+    {
+        if (node.ModuleType != ConditionalBranching.ModuleType) return;
+        if (node.BlockedOutputPorts.Count > 0) return;
+
+        var met = ConditionalBranching.ReadConditionMet(node.Output);
+        if (met is null) return;
+
+        foreach (var portId in ConditionalBranching.BlockedPortsFor(met.Value))
+            node.BlockedOutputPorts.Add(portId);
+    }
+
+    /// <summary>
+    /// Marca como <see cref="NodeStatus.Skipped"/> todo nodo pendiente cuyas
+    /// entradas vengan solo de ramas descartadas por un condicional, y propaga
+    /// el corte a sus propios sucesores hasta alcanzar un punto fijo. Un nodo
+    /// que ademas recibe datos de una rama viva NO se salta: se ejecuta con lo
+    /// que le llega por esa rama.
+    /// </summary>
+    /// <returns>Los nodos saltados en esta pasada (para registrarlos como pasos).</returns>
+    public List<ModuleNode> SkipUnreachableNodes()
+    {
+        var skipped = new List<ModuleNode>();
+        bool changed;
+
+        do
+        {
+            changed = false;
+            foreach (var node in Nodes.Values)
+            {
+                if (node.Status != NodeStatus.Pending) continue;
+                if (!node.IsUnreachable) continue;
+
+                node.Status = NodeStatus.Skipped;
+                foreach (var conn in node.OutputPorts.SelectMany(p => p.Connections))
+                    conn.IsDead = true;
+
+                skipped.Add(node);
+                changed = true;
+            }
+        }
+        while (changed);
+
+        return skipped;
     }
 
     public void MarkReadyIfSatisfied(ModuleNode node)
@@ -250,6 +311,7 @@ public class ExecutionGraph
             "SubProject" => ("output", "any"),
             "Embeddings" => ("output_embedding", "file"),
             "Checkpoint" => ("output_1", "any"),
+            ConditionalBranching.ModuleType => (ConditionalBranching.TruePort, "any"),
             _ => ("output_data", "any"),
         };
 

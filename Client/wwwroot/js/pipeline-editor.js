@@ -512,7 +512,7 @@ window.pipelineEditor = {
             Interaction: 'bi-chat-dots', Publish: 'bi-send', ShopifyBlog: 'bi-shop',
             Embeddings: 'bi-grid-3x3', Checkpoint: 'bi-check-circle', FileUpload: 'bi-paperclip',
             Scene: 'bi-layers', StaticText: 'bi-fonts', Start: 'bi-play-circle',
-            SubProject: 'bi-diagram-2'
+            SubProject: 'bi-diagram-2', Conditional: 'bi-signpost-split'
         };
         return map[type] || 'bi-gear';
     },

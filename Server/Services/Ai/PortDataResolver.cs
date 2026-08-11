@@ -50,6 +50,25 @@ public static class PortDataResolver
             return new PortData { DataType = "any", SourcePortId = port.PortId };
         }
 
+        // Conditional pass-through: la rama viva recibe la entrada tal cual, para
+        // que los modulos siguientes vean lo mismo que si el condicional no
+        // estuviera en medio (el nodo solo decide por donde sigue el flujo).
+        if (node.ModuleType == ConditionalBranching.ModuleType)
+        {
+            var received = node.InputPorts.SelectMany(p => p.ReceivedData).ToList();
+            var passthrough = received.FirstOrDefault(d => d.Files is { Count: > 0 })
+                              ?? received.FirstOrDefault();
+            if (passthrough is not null)
+                return passthrough;
+
+            return new PortData
+            {
+                DataType = "any",
+                TextContent = output.Content,
+                SourcePortId = port.PortId,
+            };
+        }
+
         // Indexed image output: output_image_1, output_image_2, etc.
         if (port.PortId.StartsWith("output_image_")
             && int.TryParse(port.PortId.AsSpan("output_image_".Length), out var imgIdx))

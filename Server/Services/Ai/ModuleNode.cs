@@ -20,6 +20,12 @@ public class ModuleNode
     public StepExecution? StepExecution { get; set; }
     public decimal Cost { get; set; }
 
+    /// <summary>
+    /// Puertos de salida cuya rama no se ejecuta (la decide el modulo, p. ej.
+    /// el Condicional). Sus conexiones se marcan muertas al completar el nodo.
+    /// </summary>
+    public HashSet<string> BlockedOutputPorts { get; } = new(StringComparer.OrdinalIgnoreCase);
+
     public ModuleNode(ProjectModule pm)
     {
         ModuleId = pm.Id;
@@ -36,9 +42,23 @@ public class ModuleNode
         _ => false,
     };
 
+    /// <summary>
+    /// True cuando todas las conexiones de entrada del nodo vienen de ramas
+    /// descartadas por un condicional: el nodo es inalcanzable y no debe
+    /// ejecutarse (se marcara como Skipped).
+    /// </summary>
+    public bool IsUnreachable
+    {
+        get
+        {
+            var incoming = InputPorts.SelectMany(p => p.Connections).ToList();
+            return incoming.Count > 0 && incoming.All(c => c.IsDead);
+        }
+    }
+
     /// <summary>True when this node can be marked Ready from its current inputs.</summary>
     public bool CanBecomeReady => CanStartWithoutInputs
-        || (InputPorts.Count > 0 && InputPorts.All(p => p.IsSatisfied));
+        || (InputPorts.Count > 0 && !IsUnreachable && InputPorts.All(p => p.IsSatisfied));
 }
 
 /// <summary>An input port on a module node.</summary>
@@ -58,9 +78,12 @@ public class InputPort
     /// <summary>
     /// Satisfied when every connected upstream has delivered its data (fan-in:
     /// N upstreams → wait for N). Optional ports and ports with no connections
-    /// don't block — preserves the original pipeline semantics.
+    /// don't block — preserves the original pipeline semantics. Las conexiones
+    /// muertas (rama descartada por un condicional) no cuentan: si no lo
+    /// hicieran, un nodo alimentado por dos ramas se quedaria esperando para
+    /// siempre a la que ya no va a ejecutarse.
     /// </summary>
-    public bool IsSatisfied => ReceivedData.Count >= Connections.Count || !IsRequired;
+    public bool IsSatisfied => ReceivedData.Count >= Connections.Count(c => !c.IsDead) || !IsRequired;
 }
 
 /// <summary>An output port on a module node.</summary>
@@ -87,6 +110,13 @@ public class PortConnection
     /// <summary>Optional JSON schema agreed on this edge; used to steer the
     /// upstream producer and to disaggregate the downstream consumer.</summary>
     public string? Format { get; set; }
+
+    /// <summary>
+    /// Arista muerta: su origen decidio no propagar datos por este puerto (rama
+    /// descartada por un modulo Condicional). No entrega datos ni bloquea al
+    /// nodo destino.
+    /// </summary>
+    public bool IsDead { get; set; }
 }
 
 /// <summary>A unit of data flowing between ports.</summary>

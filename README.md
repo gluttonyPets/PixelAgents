@@ -370,6 +370,8 @@ Handlers actuales:
 - `Coordinator`: agregacion de multiples entradas y llamada IA.
 - `Scene`: construccion de JSON de escena.
 - `Checkpoint`: pausa para revision humana.
+- `Conditional`: evalua una condicion escrita y decide por que rama sigue el
+  pipeline (ver `docs/architecture.md`).
 - `Interaction`: pausa y espera respuesta por canal externo.
 - `Design`: creacion de disenos con Canva.
 - `Publish`: publicacion social via Buffer.
@@ -379,6 +381,9 @@ Modulos de sistema creados por defecto en `SystemModuleCatalog`:
 - `FileUpload`.
 - `StaticText`.
 - `Checkpoint`.
+- `Conditional`.
+- `Publish`.
+- `SubProject`.
 
 El cliente tambien conoce otros tipos mediante `ModulePortRegistry`, incluyendo
 `Start`, `Scene`, `Interaction`, `Coordinator`, `Orchestrator`, `Publish` y los

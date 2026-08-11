@@ -471,6 +471,64 @@
                         </div>
                     }
 
+                    @if (sel.ModuleType == "Conditional")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Condicion</div>
+                            <div class="inspector-field">
+                                <label>Modo de evaluacion</label>
+                                <select value="@GetModuleConfig(sel.Id, "conditionMode", "auto")"
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "conditionMode", e.Value?.ToString() ?? "auto"))">
+                                    <option value="auto">Automatico (expresion y, si no, IA)</option>
+                                    <option value="expression">Solo expresion</option>
+                                    <option value="ai">Solo IA (lenguaje natural)</option>
+                                </select>
+                            </div>
+                            <div class="inspector-field">
+                                <label>Condicion a cumplir</label>
+                                <textarea rows="3" placeholder="ej: contiene &quot;aprobado&quot; y longitud > 200"
+                                          value="@GetModuleConfig(sel.Id, "condition", "")"
+                                          @onchange="@(e => SetModuleConfig(sel.Id, "condition", e.Value?.ToString() ?? ""))"></textarea>
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                                    Si se cumple, el pipeline sigue por la salida <strong>Se cumple</strong>. Si no,
+                                    sigue por <strong>No se cumple</strong>; si esa salida no esta conectada, los
+                                    modulos siguientes no se ejecutan y la ejecucion termina correctamente.
+                                </p>
+                            </div>
+                            @if (GetModuleConfig(sel.Id, "conditionMode", "auto") != "expression")
+                            {
+                                <div class="inspector-field">
+                                    <label>Modelo para evaluar con IA</label>
+                                    <select value="@GetConditionModel(sel.Id)"
+                                            @onchange="@(e => SetConditionModel(sel.Id, e.Value?.ToString() ?? ""))">
+                                        <option value="">(por defecto segun las API Keys)</option>
+                                        @foreach (var (provider, model, label) in _conditionModels)
+                                        {
+                                            <option value="@($"{provider}|{model}")">@label</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                            <details class="inspector-rule-item">
+                                <summary>
+                                    <span class="inspector-rule-title">Sintaxis de expresiones</span>
+                                    <span class="inspector-rule-desc">Comparaciones deterministas sobre el texto de entrada.</span>
+                                </summary>
+                                <pre class="inspector-rule-body">contiene "descuento"
+no contiene "error"
+empieza por "OK"      termina en "."
+es igual a "aprobado"
+longitud > 500        palabras >= 50
+no esta vacio
+coincide con /^[0-9]{4}$/
+numero > 10
+
+Se combinan con "y" (todas) y "o" (alguna).
+Sin acentos ni mayusculas: la comparacion los ignora.</pre>
+                            </details>
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "Coordinator")
                     {
                         <div class="inspector-section">
@@ -1101,6 +1159,15 @@
         "claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-haiku-20241022",
         "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro",
     ];
+    // Modelos ofrecidos para evaluar la condicion del modulo Condicional. Si no
+    // se elige ninguno, el servidor usa el modelo por defecto del tenant segun
+    // que API Keys tenga configuradas.
+    private static readonly (string Provider, string Model, string Label)[] _conditionModels = [
+        ("OpenAI", "gpt-4o-mini", "OpenAI - gpt-4o-mini"),
+        ("OpenAI", "gpt-4.1-mini", "OpenAI - gpt-4.1-mini"),
+        ("Anthropic", "claude-haiku-4-5-20251001", "Anthropic - claude haiku 4.5"),
+        ("Google", "gemini-2.5-flash", "Google - gemini 2.5 flash"),
+    ];
     private Dictionary<Guid, Dictionary<string, string>> _moduleConfigs = new();
     private bool _lastExecuting;
 
@@ -1165,7 +1232,7 @@
         new("media", "bi-brush", "Generacion", ["Image", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["Transcription", "Embeddings"]),
         new("resources", "bi-paperclip", "Recursos", ["FileUpload", "StaticText"]),
-        new("control", "bi-sliders", "Control y Salida", ["Scene", "Checkpoint", "Publish", "ShopifyBlog", "Coordinator"]),
+        new("control", "bi-sliders", "Control y Salida", ["Scene", "Checkpoint", "Conditional", "Publish", "ShopifyBlog", "Coordinator"]),
     ];
 
     private void ToggleModulePanel()
@@ -1602,6 +1669,25 @@
         await SetModuleConfig(moduleId, "blogId", blogId);
         var blog = _shopifyBlogs.FirstOrDefault(b => b.Id == blogId);
         await SetModuleConfig(moduleId, "blogTitle", blog?.Title ?? "");
+    }
+
+    // ── Modulo condicional ──
+
+    /// <summary>Valor del selector de modelo ("Proveedor|modelo", vacio = por defecto).</summary>
+    private string GetConditionModel(Guid moduleId)
+    {
+        var provider = GetModuleConfig(moduleId, "conditionProvider", "");
+        var model = GetModuleConfig(moduleId, "conditionModel", "");
+        return string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(model) ? "" : $"{provider}|{model}";
+    }
+
+    private async Task SetConditionModel(Guid moduleId, string value)
+    {
+        var parts = value.Split('|', 2);
+        var provider = parts.Length == 2 ? parts[0] : "";
+        var model = parts.Length == 2 ? parts[1] : "";
+        await SetModuleConfig(moduleId, "conditionProvider", provider);
+        await SetModuleConfig(moduleId, "conditionModel", model);
     }
 
     private async Task ToggleSkipped(Guid moduleId, bool skipped)

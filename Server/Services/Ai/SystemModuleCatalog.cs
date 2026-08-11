@@ -31,6 +31,11 @@ public static class SystemModuleCatalog
             "Checkpoint",
             "checkpoint"),
         new(
+            "Condicional",
+            "Evalua una condicion escrita y decide si el pipeline continua por esa rama",
+            ConditionalBranching.ModuleType,
+            "conditional"),
+        new(
             "Publicar",
             "Publica contenido en redes sociales (Instagram, TikTok, Pinterest, Threads)",
             "Publish",

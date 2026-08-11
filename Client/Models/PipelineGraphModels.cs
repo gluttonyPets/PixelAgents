@@ -203,6 +203,14 @@ public static class ModulePortRegistry
                 }
                 break;
 
+            case "Conditional":
+                // Una entrada y dos salidas: la rama que se ejecuta depende de
+                // si la condicion escrita en el nodo se cumple o no.
+                ports.Add(new("input", "Entrada", PortDataType.Any, isInput: true, isRequired: true));
+                ports.Add(new("output_true", "Se cumple", PortDataType.Any, isInput: false));
+                ports.Add(new("output_false", "No se cumple", PortDataType.Any, isInput: false));
+                break;
+
             case "Coordinator":
                 var coordInputs = Math.Max(sceneCount, 1);
                 for (int i = 1; i <= coordInputs; i++)
@@ -281,6 +289,7 @@ public static class ModulePortRegistry
         "ShopifyBlog" => "bi-shop",
         "Embeddings" => "bi-grid-3x3",
         "Checkpoint" => "bi-check-circle",
+        "Conditional" => "bi-signpost-split",
         "FileUpload" => "bi-paperclip",
         "Scene" => "bi-layers",
         "StaticText" => "bi-fonts",
@@ -302,6 +311,7 @@ public static class ModulePortRegistry
         "ShopifyBlog" => "#95bf47",
         "Embeddings" => "#78909c",
         "Checkpoint" => "#f44336",
+        "Conditional" => "#ff9800",
         "FileUpload" => "#607d8b",
         "Scene" => "#ff7043",
         "StaticText" => "#5c6bc0",

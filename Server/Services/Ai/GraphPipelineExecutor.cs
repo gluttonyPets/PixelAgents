@@ -747,7 +747,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
         {
             ct.ThrowIfCancellationRequested();
 
-            var skippedAny = false;
+            // Ramas descartadas por un modulo condicional: sus modulos quedan
+            // como Skipped antes de decidir si el grafo esta listo o bloqueado.
+            var skippedAny = await SkipUnreachableNodesAsync(graph, project, execution, db, ct) > 0;
+
             foreach (var node in graph.GetReadyNodes())
             {
                 var skipped = IsNodeSkipped(node, out var rawSkipValue);
@@ -1405,6 +1408,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
             step.Status = "Completed";
             step.OutputData = JsonSerializer.Serialize(node.Output, JsonOptions);
             step.CompletedAt = DateTime.UtcNow;
+            // Ramas que el propio modulo descarta (Condicional): no propagan datos.
+            foreach (var portId in result.BlockedOutputPorts)
+                node.BlockedOutputPorts.Add(portId);
             graph.CompleteNodeAndPrepareDownstream(node);
             await db.SaveChangesAsync(ct);
             await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Completed");
@@ -2112,6 +2118,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
         foreach (var node in graph.Nodes.Values)
         {
             if (node.Output is null) continue;
+            // Un modulo saltado no produjo nada propio: su salida es un
+            // pass-through (o el aviso de rama descartada), asi que anadirlo
+            // duplicaria contenido en el historial de "no repetir tematicas".
+            if (node.Status == NodeStatus.Skipped) continue;
             var value = node.Output.Summary ?? node.Output.Content;
             if (!string.IsNullOrWhiteSpace(value))
                 parts.Add($"{node.ProjectModule.StepName ?? node.AiModule.Name} ({node.ModuleType}): {Truncate(value, 160)}");
@@ -2179,6 +2189,11 @@ public class GraphPipelineExecutor : IPipelineExecutor
             Files = passthrough?.Files ?? [],
         };
 
+        // Un condicional saltado a mano no evalua nada: se deja pasar el flujo
+        // por la rama "se cumple" para no cortar el pipeline entero.
+        if (node.ModuleType == ConditionalBranching.ModuleType)
+            node.Output.Metadata[ConditionalBranching.MetadataKey] = true;
+
         node.Status = NodeStatus.Skipped;
         step.Status = "Skipped";
         step.OutputData = JsonSerializer.Serialize(node.Output, JsonOptions);
@@ -2191,6 +2206,52 @@ public class GraphPipelineExecutor : IPipelineExecutor
             node.ModuleId, stepName);
 
         graph.CompleteNodeAndPrepareDownstream(node);
+    }
+
+    /// <summary>
+    /// Marca como saltados los modulos que solo colgaban de una rama descartada
+    /// por un modulo Condicional y les crea su paso en la BD, para que la UI
+    /// muestre por que no se ejecutaron. Sin esto se quedarian en Pending y el
+    /// grafo terminaria como "bloqueado" (Failed) al finalizar.
+    /// </summary>
+    /// <returns>Cuantos modulos se han saltado en esta pasada.</returns>
+    private async Task<int> SkipUnreachableNodesAsync(
+        ExecutionGraph graph,
+        Project project,
+        ProjectExecution execution,
+        UserDbContext db,
+        CancellationToken ct)
+    {
+        var unreachable = graph.SkipUnreachableNodes();
+        if (unreachable.Count == 0) return 0;
+
+        foreach (var node in unreachable)
+        {
+            var stepName = node.ProjectModule.StepName ?? node.AiModule.Name;
+            // Al reintentar o reanudar, el modulo puede conservar su paso de la
+            // corrida anterior: se reutiliza en vez de duplicarlo.
+            var step = await GetPausedStepAsync(execution.Id, node.ModuleId, db, ct)
+                       ?? await CreateStepExecutionAsync(node, execution, db, ct);
+            node.StepExecution = step;
+            node.Output = new StepOutput
+            {
+                Type = "skipped",
+                Content = "",
+                Summary = "Rama descartada por un modulo condicional",
+            };
+
+            step.Status = "Skipped";
+            step.OutputData = JsonSerializer.Serialize(node.Output, JsonOptions);
+            step.CompletedAt = DateTime.UtcNow;
+
+            await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Skipped");
+            await _logger.LogAsync(project.Id, execution.Id, "info",
+                $"{stepName} no se ejecuta: la condicion descarto esta rama",
+                node.ModuleId, stepName);
+        }
+
+        await db.SaveChangesAsync(ct);
+        return unreachable.Count;
     }
 
     /// <summary>

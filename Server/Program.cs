@@ -81,6 +81,7 @@ builder.Services.AddTransient<IModuleHandler, EmbeddingsModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, OrchestratorModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, SceneModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, CheckpointModuleHandler>();
+builder.Services.AddTransient<IModuleHandler, ConditionalModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, InteractionModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, DesignModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, PublishModuleHandler>();

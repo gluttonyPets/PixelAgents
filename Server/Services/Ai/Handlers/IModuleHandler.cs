@@ -23,6 +23,14 @@ public class ModuleResult
     /// <summary>Files produced by this module (images, videos, etc.) to be persisted by the executor.</summary>
     public List<ProducedFile> ProducedFiles { get; set; } = [];
 
+    /// <summary>
+    /// Puertos de salida que NO deben propagar datos aunque el modulo termine
+    /// bien. Lo usa el modulo Condicional para cortar la rama descartada: el
+    /// executor marca como <c>Skipped</c> los modulos que solo colgaban de esos
+    /// puertos, en lugar de dejarlos pendientes y bloquear el grafo.
+    /// </summary>
+    public List<string> BlockedOutputPorts { get; set; } = [];
+
     public static ModuleResult Completed(StepOutput output, decimal cost = 0m, List<ProducedFile>? files = null) =>
         new() { Status = ModuleResultStatus.Completed, Output = output, Cost = cost, ProducedFiles = files ?? [] };
 

@@ -97,7 +97,9 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 9. Si un nodo es de tipo `Interaction` o `Checkpoint`, el executor pausa la ejecucion
    (`PausedStepData` serializado en la BD) y espera respuesta externa (Telegram, WhatsApp o
    UI). La ejecucion se reanuda con `ResumeFromInteractionAsync` o `ResumeFromCheckpointAsync`.
-10. Al terminar todos los nodos, la ejecucion queda en `Completed`, `Failed` o `Cancelled`.
+10. Si un nodo `Conditional` descarta una rama, sus modulos quedan en `Skipped` y el
+    resto del grafo sigue con normalidad (ver "Modulo Condicional" mas abajo).
+11. Al terminar todos los nodos, la ejecucion queda en `Completed`, `Failed` o `Cancelled`.
 
 ---
 
@@ -147,9 +149,67 @@ Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nue
 | Coordinator   | CoordinatorModuleHandler   | Combina y resume resultados de ramas anteriores            |
 | Interaction   | InteractionModuleHandler   | Pausa el pipeline y espera respuesta humana (Telegram/WA)  |
 | Checkpoint    | CheckpointModuleHandler    | Pausa para revision humana antes de continuar              |
+| Conditional   | ConditionalModuleHandler   | Evalua una condicion escrita y elige por que rama continua |
 | Design        | DesignModuleHandler        | Genera disenos via proveedor grafico (Canva, etc.)         |
 | Publish       | PublishModuleHandler       | Publica contenido en Instagram, TikTok, Pinterest o Threads via Buffer API |
 | ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug, SEO e imagen destacada via `input_image`, que se sube a Shopify con `stagedUploadsCreate` y requiere el scope `write_files`). El cuerpo acepta HTML con CSS (inline o `<style>`): si el contenido contiene cualquier etiqueta HTML se envia intacto sin escapar; el texto plano se convierte en parrafos. Publica **visible** por defecto (desmarcar "Publicar" en el nodo lo deja como borrador). Devuelve en la salida y en `metadata` la URL del articulo en el admin (`adminUrl`, sirve para borradores) y la URL publica de la tienda (`publicUrl`) |
+
+### Modulo Condicional: ramas del pipeline
+
+`ConditionalModuleHandler` es el unico modulo que decide **si el flujo continua**.
+Tiene una entrada (`input`) y dos salidas: `output_true` ("Se cumple") y
+`output_false` ("No se cumple"). La entrada se propaga tal cual por la rama viva,
+asi que los modulos siguientes reciben lo mismo que si el condicional no
+estuviera en medio; el nodo solo elige por donde sigue el grafo.
+
+Configuracion del nodo (inspector del editor):
+
+| Clave | Valores | Para que sirve |
+|-------|---------|----------------|
+| `condition` | texto libre | La condicion a evaluar. Obligatoria. |
+| `conditionMode` | `auto` (defecto), `expression`, `ai` | Como se evalua. |
+| `conditionProvider` / `conditionModel` | p. ej. `OpenAI` / `gpt-4o-mini` | Modelo del modo IA. Vacio = modelo por defecto del tenant (`AnalystDefaults`) segun las API Keys configuradas. |
+
+Modos:
+
+- `auto`: intenta primero la evaluacion determinista (`ConditionEvaluator`) y,
+  si la condicion no encaja con esa gramatica, la delega en la IA.
+- `expression`: solo determinista; si no se entiende, el modulo falla en vez de
+  adivinar.
+- `ai`: siempre pregunta al modelo, que responde `{"cumple": ..., "motivo": ...}`.
+
+Gramatica del modo expresion (ignora mayusculas y acentos):
+
+```
+contiene "descuento"        no contiene "error"
+empieza por "OK"            termina en "."
+es igual a "aprobado"       distinto de "no"
+esta vacio                  no esta vacio
+longitud > 500              palabras >= 50
+numero > 10                 coincide con /^[0-9]{4}$/
+```
+
+Los terminos se combinan con `y`/`and`/`&&` (todos) y `o`/`or`/`||` (alguno),
+evaluados como disyuncion de conjunciones: `(A y B) o C`.
+
+**Que pasa con la rama descartada.** El handler devuelve en
+`ModuleResult.BlockedOutputPorts` el puerto que no se activa. El grafo marca esas
+aristas como muertas (`PortConnection.IsDead`) y
+`ExecutionGraph.SkipUnreachableNodes` deja en `Skipped` todos los modulos que
+solo colgaban de ellas, en cascada. Detalles que importan:
+
+- Un modulo alimentado ademas por una rama viva **no** se salta: se ejecuta con
+  los datos de esa rama (las aristas muertas no cuentan para satisfacer puertos).
+- Si `output_false` no esta conectado, no cumplirse la condicion equivale a
+  detener ahi el pipeline: la ejecucion termina como **Completed**, no como
+  fallida ni bloqueada.
+- Cada modulo saltado deja su `StepExecution` en estado `Skipped`, para que la UI
+  muestre que no se ejecuto y por que.
+- Al reanudar (checkpoint/interaccion) o reintentar, el nodo condicional ya viene
+  completo desde la BD: la rama viva se recupera del metadato `conditionMet` de
+  su salida (`ConditionalBranching.ReadConditionMet`).
+- Marcar "Saltar este paso" en un condicional lo neutraliza: deja pasar el flujo
+  por la rama "se cumple".
 
 ---
 
