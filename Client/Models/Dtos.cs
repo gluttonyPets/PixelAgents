@@ -77,7 +77,8 @@ public record ReassignProjectModuleRequest(Guid AiModuleId);
 // ── Project ──
 public record CreateProjectRequest(string Name, string? Description, string? Context);
 public record UpdateProjectRequest(string Name, string? Description, string? Context);
-public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt);
+public record SetProjectPinRequest(bool IsPinned);
+public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false);
 public record ProjectDetailResponse(
     Guid Id, string Name, string? Description, DateTime CreatedAt, DateTime UpdatedAt,
     List<ProjectModuleResponse> Modules,

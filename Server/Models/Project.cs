@@ -8,6 +8,9 @@ namespace Server.Models
         public string? Context { get; set; }
         public string? GraphLayout { get; set; }
 
+        /// <summary>Proyecto fijado: se muestra primero en el listado de /projects.</summary>
+        public bool IsPinned { get; set; }
+
         // ── Aprendizaje: modelo "analista" que procesa el feedback de abortos ──
         /// <summary>Si está activo, cada abort con comentario dispara el analista de aprendizaje.
         /// Activado por defecto: sin configurar nada, el aprendizaje funciona con un modelo por defecto.</summary>

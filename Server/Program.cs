@@ -1081,8 +1081,9 @@ app.MapGet("/api/projects", async (
     if (db is null) return Results.Unauthorized();
 
     var projects = await db.Projects
-        .OrderByDescending(p => p.CreatedAt)
-        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt))
+        .OrderByDescending(p => p.IsPinned)
+        .ThenByDescending(p => p.CreatedAt)
+        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt, p.IsPinned))
         .ToListAsync();
 
     return Results.Ok(projects);
@@ -1228,7 +1229,26 @@ app.MapPut("/api/projects/{id}", async (
 
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned));
+}).RequireAuthorization();
+
+// Fija o desfija un proyecto para que aparezca primero en el listado.
+// No toca UpdatedAt: fijar no es una edicion del contenido del proyecto.
+app.MapPut("/api/projects/{id}/pin", async (
+    Guid id, SetProjectPinRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(id);
+    if (project is null) return Results.NotFound();
+
+    project.IsPinned = req.IsPinned;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
+        project.CreatedAt, project.UpdatedAt, project.IsPinned));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{id}/graph", async (

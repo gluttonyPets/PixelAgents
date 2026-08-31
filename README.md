@@ -93,7 +93,8 @@ Rutas actuales:
 - `/rules`: reglas obligatorias por tenant.
 - `/modules`: catalogo y configuracion de modulos.
 - `/biblioteca`: archivos subidos a modulos.
-- `/projects`: listado y creacion de proyectos.
+- `/projects`: listado y creacion de proyectos. Los proyectos fijados se
+  muestran primero.
 - `/projects/{ProjectId:guid}`: detalle, editor visual, ejecuciones e
   integraciones del proyecto.
 
@@ -486,6 +487,7 @@ Gestion de pipelines:
 - `/api/projects`: crear y listar proyectos.
 - `/api/projects/{id}`: obtener detalle, actualizar o eliminar.
 - `/api/projects/{id}/duplicate`: duplicar proyecto completo.
+- `PUT /api/projects/{id}/pin`: fijar o desfijar el proyecto en el listado.
 - `/api/projects/{id}/graph`: guardar layout bruto.
 - `/api/projects/{projectId}/graph/save`: guardar posiciones, conexiones,
   conteos de escenas y configs de modulos.

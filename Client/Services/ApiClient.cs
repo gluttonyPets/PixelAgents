@@ -300,6 +300,13 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    public async Task<(bool Ok, string? Error)> SetProjectPinAsync(Guid id, bool isPinned)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{id}/pin", new SetProjectPinRequest(isPinned));
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     public async Task<ProjectResponse?> DuplicateProjectAsync(Guid id)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{id}/duplicate");

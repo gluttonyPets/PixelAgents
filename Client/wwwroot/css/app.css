@@ -1732,6 +1732,18 @@ a.link:hover { text-decoration: underline; }
     box-shadow: 0 0 12px rgba(108, 99, 255, 0.15);
 }
 
+/* ── Proyecto fijado: aparece primero y se distingue del resto ── */
+.project-card.is-pinned {
+    border-color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.project-card-pin-badge {
+    font-size: 0.8rem;
+    margin-right: 0.3rem;
+    vertical-align: middle;
+}
+
 .project-card-body {
     padding: 1rem 1rem 0.75rem;
     cursor: pointer;
@@ -1781,6 +1793,21 @@ a.link:hover { text-decoration: underline; }
 
 .project-action-btn:last-child {
     border-right: none;
+}
+
+.project-action-btn.action-pin {
+    opacity: 0.45;
+}
+
+.project-action-btn.action-pin:hover {
+    background: rgba(108, 99, 255, 0.1);
+    opacity: 1;
+}
+
+.project-action-btn.action-pin.is-pinned {
+    opacity: 1;
+    color: var(--accent);
+    background: rgba(108, 99, 255, 0.08);
 }
 
 .project-action-btn.action-edit:hover {

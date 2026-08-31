@@ -7,13 +7,18 @@
     <button class="btn btn-primary" @onclick="OpenCreateModal">+ Crear nuevo</button>
 </div>
 
+@if (_pinError is not null)
+{
+    <div class="alert alert-error">@_pinError</div>
+}
+
 @if (_projects.Count > 0)
 {
     <div class="project-grid">
         @foreach (var p in _projects)
         {
             var isEditing = _editingId == p.Id;
-            <div class="project-card">
+            <div class="project-card @(p.IsPinned ? "is-pinned" : "")">
                 @if (isEditing)
                 {
                     <div class="project-card-edit">
@@ -39,7 +44,13 @@
                 {
                     <div class="project-card-body" @onclick="() => GoTo(p.Id)">
                         <div class="project-card-avatar">@(p.Name.Length > 0 ? p.Name[0].ToString().ToUpper() : "P")</div>
-                        <div class="project-card-title">@p.Name</div>
+                        <div class="project-card-title">
+                            @if (p.IsPinned)
+                            {
+                                <span class="project-card-pin-badge" title="Proyecto fijado">&#x1F4CC;</span>
+                            }
+                            @p.Name
+                        </div>
                         <div class="project-card-desc">@(p.Description ?? "Sin descripción")</div>
                         @if (!string.IsNullOrEmpty(p.Context))
                         {
@@ -55,6 +66,10 @@
                         </div>
                     </div>
                     <div class="project-card-actions">
+                        <button class="project-action-btn action-pin @(p.IsPinned ? "is-pinned" : "")"
+                                @onclick="() => TogglePin(p)"
+                                aria-pressed="@p.IsPinned.ToString().ToLowerInvariant()"
+                                title="@(p.IsPinned ? "Desfijar proyecto" : "Fijar proyecto")">&#x1F4CC;</button>
                         <button class="project-action-btn action-edit" @onclick="() => StartEdit(p)" title="Editar">&#x270E;</button>
                         <button class="project-action-btn action-duplicate" @onclick="() => Duplicate(p.Id)" title="Duplicar">&#x2398;</button>
                         <button class="project-action-btn action-delete" @onclick="() => Delete(p.Id)" title="Eliminar">&#x2715;</button>
@@ -116,6 +131,7 @@ else if (!_loading)
     private List<ProjectResponse> _projects = [];
     private bool _loading;
     private string? _error;
+    private string? _pinError;
 
     private bool _showCreateModal;
     private string _name = "";
@@ -184,6 +200,43 @@ else if (!_loading)
     }
 
     private void GoTo(Guid id) => Nav.NavigateTo($"/projects/{id}");
+
+    /// <summary>
+    /// Fija o desfija un proyecto. Actualiza la tarjeta al momento y solo revierte
+    /// si el backend rechaza el cambio, para no esperar a recargar todo el listado.
+    /// </summary>
+    private async Task TogglePin(ProjectResponse p)
+    {
+        var idx = _projects.FindIndex(x => x.Id == p.Id);
+        if (idx < 0) return;
+
+        _pinError = null;
+        var snapshot = _projects.ToList();
+
+        _projects[idx] = p with { IsPinned = !p.IsPinned };
+        SortProjects();
+
+        try
+        {
+            var (ok, error) = await Api.SetProjectPinAsync(p.Id, !p.IsPinned);
+            if (!ok)
+            {
+                _projects = snapshot;
+                _pinError = error ?? "No se pudo cambiar el estado de fijado.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _projects = snapshot;
+            _pinError = $"Error de conexión: {ex.Message}";
+        }
+    }
+
+    /// <summary>Mismo criterio que el backend: fijados primero, luego por fecha de creacion.</summary>
+    private void SortProjects() => _projects = _projects
+        .OrderByDescending(x => x.IsPinned)
+        .ThenByDescending(x => x.CreatedAt)
+        .ToList();
 
     private void StartEdit(ProjectResponse p)
     {
