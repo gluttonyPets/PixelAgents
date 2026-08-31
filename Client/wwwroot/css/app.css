@@ -3040,8 +3040,8 @@ a.link:hover { text-decoration: underline; }
 
 /* ── Right panel (node inspector) ── */
 .pipeline-inspector {
-    width: 280px;
-    min-width: 280px;
+    width: 320px;
+    min-width: 320px;
     background: var(--bg-card);
     border-left: 1px solid var(--border);
     display: flex;
@@ -3051,7 +3051,10 @@ a.link:hover { text-decoration: underline; }
 
 /* ── Execute inline (above inspector) ── */
 .inspector-top-panel {
-    flex-shrink: 0;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 60%;
+    overflow-y: auto;
     border-bottom: 1px solid var(--border);
 }
 
@@ -3219,9 +3222,6 @@ a.link:hover { text-decoration: underline; }
 }
 
 .planner-queue {
-    border-top: 1px solid var(--border);
-    margin-top: 0.3rem;
-    padding-top: 0.5rem;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -3234,10 +3234,70 @@ a.link:hover { text-decoration: underline; }
     gap: 0.4rem;
 }
 
-.planner-queue-title {
-    font-size: 0.78rem;
+/* ── Secciones plegables del inspector (cola, historial, log) ── */
+.inspector-collapsible {
+    border-top: 1px solid var(--border);
+    margin-top: 0.3rem;
+}
+
+.inspector-collapsible-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.1rem;
+    background: none;
+    border: none;
     color: var(--text);
+    font: inherit;
+    font-size: 0.78rem;
     font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+}
+
+.inspector-collapsible-header:hover { color: var(--accent); }
+
+.inspector-collapsible-chevron {
+    display: inline-block;
+    flex-shrink: 0;
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+}
+
+.inspector-collapsible.is-open > .inspector-collapsible-header .inspector-collapsible-chevron,
+.inspector-collapsible-chevron.is-open {
+    transform: rotate(90deg);
+}
+
+.inspector-collapsible-count {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.06);
+    border-radius: 999px;
+    padding: 0.05rem 0.35rem;
+}
+
+.inspector-collapsible-spacer { flex: 1; }
+
+.inspector-collapsible-body { padding-bottom: 0.4rem; }
+
+.inspector-collapsible-link {
+    font-size: 0.68rem;
+    color: var(--accent);
+    background: none;
+    border: none;
+    padding: 0;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.inspector-collapsible-link:hover { text-decoration: underline; }
+
+@media (prefers-reduced-motion: reduce) {
+    .inspector-collapsible-chevron { transition: none; }
 }
 
 .planner-queue-empty {
@@ -3251,8 +3311,6 @@ a.link:hover { text-decoration: underline; }
 }
 
 .planner-queue-list {
-    max-height: 260px;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -3353,17 +3411,14 @@ a.link:hover { text-decoration: underline; }
 
 /* Planner execution history */
 .planner-history {
-    margin-top: 1.25rem;
-    border-top: 1px solid var(--border);
-    padding-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
 }
 
 .planner-history-list {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    max-height: 320px;
-    overflow-y: auto;
     margin-top: 0.5rem;
 }
 
@@ -3436,15 +3491,29 @@ a.link:hover { text-decoration: underline; }
 
 /* ── Inspector execution log ── */
 .inspector-log {
+    flex: 0 0 auto;
     border-top: 1px solid var(--border);
     display: flex;
     flex-direction: column;
-    min-height: 120px;
-    max-height: 40%;
     overflow: hidden;
 }
 
+.inspector-log.is-open {
+    flex: 0 1 auto;
+    height: 240px;
+    min-height: 100px;
+}
+
+.inspector-log.is-collapsed {
+    height: auto;
+}
+
 .inspector-log-header {
+    width: 100%;
+    border: none;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
     padding: 0.35rem 0.8rem;
     font-weight: 700;
     font-size: 0.68rem;
