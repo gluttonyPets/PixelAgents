@@ -5412,3 +5412,67 @@ a.link:hover { text-decoration: underline; }
         border-bottom: 1px solid var(--border);
     }
 }
+
+/* Vista previa del indice: las URLs exactas que recibe el modulo de destino,
+   para poder abrirlas y comprobar que responden. */
+
+.fd-preview {
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.fd-preview-header {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.fd-preview-header .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    background: var(--bg-input);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.fd-preview-header .btn:hover { border-color: var(--accent); }
+
+.fd-preview-note { margin: 0; }
+
+.fd-preview-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+}
+
+.fd-preview-index { border-color: var(--accent); }
+
+.fd-preview-path {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+}
+
+.fd-preview-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+/* La URL se parte por donde sea: importa poder leerla y pincharla entera. */
+.fd-preview-row a {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.72rem;
+    color: var(--accent);
+    word-break: break-all;
+}
+
+.fd-preview-row a:hover { text-decoration: underline; }

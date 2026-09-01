@@ -959,6 +959,45 @@ app.MapGet("/api/project-modules/{projectModuleId}/files", async (
     return Results.Ok(files);
 }).RequireAuthorization();
 
+// Vista previa del indice de un nodo Directorio: lo mismo que emitira el modulo
+// al ejecutarse, con la URL de cada fichero ya resuelta. Existe para poder
+// comprobar desde el inspector que las rutas responden, sin lanzar el pipeline.
+// A diferencia del endpoint publico, este pide sesion y devuelve tambien los
+// errores de validacion, que es lo que el usuario necesita para arreglarlos.
+app.MapGet("/api/project-modules/{projectModuleId:guid}/directory-index", async (
+    Guid projectModuleId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IConfiguration configuration) =>
+{
+    var user = await um.GetUserAsync(ctx.User);
+    if (user is null) return Results.Unauthorized();
+
+    var claims = await um.GetClaimsAsync(user);
+    var tenantDbName = claims.FirstOrDefault(c => c.Type == "db_name")?.Value;
+    if (tenantDbName is null) return Results.Unauthorized();
+
+    await using var db = factory.Create(tenantDbName);
+
+    var directory = await FileDirectoryPublisher.LoadAsync(db, projectModuleId);
+    if (directory is null) return Results.NotFound();
+
+    var publicBaseUrl = (configuration["BaseUrl"] ?? configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+    var index = FileDirectoryPublisher.Resolve(directory, tenantDbName, publicBaseUrl);
+
+    return Results.Ok(new DirectoryIndexPreviewResponse(
+        index.IsValid,
+        index.BaseUrl,
+        FileDirectoryIndex.Absolutize(
+            publicBaseUrl,
+            FileDirectoryIndex.BuildPublicIndexPath(tenantDbName, projectModuleId)),
+        index.Folders.ToList(),
+        index.Entries
+            .Select(e => new DirectoryIndexEntryResponse(
+                e.Path, e.Folder, e.Name, e.Description, e.Url, e.Source))
+            .ToList(),
+        index.Errors));
+}).RequireAuthorization();
+
 app.MapGet("/api/module-files", async (
     HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>

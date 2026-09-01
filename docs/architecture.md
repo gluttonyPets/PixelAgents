@@ -221,6 +221,14 @@ Eliminar un fichero o una carpeta (con confirmacion en dos pasos) borra tambien
 lo subido: fuera del indice no se sirve por la URL publica ni aparece en ninguna
 otra pantalla, asi que conservarlo solo acumularia basura.
 
+El explorador incluye una vista previa, "Indice que recibe el modulo", que pide
+al servidor el indice ya resuelto y lista cada fichero con su URL como enlace.
+Es la forma de comprobar que las rutas responden sin lanzar el pipeline: las URL
+no se pueden construir en el cliente porque dependen del tenant y del dominio
+publico. La sirve `GET /api/project-modules/{id}/directory-index`, que pide
+sesion y, a diferencia del endpoint publico, devuelve tambien los errores de
+validacion.
+
 El directorio se expone sin autenticacion en:
 
 - `GET /api/public/directory/{tenant}/{moduleId}`: el indice resuelto.

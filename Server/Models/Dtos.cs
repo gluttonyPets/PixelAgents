@@ -182,6 +182,17 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         Guid Id, Guid ProjectModuleId, string ModuleName, Guid ProjectId, string ProjectName,
         string? StepName, string FileName, string ContentType, long FileSize, DateTime CreatedAt);
 
+    // ── Directorio de archivos ──
+    // Vista previa de lo que el modulo Directorio emitira: cada fichero con la
+    // URL desde la que se descarga, ya resuelta con el dominio publico. Sirve
+    // para comprobar desde la interfaz que las rutas responden de verdad.
+    public record DirectoryIndexEntryResponse(
+        string Path, string Folder, string Name, string Description, string Url, string Source);
+
+    public record DirectoryIndexPreviewResponse(
+        bool IsValid, string? BaseUrl, string IndexUrl,
+        List<string> Folders, List<DirectoryIndexEntryResponse> Files, List<string> Errors);
+
     // ── Schedule ──
     public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false);
     public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true, bool UsePromptQueue = false);

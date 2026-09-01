@@ -231,6 +231,75 @@
     </div>
 </div>
 
+<div class="fd-preview">
+    <div class="fd-preview-header">
+        <button type="button" class="btn btn-sm" @onclick="TogglePreview">
+            <i class="bi @(_previewOpen ? "bi-chevron-down" : "bi-chevron-right")"></i>
+            Indice que recibe el modulo
+        </button>
+        @if (_previewOpen)
+        {
+            <button type="button" class="btn btn-sm" @onclick="LoadPreview" disabled="@_previewLoading">
+                <i class="bi bi-arrow-clockwise"></i> @(_previewLoading ? "Cargando..." : "Actualizar")
+            </button>
+        }
+    </div>
+
+    @if (_previewOpen)
+    {
+        @if (_previewError is not null)
+        {
+            <div class="alert alert-error">@_previewError</div>
+        }
+        else if (_preview is null)
+        {
+            <p class="text-sm text-muted">Cargando...</p>
+        }
+        else
+        {
+            @if (!_preview.IsValid)
+            {
+                <div class="alert alert-error">
+                    <strong>El indice no es valido, el modulo fallaria:</strong>
+                    <ul style="margin: 0.3rem 0 0 1rem; padding: 0;">
+                        @foreach (var err in _preview.Errors)
+                        {
+                            <li>@err</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            <p class="text-sm text-muted fd-preview-note">
+                Estas son las URLs exactas que viajan por el pipeline. Se sirven sin
+                autenticacion: abrelas para comprobar que responden.
+            </p>
+
+            <div class="fd-preview-row fd-preview-index">
+                <span class="fd-preview-label">Indice completo</span>
+                <a href="@_preview.IndexUrl" target="_blank" rel="noopener">@_preview.IndexUrl</a>
+            </div>
+
+            @if (_preview.Files.Count == 0)
+            {
+                <p class="text-sm text-muted">Todavia no hay archivos que publicar.</p>
+            }
+
+            @foreach (var entry in _preview.Files)
+            {
+                <div class="fd-preview-row">
+                    <div class="fd-preview-path">
+                        <span class="fd-preview-label">@entry.Path</span>
+                        <span class="fd-tag">@(entry.Source == "hosted" ? "Este servidor" : "Externo")</span>
+                    </div>
+                    <div class="text-sm text-muted">@entry.Description</div>
+                    <a href="@entry.Url" target="_blank" rel="noopener">@entry.Url</a>
+                </div>
+            }
+        }
+    }
+</div>
+
 @code {
     /// <summary>Nodo del pipeline al que se suben los archivos.</summary>
     [Parameter] public Guid? ProjectModuleId { get; set; }
@@ -279,6 +348,10 @@
     private string _renameValue = "";
     private DirFile? _pendingDelete;
     private string? _confirmFolderDelete;
+    private bool _previewOpen;
+    private bool _previewLoading;
+    private string? _previewError;
+    private DirectoryIndexPreviewResponse? _preview;
     private string? _loadedIndex;
     private Guid? _loadedNodeId;
 
@@ -289,9 +362,16 @@
         // cada render posterior a un cambio pisaria la edicion en curso.
         if (ProjectModuleId != _loadedNodeId || Index != _loadedIndex)
         {
+            var nodeChanged = ProjectModuleId != _loadedNodeId;
             _loadedNodeId = ProjectModuleId;
             _loadedIndex = Index;
             LoadFromIndex(Index);
+
+            if (nodeChanged)
+            {
+                _preview = null;
+                _previewError = null;
+            }
         }
     }
 
@@ -395,6 +475,49 @@
     {
         _loadedIndex = BuildIndex();
         await IndexChanged.InvokeAsync(_loadedIndex);
+
+        // IndexChanged ya ha esperado al guardado del grafo, asi que el servidor
+        // resuelve sobre el indice nuevo y la vista previa no queda desfasada.
+        if (_previewOpen) await LoadPreview();
+    }
+
+    private async Task TogglePreview()
+    {
+        _previewOpen = !_previewOpen;
+        if (_previewOpen && _preview is null) await LoadPreview();
+    }
+
+    /// <summary>
+    /// Pide al servidor el indice ya resuelto. Las URLs no se pueden construir
+    /// aqui: dependen del tenant y del dominio publico configurado, que solo
+    /// conoce el servidor.
+    /// </summary>
+    private async Task LoadPreview()
+    {
+        if (ProjectModuleId is not { } nodeId)
+        {
+            _previewError = "Guarda el nodo para poder ver el indice.";
+            return;
+        }
+
+        _previewLoading = true;
+        _previewError = null;
+        StateHasChanged();
+
+        try
+        {
+            _preview = await Api.GetDirectoryIndexAsync(nodeId);
+            if (_preview is null)
+                _previewError = "No se pudo leer el indice del directorio.";
+        }
+        catch (Exception ex)
+        {
+            _previewError = $"No se pudo leer el indice: {ex.Message}";
+        }
+        finally
+        {
+            _previewLoading = false;
+        }
     }
 
     // ── Arbol de carpetas ──

@@ -260,6 +260,18 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ModuleFileResponse>>() ?? [];
     }
 
+    /// <summary>
+    /// Indice resuelto de un nodo Directorio: lo mismo que recibira el modulo
+    /// de destino, con la URL de cada fichero ya montada sobre el dominio
+    /// publico, mas los errores de validacion si el indice no es valido.
+    /// </summary>
+    public async Task<DirectoryIndexPreviewResponse?> GetDirectoryIndexAsync(Guid projectModuleId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/project-modules/{projectModuleId}/directory-index");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<DirectoryIndexPreviewResponse>();
+    }
+
     public async Task DeleteModuleFileAsync(Guid fileId)
     {
         await SendAsync(HttpMethod.Delete, $"/api/module-files/{fileId}");
