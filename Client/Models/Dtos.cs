@@ -78,6 +78,12 @@ public record ReassignProjectModuleRequest(Guid AiModuleId);
 public record CreateProjectRequest(string Name, string? Description, string? Context);
 public record UpdateProjectRequest(string Name, string? Description, string? Context);
 public record SetProjectPinRequest(bool IsPinned);
+public record UpcomingRunResponse(
+    int Index, DateTime RunAtUtc, Guid? PlannedPromptId, string? PlannedPromptContent);
+public record UpcomingRunsResponse(
+    bool HasSchedule, bool IsEnabled, bool UsesPromptQueue,
+    string? CronExpression, string? TimeZone,
+    List<UpcomingRunResponse> Runs);
 public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false);
 public record ProjectDetailResponse(
     Guid Id, string Name, string? Description, DateTime CreatedAt, DateTime UpdatedAt,

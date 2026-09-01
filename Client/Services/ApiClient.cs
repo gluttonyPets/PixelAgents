@@ -702,6 +702,13 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<ScheduleResponse>();
     }
 
+    public async Task<UpcomingRunsResponse?> GetUpcomingRunsAsync(Guid projectId, int count = 10)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/schedule/upcoming?count={count}");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<UpcomingRunsResponse>();
+    }
+
     public async Task<(bool Ok, ScheduleResponse? Result, string? Error)> CreateScheduleAsync(Guid projectId, CreateScheduleRequest req)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/schedule", req);

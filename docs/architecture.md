@@ -112,6 +112,14 @@ pipeline. El input de cada corrida se decide asi:
   `PlannedPrompt` pendiente de la cola del proyecto (por `OrderIndex`) y lo usa como input.
 - Si la cola esta vacia, cae al `UserInput` estatico del schedule.
 
+En la interfaz el planificador vive en su propio panel, que se abre con el boton
+"Planificador" de la barra del canvas (junto a "Sub-proyecto"). Ese panel reune la
+configuracion del generador, la cola de prompts, el historial y un timeline de
+ejecuciones futuras: cada numero es el siguiente prompt pendiente y, si hay
+programacion activa consumiendo la cola, la fecha estimada en que se lanzara. Las
+fechas las proyecta `GET /api/projects/{projectId}/schedule/upcoming`, que encadena
+`SchedulerBackgroundService.ComputeNextRun` sobre su propio resultado.
+
 Cuando el planificador esta activo pero **no queda ningun prompt** (cola vacia y sin
 `UserInput`), el scheduler no ejecuta el pipeline con un prompt vacio: crea una correlacion
 Telegram en estado `awaiting_planning` (asociada al proyecto, sin ejecucion) y envia un mensaje

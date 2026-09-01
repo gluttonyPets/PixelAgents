@@ -2657,6 +2657,50 @@ app.MapGet("/api/projects/{projectId:guid}/schedule", async (
         schedule.CreatedAt, schedule.UpdatedAt));
 }).RequireAuthorization();
 
+// Proyecta las proximas ejecuciones programadas encadenando el cron sobre si mismo.
+// Cuando la programacion consume la cola, empareja cada fecha con el prompt pendiente
+// que le tocaria, en el mismo orden en que los consume el scheduler.
+app.MapGet("/api/projects/{projectId:guid}/schedule/upcoming", async (
+    Guid projectId, int? count,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var take = Math.Clamp(count ?? 10, 1, 50);
+    var schedule = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == projectId);
+
+    if (schedule is null)
+        return Results.Ok(new UpcomingRunsResponse(false, false, false, null, null, []));
+
+    // Mismo orden con el que el scheduler saca los prompts de la cola.
+    var pending = schedule.UsePromptQueue
+        ? await db.PlannedPrompts
+            .Where(p => p.ProjectId == projectId && p.Status == PlannedPromptStatus.Pending)
+            .OrderBy(p => p.OrderIndex)
+            .ThenBy(p => p.CreatedAt)
+            .Take(take)
+            .ToListAsync()
+        : [];
+
+    var runs = new List<UpcomingRunResponse>();
+    var cursor = DateTime.UtcNow;
+    for (var i = 0; i < take; i++)
+    {
+        var next = Server.Services.Scheduler.SchedulerBackgroundService.ComputeNextRun(
+            schedule.CronExpression, schedule.TimeZone, cursor);
+        if (next is null) break;          // cron o zona horaria invalidos
+        cursor = next.Value;
+
+        var prompt = i < pending.Count ? pending[i] : null;
+        runs.Add(new UpcomingRunResponse(i + 1, next.Value, prompt?.Id, prompt?.Content));
+    }
+
+    return Results.Ok(new UpcomingRunsResponse(
+        true, schedule.IsEnabled, schedule.UsePromptQueue,
+        schedule.CronExpression, schedule.TimeZone, runs));
+}).RequireAuthorization();
+
 app.MapPost("/api/projects/{projectId:guid}/schedule", async (
     Guid projectId, CreateScheduleRequest req,
     HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>

@@ -537,6 +537,8 @@ legacy y re-rooting bajo `GeneratedMedia`.
 Cada proyecto puede tener una programacion:
 
 - `GET /api/projects/{projectId}/schedule`.
+- `GET /api/projects/{projectId}/schedule/upcoming`: proyecta las proximas
+  ejecuciones programadas (timeline del planificador).
 - `POST /api/projects/{projectId}/schedule`.
 - `PUT /api/projects/{projectId}/schedule`.
 - `DELETE /api/projects/{projectId}/schedule`.

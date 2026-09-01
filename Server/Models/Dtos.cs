@@ -191,6 +191,16 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         DateTime? LastRunAt, DateTime? NextRunAt,
         DateTime CreatedAt, DateTime UpdatedAt);
 
+    /// <summary>Una ejecucion futura proyectada: cuando se lanzara y con que prompt de la cola.</summary>
+    public record UpcomingRunResponse(
+        int Index, DateTime RunAtUtc, Guid? PlannedPromptId, string? PlannedPromptContent);
+
+    /// <summary>Proyeccion de las proximas ejecuciones programadas de un proyecto.</summary>
+    public record UpcomingRunsResponse(
+        bool HasSchedule, bool IsEnabled, bool UsesPromptQueue,
+        string? CronExpression, string? TimeZone,
+        List<UpcomingRunResponse> Runs);
+
     // ── Prompt Builder ──
     public record PromptBuilderQuestionsRequest(string ModelName, string TargetKind, string Description);
     public record PromptBuilderQaItem(string? Question, string? Answer);

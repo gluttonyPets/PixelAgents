@@ -17,7 +17,30 @@
             <button class="toolbar-btn" @onclick="ToggleSubProjectPanel" title="Insertar un proyecto entero como modulo">
                 <span class="toolbar-btn-icon">&#x2795;</span> Sub-proyecto
             </button>
+            @if (PlannerPanel is not null)
+            {
+                <button class="toolbar-btn @(_showPlannerPanel ? "is-active" : "")"
+                        @onclick="TogglePlannerPanel"
+                        title="Planificador: genera y ordena la cola de prompts">
+                    <span class="toolbar-btn-icon"><i class="bi bi-calendar3"></i></span> Planificador
+                </button>
+            }
         </div>
+
+        @* ── Panel flotante del planificador ── *@
+        @if (_showPlannerPanel && PlannerPanel is not null)
+        {
+            <div class="module-panel-backdrop" @onclick="ClosePlannerPanel"></div>
+            <div class="module-panel planner-float-panel">
+                <div class="module-panel-header">
+                    <span>Planificador</span>
+                    <button class="node-btn" @onclick="ClosePlannerPanel">&#x2715;</button>
+                </div>
+                <div class="module-panel-body planner-float-body">
+                    @PlannerPanel
+                </div>
+            </div>
+        }
 
         <!-- Floating module selector panel -->
         @if (_showModulePanel)
@@ -1119,6 +1142,13 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     [Parameter] public List<ModuleConnectionResponse> Connections { get; set; } = [];
     [Parameter] public List<RuleResponse> TenantRules { get; set; } = [];
     [Parameter] public RenderFragment? TopPanel { get; set; }
+
+    /// <summary>Contenido del planificador, que vive en la pagina pero se abre desde
+    /// el boton de la barra del canvas. Si no se pasa, el boton no aparece.</summary>
+    [Parameter] public RenderFragment? PlannerPanel { get; set; }
+
+    /// <summary>Se dispara al abrir el panel, para que la pagina cargue sus datos.</summary>
+    [Parameter] public EventCallback OnPlannerPanelOpened { get; set; }
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
     // Notifica al padre que el usuario quiere insertar el proyecto con ese Id como sub-proyecto.
     [Parameter] public EventCallback<Guid> OnAddSubProject { get; set; }
@@ -1226,6 +1256,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
     // Sub-project panel state
     private bool _showSubProjectPanel;
+    private bool _showPlannerPanel;
     private string _subProjectFilter = "";
 
     // FileUpload inspector state
@@ -1268,6 +1299,21 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         _showSubProjectPanel = false;
         _subProjectFilter = "";
     }
+
+    // ── Planner panel ──
+
+    private async Task TogglePlannerPanel()
+    {
+        _showPlannerPanel = !_showPlannerPanel;
+        if (_showPlannerPanel)
+        {
+            _showModulePanel = false;
+            _showSubProjectPanel = false;
+            await OnPlannerPanelOpened.InvokeAsync();
+        }
+    }
+
+    private void ClosePlannerPanel() => _showPlannerPanel = false;
 
     // Proyectos insertables: todos menos el actual, filtrados por el buscador.
     // La proteccion frente a ciclos indirectos la aplica el servidor al insertar.
