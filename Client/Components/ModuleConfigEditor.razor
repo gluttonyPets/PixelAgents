@@ -274,6 +274,41 @@ else if (m.ModuleType == "StaticText")
         <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo.</p>
     </div>
 }
+else if (m.ModuleType == "FileDirectory")
+{
+    <div class="form-group">
+        <label>URL base del repositorio</label>
+        <input @bind="_editDirectoryBaseUrl" placeholder="https://cdn.ejemplo.com/marca" />
+        <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+            Opcional. Si la indicas, la ruta de cada fichero cuelga de aqui. Dejala vacia
+            para servir los ficheros que subas a este modulo.
+        </p>
+    </div>
+    <div class="form-group">
+        <label>Indice del directorio</label>
+        <textarea @bind="_editDirectoryIndex" @bind:event="oninput" rows="12"
+                  placeholder='@DirectoryIndexPlaceholder'></textarea>
+        <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+            Obligatorio. Cada fichero necesita su ruta (con carpetas y subcarpetas) y una
+            descripcion que explique que es. El modulo emite este indice con la URL de
+            descarga de cada fichero.
+        </p>
+        @if (!string.IsNullOrWhiteSpace(_editDirectoryIndex))
+        {
+            var check = ValidateDirectoryIndex(_editDirectoryIndex);
+            <p class="text-sm @(check.IsValid ? "text-muted" : "text-danger")" style="margin-top: 0.15rem;">
+                @check.Message
+            </p>
+        }
+    </div>
+    <div class="form-group">
+        <label>Formato de salida</label>
+        <select @bind="_editDirectoryFormat">
+            <option value="markdown">Texto (agrupado por carpetas)</option>
+            <option value="json">JSON</option>
+        </select>
+    </div>
+}
 else
 {
     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
@@ -406,6 +441,9 @@ else
     private string _editCanvaExportFormat = "png";
     private string _editCanvaBrandTemplate = "";
     private string _editCanvaDesignType = "doc";
+    private string _editDirectoryIndex = "";
+    private string _editDirectoryBaseUrl = "";
+    private string _editDirectoryFormat = "markdown";
 
     protected override void OnParametersSet()
     {
@@ -449,6 +487,9 @@ else
         _editGeminiImageCount = 1;
         _editStaticTextContent = "";
         _editImagePrompt = "";
+        _editDirectoryIndex = "";
+        _editDirectoryBaseUrl = "";
+        _editDirectoryFormat = "markdown";
 
         if (string.IsNullOrWhiteSpace(module.Configuration)) return;
 
@@ -478,6 +519,12 @@ else
             if (root.TryGetProperty("designType", out var cdt)) _editCanvaDesignType = cdt.GetString() ?? "doc";
             if (root.TryGetProperty("content", out var stContent)) _editStaticTextContent = stContent.GetString() ?? "";
             if (root.TryGetProperty("imagePrompt", out var imgP)) _editImagePrompt = imgP.GetString() ?? "";
+            if (root.TryGetProperty("index", out var dirIdx))
+                _editDirectoryIndex = dirIdx.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? dirIdx.GetString() ?? ""
+                    : dirIdx.GetRawText();
+            if (root.TryGetProperty("baseUrl", out var dirBase)) _editDirectoryBaseUrl = dirBase.GetString() ?? "";
+            if (root.TryGetProperty("format", out var dirFmt)) _editDirectoryFormat = dirFmt.GetString() ?? "markdown";
         }
         catch { }
     }
@@ -569,14 +616,88 @@ else
                 parts.Add($"\"imagePrompt\":{System.Text.Json.JsonSerializer.Serialize(_editImagePrompt)}");
         }
 
+        if (moduleType == "FileDirectory")
+        {
+            if (!string.IsNullOrWhiteSpace(_editDirectoryIndex))
+                parts.Add($"\"index\":{System.Text.Json.JsonSerializer.Serialize(_editDirectoryIndex)}");
+            if (!string.IsNullOrWhiteSpace(_editDirectoryBaseUrl))
+                parts.Add($"\"baseUrl\":{System.Text.Json.JsonSerializer.Serialize(_editDirectoryBaseUrl.Trim())}");
+            if (_editDirectoryFormat != "markdown")
+                parts.Add($"\"format\":\"{_editDirectoryFormat}\"");
+        }
+
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;
     }
+
+    private const string DirectoryIndexPlaceholder = @"{
+  ""files"": [
+    { ""path"": ""logos/principal.svg"", ""description"": ""Logo principal en vectorial"" },
+    { ""path"": ""fotos/producto/frontal.jpg"", ""description"": ""Foto frontal del producto"" }
+  ]
+}";
+
+    /// <summary>
+    /// Comprobacion rapida del indice mientras se escribe. No sustituye a la
+    /// validacion del servidor (que ademas resuelve las URLs); solo avisa de lo
+    /// que se ve a simple vista: JSON roto, indice vacio o ficheros sin explicar.
+    /// </summary>
+    private static (bool IsValid, string Message) ValidateDirectoryIndex(string indexJson)
+    {
+        System.Text.Json.JsonElement root;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(indexJson);
+            root = doc.RootElement.Clone();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (false, "El indice no es JSON valido.");
+        }
+
+        var files = root;
+        if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            if (!root.TryGetProperty("files", out files) || files.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return (false, "Falta la lista de ficheros en la propiedad \"files\".");
+        }
+        else if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
+        {
+            return (false, "El indice debe ser una lista de ficheros o un objeto con \"files\".");
+        }
+
+        var total = 0;
+        var sinDescripcion = 0;
+        var sinRuta = 0;
+        foreach (var item in files.EnumerateArray())
+        {
+            total++;
+            if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
+            {
+                sinRuta++;
+                continue;
+            }
+            if (!HasText(item, "path")) sinRuta++;
+            if (!HasText(item, "description")) sinDescripcion++;
+        }
+
+        if (total == 0) return (false, "El indice esta vacio: declara al menos un fichero.");
+        if (sinRuta > 0) return (false, $"{sinRuta} fichero(s) sin ruta (\"path\").");
+        if (sinDescripcion > 0)
+            return (false, $"{sinDescripcion} fichero(s) sin descripcion: el indice tiene que explicar que es cada uno.");
+
+        return (true, $"{total} fichero(s) indexados.");
+    }
+
+    private static bool HasText(System.Text.Json.JsonElement obj, string name) =>
+        obj.TryGetProperty(name, out var el)
+        && el.ValueKind == System.Text.Json.JsonValueKind.String
+        && !string.IsNullOrWhiteSpace(el.GetString());
 
     /// <summary>Indica si este tipo de modulo expone configuracion editable y guardable.</summary>
     public bool HasEditableConfig() =>
         Module is not null &&
         Module.ModuleType is "Text" or "Image" or "Audio" or "Design"
-            or "Coordinator" or "StaticText";
+            or "Coordinator" or "StaticText" or "FileDirectory";
 
     private static string[] GetImageSizesForModel(string model)
     {

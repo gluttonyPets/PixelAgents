@@ -27,7 +27,7 @@ ASP.NET Core Minimal API (:5000)
   |-- Identity + CoreDbContext  (DB: pixelagents_core)
   |-- TenantDbContextFactory    (DB: una por usuario/cuenta)
   |-- GraphPipelineExecutor     (motor de ejecucion de grafos)
-  |-- IModuleHandler x16        (handlers por tipo de modulo)
+  |-- IModuleHandler x18        (handlers por tipo de modulo)
   |-- IAiProvider x5            (OpenAI, Anthropic, Google, xAI,
   |                               LeonardoAI)
   |-- ExecutionHub (SignalR)
@@ -147,6 +147,7 @@ Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nue
 | Start         | StartModuleHandler         | Punto de entrada; inyecta el input del usuario al grafo    |
 | StaticText    | StaticTextModuleHandler    | Emite texto estatico configurado en el modulo              |
 | FileUpload    | FileUploadModuleHandler    | Pasa archivos adjuntos al modulo como salida               |
+| FileDirectory | FileDirectoryModuleHandler | Publica un directorio de ficheros y emite su indice (ver seccion propia) |
 | Text          | TextModuleHandler          | Genera texto con un proveedor LLM                          |
 | Image         | ImageModuleHandler         | Genera imagenes con un proveedor de imagen                 |
 | Audio         | AudioModuleHandler         | Genera audio (TTS) con un proveedor                        |
@@ -161,6 +162,41 @@ Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nue
 | Design        | DesignModuleHandler        | Genera disenos via proveedor grafico (Canva, etc.)         |
 | Publish       | PublishModuleHandler       | Publica contenido en Instagram, TikTok, Pinterest o Threads via Buffer API |
 | ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug, SEO e imagen destacada via `input_image`, que se sube a Shopify con `stagedUploadsCreate` y requiere el scope `write_files`). El cuerpo acepta HTML con CSS (inline o `<style>`): si el contenido contiene cualquier etiqueta HTML se envia intacto sin escapar; el texto plano se convierte en parrafos. Publica **visible** por defecto (desmarcar "Publicar" en el nodo lo deja como borrador). Devuelve en la salida y en `metadata` la URL del articulo en el admin (`adminUrl`, sirve para borradores) y la URL publica de la tienda (`publicUrl`) |
+
+### Modulo Directorio de archivos: indice y URLs publicas
+
+`FileDirectoryModuleHandler` publica un conjunto de ficheros organizados en
+carpetas y subcarpetas. Es un modulo **solo de salida** (`CanStartWithoutInputs`,
+como `StaticText` o `FileUpload`) con un unico puerto, `output_index`.
+
+Lo que emite es el **indice**, no los ficheros. Un directorio grande no tiene que
+arrastrar su peso por el pipeline: viaja la lista de ficheros con su descripcion
+y su URL, y el modulo de destino descarga solo el que necesita.
+
+El indice es obligatorio y se valida entero en `FileDirectoryIndex.Resolve`. Cada
+entrada necesita tres cosas, y si falta una el modulo falla en vez de publicar un
+directorio a medias:
+
+- `path`: ruta dentro del directorio, con sus carpetas (`logos/primarios/logo.svg`).
+- `description`: que es ese fichero. Sin esto el indice no cumple su funcion.
+- una ruta accesible, que se resuelve en este orden: la `url` absoluta de la
+  entrada, la `baseUrl` del directorio mas la ruta, o el fichero subido al nodo,
+  que se sirve desde nuestra propia URL publica.
+
+Rutas duplicadas o con `..` se rechazan.
+
+Configuracion del nodo (inspector del pipeline): `index` (JSON), `baseUrl`
+(opcional) y `format` (`markdown`, por defecto, o `json`).
+
+Los ficheros se suben al nodo con los endpoints ya existentes de
+`/api/project-modules/{id}/files`, y se exponen sin autenticacion en:
+
+- `GET /api/public/directory/{tenant}/{moduleId}`: el indice resuelto.
+- `GET /api/public/directory/{tenant}/{moduleId}/{ruta}`: un fichero del indice.
+
+El indice es la unica puerta de entrada: una ruta que no aparece en el no se
+sirve, aunque el nodo tenga subido un fichero con ese nombre
+(`FileDirectoryPublisher.FindHostedFile`).
 
 ### Modulo Condicional: ramas del pipeline
 

@@ -73,6 +73,7 @@ builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddTransient<IModuleHandler, StartModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, StaticTextModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, FileUploadModuleHandler>();
+builder.Services.AddTransient<IModuleHandler, FileDirectoryModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, TextModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, ImageModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, AudioModuleHandler>();
@@ -707,7 +708,7 @@ app.MapGet("/api/modules", async (
         // El modulo de sistema "SubProject" no se anade desde el palette "+ Modulo";
         // se inserta con el boton "+ Sub-proyecto" (endpoint dedicado).
         .Where(m => !(m.ProviderType == "System" && m.ModuleType == "SubProject"))
-        .GroupBy(m => m.ProviderType == "System" && m.ModuleType is "FileUpload" or "StaticText"
+        .GroupBy(m => m.ProviderType == "System" && m.ModuleType is "FileUpload" or "StaticText" or "FileDirectory"
             ? $"System:{m.ModuleType}"
             : m.Id.ToString())
         .Select(g => g.OrderBy(m => m.CreatedAt).First())
@@ -2590,6 +2591,90 @@ app.MapMethods("/api/public/files/{tenant}/{executionId}/{fileId}/{fileName}", n
         // Serve inline (not as an attachment) so external image validators accept it.
         httpContext.Response.Headers.ContentDisposition = "inline";
         return Results.File(bytes, file.ContentType);
+    }
+});
+
+// ==================== Directorio de archivos (URLs publicas) ====================
+
+// El modulo Directorio no manda ficheros por el pipeline: manda su indice con
+// una URL por fichero. Para que esa URL sirva de algo, el directorio tiene que
+// ser descargable sin autenticacion por el modulo o el servicio al que se lo
+// estamos facilitando; de ahi que estos dos endpoints sean publicos.
+//
+// El indice es la unica puerta de entrada: solo se sirven las rutas que el
+// propio indice declara como alojadas aqui.
+
+app.MapMethods($"{FileDirectoryIndex.PublicRoute}/{{tenant}}/{{moduleId:guid}}", new[] { "GET", "HEAD" }, async (
+    string tenant, Guid moduleId,
+    ITenantDbContextFactory factory, IConfiguration configuration) =>
+{
+    UserDbContext db;
+    try { db = factory.Create(tenant); }
+    catch { return Results.NotFound(); }
+
+    await using (db)
+    {
+        var directory = await FileDirectoryPublisher.LoadAsync(db, moduleId);
+        if (directory is null) return Results.NotFound();
+
+        // Misma base que usa el executor al resolver el indice, para que la URL
+        // que sale por el pipeline y la que sirve este endpoint sean la misma.
+        var publicBaseUrl = (configuration["BaseUrl"] ?? configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+        var index = FileDirectoryPublisher.Resolve(directory, tenant, publicBaseUrl);
+
+        // Un directorio con el indice mal no esta publicado: no se responde con
+        // el detalle del error porque este endpoint es anonimo (el usuario ve la
+        // validacion en el inspector y en el error de la ejecucion).
+        if (!index.IsValid) return Results.NotFound();
+
+        return Results.Ok(new
+        {
+            directory = directory.Node.StepName ?? directory.Node.AiModule?.Name,
+            baseUrl = index.BaseUrl,
+            folders = index.Folders,
+            fileCount = index.Entries.Count,
+            files = index.Entries.Select(e => new
+            {
+                path = e.Path,
+                folder = e.Folder,
+                name = e.Name,
+                description = e.Description,
+                url = e.Url,
+                source = e.Source,
+            }),
+        });
+    }
+});
+
+app.MapMethods($"{FileDirectoryIndex.PublicRoute}/{{tenant}}/{{moduleId:guid}}/{{**filePath}}", new[] { "GET", "HEAD" }, async (
+    string tenant, Guid moduleId, string filePath,
+    ITenantDbContextFactory factory, IConfiguration configuration,
+    IWebHostEnvironment env, HttpContext httpContext) =>
+{
+    UserDbContext db;
+    try { db = factory.Create(tenant); }
+    catch { return Results.NotFound(); }
+
+    await using (db)
+    {
+        var directory = await FileDirectoryPublisher.LoadAsync(db, moduleId);
+        if (directory is null) return Results.NotFound();
+
+        var publicBaseUrl = (configuration["BaseUrl"] ?? configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+        var index = FileDirectoryPublisher.Resolve(directory, tenant, publicBaseUrl);
+        if (!index.IsValid) return Results.NotFound();
+
+        var file = FileDirectoryPublisher.FindHostedFile(directory, index, filePath);
+        if (file is null) return Results.NotFound();
+
+        var mediaRoot = Path.Combine(env.ContentRootPath, "GeneratedMedia");
+        var fullPath = FileDirectoryPublisher.ResolveDiskPath(mediaRoot, file);
+        if (fullPath is null) return Results.NotFound();
+
+        // Inline, igual que el resto de ficheros publicos: los validadores de
+        // URL externos rechazan las respuestas marcadas como descarga adjunta.
+        httpContext.Response.Headers.ContentDisposition = "inline";
+        return Results.File(await File.ReadAllBytesAsync(fullPath), file.ContentType);
     }
 });
 

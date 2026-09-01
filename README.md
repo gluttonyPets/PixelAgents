@@ -362,6 +362,9 @@ Handlers actuales:
 - `Start`: emite el prompt de entrada del usuario.
 - `StaticText`: emite texto fijo configurado.
 - `FileUpload`: expone archivos adjuntos como recurso de pipeline.
+- `FileDirectory`: publica un directorio de ficheros en carpetas y subcarpetas y
+  emite su indice (descripcion y URL de descarga de cada fichero), no los
+  ficheros en si (ver `docs/architecture.md`).
 - `Text`: generacion de texto mediante proveedor IA.
 - `Image`: generacion o edicion de imagenes.
 - `Audio`: texto a voz.
@@ -382,6 +385,7 @@ Modulos de sistema creados por defecto en `SystemModuleCatalog`:
 
 - `FileUpload`.
 - `StaticText`.
+- `FileDirectory`.
 - `Checkpoint`.
 - `Conditional`.
 - `Publish`.
@@ -477,6 +481,12 @@ Gestion de catalogo reusable:
 - `/api/module-files`: listar todos los archivos del tenant.
 - `/api/module-files/{fileId}/download`: descargar archivo de modulo.
 - `/api/module-files/{fileId}`: eliminar archivo.
+
+Directorio de archivos (publico, sin autenticacion, para que el destinatario del
+indice pueda descargar):
+
+- `/api/public/directory/{tenant}/{moduleId}`: indice resuelto del directorio.
+- `/api/public/directory/{tenant}/{moduleId}/{ruta}`: fichero declarado en el indice.
 
 Si se solicita crear un modulo de sistema conocido, `SystemModuleCatalog`
 garantiza o actualiza su definicion.

@@ -753,7 +753,7 @@ else
 
     private List<ModuleGroup> GetModuleGroups()
     {
-        // System modules (Start, StaticText, FileUpload, Checkpoint, Scene, Interaction,
+        // System modules (Start, StaticText, FileUpload, FileDirectory, Checkpoint, Scene, Interaction,
         // Publish) are built-in and managed internally — they do not appear in this page.
         var userModules = _modules
             .Where(m => !m.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase))
@@ -800,7 +800,7 @@ else
     // ── Data lists ──
     private static bool IsBuiltInSystemModule(AiModuleResponse module) =>
         module.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase)
-        && module.ModuleType is "FileUpload" or "StaticText" or "Checkpoint";
+        && module.ModuleType is "FileUpload" or "StaticText" or "Checkpoint" or "FileDirectory";
 
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];
@@ -1064,6 +1064,7 @@ else
                 "FileUpload"    => "Archivos",
                 "Scene"         => "Constructor de escena",
                 "StaticText"    => "Texto plano",
+                "FileDirectory" => "Directorio de archivos",
                 _               => t
             }))
             .ToList();

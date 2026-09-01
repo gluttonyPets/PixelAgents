@@ -304,6 +304,7 @@ public class ExecutionGraph
             "Scene" => ("output_scene", "scene"),
             "StaticText" => ("output_text", "text"),
             "FileUpload" => ("output_file", "any"),
+            FileDirectoryIndex.ModuleType => (FileDirectoryIndex.OutputPort, "text"),
             "Start" => ("output_prompt", "text"),
             "Interaction" => ("output_response", "text"),
             "Design" => ("output_file", "file"),

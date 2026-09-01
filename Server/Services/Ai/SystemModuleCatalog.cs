@@ -26,6 +26,11 @@ public static class SystemModuleCatalog
             "StaticText",
             "static-text"),
         new(
+            "Directorio de archivos",
+            "Publica un directorio con indice: cada fichero explicado y con su URL de descarga",
+            FileDirectoryIndex.ModuleType,
+            "file-directory"),
+        new(
             "Checkpoint",
             "Pausa la ejecucion para revisar los datos antes de continuar",
             "Checkpoint",

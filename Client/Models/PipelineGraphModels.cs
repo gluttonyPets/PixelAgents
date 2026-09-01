@@ -239,6 +239,11 @@ public static class ModulePortRegistry
                 ports.Add(new("output_file", "Archivo", PortDataType.Any, isInput: false));
                 break;
 
+            case "FileDirectory":
+                // Solo salida: el modulo emite el indice del directorio, no los ficheros.
+                ports.Add(new("output_index", "Indice", PortDataType.Text, isInput: false));
+                break;
+
             case "Scene":
                 // Dynamic input ports from configured scene fields
                 if (templateVars is { Count: > 0 })
@@ -291,6 +296,7 @@ public static class ModulePortRegistry
         "Checkpoint" => "bi-check-circle",
         "Conditional" => "bi-signpost-split",
         "FileUpload" => "bi-paperclip",
+        "FileDirectory" => "bi-folder2-open",
         "Scene" => "bi-layers",
         "StaticText" => "bi-fonts",
         "Start" => "bi-play-circle",
@@ -313,6 +319,7 @@ public static class ModulePortRegistry
         "Checkpoint" => "#f44336",
         "Conditional" => "#ff9800",
         "FileUpload" => "#607d8b",
+        "FileDirectory" => "#8d6e63",
         "Scene" => "#ff7043",
         "StaticText" => "#5c6bc0",
         "Start" => "#43a047",

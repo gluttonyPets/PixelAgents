@@ -36,7 +36,7 @@ public class ModuleNode
     {
         // Source modules: their handlers produce output without consuming
         // upstream data, so they must auto-start even without inputs wired.
-        "Start" or "StaticText" or "FileUpload" => true,
+        "Start" or "StaticText" or "FileUpload" or FileDirectoryIndex.ModuleType => true,
         // Scene can be a pure source when it has no template-variable ports wired.
         "Scene" => InputPorts.Count == 0,
         _ => false,

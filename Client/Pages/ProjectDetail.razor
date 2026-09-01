@@ -2063,7 +2063,7 @@ else
     // Execution detail: expanded steps
     private HashSet<Guid> _expandedSteps = new();
     private HashSet<Guid> _expandedRawPayloadSteps = new();
-    private static readonly HashSet<string> PassThroughModuleTypes = new() { "StaticText", "FileUpload" };
+    private static readonly HashSet<string> PassThroughModuleTypes = new() { "StaticText", "FileUpload", "FileDirectory" };
 
     // Orchestrator review
     private string _orchestratorComment = "";
