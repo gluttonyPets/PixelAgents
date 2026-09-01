@@ -98,7 +98,7 @@
         {
             <div class="fd-inline-form">
                 <i class="bi bi-folder-plus"></i>
-                <input @bind="_newFolderName" @bind:event="oninput" placeholder="Nombre de la carpeta"
+                <input type="text" @bind="_newFolderName" @bind:event="oninput" placeholder="Nombre de la carpeta"
                        @onkeydown="OnNewFolderKey" />
                 <button type="button" class="btn btn-primary btn-sm" @onclick="CreateFolder">Crear</button>
                 <button type="button" class="btn btn-sm" @onclick="CancelNewFolder">Cancelar</button>
@@ -109,7 +109,7 @@
         {
             <div class="fd-inline-form">
                 <i class="bi bi-pencil"></i>
-                <input @bind="_renameValue" @bind:event="oninput" placeholder="Nuevo nombre"
+                <input type="text" @bind="_renameValue" @bind:event="oninput" placeholder="Nuevo nombre"
                        @onkeydown="OnRenameKey" />
                 <button type="button" class="btn btn-primary btn-sm" @onclick="RenameFolder">Renombrar</button>
                 <button type="button" class="btn btn-sm" @onclick="() => _renameOpen = false">Cancelar</button>
@@ -153,7 +153,7 @@
                             <span class="text-muted fd-row-meta">@FormatFileSize(file.Size)</span>
                         }
                     </div>
-                    <input class="fd-desc @(string.IsNullOrWhiteSpace(file.Description) ? "missing" : "")"
+                    <input type="text" class="fd-desc @(string.IsNullOrWhiteSpace(file.Description) ? "missing" : "")"
                            value="@file.Description"
                            @onchange="@(e => SetDescription(file, e.Value?.ToString()))"
                            placeholder="Obligatorio: que es este archivo" />
@@ -212,7 +212,7 @@
 <div class="fd-settings">
     <div class="fd-field">
         <label>URL base del repositorio (opcional)</label>
-        <input placeholder="https://cdn.ejemplo.com/marca"
+        <input type="text" placeholder="https://cdn.ejemplo.com/marca"
                value="@BaseUrl"
                @onchange="@(e => BaseUrlChanged.InvokeAsync(e.Value?.ToString() ?? ""))" />
         <p class="text-sm text-muted">
