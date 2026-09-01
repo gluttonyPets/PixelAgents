@@ -2682,6 +2682,24 @@ a.link:hover { text-decoration: underline; }
     text-overflow: ellipsis;
 }
 
+/* ── Publicar: red social de destino del nodo ── */
+.df-node-platform {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.df-node-platform i {
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
 /* ── Sub-proyecto: tarjeta grande con los pasos del proyecto insertado ── */
 .drawflow .drawflow-node.df-type-subproject {
     width: 240px;

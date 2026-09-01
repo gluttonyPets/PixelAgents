@@ -375,7 +375,8 @@ Handlers actuales:
   pipeline (ver `docs/architecture.md`).
 - `Interaction`: pausa y espera respuesta por canal externo.
 - `Design`: creacion de disenos con Canva.
-- `Publish`: publicacion social via Buffer.
+- `Publish`: publicacion social via Buffer. La red de destino se elige por nodo
+  en el inspector (config `provider`) y el nodo del grafo muestra su logotipo.
 
 Modulos de sistema creados por defecto en `SystemModuleCatalog`:
 

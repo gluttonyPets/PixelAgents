@@ -173,13 +173,13 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson, platform) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
         var subSteps = [];
         if (subStepsJson) { try { subSteps = JSON.parse(subStepsJson) || []; } catch (e) { subSteps = []; } }
-        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps, platform);
         var cssClass = 'df-type-' + moduleType.toLowerCase();
         if (skipped) cssClass += ' df-state-skipped';
         var nodeId = this._editor.addNode(
@@ -517,14 +517,50 @@ window.pipelineEditor = {
         return map[type] || 'bi-gear';
     },
 
-    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount, activeRulesCount, subSteps) {
+    // Redes de destino del modulo Publicar. Los colores estan elegidos para leerse
+    // sobre el fondo oscuro de la tarjeta (el negro de TikTok/Threads no serviria).
+    _platforms: {
+        instagram: { icon: 'bi-instagram', label: 'Instagram', color: '#E1306C' },
+        tiktok:    { icon: 'bi-tiktok',    label: 'TikTok',    color: '#25F4EE' },
+        pinterest: { icon: 'bi-pinterest', label: 'Pinterest', color: '#E60023' },
+        threads:   { icon: 'bi-threads',   label: 'Threads',   color: '#F0F0F0' }
+    },
+
+    // Insignia con el logo de la red donde publica el nodo. Solo aplica al modulo
+    // Publicar; el resto de tipos no tienen destino que mostrar.
+    _buildPlatformBadge: function (type, platform) {
+        if (type !== 'Publish') return '';
+        var meta = this._platforms[(platform || 'instagram').toLowerCase()] || this._platforms.instagram;
+        return '<div class="df-node-platform" style="color: ' + meta.color + ';" title="Publica en ' + meta.label + '">'
+            + '<i class="bi ' + meta.icon + '"></i>'
+            + '<span>' + meta.label + '</span>'
+            + '</div>';
+    },
+
+    // Repinta la insignia sin reconstruir el grafo, para que al cambiar la red en
+    // el inspector el nodo lo refleje al momento.
+    updateNodePlatform: function (moduleId, platform) {
+        var nodeId = this._reverseMap[moduleId];
+        if (nodeId === undefined) return;
+        var el = document.querySelector('#node-' + nodeId + ' .df-node-platform');
+        if (!el) return;
+        var meta = this._platforms[(platform || 'instagram').toLowerCase()] || this._platforms.instagram;
+        el.style.color = meta.color;
+        el.title = 'Publica en ' + meta.label;
+        el.innerHTML = '<i class="bi ' + meta.icon + '"></i><span>' + meta.label + '</span>';
+    },
+
+    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount, activeRulesCount, subSteps, platform) {
         var orderBadge = stepLabel
             ? '<span class="df-order-badge">' + stepLabel + '</span>'
             : '<span class="df-order-badge" style="display:none"></span>';
         var rulesBadge = (activeRulesCount | 0) > 0
             ? '<span class="df-node-rules-badge" title="' + activeRulesCount + ' regla(s) activa(s) en este modulo"><i class="bi bi-shield-check"></i>' + activeRulesCount + '</span>'
             : '';
-        var modelLine = modelName
+        var platformBadge = this._buildPlatformBadge(type, platform);
+        // En Publicar el ModelName es siempre la constante "publish": no aporta nada
+        // y la insignia de la red ocupa su sitio.
+        var modelLine = (modelName && !platformBadge)
             ? '<div class="df-node-model">' + modelName + '</div>'
             : '';
         var warningLine = warning
@@ -555,6 +591,7 @@ window.pipelineEditor = {
             + '<div class="df-node-overlay-spinner"></div>'
             + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + name + rulesBadge + '</div>'
             + '<div class="df-node-type">' + type + '</div>'
+            + platformBadge
             + modelLine
             + portSummary
             + warningLine

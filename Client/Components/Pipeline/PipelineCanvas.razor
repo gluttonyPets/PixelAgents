@@ -1445,7 +1445,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                 warning,
                 isSkipped,
                 activeRulesCount,
-                subStepsJson);
+                subStepsJson,
+                GetPublishPlatform(pm));
 
             idx++;
         }
@@ -1568,6 +1569,13 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
     // ── Generic module config helpers ──
 
+    /// <summary>
+    /// Red social de destino de un nodo Publicar, tal como la elige el inspector.
+    /// Devuelve null para el resto de tipos, que no publican en ninguna parte.
+    /// </summary>
+    private string? GetPublishPlatform(ProjectModuleResponse pm) =>
+        pm.ModuleType == "Publish" ? GetModuleConfig(pm.Id, "provider", "instagram") : null;
+
     private string GetModuleConfig(Guid moduleId, string key, string fallback = "")
     {
         if (_moduleConfigs.TryGetValue(moduleId, out var dict) && dict.TryGetValue(key, out var val))
@@ -1662,6 +1670,16 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         if (!_moduleConfigs.ContainsKey(moduleId))
             _moduleConfigs[moduleId] = new();
         _moduleConfigs[moduleId][key] = value;
+
+        // Cambiar la red de un nodo Publicar debe verse en el grafo al momento,
+        // sin esperar a reconstruirlo entero.
+        if (key == "provider" && _jsInitialized
+            && Modules.FirstOrDefault(m => m.Id == moduleId)?.ModuleType == "Publish")
+        {
+            try { await JS.InvokeVoidAsync("pipelineEditor.updateNodePlatform", moduleId.ToString(), value); }
+            catch { /* el nodo puede no estar pintado todavia */ }
+        }
+
         await AutoSaveGraph();
     }
 
