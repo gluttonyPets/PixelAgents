@@ -609,6 +609,44 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                         </div>
                     }
 
+                    @if (sel.ModuleType == "FileDirectory")
+                    {
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Directorio de archivos</div>
+
+                            <p class="text-sm text-muted" style="margin-bottom: 0.5rem;">
+                                <i class="bi bi-info-circle"></i>
+                                Organiza los archivos en carpetas y describe cada uno. El modulo emite
+                                este indice con la URL de descarga de cada archivo; el modulo que lo
+                                recibe elige por la descripcion y se baja solo lo que necesita.
+                            </p>
+
+                            <FileDirectoryEditor ProjectModuleId="@sel.Id"
+                                                 Index='@GetModuleConfig(sel.Id, "index")'
+                                                 IndexChanged='@(json => SetModuleConfig(sel.Id, "index", json))' />
+
+                            <div class="inspector-field" style="margin-top: 0.5rem;">
+                                <label>URL base del repositorio (opcional)</label>
+                                <input placeholder="https://cdn.ejemplo.com/marca"
+                                       value="@GetModuleConfig(sel.Id, "baseUrl", "")"
+                                       @onchange="@(e => SetModuleConfig(sel.Id, "baseUrl", e.Value?.ToString() ?? ""))" />
+                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                                    Solo si los archivos ya viven en un repositorio expuesto. Los que subas
+                                    aqui se sirven desde este servidor y no la necesitan.
+                                </p>
+                            </div>
+
+                            <div class="inspector-field">
+                                <label>Formato de salida</label>
+                                <select value="@GetModuleConfig(sel.Id, "format", "markdown")"
+                                        @onchange="@(e => SetModuleConfig(sel.Id, "format", e.Value?.ToString() ?? "markdown"))">
+                                    <option value="markdown">Texto (agrupado por carpetas)</option>
+                                    <option value="json">JSON</option>
+                                </select>
+                            </div>
+                        </div>
+                    }
+
                     @if (sel.ModuleType == "Publish")
                     {
                         <div class="inspector-section">

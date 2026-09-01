@@ -62,7 +62,7 @@ public static class FileDirectoryPublisher
         return FileDirectoryIndex.Resolve(
             indexJson,
             baseUrl,
-            directory.Files.Select(f => f.FileName),
+            directory.Files.Select(f => new FileDirectoryIndex.HostedFile(f.Id, f.FileName)),
             path => FileDirectoryIndex.Absolutize(
                 publicBaseUrl,
                 FileDirectoryIndex.BuildPublicPath(tenant, directory.Node.Id, path)));
@@ -89,8 +89,8 @@ public static class FileDirectoryPublisher
 
         if (entry is null || entry.Source != FileDirectoryIndex.Sources.Hosted) return null;
 
-        return directory.Files.FirstOrDefault(f =>
-            string.Equals(f.FileName, entry.SourceFile, StringComparison.OrdinalIgnoreCase));
+        // El indice ya resolvio cual es el fichero: aqui solo se recupera la fila.
+        return directory.Files.FirstOrDefault(f => f.Id == entry.SourceFileId);
     }
 
     /// <summary>Ruta en disco de un fichero del directorio, o null si ya no esta.</summary>

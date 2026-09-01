@@ -51,7 +51,17 @@ public static class FileDirectoryIndex
 
         /// <summary>Nombre del fichero subido a este nodo que respalda la entrada.</summary>
         public string? File { get; set; }
+
+        /// <summary>
+        /// Id del fichero subido que respalda la entrada. Es la forma preferente
+        /// de apuntar a un fichero alojado: el nombre puede repetirse entre
+        /// carpetas, el id no. El explorador del inspector siempre lo escribe.
+        /// </summary>
+        public Guid? FileId { get; set; }
     }
+
+    /// <summary>Un fichero subido al nodo, candidato a respaldar una entrada.</summary>
+    public sealed record HostedFile(Guid Id, string FileName);
 
     /// <summary>Una entrada ya validada, con su ruta accesible resuelta.</summary>
     public sealed record ResolvedEntry(
@@ -61,7 +71,8 @@ public static class FileDirectoryIndex
         string Description,
         string Url,
         string Source,
-        string? SourceFile = null);
+        string? SourceFile = null,
+        Guid? SourceFileId = null);
 
     /// <summary>Resultado de resolver un indice completo.</summary>
     public sealed class ParseResult
@@ -70,11 +81,20 @@ public static class FileDirectoryIndex
         public List<string> Errors { get; } = [];
         public string? BaseUrl { get; set; }
 
+        /// <summary>
+        /// Carpetas declaradas explicitamente en el indice. El explorador del
+        /// inspector las escribe para que una carpeta recien creada no
+        /// desaparezca por no tener ficheros todavia.
+        /// </summary>
+        public List<string> DeclaredFolders { get; } = [];
+
         public bool IsValid => Errors.Count == 0 && Entries.Count > 0;
 
-        /// <summary>Carpetas distintas presentes en el indice (incluida la raiz).</summary>
+        /// <summary>Carpetas del directorio: las que tienen ficheros y las declaradas vacias.</summary>
         public IReadOnlyList<string> Folders => Entries
             .Select(e => e.Folder)
+            .Concat(DeclaredFolders)
+            .Where(f => !string.IsNullOrEmpty(f))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -97,10 +117,15 @@ public static class FileDirectoryIndex
     /// (<c>{ "baseUrl": ..., "files": [...] }</c>) como la lista pelada
     /// (<c>[ ... ]</c>), que es como se escribe cuando no hay URL base.
     /// </summary>
-    public static List<IndexEntry> ParseEntries(string? indexJson, out string? baseUrl, out string? parseError)
+    public static List<IndexEntry> ParseEntries(
+        string? indexJson,
+        out string? baseUrl,
+        out string? parseError,
+        out List<string> declaredFolders)
     {
         baseUrl = null;
         parseError = null;
+        declaredFolders = [];
 
         if (string.IsNullOrWhiteSpace(indexJson))
         {
@@ -130,6 +155,16 @@ public static class FileDirectoryIndex
             if (root.TryGetProperty(BaseUrlConfigKey, out var baseEl) && baseEl.ValueKind == JsonValueKind.String)
                 baseUrl = baseEl.GetString();
 
+            if (root.TryGetProperty("folders", out var foldersEl) && foldersEl.ValueKind == JsonValueKind.Array)
+                declaredFolders = foldersEl
+                    .EnumerateArray()
+                    .Where(f => f.ValueKind == JsonValueKind.String)
+                    .Select(f => NormalizePath(f.GetString()))
+                    .Where(f => f is not null && !HasTraversal(f))
+                    .Select(f => f!)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
             if (!TryGetFilesArray(root, out filesElement))
             {
                 parseError = "El indice debe traer una lista de ficheros en la propiedad \"files\".";
@@ -157,6 +192,7 @@ public static class FileDirectoryIndex
                 Description = ReadString(item, "description", "descripcion", "desc"),
                 Url = ReadString(item, "url"),
                 File = ReadString(item, "file", "fichero", "archivo"),
+                FileId = ReadGuid(item, "fileId"),
             });
         }
 
@@ -176,6 +212,13 @@ public static class FileDirectoryIndex
 
         files = default;
         return false;
+    }
+
+    private static Guid? ReadGuid(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var el) || el.ValueKind != JsonValueKind.String)
+            return null;
+        return Guid.TryParse(el.GetString(), out var parsed) ? parsed : null;
     }
 
     private static string? ReadString(JsonElement obj, params string[] names)
@@ -239,17 +282,19 @@ public static class FileDirectoryIndex
     public static ParseResult Resolve(
         string? indexJson,
         string? configBaseUrl = null,
-        IEnumerable<string>? hostedFiles = null,
+        IEnumerable<HostedFile>? hostedFiles = null,
         Func<string, string>? hostedUrlFactory = null)
     {
         var result = new ParseResult();
 
-        var entries = ParseEntries(indexJson, out var indexBaseUrl, out var parseError);
+        var entries = ParseEntries(indexJson, out var indexBaseUrl, out var parseError, out var declaredFolders);
         if (parseError is not null)
         {
             result.Errors.Add(parseError);
             return result;
         }
+
+        result.DeclaredFolders.AddRange(declaredFolders);
 
         // La URL base del propio indice manda sobre la del inspector: el indice
         // es el documento que viaja con el directorio.
@@ -262,7 +307,7 @@ public static class FileDirectoryIndex
             return result;
         }
 
-        var hosted = new HashSet<string>(hostedFiles ?? [], StringComparer.OrdinalIgnoreCase);
+        var hosted = (hostedFiles ?? []).ToList();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (var i = 0; i < entries.Count; i++)
@@ -296,7 +341,8 @@ public static class FileDirectoryIndex
                 continue;
             }
 
-            var (url, source, sourceFile) = ResolveUrl(entry, path, result.BaseUrl, hosted, hostedUrlFactory);
+            var (url, source, sourceFile, sourceFileId) =
+                ResolveUrl(entry, path, result.BaseUrl, hosted, hostedUrlFactory);
             if (url is null)
             {
                 result.Errors.Add(
@@ -309,33 +355,52 @@ public static class FileDirectoryIndex
             var folder = separator < 0 ? "" : path[..separator];
             var name = separator < 0 ? path : path[(separator + 1)..];
 
-            result.Entries.Add(new ResolvedEntry(path, folder, name, description!, url, source, sourceFile));
+            result.Entries.Add(
+                new ResolvedEntry(path, folder, name, description!, url, source, sourceFile, sourceFileId));
         }
 
         return result;
     }
 
-    private static (string? Url, string Source, string? SourceFile) ResolveUrl(
+    private static (string? Url, string Source, string? SourceFile, Guid? SourceFileId) ResolveUrl(
         IndexEntry entry,
         string path,
         string? baseUrl,
-        HashSet<string> hosted,
+        List<HostedFile> hosted,
         Func<string, string>? hostedUrlFactory)
     {
+        // Un fichero subido al nodo manda sobre la URL base: el explorador
+        // escribe su id al subirlo, y ese fichero es el que el usuario puso
+        // ahi, aunque el directorio tenga ademas un repositorio externo.
+        var match = FindHosted(entry, path, hosted);
+        if (match is not null && hostedUrlFactory is not null)
+            return (hostedUrlFactory(path), Sources.Hosted, match.FileName, match.Id);
+
         if (IsAbsoluteUrl(entry.Url))
-            return (entry.Url!.Trim(), Sources.External, null);
+            return (entry.Url!.Trim(), Sources.External, null, null);
 
         if (!string.IsNullOrWhiteSpace(baseUrl))
-            return ($"{baseUrl}/{EncodePath(path)}", Sources.External, null);
+            return ($"{baseUrl}/{EncodePath(path)}", Sources.External, null, null);
 
-        // El fichero puede venir subido a este nodo: por defecto se busca por el
-        // nombre final de la ruta, y "file" permite apuntar a otro nombre cuando
-        // la ruta del indice no coincide con el del fichero subido.
+        return (null, Sources.External, null, null);
+    }
+
+    /// <summary>
+    /// Busca el fichero subido que respalda una entrada. Por id primero, que es
+    /// lo que escribe el explorador y lo unico que distingue dos ficheros con el
+    /// mismo nombre en carpetas distintas; por nombre despues, para los indices
+    /// escritos a mano.
+    /// </summary>
+    private static HostedFile? FindHosted(IndexEntry entry, string path, List<HostedFile> hosted)
+    {
+        if (hosted.Count == 0) return null;
+
+        if (entry.FileId is { } id)
+            return hosted.FirstOrDefault(h => h.Id == id);
+
         var fileName = entry.File ?? path[(path.LastIndexOf('/') + 1)..];
-        if (hostedUrlFactory is not null && hosted.Contains(fileName))
-            return (hostedUrlFactory(path), Sources.Hosted, fileName);
-
-        return (null, Sources.External, null);
+        return hosted.FirstOrDefault(h =>
+            string.Equals(h.FileName, fileName, StringComparison.OrdinalIgnoreCase));
     }
 
     // ── Rutas ──

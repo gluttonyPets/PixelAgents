@@ -1,0 +1,765 @@
+@using System.Text.Json
+@inject ApiClient Api
+
+@*
+    Explorador del modulo Directorio de archivos: carpetas y subcarpetas a la
+    izquierda, contenido de la carpeta seleccionada a la derecha.
+
+    El arbol es la forma comoda de escribir el indice, no una estructura aparte:
+    todo lo que se hace aqui se serializa al mismo JSON que valida el servidor
+    (carpetas en "folders", ficheros en "files" con su descripcion y su fileId).
+    Las carpetas son virtuales, viven solo en el indice; los ficheros se suben al
+    nodo y se referencian por id, que es lo unico que distingue dos ficheros con
+    el mismo nombre en carpetas distintas.
+*@
+
+<div class="fd-explorer">
+    <div class="fd-tree">
+        <div class="fd-tree-header">
+            <span>Carpetas</span>
+            <button type="button" class="btn btn-sm" title="Nueva carpeta dentro de la seleccionada"
+                    @onclick="StartNewFolder">
+                <i class="bi bi-folder-plus"></i>
+            </button>
+        </div>
+
+        <ul class="fd-tree-list">
+            <li>
+                <div class="fd-tree-node @(_selected == "" ? "selected" : "")"
+                     @onclick='() => Select("")'>
+                    <i class="bi bi-hdd"></i>
+                    <span>Directorio</span>
+                    <span class="fd-count">@CountIn("")</span>
+                </div>
+            </li>
+            @foreach (var folder in VisibleFolders())
+            {
+                var depth = folder.Count(c => c == '/') + 1;
+                <li>
+                    <div class="fd-tree-node @(_selected == folder ? "selected" : "")"
+                         style="padding-left: @(depth * 0.85)rem;"
+                         @onclick="() => Select(folder)">
+                        @if (HasChildren(folder))
+                        {
+                            <i class="bi @(IsExpanded(folder) ? "bi-chevron-down" : "bi-chevron-right") fd-chevron"
+                               @onclick:stopPropagation="true" @onclick="() => ToggleExpand(folder)"></i>
+                        }
+                        else
+                        {
+                            <i class="bi fd-chevron"></i>
+                        }
+                        <i class="bi @(_selected == folder ? "bi-folder2-open" : "bi-folder")"></i>
+                        <span class="fd-tree-name">@NameOf(folder)</span>
+                        <span class="fd-count">@CountIn(folder)</span>
+                    </div>
+                </li>
+            }
+        </ul>
+    </div>
+
+    <div class="fd-contents">
+        <div class="fd-breadcrumb">
+            <i class="bi bi-hdd"></i>
+            <a href="javascript:void(0)" @onclick='() => Select("")'>Directorio</a>
+            @foreach (var (label, path) in BreadcrumbOf(_selected))
+            {
+                <span class="fd-sep">\</span>
+                <a href="javascript:void(0)" @onclick="() => Select(path)">@label</a>
+            }
+        </div>
+
+        <div class="fd-toolbar">
+            <button type="button" class="btn btn-sm" @onclick="StartNewFolder">
+                <i class="bi bi-folder-plus"></i> Nueva carpeta
+            </button>
+            <label class="btn btn-sm fd-upload" title="Subir archivos a esta carpeta">
+                <i class="bi bi-upload"></i> @(_uploading ? "Subiendo..." : "Subir archivos")
+                <InputFile OnChange="OnFilesSelected" multiple accept="*/*" disabled="@_uploading" />
+            </label>
+            @if (_selected != "")
+            {
+                <div style="flex: 1;"></div>
+                <button type="button" class="btn btn-sm" @onclick="StartRenameFolder">
+                    <i class="bi bi-pencil"></i> Renombrar
+                </button>
+                <button type="button" class="btn btn-danger btn-sm" @onclick="DeleteSelectedFolder">
+                    <i class="bi bi-trash"></i>
+                    @(_confirmFolderDelete == _selected ? "Confirmar: borra su contenido" : "Eliminar carpeta")
+                </button>
+            }
+        </div>
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-error">@_error</div>
+        }
+
+        @if (_newFolderOpen)
+        {
+            <div class="fd-inline-form">
+                <i class="bi bi-folder-plus"></i>
+                <input @bind="_newFolderName" @bind:event="oninput" placeholder="Nombre de la carpeta"
+                       @onkeydown="OnNewFolderKey" />
+                <button type="button" class="btn btn-primary btn-sm" @onclick="CreateFolder">Crear</button>
+                <button type="button" class="btn btn-sm" @onclick="CancelNewFolder">Cancelar</button>
+            </div>
+        }
+
+        @if (_renameOpen)
+        {
+            <div class="fd-inline-form">
+                <i class="bi bi-pencil"></i>
+                <input @bind="_renameValue" @bind:event="oninput" placeholder="Nuevo nombre"
+                       @onkeydown="OnRenameKey" />
+                <button type="button" class="btn btn-primary btn-sm" @onclick="RenameFolder">Renombrar</button>
+                <button type="button" class="btn btn-sm" @onclick="() => _renameOpen = false">Cancelar</button>
+            </div>
+        }
+
+        @{
+            var subfolders = ChildFoldersOf(_selected);
+            var files = FilesIn(_selected);
+        }
+
+        @if (subfolders.Count == 0 && files.Count == 0 && !_newFolderOpen)
+        {
+            <p class="text-muted fd-empty">
+                Carpeta vacia. Crea una subcarpeta o sube archivos aqui.
+            </p>
+        }
+
+        @foreach (var folder in subfolders)
+        {
+            <div class="fd-row fd-row-folder" @ondblclick="() => Select(folder)">
+                <i class="bi bi-folder"></i>
+                <span class="fd-row-name" @onclick="() => Select(folder)">@NameOf(folder)</span>
+                <span class="text-muted fd-row-meta">@CountIn(folder) elemento(s)</span>
+            </div>
+        }
+
+        @foreach (var file in files)
+        {
+            <div class="fd-row">
+                <i class="bi @GetFileIcon(file.ContentType)"></i>
+                <div class="fd-row-main">
+                    <div class="fd-row-title">
+                        <span class="fd-row-name">@file.Name</span>
+                        @if (file.IsExternal)
+                        {
+                            <span class="fd-tag" title="@file.Url">Externo</span>
+                        }
+                        else if (file.Size > 0)
+                        {
+                            <span class="text-muted fd-row-meta">@FormatFileSize(file.Size)</span>
+                        }
+                    </div>
+                    <input class="fd-desc @(string.IsNullOrWhiteSpace(file.Description) ? "missing" : "")"
+                           value="@file.Description"
+                           @onchange="@(e => SetDescription(file, e.Value?.ToString()))"
+                           placeholder="Obligatorio: que es este archivo" />
+                </div>
+                <select class="fd-move" value="@file.Folder"
+                        @onchange="e => MoveFile(file, e.Value?.ToString())"
+                        title="Mover a otra carpeta">
+                    <option value="">Directorio</option>
+                    @foreach (var folder in AllFolders())
+                    {
+                        <option value="@folder">@folder</option>
+                    }
+                </select>
+                @if (_pendingDelete == file)
+                {
+                    <button type="button" class="btn btn-danger btn-sm" @onclick="() => RemoveFile(file)">
+                        Confirmar
+                    </button>
+                    <button type="button" class="btn btn-sm" @onclick="() => _pendingDelete = null">
+                        Cancelar
+                    </button>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-danger btn-sm" title="Eliminar del directorio"
+                            @onclick="() => _pendingDelete = file">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                }
+            </div>
+        }
+
+        <div class="fd-summary">
+            @{
+                var total = _files.Count;
+                var sinDescripcion = _files.Count(f => string.IsNullOrWhiteSpace(f.Description));
+            }
+            @if (total == 0)
+            {
+                <span class="text-danger">El directorio no tiene archivos. El indice es obligatorio.</span>
+            }
+            else if (sinDescripcion > 0)
+            {
+                <span class="text-danger">
+                    @sinDescripcion de @total archivo(s) sin descripcion: el indice tiene que explicar que es cada uno.
+                </span>
+            }
+            else
+            {
+                <span class="text-muted">@total archivo(s) indexados en @(AllFolders().Count) carpeta(s).</span>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Nodo del pipeline al que se suben los archivos.</summary>
+    [Parameter] public Guid? ProjectModuleId { get; set; }
+
+    /// <summary>Indice actual, en el mismo JSON que consume el servidor.</summary>
+    [Parameter] public string? Index { get; set; }
+
+    /// <summary>Notifica el indice reconstruido tras cada cambio.</summary>
+    [Parameter] public EventCallback<string> IndexChanged { get; set; }
+
+    private const long MaxUploadFileSize = 512L * 1024 * 1024;
+
+    /// <summary>Un archivo del directorio, ya sea subido al nodo o externo.</summary>
+    private sealed class DirFile
+    {
+        public string Folder { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Description { get; set; } = "";
+        public Guid? FileId { get; set; }
+        public string? Url { get; set; }
+        public string ContentType { get; set; } = "";
+        public long Size { get; set; }
+
+        public bool IsExternal => FileId is null && !string.IsNullOrWhiteSpace(Url);
+        public string Path => string.IsNullOrEmpty(Folder) ? Name : $"{Folder}/{Name}";
+    }
+
+    private readonly List<DirFile> _files = [];
+    private readonly HashSet<string> _folders = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
+
+    private string _selected = "";
+    private string? _error;
+    private bool _uploading;
+    private bool _newFolderOpen;
+    private string _newFolderName = "";
+    private bool _renameOpen;
+    private string _renameValue = "";
+    private DirFile? _pendingDelete;
+    private string? _confirmFolderDelete;
+    private string? _loadedIndex;
+    private Guid? _loadedNodeId;
+
+    protected override void OnParametersSet()
+    {
+        // Se reconstruye el arbol al cambiar de nodo, o cuando el indice entrante
+        // no es el que este editor acaba de emitir. Sin esa segunda condicion,
+        // cada render posterior a un cambio pisaria la edicion en curso.
+        if (ProjectModuleId != _loadedNodeId || Index != _loadedIndex)
+        {
+            _loadedNodeId = ProjectModuleId;
+            _loadedIndex = Index;
+            LoadFromIndex(Index);
+        }
+    }
+
+    // ── Carga y serializacion del indice ──
+
+    private void LoadFromIndex(string? indexJson)
+    {
+        _files.Clear();
+        _folders.Clear();
+        _selected = "";
+
+        if (string.IsNullOrWhiteSpace(indexJson)) return;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(indexJson);
+            var root = doc.RootElement;
+
+            var filesEl = root;
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("folders", out var foldersEl) && foldersEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var f in foldersEl.EnumerateArray())
+                    {
+                        var folder = Normalize(f.GetString());
+                        if (folder != "") AddFolderChain(folder);
+                    }
+                }
+
+                if (!root.TryGetProperty("files", out filesEl) || filesEl.ValueKind != JsonValueKind.Array)
+                    return;
+            }
+            else if (root.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
+
+            foreach (var item in filesEl.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object) continue;
+
+                var path = Normalize(Str(item, "path"));
+                if (path == "") continue;
+
+                var cut = path.LastIndexOf('/');
+                var folder = cut < 0 ? "" : path[..cut];
+                if (folder != "") AddFolderChain(folder);
+
+                _files.Add(new DirFile
+                {
+                    Folder = folder,
+                    Name = cut < 0 ? path : path[(cut + 1)..],
+                    Description = Str(item, "description") ?? "",
+                    FileId = Guid.TryParse(Str(item, "fileId"), out var id) ? id : null,
+                    Url = Str(item, "url"),
+                    ContentType = Str(item, "contentType") ?? "",
+                    Size = item.TryGetProperty("size", out var sz) && sz.TryGetInt64(out var n) ? n : 0,
+                });
+            }
+        }
+        catch (JsonException)
+        {
+            // Un indice escrito a mano que no parsea no debe romper el editor:
+            // se abre vacio y el usuario lo rehace desde el arbol.
+            _error = "El indice guardado no se pudo leer y se ha abierto vacio.";
+        }
+    }
+
+    /// <summary>
+    /// Reconstruye el JSON del indice. Se guardan tambien las carpetas para que
+    /// una recien creada no desaparezca al recargar por no tener archivos.
+    /// </summary>
+    private string BuildIndex()
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["folders"] = AllFolders(),
+            ["files"] = _files
+                .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
+                .Select(f =>
+                {
+                    var entry = new Dictionary<string, object>
+                    {
+                        ["path"] = f.Path,
+                        ["description"] = f.Description ?? "",
+                    };
+                    if (f.FileId is { } id) entry["fileId"] = id.ToString();
+                    if (f.IsExternal && f.Url is not null) entry["url"] = f.Url;
+                    if (!string.IsNullOrEmpty(f.ContentType)) entry["contentType"] = f.ContentType;
+                    if (f.Size > 0) entry["size"] = f.Size;
+                    return entry;
+                })
+                .ToList(),
+        };
+
+        return JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private async Task NotifyChanged()
+    {
+        _loadedIndex = BuildIndex();
+        await IndexChanged.InvokeAsync(_loadedIndex);
+    }
+
+    // ── Arbol de carpetas ──
+
+    private List<string> AllFolders() => _folders
+        .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    /// <summary>Carpetas visibles: una carpeta se ve si todos sus padres estan desplegados.</summary>
+    private List<string> VisibleFolders() => AllFolders()
+        .Where(f => ParentsOf(f).All(p => _expanded.Contains(p)))
+        .ToList();
+
+    private static IEnumerable<string> ParentsOf(string folder)
+    {
+        var parts = folder.Split('/');
+        for (var i = 1; i < parts.Length; i++)
+            yield return string.Join('/', parts[..i]);
+    }
+
+    private void AddFolderChain(string folder)
+    {
+        foreach (var parent in ParentsOf(folder)) _folders.Add(parent);
+        _folders.Add(folder);
+    }
+
+    private bool HasChildren(string folder) =>
+        _folders.Any(f => f.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase));
+
+    private bool IsExpanded(string folder) => _expanded.Contains(folder);
+
+    private void ToggleExpand(string folder)
+    {
+        if (!_expanded.Remove(folder)) _expanded.Add(folder);
+    }
+
+    private List<string> ChildFoldersOf(string folder) => _folders
+        .Where(f => string.Equals(ParentOf(f), folder, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    private static string ParentOf(string folder)
+    {
+        var cut = folder.LastIndexOf('/');
+        return cut < 0 ? "" : folder[..cut];
+    }
+
+    private static string NameOf(string folder)
+    {
+        var cut = folder.LastIndexOf('/');
+        return cut < 0 ? folder : folder[(cut + 1)..];
+    }
+
+    private static List<(string Label, string Path)> BreadcrumbOf(string folder)
+    {
+        var crumbs = new List<(string, string)>();
+        if (string.IsNullOrEmpty(folder)) return crumbs;
+
+        var parts = folder.Split('/');
+        for (var i = 0; i < parts.Length; i++)
+            crumbs.Add((parts[i], string.Join('/', parts[..(i + 1)])));
+        return crumbs;
+    }
+
+    private void Select(string folder)
+    {
+        _selected = folder;
+        _renameOpen = false;
+        _newFolderOpen = false;
+        _pendingDelete = null;
+        _confirmFolderDelete = null;
+        foreach (var parent in ParentsOf(folder)) _expanded.Add(parent);
+        if (HasChildren(folder)) _expanded.Add(folder);
+    }
+
+    private List<DirFile> FilesIn(string folder) => _files
+        .Where(f => string.Equals(f.Folder, folder, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    /// <summary>Cuenta lo que cuelga de una carpeta: subcarpetas directas y archivos.</summary>
+    private int CountIn(string folder) => ChildFoldersOf(folder).Count + FilesIn(folder).Count;
+
+    // ── Crear, renombrar y borrar carpetas ──
+
+    private void StartNewFolder()
+    {
+        _newFolderOpen = true;
+        _newFolderName = "";
+        _error = null;
+    }
+
+    private void CancelNewFolder()
+    {
+        _newFolderOpen = false;
+        _newFolderName = "";
+    }
+
+    private async Task OnNewFolderKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await CreateFolder();
+        else if (e.Key == "Escape") CancelNewFolder();
+    }
+
+    private async Task CreateFolder()
+    {
+        var name = SanitizeSegment(_newFolderName);
+        if (name is null)
+        {
+            _error = "El nombre de la carpeta no puede estar vacio ni llevar \\ / o ..";
+            return;
+        }
+
+        var path = string.IsNullOrEmpty(_selected) ? name : $"{_selected}/{name}";
+        if (_folders.Contains(path))
+        {
+            _error = $"Ya existe una carpeta \"{name}\" aqui.";
+            return;
+        }
+
+        AddFolderChain(path);
+        if (!string.IsNullOrEmpty(_selected)) _expanded.Add(_selected);
+        _newFolderOpen = false;
+        _newFolderName = "";
+        _error = null;
+        await NotifyChanged();
+    }
+
+    private void StartRenameFolder()
+    {
+        _renameOpen = true;
+        _renameValue = NameOf(_selected);
+        _error = null;
+    }
+
+    private async Task OnRenameKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await RenameFolder();
+        else if (e.Key == "Escape") _renameOpen = false;
+    }
+
+    /// <summary>
+    /// Renombrar arrastra a las subcarpetas y a los archivos que cuelgan: la
+    /// ruta es la identidad de la entrada en el indice, asi que hay que
+    /// reescribir el prefijo en todo lo que estaba dentro.
+    /// </summary>
+    private async Task RenameFolder()
+    {
+        if (string.IsNullOrEmpty(_selected)) return;
+
+        var name = SanitizeSegment(_renameValue);
+        if (name is null)
+        {
+            _error = "El nombre de la carpeta no puede estar vacio ni llevar \\ / o ..";
+            return;
+        }
+
+        var parent = ParentOf(_selected);
+        var target = string.IsNullOrEmpty(parent) ? name : $"{parent}/{name}";
+        if (!string.Equals(target, _selected, StringComparison.OrdinalIgnoreCase) && _folders.Contains(target))
+        {
+            _error = $"Ya existe una carpeta \"{name}\" aqui.";
+            return;
+        }
+
+        var affected = _folders
+            .Where(f => f.Equals(_selected, StringComparison.OrdinalIgnoreCase)
+                        || f.StartsWith(_selected + "/", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        foreach (var folder in affected)
+        {
+            _folders.Remove(folder);
+            _expanded.Remove(folder);
+        }
+        foreach (var folder in affected)
+            _folders.Add(target + folder[_selected.Length..]);
+
+        foreach (var file in _files)
+        {
+            if (file.Folder.Equals(_selected, StringComparison.OrdinalIgnoreCase)
+                || file.Folder.StartsWith(_selected + "/", StringComparison.OrdinalIgnoreCase))
+                file.Folder = target + file.Folder[_selected.Length..];
+        }
+
+        _selected = target;
+        _renameOpen = false;
+        _error = null;
+        await NotifyChanged();
+    }
+
+    /// <summary>
+    /// Quita la carpeta y todo lo que cuelga. Los archivos subidos que hubiera
+    /// dentro se borran tambien del servidor, por lo mismo que al eliminar un
+    /// archivo suelto: fuera del indice quedarian inalcanzables.
+    /// </summary>
+    private async Task DeleteSelectedFolder()
+    {
+        if (string.IsNullOrEmpty(_selected)) return;
+
+        if (_confirmFolderDelete != _selected)
+        {
+            _confirmFolderDelete = _selected;
+            return;
+        }
+
+        var prefix = _selected + "/";
+        var doomed = _files
+            .Where(f => f.Folder.Equals(_selected, StringComparison.OrdinalIgnoreCase)
+                        || f.Folder.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        foreach (var file in doomed.Where(f => f.FileId is not null))
+        {
+            try { await Api.DeleteModuleFileAsync(file.FileId!.Value); }
+            catch { /* el indice manda: si el borrado falla, la entrada se va igual */ }
+        }
+
+        _folders.RemoveWhere(f => f.Equals(_selected, StringComparison.OrdinalIgnoreCase)
+                                  || f.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+        foreach (var file in doomed) _files.Remove(file);
+
+        _selected = ParentOf(_selected);
+        _confirmFolderDelete = null;
+        _error = null;
+        await NotifyChanged();
+    }
+
+    // ── Archivos ──
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        if (ProjectModuleId is not { } nodeId)
+        {
+            _error = "Guarda el nodo antes de subir archivos.";
+            return;
+        }
+
+        _error = null;
+        _uploading = true;
+        StateHasChanged();
+
+        try
+        {
+            var selection = e.GetMultipleFiles(50);
+            using var content = new MultipartFormDataContent();
+            foreach (var file in selection)
+                content.Add(CreateBrowserFileContent(file), "files", file.Name);
+
+            var uploaded = await Api.UploadModuleFilesAsync(nodeId, content);
+
+            foreach (var file in uploaded)
+            {
+                _files.Add(new DirFile
+                {
+                    Folder = _selected,
+                    Name = UniqueNameIn(_selected, file.FileName),
+                    Description = "",
+                    FileId = file.Id,
+                    ContentType = file.ContentType,
+                    Size = file.FileSize,
+                });
+            }
+
+            await NotifyChanged();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error al subir: {ex.Message}";
+        }
+        finally
+        {
+            _uploading = false;
+        }
+    }
+
+    /// <summary>
+    /// Evita dos rutas iguales dentro de la misma carpeta, que el servidor
+    /// rechazaria como duplicadas. Entre carpetas distintas el nombre puede
+    /// repetirse: cada entrada apunta a su archivo por id.
+    /// </summary>
+    private string UniqueNameIn(string folder, string fileName)
+    {
+        var taken = FilesIn(folder)
+            .Select(f => f.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!taken.Contains(fileName)) return fileName;
+
+        var stem = System.IO.Path.GetFileNameWithoutExtension(fileName);
+        var ext = System.IO.Path.GetExtension(fileName);
+        for (var i = 2; ; i++)
+        {
+            var candidate = $"{stem} ({i}){ext}";
+            if (!taken.Contains(candidate)) return candidate;
+        }
+    }
+
+    private async Task SetDescription(DirFile file, string? value)
+    {
+        file.Description = value ?? "";
+        await NotifyChanged();
+    }
+
+    private async Task MoveFile(DirFile file, string? folder)
+    {
+        var target = Normalize(folder);
+        if (target != "" && !_folders.Contains(target)) return;
+
+        file.Folder = target;
+        file.Name = UniqueNameIn(target, file.Name);
+        await NotifyChanged();
+    }
+
+    /// <summary>
+    /// Elimina el archivo del directorio. Si estaba subido a este nodo se borra
+    /// tambien del servidor: fuera del indice no se sirve por la URL publica ni
+    /// aparece en ninguna otra pantalla, asi que dejarlo solo acumularia basura.
+    /// </summary>
+    private async Task RemoveFile(DirFile file)
+    {
+        _pendingDelete = null;
+        _error = null;
+
+        if (file.FileId is { } id)
+        {
+            try
+            {
+                await Api.DeleteModuleFileAsync(id);
+            }
+            catch (Exception ex)
+            {
+                _error = $"No se pudo borrar el archivo del servidor: {ex.Message}";
+                return;
+            }
+        }
+
+        _files.Remove(file);
+        await NotifyChanged();
+    }
+
+    // ── Utilidades ──
+
+    private static string Normalize(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var segments = raw
+            .Replace('\\', '/')
+            .Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0 && s != "." && s != "..");
+        return string.Join('/', segments);
+    }
+
+    /// <summary>Valida el nombre de una carpeta: un solo segmento, sin rutas dentro.</summary>
+    private static string? SanitizeSegment(string? raw)
+    {
+        var name = raw?.Trim();
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        if (name.Contains('/') || name.Contains('\\')) return null;
+        if (name is "." or "..") return null;
+        return name;
+    }
+
+    private static string? Str(JsonElement obj, string name) =>
+        obj.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.String
+            ? el.GetString()
+            : null;
+
+    private static StreamContent CreateBrowserFileContent(IBrowserFile file)
+    {
+        var stream = file.OpenReadStream(maxAllowedSize: MaxUploadFileSize);
+        var content = new StreamContent(stream);
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType)
+            ? "application/octet-stream"
+            : file.ContentType;
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+        return content;
+    }
+
+    private static string GetFileIcon(string contentType) => contentType switch
+    {
+        var t when t.StartsWith("image/") => "bi-file-image",
+        var t when t.StartsWith("video/") => "bi-file-play",
+        var t when t.StartsWith("audio/") => "bi-file-music",
+        var t when t.Contains("pdf") => "bi-file-pdf",
+        var t when t.Contains("json") || t.Contains("xml") || t.Contains("csv") => "bi-file-code",
+        var t when t.Contains("text") || t.Contains("document") => "bi-file-text",
+        _ => "bi-file-earmark"
+    };
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+}

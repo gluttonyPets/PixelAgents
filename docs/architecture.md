@@ -179,17 +179,41 @@ directorio a medias:
 
 - `path`: ruta dentro del directorio, con sus carpetas (`logos/primarios/logo.svg`).
 - `description`: que es ese fichero. Sin esto el indice no cumple su funcion.
-- una ruta accesible, que se resuelve en este orden: la `url` absoluta de la
-  entrada, la `baseUrl` del directorio mas la ruta, o el fichero subido al nodo,
-  que se sirve desde nuestra propia URL publica.
+- una ruta accesible, que se resuelve en este orden: el fichero subido al nodo
+  (por `fileId`, o por nombre en indices escritos a mano), la `url` absoluta de
+  la entrada, o la `baseUrl` del directorio mas la ruta.
 
-Rutas duplicadas o con `..` se rechazan.
+Un fichero subido manda sobre la `baseUrl` porque es el que el usuario coloco
+ahi; el repositorio externo no tiene por que contenerlo. Las entradas se
+identifican por `fileId` y no por nombre: es lo unico que distingue dos ficheros
+llamados igual en carpetas distintas. Rutas duplicadas o con `..` se rechazan.
 
-Configuracion del nodo (inspector del pipeline): `index` (JSON), `baseUrl`
-(opcional) y `format` (`markdown`, por defecto, o `json`).
+El indice tambien lleva `folders`, la lista de carpetas del directorio, para que
+una carpeta recien creada no desaparezca por no tener ficheros todavia.
 
-Los ficheros se suben al nodo con los endpoints ya existentes de
-`/api/project-modules/{id}/files`, y se exponen sin autenticacion en:
+Configuracion, en el nodo (no en el modulo de catalogo, que es unico y comun a
+todos los directorios): `index` (JSON), `baseUrl` (opcional) y `format`
+(`markdown`, por defecto, o `json`).
+
+### Explorador del inspector
+
+El indice no se escribe a mano: el inspector del nodo monta un explorador
+(`Client/Components/FileDirectoryEditor.razor`) con el arbol de carpetas a la
+izquierda y el contenido a la derecha. Permite crear carpetas y subcarpetas,
+renombrarlas (arrastra las rutas de todo lo que cuelga), subir ficheros a la
+carpeta seleccionada, describirlos, moverlos entre carpetas y eliminarlos.
+
+Todo lo que hace se serializa al mismo JSON que valida el servidor, y se guarda
+en la configuracion del nodo por la via habitual del grafo (`SetModuleConfig` ->
+`ModuleConfigEntry`). Las carpetas son virtuales: viven solo en el indice. Los
+ficheros se suben al nodo con los endpoints ya existentes de
+`/api/project-modules/{id}/files`.
+
+Eliminar un fichero o una carpeta (con confirmacion en dos pasos) borra tambien
+lo subido: fuera del indice no se sirve por la URL publica ni aparece en ninguna
+otra pantalla, asi que conservarlo solo acumularia basura.
+
+El directorio se expone sin autenticacion en:
 
 - `GET /api/public/directory/{tenant}/{moduleId}`: el indice resuelto.
 - `GET /api/public/directory/{tenant}/{moduleId}/{ruta}`: un fichero del indice.

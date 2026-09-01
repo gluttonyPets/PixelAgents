@@ -27,7 +27,7 @@ public class FileDirectoryModuleHandler : IModuleHandler
         var result = FileDirectoryIndex.Resolve(
             indexJson,
             baseUrl,
-            ctx.ModuleFiles.Select(f => f.FileName),
+            ctx.ModuleFiles.Select(f => new FileDirectoryIndex.HostedFile(f.Id, f.FileName)),
             path => FileDirectoryIndex.Absolutize(
                 ctx.PublicBaseUrl,
                 FileDirectoryIndex.BuildPublicPath(ctx.TenantDbName, ctx.Node.ModuleId, path)));

@@ -1,0 +1,217 @@
+/* Explorador del modulo Directorio de archivos: arbol a la izquierda,
+   contenido de la carpeta seleccionada a la derecha. */
+
+.fd-explorer {
+    display: flex;
+    gap: 0.6rem;
+    align-items: stretch;
+    border: 1px solid var(--border-color, #333);
+    border-radius: 6px;
+    overflow: hidden;
+    min-height: 18rem;
+}
+
+/* ── Arbol ── */
+
+.fd-tree {
+    flex: 0 0 13rem;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border-color, #333);
+    background: rgba(0, 0, 0, 0.12);
+    max-height: 26rem;
+}
+
+.fd-tree-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.3rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.75;
+    border-bottom: 1px solid var(--border-color, #333);
+}
+
+.fd-tree-list {
+    list-style: none;
+    margin: 0;
+    padding: 0.25rem 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.fd-tree-node {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.5rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.fd-tree-node:hover { background: rgba(255, 255, 255, 0.06); }
+.fd-tree-node.selected { background: rgba(141, 110, 99, 0.28); }
+
+.fd-tree-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.fd-chevron {
+    width: 0.9rem;
+    flex: 0 0 0.9rem;
+    font-size: 0.7rem;
+    opacity: 0.7;
+}
+
+.fd-count {
+    margin-left: auto;
+    font-size: 0.72rem;
+    opacity: 0.55;
+    padding-left: 0.3rem;
+}
+
+/* ── Contenido ── */
+
+.fd-contents {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem;
+    gap: 0.4rem;
+    max-height: 26rem;
+    overflow-y: auto;
+}
+
+.fd-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    font-size: 0.82rem;
+    opacity: 0.85;
+}
+
+.fd-breadcrumb a { text-decoration: none; }
+.fd-breadcrumb a:hover { text-decoration: underline; }
+.fd-sep { opacity: 0.45; }
+
+.fd-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+/* El InputFile va oculto dentro del boton: el label es el control visible. */
+.fd-upload {
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    cursor: pointer;
+}
+
+.fd-upload input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.fd-inline-form {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem;
+    border: 1px dashed var(--border-color, #444);
+    border-radius: 4px;
+}
+
+.fd-inline-form input { flex: 1; min-width: 6rem; }
+
+.fd-empty {
+    padding: 1.2rem 0.4rem;
+    text-align: center;
+    font-size: 0.85rem;
+}
+
+.fd-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.4rem;
+    border-radius: 4px;
+    border: 1px solid transparent;
+}
+
+.fd-row:hover { background: rgba(255, 255, 255, 0.05); }
+.fd-row-folder { cursor: pointer; }
+
+.fd-row-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.fd-row-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+}
+
+.fd-row-name {
+    font-size: 0.86rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fd-row-meta { font-size: 0.75rem; }
+
+.fd-tag {
+    font-size: 0.68rem;
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    border: 1px solid var(--border-color, #444);
+    opacity: 0.8;
+}
+
+/* La descripcion es obligatoria: si falta, se marca en el propio campo. */
+.fd-desc {
+    width: 100%;
+    font-size: 0.8rem;
+    padding: 0.2rem 0.35rem;
+}
+
+.fd-desc.missing {
+    border-color: #e57373;
+    background: rgba(229, 115, 115, 0.08);
+}
+
+.fd-move {
+    flex: 0 0 8rem;
+    max-width: 8rem;
+    font-size: 0.78rem;
+    padding: 0.15rem 0.25rem;
+}
+
+.fd-summary {
+    margin-top: auto;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--border-color, #333);
+    font-size: 0.8rem;
+}
+
+@media (max-width: 720px) {
+    .fd-explorer { flex-direction: column; }
+    .fd-tree { flex: 1 1 auto; max-height: 12rem; border-right: none; border-bottom: 1px solid var(--border-color, #333); }
+}

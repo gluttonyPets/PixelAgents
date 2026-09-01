@@ -132,7 +132,7 @@ public class FileDirectoryIndexTests
         var result = FileDirectoryIndex.Resolve(
             json,
             configBaseUrl: null,
-            hostedFiles: ["uso.pdf"],
+            hostedFiles: [new FileDirectoryIndex.HostedFile(Guid.NewGuid(), "uso.pdf")],
             hostedUrlFactory: path => HostedBase + path);
 
         Assert.True(result.IsValid);
@@ -156,7 +156,7 @@ public class FileDirectoryIndexTests
         var result = FileDirectoryIndex.Resolve(
             json,
             configBaseUrl: null,
-            hostedFiles: ["subido.pdf"],
+            hostedFiles: [new FileDirectoryIndex.HostedFile(Guid.NewGuid(), "subido.pdf")],
             hostedUrlFactory: path => HostedBase + path);
 
         Assert.True(result.IsValid);
@@ -297,6 +297,117 @@ public class FileDirectoryIndexTests
 
         Assert.NotNull(value);
         Assert.Contains("a.txt", value);
+    }
+
+    [Fact]
+    public void DosArchivosConElMismoNombreEnCarpetasDistintas_NoSeConfunden()
+    {
+        // Es lo que produce el explorador al subir el mismo nombre a dos
+        // carpetas: cada entrada apunta a SU archivo por id.
+        var logoA = new FileDirectoryIndex.HostedFile(Guid.NewGuid(), "logo.png");
+        var logoB = new FileDirectoryIndex.HostedFile(Guid.NewGuid(), "logo.png");
+
+        var json = $$"""
+        {
+          "files": [
+            { "path": "marca-a/logo.png", "description": "Logo de la marca A", "fileId": "{{logoA.Id}}" },
+            { "path": "marca-b/logo.png", "description": "Logo de la marca B", "fileId": "{{logoB.Id}}" }
+          ]
+        }
+        """;
+
+        var result = FileDirectoryIndex.Resolve(
+            json,
+            configBaseUrl: null,
+            hostedFiles: [logoA, logoB],
+            hostedUrlFactory: path => HostedBase + path);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(logoA.Id, result.Entries.Single(e => e.Folder == "marca-a").SourceFileId);
+        Assert.Equal(logoB.Id, result.Entries.Single(e => e.Folder == "marca-b").SourceFileId);
+    }
+
+    [Fact]
+    public void UnArchivoSubidoManda_SobreLaUrlBase()
+    {
+        // El usuario lo puso ahi con el explorador: gana a la baseUrl del
+        // repositorio externo, que no tiene por que contener ese archivo.
+        var subido = new FileDirectoryIndex.HostedFile(Guid.NewGuid(), "manual.pdf");
+        var json = $$"""
+        {
+          "baseUrl": "https://cdn.ejemplo.com",
+          "files": [
+            { "path": "docs/manual.pdf", "description": "Manual", "fileId": "{{subido.Id}}" }
+          ]
+        }
+        """;
+
+        var result = FileDirectoryIndex.Resolve(
+            json,
+            configBaseUrl: null,
+            hostedFiles: [subido],
+            hostedUrlFactory: path => HostedBase + path);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(FileDirectoryIndex.Sources.Hosted, result.Entries[0].Source);
+        Assert.Equal(HostedBase + "docs/manual.pdf", result.Entries[0].Url);
+    }
+
+    [Fact]
+    public void UnFileIdQueYaNoExiste_CaeALaUrlBase()
+    {
+        // El archivo se borro del nodo: la entrada sigue indexada y se resuelve
+        // por la baseUrl en vez de quedarse sin ruta accesible.
+        var json = """
+        {
+          "baseUrl": "https://cdn.ejemplo.com",
+          "files": [
+            { "path": "docs/manual.pdf", "description": "Manual",
+              "fileId": "99999999-9999-9999-9999-999999999999" }
+          ]
+        }
+        """;
+
+        var result = FileDirectoryIndex.Resolve(json, hostedFiles: []);
+
+        Assert.True(result.IsValid);
+        Assert.Equal("https://cdn.ejemplo.com/docs/manual.pdf", result.Entries[0].Url);
+    }
+
+    [Fact]
+    public void LasCarpetasVaciasDeclaradasSeConservan()
+    {
+        // El explorador guarda las carpetas creadas para que una recien hecha
+        // no desaparezca al recargar por no tener archivos todavia.
+        var json = """
+        {
+          "baseUrl": "https://cdn.ejemplo.com",
+          "folders": ["logos", "logos/secundarios", "vacia"],
+          "files": [ { "path": "logos/a.svg", "description": "a" } ]
+        }
+        """;
+
+        var result = FileDirectoryIndex.Resolve(json);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(["logos", "logos/secundarios", "vacia"], result.Folders);
+    }
+
+    [Fact]
+    public void UnaCarpetaDeclaradaQueSaleDelDirectorio_SeDescarta()
+    {
+        var json = """
+        {
+          "baseUrl": "https://cdn.ejemplo.com",
+          "folders": ["../fuera", "dentro"],
+          "files": [ { "path": "a.txt", "description": "a" } ]
+        }
+        """;
+
+        var result = FileDirectoryIndex.Resolve(json);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(["dentro"], result.Folders);
     }
 
     [Fact]
