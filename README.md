@@ -365,7 +365,8 @@ Handlers actuales:
 - `FileDirectory`: publica un directorio de ficheros en carpetas y subcarpetas y
   emite su indice (descripcion y URL de descarga de cada fichero), no los
   ficheros en si. Las carpetas y las subidas se gestionan desde el explorador
-  del inspector del nodo (ver `docs/architecture.md`).
+  del nodo, disponible tanto en el inspector como en "Editar nodo"
+  (ver `docs/architecture.md`).
 - `Text`: generacion de texto mediante proveedor IA.
 - `Image`: generacion o edicion de imagenes.
 - `Audio`: texto a voz.

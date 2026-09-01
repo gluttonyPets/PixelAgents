@@ -274,6 +274,12 @@ else if (m.ModuleType == "StaticText")
         <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo.</p>
     </div>
 }
+else if (m.ModuleType == "FileDirectory")
+{
+    @* El contenido del directorio es del nodo, no de este modulo de catalogo,
+       asi que lo edita su propia seccion en vez de este bloque. *@
+    <p class="text-muted">El contenido del directorio se configura mas abajo.</p>
+}
 else
 {
     <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>

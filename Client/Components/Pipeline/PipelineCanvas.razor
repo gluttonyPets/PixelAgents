@@ -623,27 +623,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
                             <FileDirectoryEditor ProjectModuleId="@sel.Id"
                                                  Index='@GetModuleConfig(sel.Id, "index")'
-                                                 IndexChanged='@(json => SetModuleConfig(sel.Id, "index", json))' />
-
-                            <div class="inspector-field" style="margin-top: 0.5rem;">
-                                <label>URL base del repositorio (opcional)</label>
-                                <input placeholder="https://cdn.ejemplo.com/marca"
-                                       value="@GetModuleConfig(sel.Id, "baseUrl", "")"
-                                       @onchange="@(e => SetModuleConfig(sel.Id, "baseUrl", e.Value?.ToString() ?? ""))" />
-                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">
-                                    Solo si los archivos ya viven en un repositorio expuesto. Los que subas
-                                    aqui se sirven desde este servidor y no la necesitan.
-                                </p>
-                            </div>
-
-                            <div class="inspector-field">
-                                <label>Formato de salida</label>
-                                <select value="@GetModuleConfig(sel.Id, "format", "markdown")"
-                                        @onchange="@(e => SetModuleConfig(sel.Id, "format", e.Value?.ToString() ?? "markdown"))">
-                                    <option value="markdown">Texto (agrupado por carpetas)</option>
-                                    <option value="json">JSON</option>
-                                </select>
-                            </div>
+                                                 IndexChanged='@(json => SetModuleConfig(sel.Id, "index", json))'
+                                                 BaseUrl='@GetModuleConfig(sel.Id, "baseUrl", "")'
+                                                 BaseUrlChanged='@(v => SetModuleConfig(sel.Id, "baseUrl", v))'
+                                                 Format='@GetModuleConfig(sel.Id, "format", "markdown")'
+                                                 FormatChanged='@(v => SetModuleConfig(sel.Id, "format", v))' />
                         </div>
                     }
 
@@ -1155,6 +1139,28 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                     <legend>Configuracion</legend>
                     <ModuleConfigEditor @ref="_nodeConfigEditor" Module="_editNodeModule" />
                 </fieldset>
+
+                @if (_editNodeProjectModule is { } dirNode && dirNode.ModuleType == "FileDirectory")
+                {
+                    <fieldset class="config-fieldset">
+                        <legend>Directorio de archivos</legend>
+
+                        <p class="text-sm text-muted" style="margin-bottom: 0.5rem;">
+                            <i class="bi bi-info-circle"></i>
+                            El contenido del directorio es de este nodo, no del modulo de catalogo
+                            (que es unico y comun a todos los directorios). Por eso se guarda al
+                            momento y no depende de <strong>Guardar cambios</strong>.
+                        </p>
+
+                        <FileDirectoryEditor ProjectModuleId="@dirNode.Id"
+                                             Index='@GetModuleConfig(dirNode.Id, "index")'
+                                             IndexChanged='@(json => SetModuleConfig(dirNode.Id, "index", json))'
+                                             BaseUrl='@GetModuleConfig(dirNode.Id, "baseUrl", "")'
+                                             BaseUrlChanged='@(v => SetModuleConfig(dirNode.Id, "baseUrl", v))'
+                                             Format='@GetModuleConfig(dirNode.Id, "format", "markdown")'
+                                             FormatChanged='@(v => SetModuleConfig(dirNode.Id, "format", v))' />
+                    </fieldset>
+                }
             </div>
             <div class="modal-footer">
                 <button class="btn btn-sm" @onclick="CloseEditNode" disabled="@_editNodeSaving">Cancelar</button>

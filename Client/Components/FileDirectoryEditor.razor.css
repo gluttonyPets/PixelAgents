@@ -215,3 +215,27 @@
     .fd-explorer { flex-direction: column; }
     .fd-tree { flex: 1 1 auto; max-height: 12rem; border-right: none; border-bottom: 1px solid var(--border-color, #333); }
 }
+
+/* Ajustes del directorio que acompanan al explorador (URL base y formato). */
+
+.fd-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.fd-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.fd-field label {
+    font-size: 0.8rem;
+    opacity: 0.85;
+}
+
+.fd-field p {
+    margin: 0;
+}

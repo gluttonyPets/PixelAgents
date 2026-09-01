@@ -209,6 +209,28 @@
     </div>
 </div>
 
+<div class="fd-settings">
+    <div class="fd-field">
+        <label>URL base del repositorio (opcional)</label>
+        <input placeholder="https://cdn.ejemplo.com/marca"
+               value="@BaseUrl"
+               @onchange="@(e => BaseUrlChanged.InvokeAsync(e.Value?.ToString() ?? ""))" />
+        <p class="text-sm text-muted">
+            Solo si los archivos ya viven en un repositorio expuesto. Los que subas
+            aqui se sirven desde este servidor y no la necesitan.
+        </p>
+    </div>
+
+    <div class="fd-field">
+        <label>Formato de salida</label>
+        <select value="@(string.IsNullOrWhiteSpace(Format) ? "markdown" : Format)"
+                @onchange="@(e => FormatChanged.InvokeAsync(e.Value?.ToString() ?? "markdown"))">
+            <option value="markdown">Texto (agrupado por carpetas)</option>
+            <option value="json">JSON</option>
+        </select>
+    </div>
+</div>
+
 @code {
     /// <summary>Nodo del pipeline al que se suben los archivos.</summary>
     [Parameter] public Guid? ProjectModuleId { get; set; }
@@ -218,6 +240,14 @@
 
     /// <summary>Notifica el indice reconstruido tras cada cambio.</summary>
     [Parameter] public EventCallback<string> IndexChanged { get; set; }
+
+    /// <summary>URL base del repositorio externo, si el directorio ya vive en uno.</summary>
+    [Parameter] public string? BaseUrl { get; set; }
+    [Parameter] public EventCallback<string> BaseUrlChanged { get; set; }
+
+    /// <summary>Formato con el que el modulo emite el indice: markdown o json.</summary>
+    [Parameter] public string? Format { get; set; }
+    [Parameter] public EventCallback<string> FormatChanged { get; set; }
 
     private const long MaxUploadFileSize = 512L * 1024 * 1024;
 

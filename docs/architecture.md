@@ -197,11 +197,19 @@ todos los directorios): `index` (JSON), `baseUrl` (opcional) y `format`
 
 ### Explorador del inspector
 
-El indice no se escribe a mano: el inspector del nodo monta un explorador
-(`Client/Components/FileDirectoryEditor.razor`) con el arbol de carpetas a la
-izquierda y el contenido a la derecha. Permite crear carpetas y subcarpetas,
-renombrarlas (arrastra las rutas de todo lo que cuelga), subir ficheros a la
-carpeta seleccionada, describirlos, moverlos entre carpetas y eliminarlos.
+El indice no se escribe a mano: `Client/Components/FileDirectoryEditor.razor`
+monta un explorador con el arbol de carpetas a la izquierda y el contenido a la
+derecha, mas la URL base y el formato de salida. Permite crear carpetas y
+subcarpetas, renombrarlas (arrastra las rutas de todo lo que cuelga), subir
+ficheros a la carpeta seleccionada, describirlos, moverlos entre carpetas y
+eliminarlos.
+
+Aparece en dos sitios, ambos apuntando al mismo nodo, asi que se mantienen
+sincronizados: la seccion "Directorio de archivos" del inspector y el popup
+"Editar nodo". En el popup se guarda al momento y no depende de su boton
+`Guardar cambios`, que escribe en el modulo de catalogo: el contenido del
+directorio es del nodo, y el modulo de catalogo es unico y comun a todos los
+directorios de todos los proyectos.
 
 Todo lo que hace se serializa al mismo JSON que valida el servidor, y se guarda
 en la configuracion del nodo por la via habitual del grafo (`SetModuleConfig` ->
