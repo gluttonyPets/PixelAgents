@@ -75,8 +75,9 @@ public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
 public record ReassignProjectModuleRequest(Guid AiModuleId);
 
 // ── Project ──
-public record CreateProjectRequest(string Name, string? Description, string? Context);
-public record UpdateProjectRequest(string Name, string? Description, string? Context);
+public record CreateProjectRequest(string Name, string? Description, string? Context, bool IsTestProject = false);
+// IsTestProject es opcional: null deja la marca de proyecto de prueba como estaba.
+public record UpdateProjectRequest(string Name, string? Description, string? Context, bool? IsTestProject = null);
 public record SetProjectPinRequest(bool IsPinned);
 public record UpcomingRunResponse(
     int Index, DateTime RunAtUtc, Guid? PlannedPromptId, string? PlannedPromptContent);
@@ -84,7 +85,7 @@ public record UpcomingRunsResponse(
     bool HasSchedule, bool IsEnabled, bool UsesPromptQueue,
     string? CronExpression, string? TimeZone,
     List<UpcomingRunResponse> Runs);
-public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false);
+public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false, bool IsTestProject = false);
 public record ProjectDetailResponse(
     Guid Id, string Name, string? Description, DateTime CreatedAt, DateTime UpdatedAt,
     List<ProjectModuleResponse> Modules,

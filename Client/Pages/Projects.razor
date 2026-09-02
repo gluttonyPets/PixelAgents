@@ -14,70 +14,89 @@
 
 @if (_projects.Count > 0)
 {
-    <div class="project-grid">
-        @foreach (var p in _projects)
+    @foreach (var grp in BuildSections())
+    {
+        @if (grp.Title is not null)
         {
-            var isEditing = _editingId == p.Id;
-            <div class="project-card @(p.IsPinned ? "is-pinned" : "")">
-                @if (isEditing)
-                {
-                    <div class="project-card-edit">
-                        <div class="form-group">
-                            <label>Nombre</label>
-                            <input type="text" @bind="_editName" />
-                        </div>
-                        <div class="form-group">
-                            <label>Descripcion</label>
-                            <input type="text" @bind="_editDesc" />
-                        </div>
-                        <div class="form-group">
-                            <label>Contexto</label>
-                            <textarea @bind="_editContext" rows="2"></textarea>
-                        </div>
-                        <div class="project-card-edit-actions">
-                            <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
-                            <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    <div class="project-card-body" @onclick="() => GoTo(p.Id)">
-                        <div class="project-card-avatar">@(p.Name.Length > 0 ? p.Name[0].ToString().ToUpper() : "P")</div>
-                        <div class="project-card-title">
-                            @if (p.IsPinned)
-                            {
-                                <span class="project-card-pin-badge" title="Proyecto fijado">&#x1F4CC;</span>
-                            }
-                            @p.Name
-                        </div>
-                        <div class="project-card-desc">@(p.Description ?? "Sin descripción")</div>
-                        @if (!string.IsNullOrEmpty(p.Context))
-                        {
-                            <div class="project-card-context">@Truncate(p.Context, 90)</div>
-                        }
-                        <div class="project-card-meta">
-                            <span title="Creado el @p.CreatedAt.ToString("dd MMM yyyy")">
-                                &#x1F4C5; @p.CreatedAt.ToString("dd MMM yyyy")
-                            </span>
-                            <span title="Última actualización">
-                                &#x1F504; @RelativeTime(p.UpdatedAt)
-                            </span>
-                        </div>
-                    </div>
-                    <div class="project-card-actions">
-                        <button class="project-action-btn action-pin @(p.IsPinned ? "is-pinned" : "")"
-                                @onclick="() => TogglePin(p)"
-                                aria-pressed="@p.IsPinned.ToString().ToLowerInvariant()"
-                                title="@(p.IsPinned ? "Desfijar proyecto" : "Fijar proyecto")">&#x1F4CC;</button>
-                        <button class="project-action-btn action-edit" @onclick="() => StartEdit(p)" title="Editar">&#x270E;</button>
-                        <button class="project-action-btn action-duplicate" @onclick="() => Duplicate(p.Id)" title="Duplicar">&#x2398;</button>
-                        <button class="project-action-btn action-delete" @onclick="() => Delete(p.Id)" title="Eliminar">&#x2715;</button>
-                    </div>
-                }
+            <div class="projects-section-header">
+                <h3>@grp.Title</h3>
+                <span class="projects-section-count">@grp.Projects.Count</span>
             </div>
         }
-    </div>
+
+        <div class="project-grid @(grp.IsTest ? "is-test-section" : "")">
+            @foreach (var p in grp.Projects)
+            {
+                var isEditing = _editingId == p.Id;
+                <div class="project-card @(p.IsPinned ? "is-pinned" : "") @(p.IsTestProject ? "is-test" : "")">
+                    @if (isEditing)
+                    {
+                        <div class="project-card-edit">
+                            <div class="form-group">
+                                <label>Nombre</label>
+                                <input type="text" @bind="_editName" />
+                            </div>
+                            <div class="form-group">
+                                <label>Descripcion</label>
+                                <input type="text" @bind="_editDesc" />
+                            </div>
+                            <div class="form-group">
+                                <label>Contexto</label>
+                                <textarea @bind="_editContext" rows="2"></textarea>
+                            </div>
+                            <label class="project-test-toggle" title="Los proyectos de prueba se agrupan en una sección aparte al final del listado">
+                                <input type="checkbox" @bind="_editIsTest" />
+                                <span>Proyecto de prueba</span>
+                            </label>
+                            <div class="project-card-edit-actions">
+                                <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
+                                <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="project-card-body" @onclick="() => GoTo(p.Id)">
+                            <div class="project-card-avatar">@(p.Name.Length > 0 ? p.Name[0].ToString().ToUpper() : "P")</div>
+                            <div class="project-card-title">
+                                @if (p.IsPinned)
+                                {
+                                    <span class="project-card-pin-badge" title="Proyecto fijado">&#x1F4CC;</span>
+                                }
+                                @p.Name
+                                @if (p.IsTestProject)
+                                {
+                                    <span class="project-card-test-badge" title="Proyecto de prueba">prueba</span>
+                                }
+                            </div>
+                            <div class="project-card-desc">@(p.Description ?? "Sin descripción")</div>
+                            @if (!string.IsNullOrEmpty(p.Context))
+                            {
+                                <div class="project-card-context">@Truncate(p.Context, 90)</div>
+                            }
+                            <div class="project-card-meta">
+                                <span title="Creado el @p.CreatedAt.ToString("dd MMM yyyy")">
+                                    &#x1F4C5; @p.CreatedAt.ToString("dd MMM yyyy")
+                                </span>
+                                <span title="Última actualización">
+                                    &#x1F504; @RelativeTime(p.UpdatedAt)
+                                </span>
+                            </div>
+                        </div>
+                        <div class="project-card-actions">
+                            <button class="project-action-btn action-pin @(p.IsPinned ? "is-pinned" : "")"
+                                    @onclick="() => TogglePin(p)"
+                                    aria-pressed="@p.IsPinned.ToString().ToLowerInvariant()"
+                                    title="@(p.IsPinned ? "Desfijar proyecto" : "Fijar proyecto")">&#x1F4CC;</button>
+                            <button class="project-action-btn action-edit" @onclick="() => StartEdit(p)" title="Editar">&#x270E;</button>
+                            <button class="project-action-btn action-duplicate" @onclick="() => Duplicate(p.Id)" title="Duplicar">&#x2398;</button>
+                            <button class="project-action-btn action-delete" @onclick="() => Delete(p.Id)" title="Eliminar">&#x2715;</button>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
 }
 else if (!_loading)
 {
@@ -116,6 +135,13 @@ else if (!_loading)
                     <textarea @bind="_context" rows="4" placeholder="Ej: Este proyecto genera contenido para una marca de mascotas llamada 'PetWorld'. El tono debe ser amigable, cercano y dirigido a dueños de perros y gatos. Las imágenes deben incluir mascotas felices."></textarea>
                     <span class="text-sm text-muted">Este contexto se inyecta automáticamente en todos los módulos del proyecto.</span>
                 </div>
+                <div class="form-group">
+                    <label class="project-test-toggle">
+                        <input type="checkbox" @bind="_isTestProject" />
+                        <span>Proyecto de prueba</span>
+                    </label>
+                    <span class="text-sm text-muted">Se agrupa en la sección "Proyectos de prueba", al final del listado.</span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn" @onclick="CloseCreateModal">Cancelar</button>
@@ -137,12 +163,31 @@ else if (!_loading)
     private string _name = "";
     private string _desc = "";
     private string _context = "";
+    private bool _isTestProject;
 
     // Edit state
     private Guid? _editingId;
     private string _editName = "";
     private string _editDesc = "";
     private string _editContext = "";
+    private bool _editIsTest;
+
+    /// <summary>Un bloque del listado: los proyectos reales arriba (sin titulo) y los de prueba
+    /// agrupados debajo. Solo se devuelven las secciones que tienen proyectos.</summary>
+    private sealed record ProjectSection(string? Title, bool IsTest, List<ProjectResponse> Projects);
+
+    private List<ProjectSection> BuildSections()
+    {
+        var sections = new List<ProjectSection>();
+
+        var real = _projects.Where(p => !p.IsTestProject).ToList();
+        if (real.Count > 0) sections.Add(new ProjectSection(null, false, real));
+
+        var tests = _projects.Where(p => p.IsTestProject).ToList();
+        if (tests.Count > 0) sections.Add(new ProjectSection("Proyectos de prueba", true, tests));
+
+        return sections;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -162,6 +207,7 @@ else if (!_loading)
         _name = "";
         _desc = "";
         _context = "";
+        _isTestProject = false;
         _showCreateModal = true;
     }
 
@@ -169,7 +215,7 @@ else if (!_loading)
     {
         _showCreateModal = false;
         _error = null;
-        _name = ""; _desc = ""; _context = "";
+        _name = ""; _desc = ""; _context = ""; _isTestProject = false;
     }
 
     private async Task Create()
@@ -186,11 +232,12 @@ else if (!_loading)
             var (ok, error) = await Api.CreateProjectAsync(new CreateProjectRequest(
                 _name.Trim(),
                 string.IsNullOrWhiteSpace(_desc) ? null : _desc.Trim(),
-                string.IsNullOrWhiteSpace(_context) ? null : _context.Trim()));
+                string.IsNullOrWhiteSpace(_context) ? null : _context.Trim(),
+                _isTestProject));
             if (ok)
             {
                 _showCreateModal = false;
-                _name = ""; _desc = ""; _context = "";
+                _name = ""; _desc = ""; _context = ""; _isTestProject = false;
                 await Load();
             }
             else _error = error;
@@ -232,9 +279,11 @@ else if (!_loading)
         }
     }
 
-    /// <summary>Mismo criterio que el backend: fijados primero, luego por fecha de creacion.</summary>
+    /// <summary>Mismo criterio que el backend: los de prueba al final, dentro de cada grupo
+    /// los fijados primero y luego por fecha de creacion.</summary>
     private void SortProjects() => _projects = _projects
-        .OrderByDescending(x => x.IsPinned)
+        .OrderBy(x => x.IsTestProject)
+        .ThenByDescending(x => x.IsPinned)
         .ThenByDescending(x => x.CreatedAt)
         .ToList();
 
@@ -244,6 +293,7 @@ else if (!_loading)
         _editName = p.Name;
         _editDesc = p.Description ?? "";
         _editContext = p.Context ?? "";
+        _editIsTest = p.IsTestProject;
     }
 
     private void CancelEdit() => _editingId = null;
@@ -256,7 +306,8 @@ else if (!_loading)
             var req = new UpdateProjectRequest(
                 _editName,
                 string.IsNullOrWhiteSpace(_editDesc) ? null : _editDesc,
-                string.IsNullOrWhiteSpace(_editContext) ? null : _editContext);
+                string.IsNullOrWhiteSpace(_editContext) ? null : _editContext,
+                _editIsTest);
             var (ok, _) = await Api.UpdateProjectAsync(_editingId.Value, req);
             if (ok) { _editingId = null; await Load(); }
         }
