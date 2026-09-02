@@ -11,6 +11,10 @@ namespace Server.Models
         /// <summary>Proyecto fijado: se muestra primero en el listado de /projects.</summary>
         public bool IsPinned { get; set; }
 
+        /// <summary>Proyecto de prueba: se agrupa en una seccion aparte al final de /projects
+        /// para no mezclar los experimentos con los proyectos reales.</summary>
+        public bool IsTestProject { get; set; }
+
         // ── Aprendizaje: modelo "analista" que procesa el feedback de abortos ──
         /// <summary>Si está activo, cada abort con comentario dispara el analista de aprendizaje.
         /// Activado por defecto: sin configurar nada, el aprendizaje funciona con un modelo por defecto.</summary>

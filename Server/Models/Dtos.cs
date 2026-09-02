@@ -30,11 +30,13 @@ namespace Server.Models
     public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
 
     // ── Project ──
-    public record CreateProjectRequest(string Name, string? Description, string? Context);
-    public record UpdateProjectRequest(string Name, string? Description, string? Context);
+    public record CreateProjectRequest(string Name, string? Description, string? Context, bool IsTestProject = false);
+    // IsTestProject es opcional: null deja la marca de proyecto de prueba como estaba,
+    // asi las pantallas que solo editan nombre/contexto no la pisan sin querer.
+    public record UpdateProjectRequest(string Name, string? Description, string? Context, bool? IsTestProject = null);
     public record GraphLayoutRequest(string? GraphLayout);
     public record SetProjectPinRequest(bool IsPinned);
-    public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false);
+    public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false, bool IsTestProject = false);
     public record ProjectDetailResponse(
         Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt,
         List<ProjectModuleResponse> Modules, string? GraphLayout = null,
