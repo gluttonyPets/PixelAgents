@@ -53,13 +53,31 @@ body {
 }
 
 .sidebar a {
-    display: block;
+    /* Flex para alinear el icono con la etiqueta; el ancho fijo del icono deja
+       los textos a la misma sangria aunque los glifos midan distinto. */
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
     padding: 0.6rem 1rem;
     color: var(--text-muted);
     text-decoration: none;
     font-size: 0.9rem;
     transition: all 0.15s;
     border-left: 3px solid transparent;
+}
+
+.sidebar a .bi {
+    flex: 0 0 1.1rem;
+    width: 1.1rem;
+    text-align: center;
+    font-size: 1rem;
+    opacity: 0.85;
+}
+
+.sidebar a:hover .bi,
+.sidebar a.active .bi {
+    opacity: 1;
+    color: var(--accent);
 }
 
 .sidebar a:hover,
