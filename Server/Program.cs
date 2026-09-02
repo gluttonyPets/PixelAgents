@@ -951,9 +951,11 @@ app.MapGet("/api/project-modules/{projectModuleId}/files", async (
     var files = await db.ModuleFiles
         .Where(f => f.ProjectModuleId == projectModuleId)
         .OrderByDescending(f => f.CreatedAt)
+        // El null final es PublicUrl: la calcula solo la biblioteca. Va explicito
+        // porque EF no admite argumentos opcionales dentro de la proyeccion.
         .Select(f => new ModuleFileResponse(f.Id, f.ProjectModuleId, f.ProjectModule.AiModule.Name,
             f.ProjectModule.ProjectId, f.ProjectModule.Project.Name, f.ProjectModule.StepName,
-            f.FileName, f.ContentType, f.FileSize, f.CreatedAt))
+            f.FileName, f.ContentType, f.FileSize, f.CreatedAt, null))
         .ToListAsync();
 
     return Results.Ok(files);
@@ -1000,21 +1002,43 @@ app.MapGet("/api/project-modules/{projectModuleId:guid}/directory-index", async 
 
 app.MapGet("/api/module-files", async (
     HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IConfiguration configuration) =>
 {
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
+    // Se resuelve el tenant a mano (y no con ResolveTenantDb) porque para armar
+    // las URL publicas hace falta su nombre, no solo la conexion.
+    var user = await um.GetUserAsync(ctx.User);
+    if (user is null) return Results.Unauthorized();
+
+    var claims = await um.GetClaimsAsync(user);
+    var tenantDbName = claims.FirstOrDefault(c => c.Type == "db_name")?.Value;
+    if (tenantDbName is null) return Results.Unauthorized();
+
+    await using var db = factory.Create(tenantDbName);
 
     var files = await db.ModuleFiles
         .Include(f => f.ProjectModule).ThenInclude(p => p.AiModule)
         .Include(f => f.ProjectModule).ThenInclude(p => p.Project)
         .OrderByDescending(f => f.CreatedAt)
-        .Select(f => new ModuleFileResponse(f.Id, f.ProjectModuleId, f.ProjectModule.AiModule.Name,
-            f.ProjectModule.ProjectId, f.ProjectModule.Project.Name, f.ProjectModule.StepName,
-            f.FileName, f.ContentType, f.FileSize, f.CreatedAt))
         .ToListAsync();
 
-    return Results.Ok(files);
+    // De los nodos Directorio, la URL con la que exponemos cada fichero. El
+    // resto de ficheros no se publican por esta via y se quedan sin URL.
+    var publicBaseUrl = (configuration["BaseUrl"] ?? configuration["AllowedOrigin"] ?? "").TrimEnd('/');
+    var publicUrls = await FileDirectoryPublisher.BuildHostedUrlsAsync(
+        db,
+        files.Select(f => f.ProjectModuleId).Distinct().ToList(),
+        tenantDbName,
+        publicBaseUrl);
+
+    var response = files
+        .Select(f => new ModuleFileResponse(f.Id, f.ProjectModuleId, f.ProjectModule.AiModule.Name,
+            f.ProjectModule.ProjectId, f.ProjectModule.Project.Name, f.ProjectModule.StepName,
+            f.FileName, f.ContentType, f.FileSize, f.CreatedAt,
+            publicUrls.GetValueOrDefault(f.Id)))
+        .ToList();
+
+    return Results.Ok(response);
 }).RequireAuthorization();
 
 app.MapGet("/api/module-files/{fileId}/download", async (
