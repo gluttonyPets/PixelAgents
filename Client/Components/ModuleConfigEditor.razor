@@ -101,6 +101,14 @@ else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
                 </select>
             </div>
         }
+        <div class="form-group">
+            <label>Maximo de imagenes de referencia</label>
+            <input type="number" min="0" max="16" @bind="_editMaxReferenceImages" />
+            <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                Imagenes del Directorio que el texto de entrada cite por URL y se bajaran
+                como referencia. 0 las desactiva.
+            </p>
+        </div>
     </div>
 }
 else if (m.ModuleType == "Image" && m.ProviderType == "Google")
@@ -405,6 +413,7 @@ else
     private string _editLeoPresetStyle = "DYNAMIC";
     private string _editStaticTextContent = "";
     private string _editImagePrompt = "";
+    private int _editMaxReferenceImages = 6;
     private string _editGeminiAspectRatio = "1:1";
     private int _editGeminiImageCount = 1;
     private int _editGrokImageCount = 1;
@@ -455,6 +464,7 @@ else
         _editGeminiImageCount = 1;
         _editStaticTextContent = "";
         _editImagePrompt = "";
+        _editMaxReferenceImages = 6;
 
         if (string.IsNullOrWhiteSpace(module.Configuration)) return;
 
@@ -484,6 +494,8 @@ else
             if (root.TryGetProperty("designType", out var cdt)) _editCanvaDesignType = cdt.GetString() ?? "doc";
             if (root.TryGetProperty("content", out var stContent)) _editStaticTextContent = stContent.GetString() ?? "";
             if (root.TryGetProperty("imagePrompt", out var imgP)) _editImagePrompt = imgP.GetString() ?? "";
+            if (root.TryGetProperty("maxReferenceImages", out var mri) && mri.TryGetInt32(out var mriVal))
+                _editMaxReferenceImages = mriVal;
         }
         catch { }
     }
@@ -573,6 +585,8 @@ else
         {
             if (!string.IsNullOrWhiteSpace(_editImagePrompt))
                 parts.Add($"\"imagePrompt\":{System.Text.Json.JsonSerializer.Serialize(_editImagePrompt)}");
+            if (_editMaxReferenceImages != 6)
+                parts.Add($"\"maxReferenceImages\":{_editMaxReferenceImages}");
         }
 
         return parts.Count > 0 ? "{" + string.Join(",", parts) + "}" : null;

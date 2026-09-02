@@ -297,14 +297,21 @@ namespace Server.Services.Ai
 
             for (var loop = 0; loop < dalle3LoopTotal; loop++)
             {
-                if (context.InputFiles is { Count: > 0 } && isGptImage && sizeStr == "auto")
+                // La llamada directa (multipart) es la unica que admite varias
+                // imagenes de referencia, asi que se usa siempre que haya mas de
+                // una, ademas de cuando el tamano es "auto" y hay que deducirlo.
+                if (context.InputFiles is { Count: > 0 } && isGptImage
+                    && (sizeStr == "auto" || context.InputFiles.Count > 1))
                 {
-                    var bestSize = DetectBestGptImageSize(context.InputFiles[0]);
+                    var editSize = sizeStr == "auto"
+                        ? DetectBestGptImageSize(context.InputFiles[0])
+                        : sizeStr;
                     _log?.LogInformation(
-                        "OpenAI image POST /v1/images/edits model={Model} size={Size} (auto->{Detected}) image_bytes={Bytes} prompt_chars={Chars} n={N}",
-                        context.ModelName, sizeStr, bestSize, context.InputFiles[0].Length, prompt.Length, batchN);
+                        "OpenAI image POST /v1/images/edits model={Model} size={Size} (->{Resolved}) images={Count} image_bytes={Bytes} prompt_chars={Chars} n={N}",
+                        context.ModelName, sizeStr, editSize, context.InputFiles.Count,
+                        context.InputFiles.Sum(f => (long)f.Length), prompt.Length, batchN);
                     var (editBytes, editPrompt) = await CallImageEditRawAsync(
-                        context.ApiKey, context.ModelName, context.InputFiles[0], prompt, context.Configuration, bestSize, batchN, ct);
+                        context.ApiKey, context.ModelName, context.InputFiles, prompt, context.Configuration, editSize, batchN, ct);
                     images.AddRange(editBytes);
                     if (string.IsNullOrEmpty(revisedPrompt)) revisedPrompt = editPrompt;
                 }
@@ -544,7 +551,7 @@ namespace Server.Services.Ai
         /// passing an explicit size to preserve aspect ratio from the input image.
         /// </summary>
         private static async Task<(List<byte[]> Images, string RevisedPrompt)> CallImageEditRawAsync(
-            string apiKey, string model, byte[] inputImage, string prompt,
+            string apiKey, string model, IReadOnlyList<byte[]> inputImages, string prompt,
             IDictionary<string, object> config, string sizeOverride = "auto", int n = 1, CancellationToken ct = default)
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
@@ -562,9 +569,14 @@ namespace Server.Services.Ai
             config.TryGetValue("quality", out var q);
             form.Add(new StringContent(GptImageOptions.NormalizeQuality(q as string)), "quality");
 
-            var imageContent = new ByteArrayContent(inputImage);
-            imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
-            form.Add(imageContent, "image[]", "input.png");
+            // "image[]" admite varias referencias: gpt-image las usa todas como
+            // contexto visual, no solo la primera.
+            for (var i = 0; i < inputImages.Count; i++)
+            {
+                var imageContent = new ByteArrayContent(inputImages[i]);
+                imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+                form.Add(imageContent, "image[]", $"input{i + 1}.png");
+            }
 
             var response = await http.PostAsync("https://api.openai.com/v1/images/edits", form, ct);
             var json = await response.Content.ReadAsStringAsync(ct);
