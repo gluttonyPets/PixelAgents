@@ -17,6 +17,10 @@
             <button class="toolbar-btn" @onclick="ToggleSubProjectPanel" title="Insertar un proyecto entero como modulo">
                 <span class="toolbar-btn-icon">&#x2795;</span> Sub-proyecto
             </button>
+            <button class="toolbar-btn" @onclick="UndoLast" disabled="@(_undoStack.Count == 0)"
+                    title="@(_undoStack.Count == 0 ? "Nada que deshacer" : $"Deshacer {_undoStack[^1].Description} (Ctrl+Z)")">
+                <span class="toolbar-btn-icon"><i class="bi bi-arrow-counterclockwise"></i></span> Deshacer
+            </button>
             @if (PlannerPanel is not null)
             {
                 <button class="toolbar-btn @(_showPlannerPanel ? "is-active" : "")"
@@ -26,6 +30,17 @@
                 </button>
             }
         </div>
+
+        @* ── Aviso de borrado, con el margen para arrepentirse ── *@
+        @if (_undoToast is not null)
+        {
+            <div class="undo-toast">
+                <i class="bi bi-trash"></i>
+                <span>@_undoToast</span>
+                <button class="btn btn-sm btn-primary" @onclick="UndoLast">Deshacer</button>
+                <button class="node-btn" title="Descartar el aviso" @onclick="DismissUndoToast">&#x2715;</button>
+            </div>
+        }
 
         @* ── Panel flotante del planificador ── *@
         @if (_showPlannerPanel && PlannerPanel is not null)
@@ -1253,6 +1268,57 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         ("Google", "gemini-2.5-flash", "Google - gemini 2.5 flash"),
     ];
     private Dictionary<Guid, Dictionary<string, string>> _moduleConfigs = new();
+
+    // ── Deshacer ──
+    //
+    // Solo cubre lo que se pierde por accidente: borrar un nodo y borrar o crear
+    // una conexion. Mover nodos no entra, porque cada arrastre llenaria la pila
+    // y taparia justo lo que interesa poder recuperar.
+    //
+    // El borrado de un nodo no se manda al servidor de inmediato: el nodo se
+    // oculta del canvas y la llamada real espera un margen. Mientras espera, no
+    // se ha destruido nada, asi que deshacer lo devuelve tal cual estaba (con su
+    // configuracion, sus archivos y sus conexiones). Esa es la razon de todo el
+    // aplazamiento: recrear un nodo despues de borrarlo daria otro id y perderia
+    // los archivos subidos.
+
+    // NodeId identifica la entrada del borrado de un nodo: al confirmarse hay que
+    // sacarla de la pila, y hacerlo por el texto fallaria con dos nodos homonimos.
+    private sealed record UndoStep(string Description, Func<Task> Undo, Guid? NodeId = null);
+
+    /// <summary>Un borrado de nodo pendiente de confirmarse contra el servidor.</summary>
+    private sealed record PendingNodeDelete(
+        Guid ModuleId,
+        string Name,
+        List<ConnectionEntry> Connections,
+        (double X, double Y)? Position,
+        CancellationTokenSource Cts);
+
+    private const int UndoStackLimit = 25;
+
+    /// <summary>Margen antes de confirmar el borrado de un nodo, en segundos.</summary>
+    private const int PendingDeleteSeconds = 12;
+
+    private readonly List<UndoStep> _undoStack = [];
+    private PendingNodeDelete? _pendingDelete;
+
+    /// <summary>Nodos borrados a la espera de confirmarse: siguen en Modules pero no se pintan.</summary>
+    private readonly HashSet<Guid> _hiddenModuleIds = [];
+
+    /// <summary>Evita que confirmar un borrado se reentre desde el guardado del grafo.</summary>
+    private bool _committingDelete;
+
+    private string? _undoToast;
+
+    /// <summary>Nodos que se pintan: todos menos los borrados aun sin confirmar.</summary>
+    private IEnumerable<ProjectModuleResponse> VisibleModules =>
+        _hiddenModuleIds.Count == 0 ? Modules : Modules.Where(m => !_hiddenModuleIds.Contains(m.Id));
+
+    private void PushUndo(string description, Func<Task> undo, Guid? nodeId = null)
+    {
+        _undoStack.Add(new UndoStep(description, undo, nodeId));
+        if (_undoStack.Count > UndoStackLimit) _undoStack.RemoveAt(0);
+    }
     private bool _lastExecuting;
 
     // Shopify blog picker (config del nodo ShopifyBlog)
@@ -1493,7 +1559,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
         // Add all nodes using positions from DB
         int idx = 0;
-        foreach (var pm in Modules)
+        foreach (var pm in VisibleModules)
         {
             var sceneCount = GetSceneCount(pm.Id);
             var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount, pm.OrchestratorOutputs, GetTemplateVars(pm.Id), pm.ModelName);
@@ -1599,7 +1665,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         var statusMap = StepStatuses.ToDictionary(s => s.ProjectModuleId, s => s.Status);
         Guid? runningModuleId = null;
 
-        foreach (var pm in Modules)
+        foreach (var pm in VisibleModules)
         {
             var status = statusMap.GetValueOrDefault(pm.Id, "idle");
             var state = status switch
@@ -1839,15 +1905,138 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         _selectedModuleId = null;
     }
 
+    /// <summary>
+    /// Quita el nodo del canvas, pero todavia no del servidor: se guarda lo que
+    /// hacia falta para devolverlo (sus conexiones y su posicion) y la llamada
+    /// real se confirma pasado <see cref="PendingDeleteSeconds"/> segundos, o
+    /// antes si el usuario hace cualquier otra cosa que toque el grafo.
+    ///
+    /// Mientras tanto no se guarda nada: si se recarga la pagina en ese hueco,
+    /// el nodo sigue intacto con sus conexiones, que es el fallo mas benigno
+    /// posible para algo que se ha borrado sin querer.
+    /// </summary>
     private async Task RequestDeleteNode(Guid id)
     {
+        // Solo un borrado en el aire a la vez: el anterior se cierra ya.
+        await CommitPendingDeleteAsync();
+
+        var node = Modules.FirstOrDefault(m => m.Id == id);
+        var name = node?.StepName ?? node?.AiModuleName ?? "Nodo";
+
+        var removedConnections = _connections
+            .Where(c => c.FromModuleId == id || c.ToModuleId == id)
+            .ToList();
+        var position = _positions.TryGetValue(id, out var pos) ? pos : ((double, double)?)null;
+
+        // Un guardado con retardo en vuelo persistiria el grafo ya sin estas
+        // conexiones, y entonces deshacer dejaria de cuadrar con el servidor.
+        _saveDebounce?.Cancel();
+
         _connections.RemoveAll(c => c.FromModuleId == id || c.ToModuleId == id);
         _positions.Remove(id);
         if (_selectedModuleId == id) _selectedModuleId = null;
-        await JS.InvokeVoidAsync("pipelineEditor.removeNodeByModuleId", id.ToString());
-        await OnRemoveModule.InvokeAsync(id);
+        _hiddenModuleIds.Add(id);
+
+        var cts = new CancellationTokenSource();
+        _pendingDelete = new PendingNodeDelete(id, name, removedConnections, position, cts);
+
+        PushUndo($"eliminar \"{name}\"", () => UndoNodeDelete(id), id);
+        _undoToast = $"Nodo \"{name}\" eliminado.";
+
+        await RebuildDrawflow();
+        StateHasChanged();
+
+        _ = CommitPendingDeleteAfterDelayAsync(cts.Token);
+    }
+
+    private async Task CommitPendingDeleteAfterDelayAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(PendingDeleteSeconds), token);
+        }
+        catch (TaskCanceledException) { return; }
+
+        if (token.IsCancellationRequested) return;
+        await InvokeAsync(CommitPendingDeleteAsync);
+    }
+
+    /// <summary>
+    /// Manda al servidor el borrado que estaba en el aire. A partir de aqui el
+    /// nodo ya no se puede recuperar, asi que su entrada sale de la pila.
+    /// </summary>
+    private async Task CommitPendingDeleteAsync()
+    {
+        if (_pendingDelete is not { } pending || _committingDelete) return;
+
+        _committingDelete = true;
+        try
+        {
+            pending.Cts.Cancel();
+            _pendingDelete = null;
+            _undoToast = null;
+            _undoStack.RemoveAll(step => step.NodeId == pending.ModuleId);
+
+            await OnRemoveModule.InvokeAsync(pending.ModuleId);
+            _hiddenModuleIds.Remove(pending.ModuleId);
+
+            // Ahora si se persiste el grafo sin sus conexiones.
+            await AutoSaveGraph();
+        }
+        finally
+        {
+            _committingDelete = false;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Devuelve el nodo al canvas. No hace falta tocar el servidor porque el
+    /// borrado nunca llego a salir; por lo mismo tampoco hay que volver a
+    /// guardar el grafo, que no se habia modificado.
+    /// </summary>
+    private async Task UndoNodeDelete(Guid id)
+    {
+        if (_pendingDelete is not { } pending || pending.ModuleId != id) return;
+
+        pending.Cts.Cancel();
+        _pendingDelete = null;
+        _undoToast = null;
+
+        _hiddenModuleIds.Remove(id);
+        if (pending.Position is { } pos) _positions[id] = pos;
+        foreach (var conn in pending.Connections)
+        {
+            if (!_connections.Any(c => c.FromModuleId == conn.FromModuleId && c.FromPort == conn.FromPort
+                                       && c.ToModuleId == conn.ToModuleId && c.ToPort == conn.ToPort))
+                _connections.Add(conn);
+        }
+
+        _selectedModuleId = id;
+        await RebuildDrawflow();
+
+        // Se vuelve a guardar por si algun guardado anterior llego a salir: asi
+        // el servidor termina viendo el grafo restaurado, no uno a medias.
         await NotifyGraphChanged();
     }
+
+    /// <summary>Deshace la ultima accion registrada.</summary>
+    private async Task UndoLast()
+    {
+        if (_undoStack.Count == 0) return;
+
+        var step = _undoStack[^1];
+        _undoStack.RemoveAt(_undoStack.Count - 1);
+        await step.Undo();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnUndoShortcut() => await UndoLast();
+
+    /// <summary>Descarta el aviso sin confirmar ni deshacer: el borrado sigue su curso.</summary>
+    private void DismissUndoToast() => _undoToast = null;
 
     // ── Popup "Editar nodo" ──
 
@@ -2123,6 +2312,10 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
     private async Task AutoSaveGraph()
     {
+        // Guardar el grafo con un borrado a medias dejaria el canvas y la base
+        // de datos contando cosas distintas, asi que el borrado se cierra antes.
+        if (!_committingDelete) await CommitPendingDeleteAsync();
+
         Console.WriteLine($"[PipelineCanvas] AutoSaveGraph: saving {_connections.Count} connections");
         _error = null;
         var positions = _positions.Select(p => new NodePositionEntry(p.Key, p.Value.X, p.Value.Y)).ToList();
@@ -2178,9 +2371,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         }
 
         // Remove existing connection to same input port ONLY if port doesn't allow multiple
+        var replacedConnections = new List<ConnectionEntry>();
         if (!toPortDef.AllowMultiple)
         {
             var existingConns = _connections.Where(c => c.ToModuleId == toId && c.ToPort == toPort).ToList();
+            replacedConnections.AddRange(existingConns);
             foreach (var ec in existingConns)
             {
                 await JS.InvokeVoidAsync("pipelineEditor.removeConnection",
@@ -2190,10 +2385,27 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             _connections.RemoveAll(c => c.ToModuleId == toId && c.ToPort == toPort);
         }
 
+        var created = new ConnectionEntry(fromId, fromPort, toId, toPort);
         if (!_connections.Any(c => c.FromModuleId == fromId && c.FromPort == fromPort && c.ToModuleId == toId && c.ToPort == toPort))
         {
-            _connections.Add(new ConnectionEntry(fromId, fromPort, toId, toPort));
+            _connections.Add(created);
         }
+
+        // Deshacer una conexion nueva devuelve tambien la que haya sustituido en
+        // un puerto de entrada unica, que si no se perderia sin remedio.
+        PushUndo("conectar", async () =>
+        {
+            _connections.RemoveAll(c => c.FromModuleId == created.FromModuleId && c.FromPort == created.FromPort
+                                        && c.ToModuleId == created.ToModuleId && c.ToPort == created.ToPort);
+            foreach (var replaced in replacedConnections)
+            {
+                if (!_connections.Any(c => c.FromModuleId == replaced.FromModuleId && c.FromPort == replaced.FromPort
+                                           && c.ToModuleId == replaced.ToModuleId && c.ToPort == replaced.ToPort))
+                    _connections.Add(replaced);
+            }
+            await RebuildDrawflow();
+            await NotifyGraphChanged();
+        });
 
         var connsToSamePort = _connections.Count(c => c.ToModuleId == toId && c.ToPort == toPort);
         Console.WriteLine($"[PipelineCanvas] After add: {_connections.Count} total connections, {connsToSamePort} to port {toPort}");
@@ -2210,9 +2422,15 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
         Console.WriteLine($"[PipelineCanvas] OnConnectionRemoved: {fromPort} → {toPort}");
 
+        var removed = _connections.FirstOrDefault(c =>
+            c.FromModuleId == fromId && c.FromPort == fromPort &&
+            c.ToModuleId == toId && c.ToPort == toPort);
+
         _connections.RemoveAll(c =>
             c.FromModuleId == fromId && c.FromPort == fromPort &&
             c.ToModuleId == toId && c.ToPort == toPort);
+
+        if (removed is not null) PushUndo("borrar una conexion", () => RestoreConnection(removed));
 
         Console.WriteLine($"[PipelineCanvas] After remove: {_connections.Count} total connections");
 
@@ -2230,8 +2448,21 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             conn.FromModuleId.ToString(), conn.FromPort,
             conn.ToModuleId.ToString(), conn.ToPort);
 
+        PushUndo("borrar una conexion", () => RestoreConnection(conn));
+
         await NotifyGraphChanged();
         StateHasChanged();
+    }
+
+    /// <summary>Vuelve a poner una conexion borrada y persiste el grafo.</summary>
+    private async Task RestoreConnection(ConnectionEntry conn)
+    {
+        if (!_connections.Any(c => c.FromModuleId == conn.FromModuleId && c.FromPort == conn.FromPort
+                                   && c.ToModuleId == conn.ToModuleId && c.ToPort == conn.ToPort))
+            _connections.Add(conn);
+
+        await RebuildDrawflow();
+        await NotifyGraphChanged();
     }
 
     [JSInvokable]
@@ -2581,7 +2812,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     private async Task ClearNodeBadges()
     {
         if (!_jsInitialized) return;
-        foreach (var pm in Modules)
+        foreach (var pm in VisibleModules)
         {
             await JS.InvokeVoidAsync("pipelineEditor.updateNodeBadge", pm.Id.ToString(), "");
         }
@@ -2589,10 +2820,15 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
     public async ValueTask DisposeAsync()
     {
+        // Si el usuario se va con un borrado a medias, se cierra aqui: el nodo ya
+        // no se ve, y dejarlo vivo lo haria reaparecer en la siguiente visita.
+        try { await CommitPendingDeleteAsync(); } catch { }
+
         if (_jsInitialized)
         {
             try { await JS.InvokeVoidAsync("pipelineEditor.dispose"); } catch { }
         }
+        _pendingDelete?.Cts.Dispose();
         _dotNetRef?.Dispose();
     }
 }

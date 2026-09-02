@@ -2,6 +2,8 @@
 window.pipelineEditor = {
     _editor: null,
     _dotNetRef: null,
+    // El listener de Ctrl+Z se registra una sola vez, aunque se reinicie el editor.
+    _undoBound: false,
     _portMap: {},       // drawflowNodeId → { inputs: [portId...], outputs: [portId...] }
     _moduleMap: {},     // drawflowNodeId → moduleId (guid string)
     _reverseMap: {},    // moduleId → drawflowNodeId
@@ -18,6 +20,27 @@ window.pipelineEditor = {
         this._editor.force_first_input = false;
         this._editor.start();
         this._dotNetRef = dotNetRef;
+
+        // ── Ctrl+Z / Cmd+Z: deshacer lo ultimo del editor ──
+        // Va en el documento y no en el contenedor porque el canvas no tiene
+        // foco propio: el usuario acaba de pulsar un boton del inspector. Se
+        // ignora mientras se escribe, para no pisar el deshacer del campo.
+        if (!this._undoBound) {
+            this._undoBound = true;
+            var self = this;
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'z' && e.key !== 'Z') return;
+                if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+                if (!self._dotNetRef) return;
+
+                var el = document.activeElement;
+                if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' ||
+                           el.tagName === 'SELECT' || el.isContentEditable)) return;
+
+                e.preventDefault();
+                self._dotNetRef.invokeMethodAsync('OnUndoShortcut');
+            });
+        }
 
         // ── Infinite canvas: allow panning even when .drawflow has scrolled out of view ──
         var editorRef = this._editor;
