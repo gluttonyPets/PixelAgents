@@ -1744,6 +1744,80 @@ a.link:hover { text-decoration: underline; }
     vertical-align: middle;
 }
 
+/* ── Proyectos de prueba: seccion propia al final del listado ── */
+.projects-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 2rem;
+    padding-bottom: 0.4rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1.2rem;
+}
+
+.projects-section-header h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.projects-section-count {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+    line-height: 1.5;
+}
+
+.project-grid.is-test-section {
+    margin-top: 0.6rem;
+}
+
+.project-card.is-test {
+    opacity: 0.85;
+    border-style: dashed;
+}
+
+.project-card.is-test:hover {
+    opacity: 1;
+}
+
+.project-card-test-badge {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.4rem;
+    margin-left: 0.35rem;
+    vertical-align: middle;
+}
+
+.project-test-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.6rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.project-test-toggle input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent, #7c5cfc);
+    cursor: pointer;
+    margin: 0;
+}
+
 .project-card-body {
     padding: 1rem 1rem 0.75rem;
     cursor: pointer;

@@ -1028,6 +1028,7 @@ app.MapPost("/api/projects", async (
         Name = req.Name,
         Description = req.Description,
         Context = req.Context,
+        IsTestProject = req.IsTestProject,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
     };
@@ -1072,7 +1073,7 @@ app.MapPost("/api/projects", async (
 
     return Results.Created($"/api/projects/{project.Id}",
         new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-            project.CreatedAt, project.UpdatedAt));
+            project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject));
 }).RequireAuthorization();
 
 app.MapGet("/api/projects", async (
@@ -1081,10 +1082,12 @@ app.MapGet("/api/projects", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
+    // Los proyectos de prueba van al final: el cliente los pinta en su propia seccion.
     var projects = await db.Projects
-        .OrderByDescending(p => p.IsPinned)
+        .OrderBy(p => p.IsTestProject)
+        .ThenByDescending(p => p.IsPinned)
         .ThenByDescending(p => p.CreatedAt)
-        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt, p.IsPinned))
+        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt, p.IsPinned, p.IsTestProject))
         .ToListAsync();
 
     return Results.Ok(projects);
@@ -1226,11 +1229,13 @@ app.MapPut("/api/projects/{id}", async (
     project.Name = req.Name;
     project.Description = req.Description;
     project.Context = req.Context;
+    // Solo se toca la marca de prueba si el cliente la envia explicitamente.
+    if (req.IsTestProject is { } isTest) project.IsTestProject = isTest;
     project.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, project.IsPinned));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject));
 }).RequireAuthorization();
 
 // Fija o desfija un proyecto para que aparezca primero en el listado.
@@ -1249,7 +1254,7 @@ app.MapPut("/api/projects/{id}/pin", async (
     await db.SaveChangesAsync();
 
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, project.IsPinned));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{id}/graph", async (
@@ -1444,6 +1449,7 @@ app.MapPost("/api/projects/{id}/duplicate", async (
         Name = source.Name + " (copia)",
         Description = source.Description,
         Context = source.Context,
+        IsTestProject = source.IsTestProject,
         InstagramConnectionId = source.InstagramConnectionId,
         TikTokConnectionId = source.TikTokConnectionId,
         PinterestConnectionId = source.PinterestConnectionId,
@@ -1543,7 +1549,8 @@ app.MapPost("/api/projects/{id}/duplicate", async (
 
     return Results.Created($"/api/projects/{newProject.Id}",
         new ProjectResponse(newProject.Id, newProject.Name, newProject.Description,
-            newProject.Context, newProject.CreatedAt, newProject.UpdatedAt));
+            newProject.Context, newProject.CreatedAt, newProject.UpdatedAt,
+            newProject.IsPinned, newProject.IsTestProject));
 }).RequireAuthorization();
 
 // ==================== ProjectModule (Pipeline) Endpoints ====================

@@ -36,6 +36,7 @@ namespace Server.Services
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"Context\" text", log);
             RunSafe(ctx, "ALTER TABLE \"Projects\" ADD COLUMN IF NOT EXISTS \"GraphLayout\" text", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""IsPinned"" boolean NOT NULL DEFAULT false", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""IsTestProject"" boolean NOT NULL DEFAULT false", log);
 
             // ── Conexiones reutilizables (redes sociales + mensajeria) ──
             RunSafe(ctx, @"
