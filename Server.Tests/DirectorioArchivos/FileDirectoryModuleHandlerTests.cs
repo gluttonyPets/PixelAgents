@@ -139,6 +139,28 @@ public class FileDirectoryModuleHandlerTests
         Assert.Equal(1, doc.RootElement.GetProperty("fileCount").GetInt32());
     }
 
+    [Fact]
+    public async Task UnIndiceEnElModuloDeCatalogo_SeIgnora()
+    {
+        // El modulo de catalogo es unico y comun a todos los directorios: un
+        // indice ahi se aplicaria a todos, con ids de ficheros de otro nodo. El
+        // nodo manda, y si no tiene indice el modulo falla en vez de heredarlo.
+        var ctx = CreateContext(indexJson: null);
+        ctx.Node.AiModule.Configuration = """
+        {
+          "index": {
+            "baseUrl": "https://viejo.ejemplo.com",
+            "files": [ { "path": "a.jpg", "description": "de otro nodo" } ]
+          }
+        }
+        """;
+
+        var result = await new FileDirectoryModuleHandler().ExecuteAsync(ctx);
+
+        Assert.Equal(ModuleResultStatus.Failed, result.Status);
+        Assert.DoesNotContain("viejo.ejemplo.com", result.Error);
+    }
+
     // ── Helpers ──
 
     private static ModuleExecutionContext CreateContext(
@@ -154,10 +176,23 @@ public class FileDirectoryModuleHandlerTests
             ProviderType = "System",
             ModelName = "file-directory",
         };
-        var projectModule = new ProjectModule { Id = Guid.NewGuid(), IsActive = true, AiModule = aiModule };
+        // El indice vive en la configuracion del NODO, que es de donde lo lee el
+        // handler: el modulo de catalogo es comun a todos los directorios.
+        var nodeConfig = new Dictionary<string, object?>();
+        if (indexJson is not null) nodeConfig[FileDirectoryIndex.IndexConfigKey] = indexJson;
+        if (format is not null) nodeConfig[FileDirectoryIndex.FormatConfigKey] = format;
 
+        var projectModule = new ProjectModule
+        {
+            Id = Guid.NewGuid(),
+            IsActive = true,
+            AiModule = aiModule,
+            Configuration = nodeConfig.Count > 0 ? System.Text.Json.JsonSerializer.Serialize(nodeConfig) : null,
+        };
+
+        // Config es la mezcla catalogo + nodo que arma el executor; el handler la
+        // usa para el formato y la URL base.
         var config = new Dictionary<string, object>();
-        if (indexJson is not null) config[FileDirectoryIndex.IndexConfigKey] = indexJson;
         if (format is not null) config[FileDirectoryIndex.FormatConfigKey] = format;
 
         return new ModuleExecutionContext

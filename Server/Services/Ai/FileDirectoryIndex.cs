@@ -345,9 +345,7 @@ public static class FileDirectoryIndex
                 ResolveUrl(entry, path, result.BaseUrl, hosted, hostedUrlFactory);
             if (url is null)
             {
-                result.Errors.Add(
-                    $"{position} (\"{path}\"): no hay ruta accesible. Declara una \"url\" absoluta, " +
-                    "una \"baseUrl\" para todo el directorio, o sube el fichero a este modulo.");
+                result.Errors.Add($"{position} (\"{path}\"): no hay ruta accesible. {DescribeMiss(hosted)}");
                 continue;
             }
 
@@ -395,12 +393,38 @@ public static class FileDirectoryIndex
     {
         if (hosted.Count == 0) return null;
 
+        // Por id, que es lo que escribe el explorador y lo unico que distingue
+        // dos ficheros con el mismo nombre en carpetas distintas.
         if (entry.FileId is { } id)
-            return hosted.FirstOrDefault(h => h.Id == id);
+        {
+            var byId = hosted.FirstOrDefault(h => h.Id == id);
+            if (byId is not null) return byId;
+            // Id que ya no existe (se resubio el fichero, se copio el indice de
+            // otro nodo...). Antes se daba por perdido; se intenta por nombre,
+            // que suele ser el mismo, en vez de dejar la entrada sin ruta.
+        }
 
         var fileName = entry.File ?? path[(path.LastIndexOf('/') + 1)..];
         return hosted.FirstOrDefault(h =>
             string.Equals(h.FileName, fileName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Explica por que una entrada se quedo sin ruta, diciendo que hay subido al
+    /// modulo. Sin esto, "no hay ruta accesible" no distingue entre no haber
+    /// subido nada y haber subido ficheros que no casan con el indice, que son
+    /// dos problemas distintos y se arreglan de forma distinta.
+    /// </summary>
+    private static string DescribeMiss(List<HostedFile> hosted)
+    {
+        if (hosted.Count == 0)
+            return "Este modulo no tiene ningun fichero subido: subelos desde el explorador del nodo, "
+                 + "o declara una \"url\" absoluta o una \"baseUrl\" para todo el directorio.";
+
+        var names = string.Join(", ", hosted.Take(10).Select(h => h.FileName));
+        var more = hosted.Count > 10 ? $" y {hosted.Count - 10} mas" : "";
+        return $"No coincide con ninguno de los {hosted.Count} fichero(s) subidos a este modulo "
+             + $"({names}{more}). Comprueba que el indice es el de este nodo y no uno copiado de otro.";
     }
 
     // ── Rutas ──

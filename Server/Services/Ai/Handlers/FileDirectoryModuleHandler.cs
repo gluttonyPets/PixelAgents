@@ -20,9 +20,26 @@ public class FileDirectoryModuleHandler : IModuleHandler
 
     public async Task<ModuleResult> ExecuteAsync(ModuleExecutionContext ctx)
     {
-        var indexJson = ctx.GetConfig(FileDirectoryIndex.IndexConfigKey);
+        // El indice se lee SOLO de la configuracion del nodo, no de la mezclada.
+        // El modulo de catalogo es unico y comun a todos los directorios, asi que
+        // un indice ahi se aplicaria a todos, con ids de ficheros subidos a otro
+        // nodo: el explorador ensenaria una cosa y la ejecucion usaria otra.
+        var nodeConfig = ctx.Node.ProjectModule.Configuration;
+        var indexJson = FileDirectoryIndex.ReadConfig(null, nodeConfig, FileDirectoryIndex.IndexConfigKey);
+
+        // baseUrl y formato no referencian ficheros, asi que si valen como
+        // ajuste heredado del modulo de catalogo.
         var baseUrl = ctx.GetConfig(FileDirectoryIndex.BaseUrlConfigKey);
         var format = ctx.GetConfig(FileDirectoryIndex.FormatConfigKey, "markdown");
+
+        var legacyIndex = FileDirectoryIndex.ReadConfig(
+            ctx.Node.AiModule.Configuration, null, FileDirectoryIndex.IndexConfigKey);
+        if (legacyIndex is not null)
+        {
+            await ctx.LogWarningAsync(
+                "El modulo de catalogo arrastra un indice antiguo que se ignora: el contenido del " +
+                "directorio es de cada nodo. Si el nodo sale vacio, vuelve a montarlo en su explorador.");
+        }
 
         var result = FileDirectoryIndex.Resolve(
             indexJson,
@@ -31,6 +48,10 @@ public class FileDirectoryModuleHandler : IModuleHandler
             path => FileDirectoryIndex.Absolutize(
                 ctx.PublicBaseUrl,
                 FileDirectoryIndex.BuildPublicPath(ctx.TenantDbName, ctx.Node.ModuleId, path)));
+
+        await ctx.LogDebugAsync(
+            $"Directorio: {ctx.ModuleFiles.Count} fichero(s) subidos al nodo, "
+            + $"{result.Entries.Count} entrada(s) resueltas del indice.");
 
         if (!result.IsValid)
         {

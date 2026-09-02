@@ -220,6 +220,13 @@ Configuracion, en el nodo (no en el modulo de catalogo, que es unico y comun a
 todos los directorios): `index` (JSON), `baseUrl` (opcional) y `format`
 (`markdown`, por defecto, o `json`).
 
+El `index` se lee **solo** de la configuracion del nodo, no de la mezcla
+catalogo + nodo que arma el executor. Un indice en el catalogo se aplicaria a
+todos los directorios a la vez, con ids de ficheros subidos a otro nodo, y el
+explorador (que siempre lee la del nodo) ensenaria una cosa mientras la ejecucion
+usaria otra. Si el catalogo arrastra uno antiguo, se ignora y se avisa en el log.
+`baseUrl` y `format` si se heredan, porque no referencian ficheros.
+
 ### Explorador del inspector
 
 El indice no se escribe a mano: `Client/Components/FileDirectoryEditor.razor`
