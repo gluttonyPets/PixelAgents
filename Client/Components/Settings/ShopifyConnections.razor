@@ -1,14 +1,14 @@
-@page "/mensajeria"
 @inject ApiClient Api
 
 <div class="apikeys-page-header">
-    <h2>Mensajeria</h2>
+    <h3>Shopify</h3>
     <button class="btn btn-primary" @onclick="OpenCreate">+ Nueva conexion</button>
 </div>
 
 <p class="text-muted" style="margin-top:-0.4rem;margin-bottom:1rem;">
-    Guarda aqui los bots de Telegram (bot token + chat) una sola vez. Luego en cada
-    proyecto solo tendras que asignar la conexion, sin volver a meter credenciales.
+    Guarda aqui las tiendas Shopify (dominio + Client ID + Client Secret de tu app del
+    Dev Dashboard) una sola vez. Luego en cada proyecto solo asignas la conexion, y en
+    cada nodo eliges el blog destino. El token se obtiene automaticamente.
 </p>
 
 @if (_loading)
@@ -21,9 +21,8 @@ else if (_conns.Count > 0)
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Proveedor</th>
+                    <th>Tienda</th>
                     <th>Nombre</th>
-                    <th>Chat ID</th>
                     <th>Uso</th>
                     <th></th>
                 </tr>
@@ -33,9 +32,8 @@ else if (_conns.Count > 0)
                 {
                     var isConfirming = _confirmDeleteId == c.Id;
                     <tr class="@(isConfirming ? "row-confirming" : c.ProjectCount == 0 ? "row-unused" : "")">
-                        <td><span class="badge badge-info">Telegram</span></td>
+                        <td><span class="badge badge-info">@c.ShopDomain</span></td>
                         <td><span class="key-name">@c.Name</span></td>
-                        <td>@c.ChatId</td>
                         <td>
                             @if (c.ProjectCount > 0)
                             {
@@ -68,16 +66,16 @@ else if (_conns.Count > 0)
 else
 {
     <div class="apikeys-empty">
-        <div class="apikeys-empty-icon">💬</div>
-        <div class="apikeys-empty-title">Sin conexiones de mensajeria</div>
-        <div class="apikeys-empty-desc">Pulsa <strong>+ Nueva conexion</strong> para guardar un bot de Telegram.</div>
+        <div class="apikeys-empty-icon">🛍️</div>
+        <div class="apikeys-empty-title">Sin conexiones de Shopify</div>
+        <div class="apikeys-empty-desc">Pulsa <strong>+ Nueva conexion</strong> para guardar una tienda.</div>
     </div>
 }
 
 @if (_showModal)
 {
     <div class="modal-overlay" @onclick="CancelModal">
-        <div class="modal-content" @onclick:stopPropagation="true" style="max-width: 520px;">
+        <div class="modal-content" @onclick:stopPropagation="true" style="max-width: 540px;">
             <div class="modal-header">
                 <strong style="flex:1">@(_editingId is null ? "Nueva conexion" : "Editar conexion")</strong>
                 <button class="modal-close-btn" @onclick="CancelModal" aria-label="Cerrar">&#x2715;</button>
@@ -89,23 +87,38 @@ else
                 }
                 <div class="form-group">
                     <label>Nombre</label>
-                    <input type="text" @bind="_name" placeholder="Mi bot de Telegram" />
+                    <input type="text" @bind="_name" placeholder="Mi tienda" />
+                </div>
+                <div class="form-group">
+                    <label>Dominio de la tienda</label>
+                    <input type="text" @bind="_domain" placeholder="mitienda.myshopify.com" />
+                    <span class="text-sm text-muted">El dominio <code>.myshopify.com</code>, no tu dominio personalizado.</span>
                 </div>
                 <div class="form-group">
                     <label>
-                        Bot Token
+                        Client ID
                         @if (_editingId is not null)
                         {
                             <span class="text-muted" style="font-weight:400;">(deja vacio para conservar el actual)</span>
                         }
                     </label>
-                    <input type="password" @bind="_botToken" placeholder="123456:ABC-DEF..." autocomplete="new-password" />
-                    <span class="text-sm text-muted">Lo obtienes de @@BotFather en Telegram.</span>
+                    <input type="text" @bind="_clientId" placeholder="API key / Client ID de la app" autocomplete="off" />
                 </div>
                 <div class="form-group">
-                    <label>Chat ID</label>
-                    <input type="text" @bind="_chatId" placeholder="-1001234567890" />
-                    <span class="text-sm text-muted">Chat o canal destino. Lo obtienes con /getUpdates.</span>
+                    <label>
+                        Client Secret
+                        @if (_editingId is not null)
+                        {
+                            <span class="text-muted" style="font-weight:400;">(deja vacio para conservar el actual)</span>
+                        }
+                    </label>
+                    <input type="password" @bind="_clientSecret" placeholder="API secret key / Client secret" autocomplete="new-password" />
+                    <span class="text-sm text-muted">
+                        En tu app del Dev Dashboard de Shopify &#x2192; <strong>Settings</strong> &#x2192; Client ID y Client secret.
+                        La app necesita los scopes <code>read_content</code> y <code>write_content</code> e instalada en la tienda.
+                        Para publicar articulos con <strong>imagen destacada</strong> anade tambien <code>write_files</code>
+                        (la imagen se sube directamente a Shopify) y <strong>reinstala</strong> la app.
+                    </span>
                 </div>
             </div>
             <div class="modal-footer">
@@ -119,15 +132,16 @@ else
 }
 
 @code {
-    private List<MessagingConnectionResponse> _conns = [];
+    private List<ShopifyConnectionResponse> _conns = [];
     private bool _loading;
     private Guid? _confirmDeleteId;
 
     private bool _showModal;
     private Guid? _editingId;
     private string _name = "";
-    private string _botToken = "";
-    private string _chatId = "";
+    private string _domain = "";
+    private string _clientId = "";
+    private string _clientSecret = "";
     private bool _saving;
     private string? _error;
 
@@ -136,22 +150,22 @@ else
     private async Task Load()
     {
         _loading = true;
-        try { _conns = await Api.GetMessagingConnectionsAsync(); } catch { }
+        try { _conns = await Api.GetShopifyConnectionsAsync(); } catch { }
         _loading = false;
     }
 
     private void OpenCreate()
     {
         _editingId = null;
-        _name = ""; _botToken = ""; _chatId = "";
+        _name = ""; _domain = ""; _clientId = ""; _clientSecret = "";
         _error = null;
         _showModal = true;
     }
 
-    private void StartEdit(MessagingConnectionResponse c)
+    private void StartEdit(ShopifyConnectionResponse c)
     {
         _editingId = c.Id;
-        _name = c.Name; _botToken = ""; _chatId = c.ChatId;
+        _name = c.Name; _domain = c.ShopDomain; _clientId = ""; _clientSecret = "";
         _error = null;
         _confirmDeleteId = null;
         _showModal = true;
@@ -167,23 +181,28 @@ else
     private async Task Save()
     {
         if (string.IsNullOrWhiteSpace(_name)) { _error = "El nombre es obligatorio."; return; }
-        if (string.IsNullOrWhiteSpace(_chatId)) { _error = "El chat id es obligatorio."; return; }
-        if (_editingId is null && string.IsNullOrWhiteSpace(_botToken)) { _error = "El bot token es obligatorio."; return; }
+        if (string.IsNullOrWhiteSpace(_domain)) { _error = "El dominio es obligatorio."; return; }
+        if (_editingId is null && (string.IsNullOrWhiteSpace(_clientId) || string.IsNullOrWhiteSpace(_clientSecret)))
+        {
+            _error = "El Client ID y el Client Secret son obligatorios.";
+            return;
+        }
 
         _saving = true; _error = null;
         try
         {
             if (_editingId is null)
             {
-                var (ok, error) = await Api.CreateMessagingConnectionAsync(
-                    new CreateMessagingConnectionRequest(_name.Trim(), "telegram", _botToken.Trim(), _chatId.Trim()));
+                var (ok, error) = await Api.CreateShopifyConnectionAsync(
+                    new CreateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), _clientId.Trim(), _clientSecret.Trim()));
                 if (!ok) { _error = error; return; }
             }
             else
             {
-                var newToken = string.IsNullOrWhiteSpace(_botToken) ? null : _botToken.Trim();
-                var (ok, error) = await Api.UpdateMessagingConnectionAsync(_editingId.Value,
-                    new UpdateMessagingConnectionRequest(_name.Trim(), "telegram", newToken, _chatId.Trim()));
+                var newClientId = string.IsNullOrWhiteSpace(_clientId) ? null : _clientId.Trim();
+                var newSecret = string.IsNullOrWhiteSpace(_clientSecret) ? null : _clientSecret.Trim();
+                var (ok, error) = await Api.UpdateShopifyConnectionAsync(_editingId.Value,
+                    new UpdateShopifyConnectionRequest(_name.Trim(), _domain.Trim(), newClientId, newSecret));
                 if (!ok) { _error = error; return; }
             }
             _showModal = false;
@@ -199,7 +218,7 @@ else
     private async Task ConfirmDelete(Guid id)
     {
         _confirmDeleteId = null;
-        try { await Api.DeleteMessagingConnectionAsync(id); await Load(); }
+        try { await Api.DeleteShopifyConnectionAsync(id); await Load(); }
         catch { }
     }
 }

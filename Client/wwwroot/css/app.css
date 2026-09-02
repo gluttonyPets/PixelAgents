@@ -5542,3 +5542,48 @@ a.link:hover { text-decoration: underline; }
 .undo-toast > .bi { color: var(--text-muted); }
 .undo-toast span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .undo-toast .btn { padding: 0.25rem 0.6rem; font-size: 0.78rem; }
+
+/* Pagina de Configuracion: pestanas de las secciones que antes eran paginas
+   sueltas (API Keys, Redes sociales, Mensajeria, Shopify y Reglas). */
+
+.settings-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 1rem 0 0.2rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.5rem 0.85rem;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    /* Se pega al borde inferior para que la pestana activa lo tape. */
+    margin-bottom: -1px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.settings-tab:hover { color: var(--text); }
+
+.settings-tab.is-active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+}
+
+.settings-tab .bi { font-size: 0.9rem; }
+
+.settings-body { padding-top: 0.6rem; }
+
+/* La cabecera de cada seccion ya no es el titulo de la pagina. */
+.settings-body .apikeys-page-header h3 {
+    margin: 0;
+    font-size: 1.05rem;
+}

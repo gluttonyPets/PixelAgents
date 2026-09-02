@@ -1252,11 +1252,11 @@ else
                                 </select>
                                 @if (_messagingConnections.Count == 0)
                                 {
-                                    <span class="text-sm text-muted">No tienes conexiones de Telegram. <a href="/mensajeria">Crear una</a>.</span>
+                                    <span class="text-sm text-muted">No tienes conexiones de Telegram. <a href="/configuracion/mensajeria">Crear una</a>.</span>
                                 }
                             </div>
                             <p class="text-sm text-muted">
-                                Las credenciales (bot token + chat) se gestionan en <a href="/mensajeria">Mensajeria</a>.
+                                Las credenciales (bot token + chat) se gestionan en <a href="/configuracion/mensajeria">Mensajeria</a>.
                                 Aqui solo eliges cual usa este proyecto.
                             </p>
                             <button class="btn btn-primary btn-sm" @onclick="SaveConnections" disabled="@_connSaving">
@@ -1326,11 +1326,11 @@ else
 
                             @if (_socialConnections.Count == 0)
                             {
-                                <span class="text-sm text-muted">No tienes conexiones de redes sociales. <a href="/redes-sociales">Crear una</a>.</span>
+                                <span class="text-sm text-muted">No tienes conexiones de redes sociales. <a href="/configuracion/redes-sociales">Crear una</a>.</span>
                             }
                             <p class="text-sm text-muted">
                                 Las credenciales (token de Buffer + canal) se gestionan en
-                                <a href="/redes-sociales">Redes sociales</a>. Aqui solo eliges cuales usa este proyecto.
+                                <a href="/configuracion/redes-sociales">Redes sociales</a>. Aqui solo eliges cuales usa este proyecto.
                             </p>
                             <button class="btn btn-primary btn-sm" @onclick="SaveConnections" disabled="@_connSaving">
                                 @(_connSaving ? "Guardando..." : "Guardar")
@@ -1366,10 +1366,10 @@ else
                             </div>
                             @if (_shopifyConnections.Count == 0)
                             {
-                                <span class="text-sm text-muted">No tienes conexiones de Shopify. <a href="/shopify">Crear una</a>.</span>
+                                <span class="text-sm text-muted">No tienes conexiones de Shopify. <a href="/configuracion/shopify">Crear una</a>.</span>
                             }
                             <p class="text-sm text-muted">
-                                Las credenciales (dominio + token) se gestionan en <a href="/shopify">Shopify</a>.
+                                Las credenciales (dominio + token) se gestionan en <a href="/configuracion/shopify">Shopify</a>.
                                 El blog destino se elige en cada nodo ShopifyBlog del pipeline.
                             </p>
                             <button class="btn btn-primary btn-sm" @onclick="SaveConnections" disabled="@_connSaving">
@@ -1592,7 +1592,7 @@ else
                                 </select>
                                 @if (_analystModels.Count == 0)
                                 {
-                                    <span class="text-sm text-muted">No hay modelos de texto disponibles. Configura una API Key en <a href="/apikeys">API Keys</a>.</span>
+                                    <span class="text-sm text-muted">No hay modelos de texto disponibles. Configura una API Key en <a href="/configuracion/apikeys">API Keys</a>.</span>
                                 }
                                 else if (_learningIsDefault && !string.IsNullOrWhiteSpace(_analystModelSel))
                                 {

@@ -130,7 +130,7 @@
                 </select>
                 @if (!_keys.Any(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)))
                 {
-                    <span class="text-sm text-muted">No tienes API keys de @_provider. <a href="/apikeys">Crear una</a></span>
+                    <span class="text-sm text-muted">No tienes API keys de @_provider. <a href="/configuracion/apikeys">Crear una</a></span>
                 }
             </div>
         }

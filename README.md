@@ -89,14 +89,16 @@ Su `Program.cs` configura:
 Rutas actuales:
 
 - `/`: registro, login y estado de usuario.
-- `/apikeys`: gestion de claves de proveedor.
-- `/rules`: reglas obligatorias por tenant.
 - `/modules`: catalogo y configuracion de modulos.
 - `/biblioteca`: archivos subidos a modulos.
 - `/projects`: listado y creacion de proyectos. Los proyectos fijados se
   muestran primero.
 - `/projects/{ProjectId:guid}`: detalle, editor visual, ejecuciones e
   integraciones del proyecto.
+- `/configuracion/{seccion?}`: ajustes del tenant en una sola pagina, con una
+  pestana por seccion: `apikeys` (claves de proveedor), `redes-sociales`,
+  `mensajeria`, `shopify` y `reglas` (reglas obligatorias). Cada seccion es un
+  componente de `Client/Components/Settings/` y solo se monta la activa.
 
 Componentes clave:
 
@@ -249,7 +251,8 @@ Variables y claves relevantes:
 - `WhatsApp:WebhookVerifyToken`: token de verificacion para webhook de WhatsApp.
 
 Las API keys de proveedores no se configuran como variables globales en el flujo
-normal. Se guardan desde la pantalla `/apikeys` y se asocian a modulos.
+normal. Se guardan en Configuracion (`/configuracion/apikeys`) y se asocian a
+modulos.
 
 ## Despliegue Con Docker
 
@@ -598,9 +601,10 @@ Asignacion por proyecto:
 - `GET|PUT /api/projects/{projectId}/connections`: asigna las conexiones de
   Instagram, TikTok, Pinterest, Telegram y Shopify que usa el proyecto (por Id).
 
-En la UI esto vive en las secciones **Redes sociales** (`/redes-sociales`),
-**Mensajeria** (`/mensajeria`) y **Shopify** (`/shopify`); dentro del proyecto, las
-pestanas de configuracion solo muestran selectores de la conexion guardada.
+En la UI esto vive en Configuracion, en las pestanas **Redes sociales**
+(`/configuracion/redes-sociales`), **Mensajeria** (`/configuracion/mensajeria`) y
+**Shopify** (`/configuracion/shopify`); dentro del proyecto, las pestanas de
+configuracion solo muestran selectores de la conexion guardada.
 
 Webhooks:
 
@@ -642,8 +646,8 @@ persiste tambien en `ExecutionLogs`.
 ### OpenAI, Anthropic, Gemini Y Grok
 
 Usados como proveedores de generacion de texto y capacidades IA segun el tipo de
-modulo. Las claves se guardan en `/apikeys` y se asocian a modulos en
-`/modules`.
+modulo. Las claves se guardan en `/configuracion/apikeys` y se asocian a modulos
+en `/modules`.
 
 ### Leonardo
 
