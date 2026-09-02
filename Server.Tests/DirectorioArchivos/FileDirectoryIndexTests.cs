@@ -354,6 +354,62 @@ public class FileDirectoryIndexTests
     }
 
     [Fact]
+    public void UnFileIdMuerto_SeRescataPorNombreSiSigueSubido()
+    {
+        // Pasa al resubir un fichero o al copiar el indice de otro nodo: el id
+        // cambia pero el nombre no. Antes la entrada se daba por perdida.
+        var resubido = new FileDirectoryIndex.HostedFile(Guid.NewGuid(), "manual.pdf");
+        var json = """
+        {
+          "files": [
+            { "path": "docs/manual.pdf", "description": "Manual",
+              "fileId": "99999999-9999-9999-9999-999999999999" }
+          ]
+        }
+        """;
+
+        var result = FileDirectoryIndex.Resolve(
+            json,
+            configBaseUrl: null,
+            hostedFiles: [resubido],
+            hostedUrlFactory: path => HostedBase + path);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(FileDirectoryIndex.Sources.Hosted, result.Entries[0].Source);
+        Assert.Equal(resubido.Id, result.Entries[0].SourceFileId);
+    }
+
+    [Fact]
+    public void SinFicherosSubidos_ElErrorLoDiceExplicitamente()
+    {
+        var json = """{ "files": [ { "path": "a.jpg", "description": "una foto" } ] }""";
+
+        var result = FileDirectoryIndex.Resolve(json, hostedFiles: []);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e =>
+            e.Contains("no tiene ningun fichero subido", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ConFicherosQueNoCasan_ElErrorListaLoQueSiHay()
+    {
+        // El caso que de verdad despista: hay ficheros, pero son otros. El error
+        // tiene que decir cuales, no solo que falta una ruta.
+        var json = """{ "files": [ { "path": "no-existe.jpg", "description": "una foto" } ] }""";
+
+        var result = FileDirectoryIndex.Resolve(
+            json,
+            configBaseUrl: null,
+            hostedFiles: [new FileDirectoryIndex.HostedFile(Guid.NewGuid(), "otra.jpg")],
+            hostedUrlFactory: path => HostedBase + path);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("otra.jpg"));
+        Assert.Contains(result.Errors, e => e.Contains("1 fichero(s) subidos"));
+    }
+
+    [Fact]
     public void UnFileIdQueYaNoExiste_CaeALaUrlBase()
     {
         // El archivo se borro del nodo: la entrada sigue indexada y se resuelve
