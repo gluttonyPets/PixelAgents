@@ -1,0 +1,67 @@
+@page "/configuracion"
+@page "/configuracion/{Section?}"
+@inject NavigationManager Nav
+
+@*
+    Configuracion: reune en una sola pagina lo que antes eran cinco (API Keys,
+    Redes sociales, Mensajeria, Shopify y Reglas). Cada seccion sigue siendo su
+    propio componente, en Components/Settings, y solo se monta la activa: asi
+    cada una carga sus datos al abrirla y no se hacen cinco peticiones de golpe.
+
+    La seccion viaja en la URL (/configuracion/reglas) para poder enlazar a una
+    concreta desde otras pantallas.
+*@
+
+<h2>Configuracion</h2>
+
+<div class="settings-tabs">
+    @foreach (var tab in Tabs)
+    {
+        <button class="settings-tab @(tab.Slug == CurrentSlug ? "is-active" : "")"
+                @onclick="() => Go(tab.Slug)">
+            <i class="bi @tab.Icon"></i> @tab.Label
+        </button>
+    }
+</div>
+
+<div class="settings-body">
+    @switch (CurrentSlug)
+    {
+        case "redes-sociales":
+            <SocialConnections />
+            break;
+        case "mensajeria":
+            <Messaging />
+            break;
+        case "shopify":
+            <ShopifyConnections />
+            break;
+        case "reglas":
+            <Rules />
+            break;
+        default:
+            <ApiKeys />
+            break;
+    }
+</div>
+
+@code {
+    [Parameter] public string? Section { get; set; }
+
+    private sealed record SettingsTab(string Slug, string Label, string Icon);
+
+    private static readonly SettingsTab[] Tabs =
+    [
+        new("apikeys", "API Keys", "bi-key"),
+        new("redes-sociales", "Redes sociales", "bi-share"),
+        new("mensajeria", "Mensajeria", "bi-chat-dots"),
+        new("shopify", "Shopify", "bi-shop"),
+        new("reglas", "Reglas", "bi-list-check"),
+    ];
+
+    /// <summary>Seccion activa. Una ruta desconocida cae en la primera pestana.</summary>
+    private string CurrentSlug =>
+        Tabs.Any(t => t.Slug == Section) ? Section! : "apikeys";
+
+    private void Go(string slug) => Nav.NavigateTo($"/configuracion/{slug}");
+}

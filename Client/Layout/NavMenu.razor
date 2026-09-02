@@ -5,15 +5,12 @@
 <nav class="sidebar">
     <div class="sidebar-brand">PixelAgents</div>
 
-    <NavLink href="/apikeys">API Keys</NavLink>
-    <NavLink href="/redes-sociales">Redes sociales</NavLink>
-    <NavLink href="/mensajeria">Mensajeria</NavLink>
-    <NavLink href="/shopify">Shopify</NavLink>
-    <NavLink href="/rules">Reglas</NavLink>
     <NavLink href="/modules">Modulos IA</NavLink>
     <NavLink href="/precios">Precios</NavLink>
     <NavLink href="/biblioteca">Biblioteca</NavLink>
     <NavLink href="/projects">Proyectos</NavLink>
+    @* Configuracion cierra el menu: es lo que menos se toca del dia a dia. *@
+    <NavLink href="/configuracion">Configuracion</NavLink>
 
     <div class="auth-status">
         @if (AuthState.IsAuthenticated)
