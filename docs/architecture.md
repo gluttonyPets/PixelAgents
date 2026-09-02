@@ -249,6 +249,14 @@ en la configuracion del nodo por la via habitual del grafo (`SetModuleConfig` ->
 ficheros se suben al nodo con los endpoints ya existentes de
 `/api/project-modules/{id}/files`.
 
+Al abrir un nodo, el explorador pide al servidor los ficheros que de verdad
+tiene asociados (`GET /api/project-modules/{id}/files`) y los contrasta con el
+indice. El indice dice a que apunta el directorio, pero no prueba que el fichero
+siga ahi: si no se cruzan, una entrada huerfana no se nota hasta que falla la
+ejecucion, tarde y sin contexto. El explorador avisa de las entradas sin fichero
+(marcadas ademas fila a fila) y de los ficheros subidos que el indice no
+menciona, estos ultimos con un boton para anadirlos.
+
 Eliminar un fichero o una carpeta (con confirmacion en dos pasos) borra tambien
 lo subido: fuera del indice no se sirve por la URL publica ni aparece en ninguna
 otra pantalla, asi que conservarlo solo acumularia basura.

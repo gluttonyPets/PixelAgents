@@ -13,6 +13,42 @@
     el mismo nombre en carpetas distintas.
 *@
 
+@{
+    var orphans = OrphanEntries;
+    var unindexed = UnindexedFiles;
+}
+
+@if (orphans.Count > 0)
+{
+    <div class="alert alert-error fd-alert">
+        <strong>@orphans.Count entrada(s) del indice sin archivo en este nodo.</strong>
+        @if (_nodeFiles.Count == 0)
+        {
+            <span>
+                Este nodo no tiene ningun archivo subido, asi que el modulo fallara al ejecutarse.
+                Vuelve a subirlos aqui, o dales una URL propia o una URL base.
+            </span>
+        }
+        else
+        {
+            <span>
+                El nodo tiene @_nodeFiles.Count archivo(s), pero esas entradas no casan con ninguno.
+                Suele pasar con un indice copiado de otro nodo.
+            </span>
+        }
+    </div>
+}
+
+@if (unindexed.Count > 0)
+{
+    <div class="alert alert-warning fd-alert">
+        <span>@unindexed.Count archivo(s) subidos a este nodo no estan en el indice, asi que no se publican.</span>
+        <button type="button" class="btn btn-sm btn-primary" @onclick="IndexMissingFiles">
+            Anadirlos a esta carpeta
+        </button>
+    </div>
+}
+
 <div class="fd-explorer">
     <div class="fd-tree">
         <div class="fd-tree-header">
@@ -147,6 +183,13 @@
                         @if (file.IsExternal)
                         {
                             <span class="fd-tag" title="@file.Url">Externo</span>
+                        }
+                        else if (FindNodeFile(file) is null)
+                        {
+                            <span class="fd-tag fd-tag-missing"
+                                  title="El indice lo nombra, pero no hay ningun archivo subido a este nodo que le corresponda">
+                                Falta el archivo
+                            </span>
                         }
                         else if (file.Size > 0)
                         {
@@ -352,10 +395,11 @@
     private bool _previewLoading;
     private string? _previewError;
     private DirectoryIndexPreviewResponse? _preview;
+    private List<ModuleFileResponse> _nodeFiles = [];
     private string? _loadedIndex;
     private Guid? _loadedNodeId;
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         // Se reconstruye el arbol al cambiar de nodo, o cuando el indice entrante
         // no es el que este editor acaba de emitir. Sin esa segunda condicion,
@@ -371,8 +415,69 @@
             {
                 _preview = null;
                 _previewError = null;
+                await LoadNodeFilesAsync();
             }
         }
+    }
+
+    /// <summary>
+    /// Archivos que el servidor tiene realmente asociados a este nodo. El indice
+    /// dice a que apunta el directorio, pero no prueba que el archivo siga ahi:
+    /// contrastar ambos es lo unico que delata una entrada huerfana antes de
+    /// lanzar el pipeline, donde el fallo sale tarde y sin contexto.
+    /// </summary>
+    private async Task LoadNodeFilesAsync()
+    {
+        if (ProjectModuleId is not { } nodeId)
+        {
+            _nodeFiles = [];
+            return;
+        }
+
+        try { _nodeFiles = await Api.GetModuleFilesAsync(nodeId); }
+        catch { _nodeFiles = []; }
+    }
+
+    /// <summary>Entradas del indice que esperan un archivo subido y no lo tienen.</summary>
+    private List<DirFile> OrphanEntries => _files
+        .Where(f => !f.IsExternal && FindNodeFile(f) is null)
+        .ToList();
+
+    /// <summary>Archivos subidos al nodo que el indice no menciona.</summary>
+    private List<ModuleFileResponse> UnindexedFiles => _nodeFiles
+        .Where(nf => !_files.Any(f => f.FileId == nf.Id
+                                      || string.Equals(f.Name, nf.FileName, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
+
+    /// <summary>El archivo del nodo que respalda una entrada: por id, y si no por nombre.</summary>
+    private ModuleFileResponse? FindNodeFile(DirFile file)
+    {
+        if (file.FileId is { } id)
+        {
+            var byId = _nodeFiles.FirstOrDefault(f => f.Id == id);
+            if (byId is not null) return byId;
+        }
+        return _nodeFiles.FirstOrDefault(f =>
+            string.Equals(f.FileName, file.Name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Mete en la carpeta actual los archivos subidos que faltaban del indice.</summary>
+    private async Task IndexMissingFiles()
+    {
+        foreach (var nf in UnindexedFiles)
+        {
+            _files.Add(new DirFile
+            {
+                Folder = _selected,
+                Name = UniqueNameIn(_selected, nf.FileName),
+                Description = "",
+                FileId = nf.Id,
+                ContentType = nf.ContentType,
+                Size = nf.FileSize,
+            });
+        }
+
+        await NotifyChanged();
     }
 
     // ── Carga y serializacion del indice ──
@@ -782,6 +887,7 @@
                 });
             }
 
+            await LoadNodeFilesAsync();
             await NotifyChanged();
         }
         catch (Exception ex)

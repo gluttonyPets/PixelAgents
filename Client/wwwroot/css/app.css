@@ -5605,3 +5605,21 @@ a.link:hover { text-decoration: underline; }
     margin: 0;
     font-size: 1.05rem;
 }
+
+/* Descuadre entre el indice del directorio y los archivos subidos al nodo. */
+
+.fd-alert {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+    font-size: 0.8rem;
+}
+
+.fd-alert .btn { flex: 0 0 auto; padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+
+.fd-tag-missing {
+    color: var(--danger);
+    border-color: var(--danger);
+}
