@@ -229,6 +229,12 @@ publico. La sirve `GET /api/project-modules/{id}/directory-index`, que pide
 sesion y, a diferencia del endpoint publico, devuelve tambien los errores de
 validacion.
 
+La biblioteca (`/biblioteca`) muestra ademas, por cada archivo, la URL con la
+que este servidor lo expone, o "No expuesto" cuando no lo esta. Solo la tienen
+los archivos de un nodo Directorio que su indice declara: un archivo subido pero
+no indexado no se sirve. La calcula `FileDirectoryPublisher.BuildHostedUrlsAsync`
+desde `/api/module-files`; el resto de endpoints dejan ese campo a null.
+
 El directorio se expone sin autenticacion en:
 
 - `GET /api/public/directory/{tenant}/{moduleId}`: el indice resuelto.

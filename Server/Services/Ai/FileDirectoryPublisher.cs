@@ -93,6 +93,47 @@ public static class FileDirectoryPublisher
         return directory.Files.FirstOrDefault(f => f.Id == entry.SourceFileId);
     }
 
+    /// <summary>
+    /// URL publica de cada fichero alojado, para los nodos Directorio que haya
+    /// entre los indicados. Solo salen los ficheros que el indice de su nodo
+    /// declara: un fichero subido pero no indexado no se sirve, asi que no
+    /// tiene URL que ensenar.
+    ///
+    /// Lo usa la biblioteca para decir de cada archivo si nuestro servidor lo
+    /// esta exponiendo y donde. Los ficheros de otros tipos de nodo no aparecen
+    /// en el resultado, porque no se publican por esta via.
+    /// </summary>
+    public static async Task<Dictionary<Guid, string>> BuildHostedUrlsAsync(
+        UserDbContext db,
+        IEnumerable<Guid> projectModuleIds,
+        string tenant,
+        string? publicBaseUrl,
+        CancellationToken ct = default)
+    {
+        var urls = new Dictionary<Guid, string>();
+
+        var directoryIds = await db.ProjectModules
+            .Where(pm => projectModuleIds.Contains(pm.Id)
+                         && pm.AiModule!.ModuleType == FileDirectoryIndex.ModuleType)
+            .Select(pm => pm.Id)
+            .ToListAsync(ct);
+
+        foreach (var id in directoryIds)
+        {
+            var directory = await LoadAsync(db, id, ct);
+            if (directory is null) continue;
+
+            var index = Resolve(directory, tenant, publicBaseUrl);
+            foreach (var entry in index.Entries)
+            {
+                if (entry.Source == FileDirectoryIndex.Sources.Hosted && entry.SourceFileId is { } fileId)
+                    urls[fileId] = entry.Url;
+            }
+        }
+
+        return urls;
+    }
+
     /// <summary>Ruta en disco de un fichero del directorio, o null si ya no esta.</summary>
     public static string? ResolveDiskPath(string mediaRoot, ModuleFile file)
     {

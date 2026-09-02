@@ -180,9 +180,14 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     // Los archivos pertenecen a la INSTANCIA (ProjectModule), no al catalogo.
     // ProjectName/StepName permiten que la biblioteca muestre a que proyecto
     // y paso concreto pertenece cada archivo subido.
+    // PublicUrl solo lo rellena /api/module-files (la biblioteca), y solo para
+    // los ficheros de un nodo Directorio que su indice declara: son los unicos
+    // que nuestro servidor expone por una URL. En el resto de endpoints y para
+    // el resto de ficheros viene null, que significa "no expuesto".
     public record ModuleFileResponse(
         Guid Id, Guid ProjectModuleId, string ModuleName, Guid ProjectId, string ProjectName,
-        string? StepName, string FileName, string ContentType, long FileSize, DateTime CreatedAt);
+        string? StepName, string FileName, string ContentType, long FileSize, DateTime CreatedAt,
+        string? PublicUrl = null);
 
     // ── Directorio de archivos ──
     // Vista previa de lo que el modulo Directorio emitira: cada fichero con la

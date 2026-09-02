@@ -207,9 +207,13 @@ public record ProjectConnectionsDto(Guid? InstagramConnectionId, Guid? TikTokCon
     Guid? ShopifyConnectionId);
 
 // ── Module Files ──
+// PublicUrl: URL con la que nuestro servidor expone el fichero, o null si no lo
+// expone. Solo la trae la biblioteca (/api/module-files), y solo para ficheros
+// de un nodo Directorio declarados en su indice.
 public record ModuleFileResponse(
     Guid Id, Guid ProjectModuleId, string ModuleName, Guid ProjectId, string ProjectName,
-    string? StepName, string FileName, string ContentType, long FileSize, DateTime CreatedAt);
+    string? StepName, string FileName, string ContentType, long FileSize, DateTime CreatedAt,
+    string? PublicUrl = null);
 
 // ── Directorio de archivos ──
 public record DirectoryIndexEntryResponse(

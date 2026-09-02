@@ -326,7 +326,12 @@ tr:hover td {
 .table-wrap {
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    overflow: hidden;
+    /* Antes era overflow: hidden, y una tabla mas ancha que su contenedor
+       perdia las ultimas columnas sin forma de llegar a ellas (la biblioteca,
+       al ganar la columna de URL publica, dejaba fuera Descargar y Eliminar).
+       En vertical se sigue recortando, que es lo que redondea las esquinas. */
+    overflow-x: auto;
+    overflow-y: hidden;
     margin-top: 1.25rem;
     background: var(--bg-card);
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
@@ -5550,3 +5555,39 @@ a.link:hover { text-decoration: underline; }
 }
 
 .fd-preview-row a:hover { text-decoration: underline; }
+
+/* Biblioteca: URL con la que el servidor expone cada archivo. */
+
+/* Estrecha a proposito: .table-wrap recorta lo que se sale (overflow hidden),
+   asi que una URL larga sin limite empujaria las acciones fuera de la tabla.
+   Se ve el principio, y el enlace lleva la URL entera en el title. */
+.cell-public-url { max-width: 13rem; }
+
+.public-url {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.public-url a {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.public-url a:hover { text-decoration: underline; }
+
+.public-url .btn {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.7rem;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+
+.public-url .btn:hover { color: var(--text); border-color: var(--accent); }

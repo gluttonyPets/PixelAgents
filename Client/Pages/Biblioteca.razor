@@ -1,6 +1,7 @@
 @page "/biblioteca"
 @inject ApiClient Api
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <h2>Biblioteca de Archivos</h2>
 
@@ -23,6 +24,7 @@ else
                 <th>Tamano</th>
                 <th>Proyecto</th>
                 <th>Modulo</th>
+                <th>URL publica</th>
                 <th>Fecha</th>
                 <th></th>
             </tr>
@@ -42,6 +44,23 @@ else
                     <td>
                         @(string.IsNullOrWhiteSpace(f.StepName) ? f.ModuleName : $"{f.StepName} ({f.ModuleName})")
                     </td>
+                    <td class="cell-public-url">
+                        @if (string.IsNullOrWhiteSpace(f.PublicUrl))
+                        {
+                            <span class="text-muted" title="Solo se exponen los archivos de un modulo Directorio que su indice declara">
+                                No expuesto
+                            </span>
+                        }
+                        else
+                        {
+                            <div class="public-url">
+                                <a href="@f.PublicUrl" target="_blank" rel="noopener" title="@f.PublicUrl">@f.PublicUrl</a>
+                                <button class="btn btn-sm" title="Copiar URL" @onclick="() => CopyUrl(f.PublicUrl)">
+                                    @(_copiedUrl == f.PublicUrl ? "Copiada" : "Copiar")
+                                </button>
+                            </div>
+                        }
+                    </td>
                     <td>@f.CreatedAt.ToString("dd MMM yyyy HH:mm")</td>
                     <td class="cell-actions">
                         <a href="/api/module-files/@f.Id/download" target="_blank" class="btn btn-sm">Descargar</a>
@@ -57,6 +76,22 @@ else
 @code {
     private List<ModuleFileResponse> _files = [];
     private bool _loading = true;
+    private string? _copiedUrl;
+
+    /// <summary>
+    /// Copia la URL al portapapeles. Si el navegador no lo permite (contexto no
+    /// seguro), no se marca como copiada y el enlace sigue ahi para copiarlo a
+    /// mano.
+    /// </summary>
+    private async Task CopyUrl(string url)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            _copiedUrl = url;
+        }
+        catch { _copiedUrl = null; }
+    }
 
     protected override async Task OnInitializedAsync()
     {
