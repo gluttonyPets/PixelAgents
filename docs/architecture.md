@@ -140,6 +140,31 @@ Si la cola esta vacia, reutiliza el flujo `awaiting_planning` para pedir una nue
 
 ---
 
+## Editor de pipelines: deshacer
+
+`PipelineCanvas` guarda una pila de acciones deshacibles (boton "Deshacer" en la
+barra y Ctrl+Z / Cmd+Z, que el listener de `pipeline-editor.js` ignora mientras
+se escribe en un campo). Cubre lo que se pierde por accidente: borrar un nodo, y
+borrar o crear una conexion. Mover nodos queda fuera a proposito, porque cada
+arrastre llenaria la pila y taparia lo que interesa recuperar.
+
+El borrado de un nodo **no se manda al servidor de inmediato**. El nodo se oculta
+del canvas (`_hiddenModuleIds`, que `VisibleModules` filtra al repintar) y la
+llamada real se confirma pasados 12 segundos, o antes si el usuario hace
+cualquier otra cosa que guarde el grafo, o al salir del editor. Mientras espera
+no se ha destruido nada, asi que deshacer devuelve el nodo tal cual estaba, con
+su configuracion, sus archivos y sus conexiones.
+
+Ese aplazamiento no es un adorno: `DELETE /api/projects/{id}/modules/{moduleId}`
+arrastra en cascada las conexiones, los archivos del nodo y sus StepExecutions.
+Recrear el nodo despues daria otro id y perderia los archivos subidos, asi que un
+"deshacer" que borrase primero y recrease despues estaria mintiendo.
+
+Mientras el borrado espera tampoco se guarda el grafo, y se cancela el guardado
+con retardo que hubiera en vuelo. Si se recarga la pagina en ese hueco, el nodo
+sigue intacto con sus conexiones: es el fallo mas benigno posible para algo que
+se acaba de borrar sin querer.
+
 ## Modulos soportados
 
 | Tipo          | Handler                    | Descripcion breve                                          |
