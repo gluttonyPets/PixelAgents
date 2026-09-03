@@ -10,9 +10,14 @@ namespace Server.Services.Ai.Handlers;
 public class ImageModuleHandler : IModuleHandler
 {
     private readonly IAiProviderRegistry _registry;
+    private readonly IHttpClientFactory _httpFactory;
     public string ModuleType => "Image";
 
-    public ImageModuleHandler(IAiProviderRegistry registry) => _registry = registry;
+    public ImageModuleHandler(IAiProviderRegistry registry, IHttpClientFactory httpFactory)
+    {
+        _registry = registry;
+        _httpFactory = httpFactory;
+    }
 
     public async Task<ModuleResult> ExecuteAsync(ModuleExecutionContext ctx)
     {
@@ -44,6 +49,11 @@ public class ImageModuleHandler : IModuleHandler
             if (bytes is not null)
                 inputFiles.Add(bytes);
         }
+
+        // Referencias que el texto de entrada cita por URL. Es lo que permite dar
+        // al modelo un indice de la biblioteca en vez de adjuntarle todo: elige
+        // los ficheros que necesita y aqui se bajan solo esos.
+        inputFiles.AddRange(await FetchReferencedImagesAsync(ctx, prompt));
 
         var aiContext = new AiExecutionContext
         {
@@ -147,6 +157,46 @@ public class ImageModuleHandler : IModuleHandler
         output.Metadata["count"] = allImages.Count;
 
         return ModuleResult.Completed(output, result.EstimatedCost, producedFiles);
+    }
+
+    /// <summary>
+    /// Baja las imagenes del directorio publico que el prompt cite por URL. Se
+    /// limita a las de este servidor y a un maximo configurable: si llega el
+    /// indice entero (por conectar el Directorio directo a este nodo) no tiene
+    /// sentido descargar la biblioteca completa.
+    /// </summary>
+    private async Task<List<byte[]>> FetchReferencedImagesAsync(ModuleExecutionContext ctx, string prompt)
+    {
+        var max = ctx.GetConfigInt("maxReferenceImages", ReferenceImageFetcher.DefaultMaxImages);
+        var urls = ReferenceImageFetcher.ExtractDirectoryUrls(prompt, ctx.PublicBaseUrl, max);
+        if (urls.Count == 0) return [];
+
+        var total = ReferenceImageFetcher.CountDirectoryUrls(prompt, ctx.PublicBaseUrl);
+        if (total > urls.Count)
+        {
+            await ctx.LogWarningAsync(
+                $"[Image] El texto cita {total} imagenes del directorio y solo se usan las {urls.Count} primeras. "
+                + "Conecta el Directorio a un modulo de texto que elija, en vez de a este nodo, "
+                + "o sube el maximo de imagenes de referencia.");
+        }
+
+        using var http = _httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromMinutes(2);
+        var fetched = await ReferenceImageFetcher.DownloadAsync(http, urls, ctx.CancellationToken);
+
+        if (fetched.Count == 0)
+        {
+            await ctx.LogWarningAsync(
+                $"[Image] Ninguna de las {urls.Count} referencia(s) del directorio se pudo descargar; "
+                + "se genera solo con el texto.");
+            return [];
+        }
+
+        var names = string.Join(", ", fetched.Select(f =>
+            $"{ReferenceImageFetcher.FileNameOf(f.Url)} ({FormatBytes(f.Data.Length)})"));
+        await ctx.LogInfoAsync($"[Image] {fetched.Count} imagen(es) de referencia del directorio: {names}.");
+
+        return fetched.Select(f => f.Data).ToList();
     }
 
     private static string FormatBytes(long bytes)

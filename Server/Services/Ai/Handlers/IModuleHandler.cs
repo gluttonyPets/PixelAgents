@@ -233,6 +233,31 @@ public class ModuleExecutionContext
         return val?.ToString() ?? fallback;
     }
 
+    /// <summary>
+    /// Lee un valor de configuracion como entero. Como con los booleanos, el
+    /// editor guarda los numeros unas veces como numero JSON y otras como
+    /// cadena, asi que hay que contemplar ambos.
+    /// </summary>
+    public int GetConfigInt(string key, int fallback)
+    {
+        if (!Config.TryGetValue(key, out var val)) return fallback;
+
+        return val switch
+        {
+            int i => i,
+            long l => (int)l,
+            double d => (int)d,
+            System.Text.Json.JsonElement je => je.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.Number => je.TryGetInt32(out var n) ? n : fallback,
+                System.Text.Json.JsonValueKind.String =>
+                    int.TryParse(je.GetString(), out var fromString) ? fromString : fallback,
+                _ => fallback,
+            },
+            _ => int.TryParse(val?.ToString(), out var parsed) ? parsed : fallback,
+        };
+    }
+
     /// <summary>Get a config value as bool.</summary>
     public bool GetConfigBool(string key, bool fallback = false) =>
         Config.TryGetValue(key, out var val) ? ParseConfigBool(val, fallback) : fallback;

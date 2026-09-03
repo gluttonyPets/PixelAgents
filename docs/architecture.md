@@ -227,6 +227,33 @@ explorador (que siempre lee la del nodo) ensenaria una cosa mientras la ejecucio
 usaria otra. Si el catalogo arrastra uno antiguo, se ignora y se avisa en el log.
 `baseUrl` y `format` si se heredan, porque no referencian ficheros.
 
+### Del indice a los bytes: imagenes de referencia
+
+El indice resuelve el problema de los tokens (al modelo se le da un catalogo de
+20 productos sin adjuntar sus 100 imagenes), pero las APIs de imagen no
+descargan URLs: solo aceptan ficheros. Faltaba quien convierte "el modelo eligio
+este producto" en bytes.
+
+Lo hace `ReferenceImageFetcher`, que usa `ImageModuleHandler`: del texto que
+llega al nodo se extraen las URLs del directorio publico **de este mismo
+servidor**, se descargan y se pasan como `InputFiles`. Con ficheros de entrada,
+`OpenAiProvider` llama a `/v1/images/edits` en vez de `/v1/images/generations`, y
+los manda todos como `image[]` (antes solo enviaba el primero).
+
+La lista blanca es deliberada: el texto lo escribe un modelo, y seguir cualquier
+URL que aparezca convertiria el servidor en un proxy de peticiones hacia donde
+diga el prompt. Sin `BaseUrl` configurada no se descarga nada, porque no hay con
+que comparar.
+
+El indice que emite el modulo incluye la instruccion de copiar la URL literal
+para usar un fichero; sin ella el modelo describe lo que elige pero no deja
+rastro que el sistema pueda resolver.
+
+El tope por nodo (`maxReferenceImages`, 6 por defecto, 0 lo desactiva) evita que
+conectar el Directorio directamente al nodo de imagen intente bajarse la
+biblioteca entera; cuando se recorta, queda avisado en el log. Lo suyo es
+conectar el Directorio a un modulo de texto que elija, y ese al de imagen.
+
 ### Explorador del inspector
 
 El indice no se escribe a mano: `Client/Components/FileDirectoryEditor.razor`

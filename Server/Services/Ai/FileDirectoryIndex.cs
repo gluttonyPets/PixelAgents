@@ -495,7 +495,12 @@ public static class FileDirectoryIndex
     {
         var sb = new StringBuilder();
         sb.AppendLine("Indice del directorio de archivos.");
-        sb.AppendLine("Cada fichero indica que es y la URL desde la que puedes descargarlo.");
+        sb.AppendLine("Cada fichero indica que es y la URL desde la que se descarga.");
+        // Sin esta instruccion el modelo describe lo que elige, pero no deja
+        // rastro utilizable: es la URL literal lo que el sistema sabe resolver
+        // despues para adjuntar el fichero.
+        sb.AppendLine("Para usar un fichero, copia su URL tal cual en tu respuesta. El sistema la");
+        sb.AppendLine("descargara y la adjuntara como referencia. Cita solo los que necesites.");
         sb.AppendLine();
 
         foreach (var group in result.Entries
