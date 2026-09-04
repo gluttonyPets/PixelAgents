@@ -453,6 +453,7 @@ else
                         <th class="num">Baja</th>
                         <th class="num">Media</th>
                         <th class="num">Alta</th>
+                        <th class="num" title="Longitud maxima del prompt que acepta la API. Lo que pase de ahi se recorta antes de llamar.">Prompt max.</th>
                         <th>Capacidades</th>
                         <th>Estado</th>
                     </tr>
@@ -461,7 +462,7 @@ else
                     @foreach (var group in GroupByProvider(image))
                     {
                         <tr class="pricing-group-row">
-                            <td colspan="6">@group.Key <span class="pricing-group-count">@group.Count() modelos</span></td>
+                            <td colspan="7">@group.Key <span class="pricing-group-count">@group.Count() modelos</span></td>
                         </tr>
                         @foreach (var m in group)
                         {
@@ -484,6 +485,7 @@ else
                                     <td class="num">@Money(m.ImageMedium, 4)</td>
                                     <td class="num num-strong">@Money(m.ImageHigh, 4)</td>
                                 }
+                                <td class="num">@(m.PromptChars is > 0 ? $"{m.PromptChars.Value:N0}" : "—")</td>
                                 <td>@CapChips(m)</td>
                                 <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
                             </tr>

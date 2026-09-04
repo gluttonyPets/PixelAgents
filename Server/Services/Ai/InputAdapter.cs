@@ -9,13 +9,25 @@ namespace Server.Services.Ai
     /// </summary>
     public static class InputAdapter
     {
-        public static int GetMaxPromptLength(string modelName)
+        /// <summary>
+        /// Limite de prompt en caracteres del modelo. Lo declara el catalogo
+        /// (<see cref="ModelCatalog.CatalogModel.PromptChars"/>), que es lo que
+        /// se ve en la pantalla de modelos: asi el numero se mantiene en un solo
+        /// sitio en vez de repartido entre providers. El switch de abajo solo
+        /// cubre los modelos que no estan en el catalogo (ids con sufijo de
+        /// snapshot, modelos nuevos todavia sin dar de alta).
+        /// </summary>
+        public static int GetMaxPromptLength(string? modelName)
         {
-            return modelName.ToLowerInvariant() switch
+            var declared = ModelCatalog.Find(modelName)?.PromptChars
+                ?? ModelCatalog.Find(ModelLifecycle.StripSnapshotSuffix(modelName ?? ""))?.PromptChars;
+            if (declared is > 0) return declared.Value;
+
+            return (modelName ?? "").ToLowerInvariant() switch
             {
                 "dall-e-2" => 1000,
                 "dall-e-3" => 4000,
-                var m when m.StartsWith("gpt-image") => 4000,
+                var m when m.StartsWith("gpt-image") => 32000,
                 var m when m.StartsWith("leonardo-") => 1500,
                 var m when m.StartsWith("imagen-") => 4000,
                 _ => 4000
@@ -74,24 +86,20 @@ namespace Server.Services.Ai
             return truncated.TrimEnd();
         }
 
-        // Models with higher image prompt limits than the defaults above, ordered by capacity.
-        // These are the models we suggest when a prompt is truncated.
-        private static readonly (string ModelId, string DisplayName, int Limit)[] ImageModelsByCapacity =
-        [
-            ("dall-e-3",         "DALL-E 3 (OpenAI)",                         4_000),
-            ("gpt-image-1-mini", "GPT Image 1 Mini (OpenAI)",                 4_000),
-            ("gpt-image-1",      "GPT Image 1 (OpenAI)",                      4_000),
-            ("gpt-image-1.5",    "GPT Image 1.5 (OpenAI)",                    4_000),
-            ("leonardo-phoenix",       "Leonardo Phoenix (LeonardoAI)",       1_500),
-            ("leonardo-phoenix-0.9",   "Leonardo Phoenix 0.9 (LeonardoAI)",   1_500),
-            ("leonardo-flux-dev",      "Leonardo Flux Dev (LeonardoAI)",      1_500),
-            ("leonardo-flux-schnell",  "Leonardo Flux Schnell (LeonardoAI)",  1_500),
-            ("gemini-2.5-flash-image",         "Gemini 2.5 Flash Image (Google)", 4_000),
-            ("gemini-3.1-flash-image-preview", "Gemini 3.1 Flash Image Preview (Google)", 4_000),
-            ("gemini-3-pro-image-preview",     "Gemini 3 Pro Image Preview (Google)", 4_000),
-            ("grok-imagine-image",     "Grok Imagine (xAI)",     4_000),
-            ("grok-imagine-image-pro", "Grok Imagine Pro (xAI)", 4_000),
-        ];
+        // Modelos de imagen que admiten un prompt mas largo que el actual: se
+        // sugieren cuando hay que recortar. Salen del catalogo para que la lista
+        // no se quede vieja cada vez que se da de alta un modelo, y se descartan
+        // los ya retirados: sugerir un modelo que responde 404 no ayuda.
+        private static IEnumerable<(string Id, string Display, int Limit)> ImageModelsAbove(int limit)
+        {
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+            return ModelCatalog.GetByModuleType("Image")
+                .Where(m => ModelLifecycle.Resolve(m.Id, today).Status != ModelStatus.Retired)
+                .Select(m => (m.Id, Display: $"{m.DisplayName} ({m.Provider})", Limit: GetMaxPromptLength(m.Id)))
+                .Where(m => m.Limit > limit)
+                .OrderByDescending(m => m.Limit);
+        }
 
         /// <summary>
         /// Builds a human-readable warning for the execution log when a prompt was
@@ -100,16 +108,10 @@ namespace Server.Services.Ai
         public static string BuildTruncationWarning(string modelName, int originalLength, int maxLength)
         {
             var currentLimit = GetMaxPromptLength(modelName);
-            var suggestions = new List<string>();
-
-            foreach (var (id, display, limit) in ImageModelsByCapacity)
-            {
-                if (limit > currentLimit
-                    && !string.Equals(id, modelName, StringComparison.OrdinalIgnoreCase))
-                {
-                    suggestions.Add(display);
-                }
-            }
+            var suggestions = ImageModelsAbove(currentLimit)
+                .Where(m => !string.Equals(m.Id, modelName, StringComparison.OrdinalIgnoreCase))
+                .Select(m => $"{m.Display}: {m.Limit:N0}")
+                .ToList();
 
             var suggestionText = suggestions.Count > 0
                 ? $" Considera cambiar a un modelo con mayor capacidad: {string.Join(", ", suggestions)}."

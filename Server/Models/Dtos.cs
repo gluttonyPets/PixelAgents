@@ -131,6 +131,11 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     /// "image-generation"...). La pantalla las cruza con el precio.
     /// </param>
     /// <param name="ContextTokens">Ventana de contexto, o null donde no aplica.</param>
+    /// <param name="PromptChars">
+    /// Longitud maxima del prompt en caracteres que acepta la API. Es el limite contra
+    /// el que se recorta antes de llamar, asi que verlo en la pantalla de modelos es lo
+    /// que permite entender un aviso de "prompt recortado" y elegir modelo por eso.
+    /// </param>
     public record ModelPriceResponse(
         string Id, string DisplayName, string Provider, string Kind,
         decimal? InputPerMTok, decimal? OutputPerMTok,
@@ -139,7 +144,8 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         string ModuleType,
         ModelLifecycleResponse Lifecycle,
         string[]? Capabilities = null,
-        int? ContextTokens = null);
+        int? ContextTokens = null,
+        int? PromptChars = null);
 
     // ── Deteccion de cambios en el catalogo de modelos ──
 

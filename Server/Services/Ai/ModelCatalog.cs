@@ -26,9 +26,18 @@ public static class ModelCatalog
     /// audio, diseno). Es la unica medida de capacidad que publican todos los
     /// proveedores con el mismo significado, asi que es la que se puede comparar.
     /// </param>
+    /// <param name="PromptChars">
+    /// Longitud maxima del prompt en CARACTERES que acepta la API del modelo. Es el
+    /// limite contra el que se recorta antes de llamar (<see cref="InputAdapter"/>),
+    /// y por eso vive aqui y no repartido por los providers: un limite mal puesto se
+    /// come el final del prompt sin que nadie lo vea. Aplica sobre todo a imagen,
+    /// donde el prompt viaja como un unico campo de texto con tope propio y no como
+    /// mensajes contados en tokens. null = sin limite declarado (se usa el fallback
+    /// por familia de <see cref="InputAdapter.GetMaxPromptLength"/>).
+    /// </param>
     public record CatalogModel(
         string Id, string DisplayName, string Provider, string[] Types,
-        string[]? Capabilities = null, int? ContextTokens = null);
+        string[]? Capabilities = null, int? ContextTokens = null, int? PromptChars = null);
 
     public static readonly CatalogModel[] AllModels =
     [
@@ -82,17 +91,17 @@ public static class ModelCatalog
 
         // ─── OpenAI: Image ───
         new("gpt-image-2",      "GPT Image 2",      "OpenAI", ["Image"],
-            ["image-generation","image-edit"], null),
+            ["image-generation","image-edit"], null, PromptChars: 32_000),
         new("gpt-image-1.5",    "GPT Image 1.5",    "OpenAI", ["Image"],
-            ["image-generation","image-edit"], null),
+            ["image-generation","image-edit"], null, PromptChars: 32_000),
         new("gpt-image-1",      "GPT Image 1",      "OpenAI", ["Image"],
-            ["image-generation","image-edit"], null),
+            ["image-generation","image-edit"], null, PromptChars: 32_000),
         new("gpt-image-1-mini", "GPT Image 1 Mini", "OpenAI", ["Image"],
-            ["image-generation","image-edit"], null),
+            ["image-generation","image-edit"], null, PromptChars: 32_000),
         new("dall-e-3",         "DALL-E 3",         "OpenAI", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 4_000),
         new("dall-e-2",         "DALL-E 2",         "OpenAI", ["Image"],
-            ["image-generation","image-editing"], null),
+            ["image-generation","image-editing"], null, PromptChars: 1_000),
 
         // ─── OpenAI: Embeddings ───
         new("text-embedding-3-large", "Embedding 3 Large", "OpenAI", ["Embeddings"],
@@ -166,9 +175,9 @@ public static class ModelCatalog
 
         // ─── xAI: Image ───
         new("grok-imagine-image",     "Grok Imagine",     "xAI", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 4_000),
         new("grok-imagine-image-pro", "Grok Imagine Pro", "xAI", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 4_000),
 
         // ─── Google: Text ───
         new("gemini-2.5-flash",     "Gemini 2.5 Flash",      "Google", ["Text","Orchestrator","Coordinator"],
@@ -184,22 +193,28 @@ public static class ModelCatalog
 
         // ─── Google: Image ───
         new("gemini-2.5-flash-image",         "Gemini 2.5 Flash Image",         "Google", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 4_000),
         new("gemini-3.1-flash-image-preview", "Gemini 3.1 Flash Image Preview", "Google", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 4_000),
         new("gemini-3-pro-image-preview",     "Gemini 3 Pro Image Preview",     "Google", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 4_000),
 
         // ─── Leonardo AI: Image ───
         new("leonardo-phoenix",       "Leonardo Phoenix 1.0",  "LeonardoAI", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 1_500),
         new("leonardo-phoenix-0.9",   "Leonardo Phoenix 0.9",  "LeonardoAI", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 1_500),
         new("leonardo-flux-dev",      "Leonardo Flux Dev",     "LeonardoAI", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 1_500),
         new("leonardo-flux-schnell",  "Leonardo Flux Schnell", "LeonardoAI", ["Image"],
-            ["image-generation"], null),
+            ["image-generation"], null, PromptChars: 1_500),
     ];
+
+    /// <summary>Datos de catalogo de un modelo por su id, o null si no esta.</summary>
+    public static CatalogModel? Find(string? modelId) =>
+        string.IsNullOrWhiteSpace(modelId)
+            ? null
+            : AllModels.FirstOrDefault(m => string.Equals(m.Id, modelId, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Models matching the given ModuleType ("Image", "Text", ...).</summary>
     public static IEnumerable<CatalogModel> GetByModuleType(string moduleType) =>

@@ -63,7 +63,8 @@ public class ModelCatalogService : IModelCatalogService
                 PrimaryModuleType(m),
                 BuildLifecycle(m, today, available),
                 m.Capabilities ?? [],
-                m.ContextTokens));
+                m.ContextTokens,
+                m.PromptChars));
         }
 
         return result;

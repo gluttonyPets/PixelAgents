@@ -77,9 +77,22 @@ nombre del fichero (~130 caracteres menos por cita, y una URL menos que el model
 pueda dibujar como texto). Como efecto secundario, las URLs que cita la escena
 entran antes que las del índice en el reparto de referencias.
 
-> Nota: `InputAdapter.GetMaxPromptLength` asume 4.000 caracteres para toda la
-> familia `gpt-image`. OpenAI documenta 32.000 para `gpt-image-1`. Si el límite
-> real es mayor, subirlo ahí quita el recorte de raíz.
+## Tercera vuelta: el límite era el de otro modelo
+
+El recorte que disparó todo esto no debería haber existido:
+`InputAdapter.GetMaxPromptLength` devolvía 4.000 caracteres para toda la familia
+`gpt-image`, que es el límite de DALL-E 3. OpenAI documenta **32.000** para
+`gpt-image`. Se partían por la mitad prompts perfectamente válidos.
+
+El límite pasa a ser un dato del catálogo (`ModelCatalog.CatalogModel.PromptChars`),
+que es de donde salen ya las capacidades y la ventana de contexto, y se ve como
+columna "Prompt máx." en la sección de imagen de la pantalla de modelos. Detalles en
+[`../CATALOGO_MODELOS.md`](../CATALOGO_MODELOS.md).
+
+Con eso, `InputAdapter` deja de tener números propios (solo un fallback por familia
+para ids que no estén en el catálogo) y la lista de modelos que sugiere el aviso de
+recorte se calcula del catálogo en vez de una tabla paralela que se quedaba vieja
+—y descarta los modelos ya retirados, que antes se sugerían igual—.
 
 ## Verificación
 

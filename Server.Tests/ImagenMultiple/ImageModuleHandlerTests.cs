@@ -97,7 +97,7 @@ public class ImageModuleHandlerTests
         // El caso real: el indice del Directorio mas el concepto del disenador
         // pasaban del limite del modelo y el recorte se llevaba justo la escena,
         // asi que las dos imagenes salian con el mismo texto.
-        var comun = new string('c', 6000);
+        var comun = new string('c', 40_000);
         var escena1 = "Sofa lleno de pelos con el cepillo al lado.";
         var escena2 = "El mismo sofa ya limpio.";
 
@@ -111,9 +111,10 @@ public class ImageModuleHandlerTests
         Assert.Contains(escena2, provider.Calls[1].Input);
         Assert.DoesNotContain(escena2, provider.Calls[0].Input);
 
-        // Y lo que se manda cabe en el limite del modelo, sin depender de que el
-        // proveedor recorte por el final.
-        Assert.All(provider.Calls, c => Assert.True(c.Input.Length <= 4000, $"prompt de {c.Input.Length} chars"));
+        // Y lo que se manda cabe en el limite que el catalogo declara para el
+        // modelo, sin depender de que el proveedor recorte por el final.
+        var limite = InputAdapter.GetMaxPromptLength("gpt-image-2");
+        Assert.All(provider.Calls, c => Assert.True(c.Input.Length <= limite, $"prompt de {c.Input.Length} chars"));
     }
 
     [Fact]
@@ -122,12 +123,12 @@ public class ImageModuleHandlerTests
         var provider = new FakeImageProvider();
         var ctx = CreateContext(provider, imageCount: 2, upstreamTexts:
         [
-            $"contexto comun\n\n===IMAGEN 1===\n{new string('a', 6000)}\n===IMAGEN 2===\ncorta"
+            $"contexto comun\n\n===IMAGEN 1===\n{new string('a', 40_000)}\n===IMAGEN 2===\ncorta"
         ]);
 
         await CreateHandler(provider).ExecuteAsync(ctx);
 
-        Assert.True(provider.Calls[0].Input.Length <= 4000);
+        Assert.True(provider.Calls[0].Input.Length <= InputAdapter.GetMaxPromptLength("gpt-image-2"));
         Assert.DoesNotContain("contexto comun", provider.Calls[0].Input);
         // La segunda cabe entera y conserva su contexto.
         Assert.Contains("contexto comun", provider.Calls[1].Input);

@@ -35,6 +35,10 @@ public record ModelLifecycleResponse(
 /// <param name="ContextTokens">
 /// Ventana de contexto en tokens; null en imagen, audio y diseño, donde no aplica.
 /// </param>
+/// <param name="PromptChars">
+/// Longitud máxima del prompt en caracteres que acepta la API. Es el límite contra el
+/// que el servidor recorta antes de llamar; null cuando el modelo no declara uno.
+/// </param>
 public record ModelPriceResponse(
     string Id, string DisplayName, string Provider, string Kind,
     decimal? InputPerMTok, decimal? OutputPerMTok,
@@ -43,7 +47,8 @@ public record ModelPriceResponse(
     string ModuleType,
     ModelLifecycleResponse Lifecycle,
     string[]? Capabilities = null,
-    int? ContextTokens = null)
+    int? ContextTokens = null,
+    int? PromptChars = null)
 {
     /// <summary>Capacidades del modelo, nunca null: la lista vacia es "no se sabe".</summary>
     public string[] Caps => Capabilities ?? [];

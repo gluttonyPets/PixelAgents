@@ -260,6 +260,9 @@ de idioma, contexto del proyecto, `systemPrompt`) y, si no cabe todo, recorta el
 **contexto comun** dejando la parte propia entera. Solo si la parte propia sola
 ya pasa del limite se recorta ella, y queda avisado en el log.
 
+El limite de cada modelo lo declara el catalogo (`PromptChars`, visible en la
+pantalla de modelos); ver `docs/CATALOGO_MODELOS.md`.
+
 Si el texto llega sin marcas no hay nada que repartir: se avisa en el log de la
 ejecucion y se mantiene el comportamiento antiguo (una llamada con `n=N`, que
 devolvera copias). Lo mismo si el numero de partes no coincide con el de

@@ -13,7 +13,7 @@ La lista está **duplicada a propósito** en dos sitios, y hay que tocar los dos
 | Fichero | Para qué | Qué guarda |
 |---------|----------|------------|
 | `Client/Pages/Modules.razor` → `AllModels` | Alta de módulos en la UI | id, nombre, tipos, capacidades, descripción, contexto |
-| `Server/Services/Ai/ModelCatalog.cs` → `AllModels` | Todo lo que no pasa por la UI (bot de Telegram, ejecutor, endpoints) | id, nombre, proveedor, tipos, capacidades, contexto |
+| `Server/Services/Ai/ModelCatalog.cs` → `AllModels` | Todo lo que no pasa por la UI (bot de Telegram, ejecutor, endpoints) | id, nombre, proveedor, tipos, capacidades, contexto, límite de prompt |
 
 Los dos tienen que contener **exactamente los mismos ids**. Si solo añades uno, el
 modelo aparece en la UI pero el bot de Telegram no lo ofrece y no sale en la pantalla
@@ -26,6 +26,24 @@ Las **capacidades** y la **ventana de contexto** también tienen que coincidir: 
 pantalla de modelos filtra por ellas y las cruza con el precio, y para eso tienen que
 viajar por la API, no quedarse en el Razor. Otro test las compara capacidad a capacidad
 (`LasCapacidadesDelServidorCoincidenConLasDelCliente`).
+
+### Límite de prompt (`PromptChars`)
+
+Caracteres que acepta la API en el campo de prompt. Vive **solo en el catálogo del
+servidor**: no lo usa el desplegable de alta de módulos, así que no hace falta
+duplicarlo en el Razor, pero sí viaja por la API (`ModelPriceResponse.PromptChars`)
+y se ve como columna "Prompt máx." en la sección de imagen de la pantalla de modelos.
+
+Es el número contra el que `InputAdapter.GetMaxPromptLength` recorta el prompt antes
+de llamar al proveedor, y del que sale la lista de modelos que se sugieren en el aviso
+de recorte. Por eso está aquí y no repartido por los providers: estaba fijado a 4.000
+para toda la familia `gpt-image` —que es el límite de DALL-E 3, no el suyo (32.000)— y
+partía por la mitad prompts perfectamente válidos, sin más rastro que un aviso en el
+log. Un modelo de imagen nuevo tiene que traer su `PromptChars`; hay un test que falla
+si falta (`LimitePromptImagenTests.TodoModeloDeImagenDelCatalogoDeclaraSuLimite`).
+
+Los ids con sufijo de snapshot heredan el límite de su modelo base, igual que en el
+ciclo de vida. Lo que no está en el catálogo cae en un fallback por familia.
 
 Alrededor hay tres tablas más que se sincronizan con estas:
 
