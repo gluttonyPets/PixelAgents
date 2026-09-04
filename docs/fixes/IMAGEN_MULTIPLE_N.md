@@ -54,6 +54,33 @@ Sin marcas en el texto no hay reparto posible: se mantiene la llamada única y
 queda avisado en el log de la ejecución, igual que cuando el número de partes no
 coincide con el de salidas.
 
+## Segunda vuelta: el recorte se comía la parte propia
+
+Con el reparto ya funcionando, las imágenes seguían saliendo iguales. El log lo
+enseñaba:
+
+```
+imagen 1/2 ... prompt 5775 chars
+[AVISO] El prompt fue recortado de 6,452 a 4,000 caracteres
+```
+
+El contexto común (índice del Directorio + concepto del diseñador) iba delante y
+la parte propia de cada imagen al final. El proveedor trunca por el final contra
+el límite del modelo, así que el recorte se llevaba los ~2.450 caracteres de la
+escena y las dos llamadas acababan enviando prácticamente el mismo texto.
+
+Ahora la parte propia va **primero** y el módulo reparte el presupuesto antes de
+llamar: descuenta lo que el proveedor antepone (regla de idioma, contexto del
+proyecto, `systemPrompt`) y recorta el contexto común, no la escena. Además, una
+vez descargadas las referencias, las URLs del directorio se sustituyen por el
+nombre del fichero (~130 caracteres menos por cita, y una URL menos que el modelo
+pueda dibujar como texto). Como efecto secundario, las URLs que cita la escena
+entran antes que las del índice en el reparto de referencias.
+
+> Nota: `InputAdapter.GetMaxPromptLength` asume 4.000 caracteres para toda la
+> familia `gpt-image`. OpenAI documenta 32.000 para `gpt-image-1`. Si el límite
+> real es mayor, subirlo ahí quita el recorte de raíz.
+
 ## Verificación
 
 ```bash

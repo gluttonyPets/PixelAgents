@@ -120,6 +120,32 @@ public static class ReferenceImageFetcher
         return results;
     }
 
+    /// <summary>
+    /// Sustituye las URLs del directorio por el nombre del fichero al que
+    /// apuntan. Se aplica al texto que va al modelo de imagen DESPUES de
+    /// descargar las referencias: a esas alturas la URL ya no aporta nada (el
+    /// modelo no descarga nada, recibe los bytes adjuntos), ocupa ~130 de los
+    /// 4.000 caracteres que admite el prompt, y siendo un modelo que dibuja
+    /// texto puede acabar pintada dentro de la imagen.
+    /// </summary>
+    public static string ReplaceUrlsWithNames(string? text, string? publicBaseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return text ?? "";
+
+        var prefix = BuildDirectoryPrefix(publicBaseUrl);
+        if (prefix is null) return text!;
+
+        return UrlPattern.Replace(text!, match =>
+        {
+            // La puntuacion final no forma parte de la URL (igual que al extraerlas).
+            var url = match.Value.TrimEnd('.', ',', ';', ':');
+            if (!url.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return match.Value;
+
+            var trailing = match.Value[url.Length..];
+            return FileNameOf(url) + trailing;
+        });
+    }
+
     /// <summary>Nombre legible de una referencia, para los logs y la trazabilidad.</summary>
     public static string FileNameOf(string url)
     {

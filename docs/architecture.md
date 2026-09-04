@@ -246,7 +246,19 @@ El contrato entre las dos puntas vive en `MultiImagePrompt`:
 
 Cada llamada resuelve sus propias imagenes de referencia, asi que una parte
 puede citar un fichero del directorio y la otra uno distinto; una URL repetida
-se descarga una sola vez.
+se descarga una sola vez. Ya descargadas, las URLs del directorio se sustituyen
+por el nombre del fichero antes de mandar el texto: el modelo no descarga nada,
+la URL ocupa unos 130 de los 4000 caracteres del prompt y un modelo que dibuja
+texto puede acabar pintandola.
+
+**El orden importa**: la parte propia de la imagen va PRIMERO y el contexto
+comun detras. El proveedor trunca por el final contra el limite del modelo, asi
+que con el orden contrario el recorte se llevaba justo lo que diferencia una
+imagen de otra y las N volvian a salir iguales. Ademas el modulo reparte el
+presupuesto antes de llamar: descuenta lo que el proveedor va a anteponer (regla
+de idioma, contexto del proyecto, `systemPrompt`) y, si no cabe todo, recorta el
+**contexto comun** dejando la parte propia entera. Solo si la parte propia sola
+ya pasa del limite se recorta ella, y queda avisado en el log.
 
 Si el texto llega sin marcas no hay nada que repartir: se avisa en el log de la
 ejecucion y se mantiene el comportamiento antiguo (una llamada con `n=N`, que

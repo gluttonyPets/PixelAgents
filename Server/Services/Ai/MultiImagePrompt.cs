@@ -113,7 +113,8 @@ public static class MultiImagePrompt
             Reglas de la separacion:
             - Cada bloque describe UNA sola imagen y tiene que ser autocontenido: el modelo que lo lea no vera los demas bloques ni sabra que existen.
             - No repartas una misma composicion entre bloques ni metas todas las partes en cada bloque.
-            - Lo que escribas ANTES de la marca {BuildMarker(1)} se envia como contexto comun a todas las imagenes: usalo solo para lo que compartan (estilo, paleta, formato, URLs de referencia comunes).
+            - Lo que escribas ANTES de la marca {BuildMarker(1)} se envia como contexto comun a todas las imagenes: usalo solo para lo que compartan (estilo, paleta, formato, referencias comunes) y manten esa parte BREVE, de dos a cuatro lineas.
+            - No describas ahi el contenido de ninguna imagen concreta: cada modelo de imagen recibe un prompt corto (unos 4000 caracteres) y lo que sobra se recorta, asi que todo lo que gaste el contexto comun se lo quita a los bloques.
             - Numera las marcas de 1 a {count}, en orden y sin saltarte ninguna.
             - Las marcas son separadores tecnicos, no decoracion: escribelas tal cual aunque otras reglas pidan texto plano sin simbolos.
             """;

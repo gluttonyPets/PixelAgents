@@ -78,6 +78,62 @@ public class ImageModuleHandlerTests
     }
 
     [Fact]
+    public async Task LaParteDeCadaImagenVaDelanteDelContextoComun()
+    {
+        // Es lo que la salva del recorte: el proveedor trunca por el final.
+        var provider = new FakeImageProvider();
+        var ctx = CreateContext(provider, imageCount: 2,
+            upstreamTexts: ["Contexto comun del diseno.\n\n===IMAGEN 1===\nuno\n===IMAGEN 2===\ndos"]);
+
+        await CreateHandler(provider).ExecuteAsync(ctx);
+
+        Assert.StartsWith("uno", provider.Calls[0].Input);
+        Assert.StartsWith("dos", provider.Calls[1].Input);
+    }
+
+    [Fact]
+    public async Task ConContextoComunEnorme_LaParteDeCadaImagenSobreviveEntera()
+    {
+        // El caso real: el indice del Directorio mas el concepto del disenador
+        // pasaban del limite del modelo y el recorte se llevaba justo la escena,
+        // asi que las dos imagenes salian con el mismo texto.
+        var comun = new string('c', 6000);
+        var escena1 = "Sofa lleno de pelos con el cepillo al lado.";
+        var escena2 = "El mismo sofa ya limpio.";
+
+        var provider = new FakeImageProvider();
+        var ctx = CreateContext(provider, imageCount: 2,
+            upstreamTexts: [$"{comun}\n\n===IMAGEN 1===\n{escena1}\n===IMAGEN 2===\n{escena2}"]);
+
+        await CreateHandler(provider).ExecuteAsync(ctx);
+
+        Assert.Contains(escena1, provider.Calls[0].Input);
+        Assert.Contains(escena2, provider.Calls[1].Input);
+        Assert.DoesNotContain(escena2, provider.Calls[0].Input);
+
+        // Y lo que se manda cabe en el limite del modelo, sin depender de que el
+        // proveedor recorte por el final.
+        Assert.All(provider.Calls, c => Assert.True(c.Input.Length <= 4000, $"prompt de {c.Input.Length} chars"));
+    }
+
+    [Fact]
+    public async Task ParteMasLargaQueElLimite_SeRecortaEllaYSeVaElContextoComun()
+    {
+        var provider = new FakeImageProvider();
+        var ctx = CreateContext(provider, imageCount: 2, upstreamTexts:
+        [
+            $"contexto comun\n\n===IMAGEN 1===\n{new string('a', 6000)}\n===IMAGEN 2===\ncorta"
+        ]);
+
+        await CreateHandler(provider).ExecuteAsync(ctx);
+
+        Assert.True(provider.Calls[0].Input.Length <= 4000);
+        Assert.DoesNotContain("contexto comun", provider.Calls[0].Input);
+        // La segunda cabe entera y conserva su contexto.
+        Assert.Contains("contexto comun", provider.Calls[1].Input);
+    }
+
+    [Fact]
     public async Task SinTextoSegmentado_SigueHaciendoUnaSolaLlamada()
     {
         // No se puede repartir lo que no viene separado: se mantiene el

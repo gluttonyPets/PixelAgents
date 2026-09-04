@@ -39,6 +39,43 @@ public class ReferenceImageFetcherTests
     }
 
     [Fact]
+    public void LasUrlsDelDirectorio_SeCambianPorElNombreDelFichero()
+    {
+        // Ya descargadas y adjuntas, la URL solo gasta caracteres del limite del
+        // prompt y un modelo que dibuja texto puede acabar pintandola.
+        var texto = $"- cepillo: cepillo quitapelos 1\n  URL: {Dir}/Cepillo%20Quitapelos/cepillo%20vertical.png";
+
+        var limpio = ReferenceImageFetcher.ReplaceUrlsWithNames(texto, Base);
+
+        Assert.Equal("- cepillo: cepillo quitapelos 1\n  URL: cepillo vertical.png", limpio);
+        Assert.True(limpio.Length < texto.Length);
+    }
+
+    [Fact]
+    public void LaPuntuacionQueSigueALaUrl_SeConserva()
+    {
+        var limpio = ReferenceImageFetcher.ReplaceUrlsWithNames($"usa {Dir}/a/main.jpg.", Base);
+
+        Assert.Equal("usa main.jpg.", limpio);
+    }
+
+    [Theory]
+    [InlineData("https://otro-sitio.com/imagen.jpg")]
+    [InlineData("https://pixel.ejemplo.com/api/public/files/tenant/exec/id/otro.jpg")]
+    public void LasUrlsAjenasAlDirectorio_NoSeTocan(string url)
+    {
+        Assert.Equal($"mira {url}", ReferenceImageFetcher.ReplaceUrlsWithNames($"mira {url}", Base));
+    }
+
+    [Fact]
+    public void SinUrlPublicaConfigurada_ElTextoNoSeToca()
+    {
+        var texto = $"usa {Dir}/a/main.jpg";
+
+        Assert.Equal(texto, ReferenceImageFetcher.ReplaceUrlsWithNames(texto, null));
+    }
+
+    [Fact]
     public void SinUrlPublicaConfigurada_NoDescargaNada()
     {
         // Sin base con la que comparar no hay lista blanca posible, y aceptar

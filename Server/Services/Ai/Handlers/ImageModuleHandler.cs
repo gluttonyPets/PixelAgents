@@ -42,10 +42,19 @@ public class ImageModuleHandler : IModuleHandler
         if (!string.IsNullOrWhiteSpace(split.Common)) commonParts.Add(split.Common);
         var common = string.Join("\n\n", commonParts);
 
-        var prompts = await BuildPromptsAsync(ctx, requested, common, split.Segments);
-        var fanOut = prompts.Count > 1;
+        // Sin reparto la escena va vacia y todo el texto viaja como contexto:
+        // el prompt sale igual que antes de existir el multi-imagen.
+        var scenes = await BuildScenesAsync(ctx, requested, split.Segments);
+        var fanOut = scenes.Count > 1;
+        if (!fanOut)
+        {
+            common = Join(common, scenes);
+            scenes = [""];
+        }
 
-        if (prompts.All(string.IsNullOrWhiteSpace) && string.IsNullOrWhiteSpace(ctx.GetConfig("systemPrompt", "")))
+        if (string.IsNullOrWhiteSpace(common)
+            && scenes.All(string.IsNullOrWhiteSpace)
+            && string.IsNullOrWhiteSpace(ctx.GetConfig("systemPrompt", "")))
             return ModuleResult.Failed("Sin prompt de entrada");
 
         var module = ctx.Node.AiModule;
@@ -79,17 +88,28 @@ public class ImageModuleHandler : IModuleHandler
         // Una misma referencia citada en varias escenas se baja una sola vez.
         var referenceCache = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
 
-        for (var i = 0; i < prompts.Count; i++)
+        var budget = PromptBudget(ctx, module.ModelName);
+
+        for (var i = 0; i < scenes.Count; i++)
         {
-            var prompt = prompts[i];
-            var label = fanOut ? $"imagen {i + 1}/{prompts.Count}" : "imagen";
+            var label = fanOut ? $"imagen {i + 1}/{scenes.Count}" : "imagen";
+
+            // La parte propia va primero: si algo se sale del limite del modelo
+            // tiene que ser el contexto comun. Ademas asi las URLs que cita esta
+            // escena entran antes en el reparto de referencias que las del indice.
+            var raw = Join(scenes[i], [common]);
 
             // Referencias que el texto de esta imagen cita por URL. Es lo que permite dar
             // al modelo un indice de la biblioteca en vez de adjuntarle todo: elige
             // los ficheros que necesita y aqui se bajan solo esos. En el reparto
             // multi-imagen cada parte puede citar las suyas.
             var callFiles = new List<byte[]>(inputFiles);
-            callFiles.AddRange(await FetchReferencedImagesAsync(ctx, prompt, referenceCache, label));
+            callFiles.AddRange(await FetchReferencedImagesAsync(ctx, raw, referenceCache, label));
+
+            var prompt = await FitPromptAsync(
+                ctx, label, budget,
+                ReferenceImageFetcher.ReplaceUrlsWithNames(scenes[i], ctx.PublicBaseUrl),
+                ReferenceImageFetcher.ReplaceUrlsWithNames(common, ctx.PublicBaseUrl));
 
             var callConfig = new Dictionary<string, object>(ctx.Config, StringComparer.OrdinalIgnoreCase)
             {
@@ -178,7 +198,7 @@ public class ImageModuleHandler : IModuleHandler
 
         if (failures.Count > 0)
             await ctx.LogWarningAsync(
-                $"[Image] {failures.Count} de {prompts.Count} llamada(s) fallaron; " +
+                $"[Image] {failures.Count} de {scenes.Count} llamada(s) fallaron; " +
                 $"se continua con {allImages.Count} imagen(es). Los puertos sin imagen no propagan datos.");
 
         contentType = string.IsNullOrEmpty(contentType) ? "image/png" : contentType;
@@ -218,12 +238,13 @@ public class ImageModuleHandler : IModuleHandler
     }
 
     /// <summary>
-    /// Decide que prompts se envian: uno por escena cuando el texto llega
-    /// segmentado, o uno solo en cualquier otro caso. Deja dicho en el log por
-    /// que, porque es la diferencia entre N imagenes distintas y N copias.
+    /// Decide la parte propia de cada imagen: una por escena cuando el texto
+    /// llega segmentado, o ninguna en cualquier otro caso (una sola llamada con
+    /// todo el texto). Deja dicho en el log por que, porque es la diferencia
+    /// entre N imagenes distintas y N copias.
     /// </summary>
-    private static async Task<List<string>> BuildPromptsAsync(
-        ModuleExecutionContext ctx, int requested, string common, List<string> segments)
+    private static async Task<List<string>> BuildScenesAsync(
+        ModuleExecutionContext ctx, int requested, List<string> segments)
     {
         if (requested <= 1)
         {
@@ -231,7 +252,7 @@ public class ImageModuleHandler : IModuleHandler
                 await ctx.LogWarningAsync(
                     $"[Image] El texto de entrada trae {segments.Count} partes pero el modulo esta configurado " +
                     "para 1 imagen: se generan todas juntas en una sola. Sube el numero de imagenes del modulo.");
-            return [Join(common, segments)];
+            return segments;
         }
 
         if (segments.Count < 2)
@@ -241,7 +262,7 @@ public class ImageModuleHandler : IModuleHandler
                 $"({MultiImagePrompt.BuildMarker(1)}, {MultiImagePrompt.BuildMarker(2)}, ...), asi que no hay nada que repartir: " +
                 $"se piden las {requested} al proveedor con el MISMO prompt y saldran repetidas. " +
                 "Conecta un modulo de texto delante para que planifique un prompt por imagen.");
-            return [Join(common, segments)];
+            return segments;
         }
 
         if (segments.Count != requested)
@@ -253,14 +274,69 @@ public class ImageModuleHandler : IModuleHandler
         await ctx.LogInfoAsync(
             $"[Image] Reparto multi-imagen: {effective} llamada(s) independientes, una por parte del prompt.");
 
-        return segments.Take(effective).Select(s => Join(common, [s])).ToList();
+        return segments.Take(effective).ToList();
     }
 
-    private static string Join(string common, List<string> parts)
+    /// <summary>
+    /// Caracteres de prompt que quedan para el texto del modulo. El proveedor
+    /// antepone su regla de idioma y el contexto del proyecto y luego trunca por
+    /// el final contra el limite del modelo, asi que hay que descontarlos aqui:
+    /// si no, el recorte se lleva la cola del prompt, que es justo donde iria la
+    /// parte propia de cada imagen.
+    /// </summary>
+    private static int PromptBudget(ModuleExecutionContext ctx, string modelName)
     {
-        var pieces = new List<string>(parts.Count + 1);
-        if (!string.IsNullOrWhiteSpace(common)) pieces.Add(common);
-        pieces.AddRange(parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+        var max = InputAdapter.GetMaxPromptLength(modelName);
+        var reserved = InputAdapter.GetVisualMediaRule().Length
+            + (ctx.Project.Context?.Length ?? 0)
+            + ctx.GetConfig("systemPrompt", "").Length
+            + 80; // envoltorio "[Contexto: ...]" y separadores
+        return Math.Max(max / 4, max - reserved);
+    }
+
+    /// <summary>
+    /// Encaja la parte propia de la imagen y el contexto comun en el limite del
+    /// modelo. La parte propia manda: se respeta entera y lo que se recorta es
+    /// el contexto comun. Al reves, las N imagenes acaban con el mismo texto y
+    /// vuelve el fallo de generar la misma composicion repetida.
+    /// </summary>
+    private static async Task<string> FitPromptAsync(
+        ModuleExecutionContext ctx, string label, int budget, string scene, string common)
+    {
+        scene = scene.Trim();
+        common = common.Trim();
+
+        // Sin reparto no hay nada que priorizar: se manda tal cual y trunca el
+        // proveedor, como siempre.
+        if (scene.Length == 0) return common;
+
+        if (scene.Length >= budget)
+        {
+            await ctx.LogWarningAsync(
+                $"[Image] {label}: la parte propia de esta imagen ({scene.Length} chars) no cabe entera en el limite " +
+                $"del modelo ({budget} chars utiles) y se recorta; el contexto comun se descarta. " +
+                "Pide al modulo de texto prompts mas cortos.");
+            return InputAdapter.TruncateAtWord(scene, budget);
+        }
+
+        if (common.Length == 0) return scene;
+
+        var room = budget - scene.Length - 2;
+        if (common.Length <= room) return $"{scene}\n\n{common}";
+
+        await ctx.LogWarningAsync(
+            $"[Image] {label}: el contexto comun ({common.Length} chars) no cabe con la parte propia de esta imagen " +
+            $"y se recorta a {Math.Max(room, 0)} chars. La parte propia se respeta entera. " +
+            "Si el indice del Directorio entra en este nodo, conectalo al modulo de texto que elige las referencias.");
+
+        return room <= 0 ? scene : $"{scene}\n\n{InputAdapter.TruncateAtWord(common, room)}";
+    }
+
+    private static string Join(string head, IEnumerable<string> parts)
+    {
+        var pieces = new List<string>();
+        if (!string.IsNullOrWhiteSpace(head)) pieces.Add(head.Trim());
+        pieces.AddRange(parts.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p.Trim()));
         return string.Join("\n\n", pieces);
     }
 
