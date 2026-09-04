@@ -29,6 +29,11 @@
                     <span class="toolbar-btn-icon"><i class="bi bi-calendar3"></i></span> Planificador
                 </button>
             }
+            <button class="toolbar-btn @(_showExportPanel ? "is-active" : "")"
+                    @onclick="ToggleExportPanel"
+                    title="Exportar el pipeline a JSON: nodos, conexiones, configuracion y reglas">
+                <span class="toolbar-btn-icon"><i class="bi bi-filetype-json"></i></span> Exportar pipeline
+            </button>
         </div>
 
         @* ── Aviso de borrado, con el margen para arrepentirse ── *@
@@ -53,6 +58,49 @@
                 </div>
                 <div class="module-panel-body planner-float-body">
                     @PlannerPanel
+                </div>
+            </div>
+        }
+
+        @* ── Panel flotante de exportacion ── *@
+        @if (_showExportPanel)
+        {
+            <div class="module-panel-backdrop" @onclick="CloseExportPanel"></div>
+            <div class="module-panel export-float-panel">
+                <div class="module-panel-header">
+                    <span>Exportar pipeline</span>
+                    <button class="node-btn" @onclick="CloseExportPanel">&#x2715;</button>
+                </div>
+                <div class="export-float-body">
+                    @if (_exportError is not null)
+                    {
+                        <div class="alert alert-error" style="margin-bottom:0.5rem;">@_exportError</div>
+                    }
+                    @if (_exportJson is null)
+                    {
+                        <div class="export-empty">Generando el JSON del pipeline...</div>
+                    }
+                    else
+                    {
+                        <div class="export-hint">
+                            Contiene el proyecto y su contexto, los @VisibleModules.Count() nodos con su
+                            configuracion, las @_connections.Count conexiones y las reglas activas.
+                            Copialo para explicar este pipeline a otra persona o a un asistente.
+                        </div>
+                        <pre class="export-preview">@_exportJson</pre>
+                    }
+                </div>
+                <div class="export-float-footer">
+                    <button class="btn btn-sm btn-primary" @onclick="CopyExportJson" disabled="@(_exportJson is null)">
+                        <i class="bi bi-clipboard"></i> Copiar
+                    </button>
+                    <button class="btn btn-sm" @onclick="DownloadExportJson" disabled="@(_exportJson is null)">
+                        <i class="bi bi-download"></i> Descargar .json
+                    </button>
+                    @if (_exportNotice is not null)
+                    {
+                        <span class="export-notice">@_exportNotice</span>
+                    }
                 </div>
             </div>
         }
@@ -1194,6 +1242,13 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
 @code {
     [Parameter] public Guid ProjectId { get; set; }
+
+    // Datos del proyecto que el canvas no necesita para pintar, pero si para
+    // exportar el pipeline con nombre y contexto.
+    [Parameter] public string? ProjectName { get; set; }
+    [Parameter] public string? ProjectDescription { get; set; }
+    [Parameter] public string? ProjectContext { get; set; }
+
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
     [Parameter] public List<AiModuleResponse> AvailableModules { get; set; } = [];
     // Proyectos que se pueden insertar como sub-proyecto (el padre filtra el actual).
@@ -1389,7 +1444,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     private void ToggleModulePanel()
     {
         _showModulePanel = !_showModulePanel;
-        if (_showModulePanel) _showSubProjectPanel = false;
+        if (_showModulePanel)
+        {
+            _showSubProjectPanel = false;
+            _showExportPanel = false;
+        }
     }
     private void CloseModulePanel()
     {
@@ -1402,7 +1461,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     private void ToggleSubProjectPanel()
     {
         _showSubProjectPanel = !_showSubProjectPanel;
-        if (_showSubProjectPanel) _showModulePanel = false;
+        if (_showSubProjectPanel)
+        {
+            _showModulePanel = false;
+            _showExportPanel = false;
+        }
     }
     private void CloseSubProjectPanel()
     {
@@ -1419,11 +1482,195 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         {
             _showModulePanel = false;
             _showSubProjectPanel = false;
+            _showExportPanel = false;
             await OnPlannerPanelOpened.InvokeAsync();
         }
     }
 
     private void ClosePlannerPanel() => _showPlannerPanel = false;
+
+    // ── Exportar el pipeline ──
+    //
+    // El fichero no es el formato interno del grafo, sino un volcado pensado
+    // para leerse fuera del editor: nombres visibles en vez de GUIDs sueltos,
+    // puertos con su etiqueta y un resumen del flujo. La forma exacta vive en
+    // PipelineExporter; aqui solo se reune lo que el canvas ya tiene resuelto.
+
+    private bool _showExportPanel;
+    private string? _exportJson;
+    private string? _exportError;
+    private string? _exportNotice;
+    // Identifica el aviso vigente: si el usuario copia y descarga seguido, el
+    // temporizador del primero no debe borrar el mensaje del segundo.
+    private int _exportNoticeToken;
+
+    private async Task ToggleExportPanel()
+    {
+        if (_showExportPanel)
+        {
+            CloseExportPanel();
+            return;
+        }
+
+        _showExportPanel = true;
+        _showModulePanel = false;
+        _showSubProjectPanel = false;
+        _showPlannerPanel = false;
+        _exportJson = null;
+        _exportError = null;
+        _exportNotice = null;
+
+        try
+        {
+            _exportJson = await BuildExportJsonAsync();
+        }
+        catch (Exception ex)
+        {
+            _exportError = $"No se pudo generar el JSON: {ex.Message}";
+        }
+    }
+
+    private void CloseExportPanel()
+    {
+        _showExportPanel = false;
+        _exportJson = null;
+        _exportError = null;
+        _exportNotice = null;
+    }
+
+    private async Task<string> BuildExportJsonAsync()
+    {
+        var nodes = new List<PipelineExportNode>();
+
+        foreach (var pm in VisibleModules)
+        {
+            var sceneCount = GetSceneCount(pm.Id);
+            var ports = ModulePortRegistry.GetPorts(pm.ModuleType, "", sceneCount,
+                pm.OrchestratorOutputs, GetTemplateVars(pm.Id), pm.ModelName);
+            if (!_positions.TryGetValue(pm.Id, out var pos))
+                pos = (pm.PosX, pm.PosY);
+
+            // Los archivos solo cuentan en los nodos que los sirven; pedirlos
+            // para todos serian llamadas de mas sin nada que enseñar.
+            List<ModuleFileResponse>? files = null;
+            if (pm.ModuleType is "FileUpload" or "FileDirectory")
+            {
+                try { files = await Api.GetModuleFilesAsync(pm.Id); }
+                catch { /* el export no se cae por no poder listar archivos */ }
+            }
+
+            nodes.Add(new PipelineExportNode(
+                pm,
+                AvailableModules.FirstOrDefault(m => m.Id == pm.AiModuleId),
+                pos.X, pos.Y,
+                sceneCount,
+                GetEffectiveConfig(pm.Id),
+                ports,
+                GetActiveRules(pm),
+                files));
+        }
+
+        // Un proyecto sin programacion responde 404 y la llamada devuelve null:
+        // el bloque "programacion" simplemente no sale en el fichero.
+        ScheduleResponse? schedule = null;
+        try { schedule = await Api.GetScheduleAsync(ProjectId); }
+        catch { /* idem */ }
+
+        return PipelineExporter.ToJson(new PipelineExportInput(
+            ProjectId, ProjectName, ProjectDescription, ProjectContext,
+            nodes, _connections, TenantRules, schedule));
+    }
+
+    /// <summary>
+    /// Configuracion efectiva de un nodo: lo guardado en el servidor mas lo que
+    /// el usuario ha tocado en el inspector y aun no se ha recargado.
+    /// </summary>
+    private Dictionary<string, JsonElement> GetEffectiveConfig(Guid moduleId)
+    {
+        var config = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+
+        var module = Modules.FirstOrDefault(m => m.Id == moduleId);
+        if (!string.IsNullOrWhiteSpace(module?.Configuration))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(module!.Configuration!);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                        config[prop.Name] = prop.Value.Clone();
+                }
+            }
+            catch { /* configuracion invalida: se exporta el resto del nodo */ }
+        }
+
+        if (_moduleConfigs.TryGetValue(moduleId, out var overrides))
+        {
+            foreach (var (key, value) in overrides)
+                config[key] = ToJsonElement(value);
+        }
+
+        return config;
+    }
+
+    /// <summary>
+    /// Los cambios del inspector viajan como texto ("true", "3", o el JSON
+    /// entero de templateVars). Se reinterpretan para no exportar numeros y
+    /// objetos metidos entre comillas.
+    /// </summary>
+    private static JsonElement ToJsonElement(string value)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(value);
+            return doc.RootElement.Clone();
+        }
+        catch
+        {
+            return JsonSerializer.SerializeToElement(value);
+        }
+    }
+
+    private async Task CopyExportJson()
+    {
+        if (_exportJson is null) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", _exportJson);
+            _ = ShowExportNotice("Copiado al portapapeles");
+        }
+        catch
+        {
+            _exportError = "El navegador no dejo copiar. Descarga el fichero o selecciona el texto a mano.";
+        }
+    }
+
+    private async Task DownloadExportJson()
+    {
+        if (_exportJson is null) return;
+        var fileName = PipelineExporter.SuggestFileName(ProjectName, DateTime.UtcNow);
+        try
+        {
+            await JS.InvokeVoidAsync("pipelineEditor.downloadText", fileName, _exportJson, "application/json");
+            _ = ShowExportNotice($"Descargado {fileName}");
+        }
+        catch (Exception ex)
+        {
+            _exportError = $"No se pudo descargar el fichero: {ex.Message}";
+        }
+    }
+
+    private async Task ShowExportNotice(string text)
+    {
+        _exportNotice = text;
+        var token = ++_exportNoticeToken;
+        await InvokeAsync(StateHasChanged);
+
+        await Task.Delay(2500);
+        if (_exportNoticeToken != token) return;
+        _exportNotice = null;
+        await InvokeAsync(StateHasChanged);
+    }
 
     // Proyectos insertables: todos menos el actual, filtrados por el buscador.
     // La proteccion frente a ciclos indirectos la aplica el servidor al insertar.

@@ -168,6 +168,33 @@ con retardo que hubiera en vuelo. Si se recarga la pagina en ese hueco, el nodo
 sigue intacto con sus conexiones: es el fallo mas benigno posible para algo que
 se acaba de borrar sin querer.
 
+## Editor de pipelines: exportar a JSON
+
+El boton **Exportar pipeline** de la barra del canvas (junto a "Planificador")
+vuelca el pipeline entero a un JSON y lo ofrece para copiar al portapapeles o
+descargar como `pipeline-<proyecto>-<fecha>.json`.
+
+No es el formato interno del grafo ni sirve para reimportar: es un volcado
+pensado para leerse **fuera** del editor (pegarselo a otra persona o a un
+asistente y que entienda de que pipeline hablamos). Por eso las claves van en
+castellano, cada nodo se cita por su nombre visible ademas de por su id, las
+conexiones nombran nodo y puerto, y hay un `resumen` con el flujo en texto, los
+nodos de entrada y finales, y el orden topologico en que se recorreria el grafo.
+
+Contenido: proyecto (nombre, descripcion y contexto), nodos (tipo, proveedor,
+modelo, posicion, puertos, configuracion efectiva, reglas activas, salidas del
+orquestador, sub-proyecto y archivos de los nodos `FileUpload`/`FileDirectory`),
+conexiones con su contrato de formato, reglas del tenant y programacion.
+
+La configuracion que se exporta es la **efectiva**: lo guardado en el servidor
+mas lo que el inspector haya cambiado y aun no se haya recargado. Las claves que
+suenan a secreto (`token`, `apiKey`, `secret`, `password`, ...) salen tapadas:
+el fichero esta hecho para compartirse.
+
+Donde vive: `PipelineExporter` (`Client/Models/PipelineExport.cs`) decide la
+forma del JSON; `PipelineCanvas` reune los datos que ya tiene resueltos y
+`pipelineEditor.downloadText` guarda el fichero desde el navegador.
+
 ## Modulos soportados
 
 | Tipo          | Handler                    | Descripcion breve                                          |

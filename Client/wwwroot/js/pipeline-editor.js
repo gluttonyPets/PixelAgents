@@ -640,6 +640,21 @@ window.pipelineEditor = {
         }
     },
 
+    // Guarda un texto generado en el cliente como fichero (el export del
+    // pipeline). No usa downloadFileWithCredentials porque aquel pide el
+    // contenido al servidor y este ya lo tiene entero en memoria.
+    downloadText: function (fileName, content, mimeType) {
+        var blob = new Blob([content], { type: mimeType || 'text/plain;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    },
+
     dispose: function () {
         if (this._editor) {
             this._editor.clear();

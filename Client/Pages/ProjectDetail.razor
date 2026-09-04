@@ -103,6 +103,9 @@ else
 
             <PipelineCanvas @ref="_pipelineCanvasRef"
                             ProjectId="_project.Id"
+                            ProjectName="_project.Name"
+                            ProjectDescription="_project.Description"
+                            ProjectContext="_project.Context"
                             Modules="_project.Modules.ToList()"
                             AvailableModules="_modules"
                             AvailableProjects="_allProjects"
