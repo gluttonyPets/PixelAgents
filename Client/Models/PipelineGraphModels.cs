@@ -436,16 +436,19 @@ public static class ActiveRulesRegistry
             });
         }
 
-        // Multi-image disaggregation rule (Image module with n>1).
+        // Multi-image disaggregation (Image module with n>1). No es una regla que
+        // se mande al modelo de imagen: describe lo que hace el modulo, que reparte
+        // el texto de entrada y lanza una llamada por parte. La instruccion que
+        // pide los N prompts se inyecta en el modulo de texto anterior.
         if (string.Equals(moduleType, "Image", StringComparison.OrdinalIgnoreCase) && sceneCount > 1)
         {
             rules.Add(new ActiveRule
             {
                 Id = "multi-image",
                 Category = "Imagen",
-                Title = $"Desagregacion multi-imagen (n={sceneCount})",
-                Description = "Cada imagen generada representa una parte del prompt, no repite todas las partes.",
-                Body = $"IMPORTANTE: Vas a generar {sceneCount} imagenes a partir de este prompt. El prompt describe {sceneCount} partes, slides o secciones distintas. Genera UNA imagen por cada parte, en orden: la imagen 1 representa la primera parte del prompt, la imagen 2 la segunda, etc. NO dibujes todas las partes en cada imagen. Cada imagen debe ser visualmente independiente y autocontenida, mostrando solo su parte correspondiente.",
+                Title = $"Reparto multi-imagen ({sceneCount} imagenes)",
+                Description = "Una llamada por imagen: el texto de entrada se reparte en partes y cada parte genera su imagen.",
+                Body = $"Este modulo genera {sceneCount} imagenes con {sceneCount} llamadas independientes, no con una llamada de n={sceneCount} (para el proveedor, n son copias del mismo prompt y saldrian todas iguales).\n\nPara repartir busca en el texto de entrada las marcas ===IMAGEN 1===, ===IMAGEN 2===, ... : lo que hay antes de la primera marca se manda como contexto comun a todas las imagenes y cada bloque posterior se manda como prompt de su imagen.\n\nEsas marcas las escribe el modulo de texto conectado a la entrada, al que se le inyecta automaticamente la instruccion de planificar {sceneCount} prompts. Si el texto llega sin marcas no hay reparto posible: se avisa en el log de la ejecucion y las {sceneCount} imagenes salen del mismo prompt.",
             });
         }
 

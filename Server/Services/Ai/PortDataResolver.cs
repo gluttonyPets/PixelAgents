@@ -75,7 +75,10 @@ public static class PortDataResolver
         {
             var idx = imgIdx - 1;
             var files = output.Files;
-            var file = idx >= 0 && idx < files.Count ? [files[idx]] : files;
+            // Sin imagen para este indice el puerto no propaga nada. Antes caia
+            // en "todas las imagenes", asi que un modulo que devolvia una sola
+            // la mandaba por los dos puertos y parecia que habia generado dos.
+            List<OutputFile>? file = idx >= 0 && idx < files.Count ? [files[idx]] : null;
             return new PortData
             {
                 DataType = "image",

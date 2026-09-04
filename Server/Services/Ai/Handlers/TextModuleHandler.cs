@@ -80,6 +80,29 @@ public class TextModuleHandler : IModuleHandler
         if (outgoingFormats.Count > 0 && !string.IsNullOrWhiteSpace(prompt))
             prompt = OutputSchemaHelper.GetOutputFormatInstruction(outgoingFormats) + "\n\n" + prompt;
 
+        // Si detras hay un modulo de imagen con varias salidas, aqui es donde se
+        // decide que salgan imagenes distintas: sin esta instruccion el modelo
+        // escribe un unico prompt compuesto y el modulo de imagen no tiene nada
+        // que repartir (ver MultiImagePrompt).
+        var plannedImages = ResolvePlannedImageCount(ctx);
+        if (plannedImages > 1)
+        {
+            if (outgoingFormats.Count > 0)
+            {
+                await ctx.LogWarningAsync(
+                    $"[Text] El modulo de imagen siguiente pide {plannedImages} imagenes, pero esta conexion declara " +
+                    "un contrato JSON propio y las marcas de reparto lo romperian. Quita el formato de la conexion " +
+                    "para que se planifique un prompt por imagen.");
+            }
+            else
+            {
+                prompt = MultiImagePrompt.BuildPlannerInstruction(plannedImages) + "\n\n" + prompt;
+                await ctx.LogInfoAsync(
+                    $"[Text] Planificacion multi-imagen: se piden {plannedImages} prompts separados " +
+                    $"por {MultiImagePrompt.BuildMarker(1)} para el modulo de imagen siguiente.");
+            }
+        }
+
         if (inputFiles.Count > 0)
         {
             var totalBytes = inputFiles.Sum(b => (long)b.Length);
@@ -131,5 +154,27 @@ public class TextModuleHandler : IModuleHandler
         }
 
         return ModuleResult.Completed(stepOutput, result.EstimatedCost, producedFiles);
+    }
+
+    /// <summary>
+    /// Cuantos prompts de imagen debe escribir este modulo: lo que diga su propia
+    /// config ("imageCount", que fija el usuario) o, si no lo dice, cuantas
+    /// imagenes pide el modulo de imagen conectado a su salida. Solo se miran los
+    /// destinos directos; con modulos intermedios hay que ponerlo a mano.
+    /// </summary>
+    private static int ResolvePlannedImageCount(ModuleExecutionContext ctx)
+    {
+        var configured = ctx.GetConfigInt("imageCount", 0);
+        if (configured > 1) return Math.Min(configured, MultiImagePrompt.MaxImages);
+
+        return ctx.Node.OutputPorts
+            .SelectMany(p => p.Connections)
+            .Select(c => c.TargetNode)
+            .Where(n => n is not null && n.ModuleType == "Image")
+            .DistinctBy(n => n.ModuleId)
+            .Select(n => MultiImagePrompt.ReadImageCountFromJson(
+                n.AiModule.Configuration, n.ProjectModule.Configuration))
+            .DefaultIfEmpty(1)
+            .Max();
     }
 }

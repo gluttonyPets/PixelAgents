@@ -204,7 +204,7 @@ forma del JSON; `PipelineCanvas` reune los datos que ya tiene resueltos y
 | FileUpload    | FileUploadModuleHandler    | Pasa archivos adjuntos al modulo como salida               |
 | FileDirectory | FileDirectoryModuleHandler | Publica un directorio de ficheros y emite su indice (ver seccion propia) |
 | Text          | TextModuleHandler          | Genera texto con un proveedor LLM                          |
-| Image         | ImageModuleHandler         | Genera imagenes con un proveedor de imagen                 |
+| Image         | ImageModuleHandler         | Genera imagenes con un proveedor de imagen; con varias salidas hace una llamada por imagen (ver seccion propia) |
 | Audio         | AudioModuleHandler         | Genera audio (TTS) con un proveedor                        |
 | Transcription | TranscriptionModuleHandler | Transcribe audio a texto via proveedor                     |
 | Embeddings    | EmbeddingsModuleHandler    | Genera embeddings de texto via proveedor                   |
@@ -217,6 +217,50 @@ forma del JSON; `PipelineCanvas` reune los datos que ya tiene resueltos y
 | Design        | DesignModuleHandler        | Genera disenos via proveedor grafico (Canva, etc.)         |
 | Publish       | PublishModuleHandler       | Publica contenido en Instagram, TikTok, Pinterest o Threads via Buffer API |
 | ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug, SEO e imagen destacada via `input_image`, que se sube a Shopify con `stagedUploadsCreate` y requiere el scope `write_files`). El cuerpo acepta HTML con CSS (inline o `<style>`): si el contenido contiene cualquier etiqueta HTML se envia intacto sin escapar; el texto plano se convierte en parrafos. Publica **visible** por defecto (desmarcar "Publicar" en el nodo lo deja como borrador). Devuelve en la salida y en `metadata` la URL del articulo en el admin (`adminUrl`, sirve para borradores) y la URL publica de la tienda (`publicUrl`) |
+
+### Modulo Imagen: varias imagenes son varias llamadas
+
+Para las APIs de imagen (OpenAI, Gemini, Grok, Leonardo) el parametro `n` son
+**muestras del mismo prompt**, no partes distintas: las n imagenes se generan de
+forma independiente y todas reciben el prompt entero. Pedir `n=2` sobre un texto
+que describe dos slides devuelve dos veces la misma composicion con las dos
+slides dentro. El modelo no sabe que esta generando dos ni recuerda la anterior.
+
+Por eso un modulo de imagen con varias salidas (`output_image_1`,
+`output_image_2`, ...) **no** pide un lote: reparte el texto de entrada y hace
+**una llamada por imagen**, cada una con `n=1`.
+
+El contrato entre las dos puntas vive en `MultiImagePrompt`:
+
+- **Quien escribe las partes**: `TextModuleHandler` mira si a su salida hay un
+  modulo de imagen con mas de una salida y, si lo hay, antepone al prompt la
+  instruccion de escribir un bloque por imagen separado por `===IMAGEN 1===`,
+  `===IMAGEN 2===`, ... Se puede forzar con `imageCount` en la config del nodo
+  de texto (util cuando entre medias hay otro modulo, porque solo se miran los
+  destinos directos).
+- **Quien las reparte**: `ImageModuleHandler` busca esas marcas en el texto que
+  le llega. Lo anterior a la primera marca es **contexto comun** y se antepone a
+  todas las imagenes; cada bloque posterior es el prompt de su imagen. Lo que
+  entra por el mismo puerto sin marcas (el indice del modulo Directorio, por
+  ejemplo) tambien es contexto comun, no una escena.
+
+Cada llamada resuelve sus propias imagenes de referencia, asi que una parte
+puede citar un fichero del directorio y la otra uno distinto; una URL repetida
+se descarga una sola vez.
+
+Si el texto llega sin marcas no hay nada que repartir: se avisa en el log de la
+ejecucion y se mantiene el comportamiento antiguo (una llamada con `n=N`, que
+devolvera copias). Lo mismo si el numero de partes no coincide con el de
+salidas: se generan las que caben y queda avisado.
+
+El numero de imagenes se lee de `n`, `numberOfImages` o `sceneCount`, en ese
+orden, con un tope de 20. `sceneCount` cuenta porque es la clave que decide
+cuantos puertos de salida se pintan en el editor.
+
+Cada puerto entrega **su** imagen: `output_image_2` propaga la segunda o no
+propaga nada. No cae en "todas las imagenes", que era lo que hacia que un modulo
+con una sola imagen la mandara por los dos puertos y pareciera haber generado
+dos.
 
 ### Modulo Directorio de archivos: indice y URLs publicas
 
