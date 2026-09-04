@@ -305,6 +305,60 @@ namespace Server.Services
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_LearningEntries_ProjectId"" ON ""LearningEntries"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_LearningEntries_ExecutionId"" ON ""LearningEntries"" (""ExecutionId"")", log);
+
+            // ── Catalogo de modelos: foto, historico de cambios y ejecuciones del escaneo ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ModelCatalogSnapshots"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ModelId"" varchar(200) NOT NULL,
+                    ""Provider"" varchar(100) NOT NULL,
+                    ""DisplayName"" varchar(200) NOT NULL DEFAULT '',
+                    ""Kind"" varchar(20) NOT NULL DEFAULT 'text',
+                    ""InputPerMTok"" numeric,
+                    ""OutputPerMTok"" numeric,
+                    ""ImageLow"" numeric,
+                    ""ImageMedium"" numeric,
+                    ""ImageHigh"" numeric,
+                    ""AuxAmount"" numeric,
+                    ""AuxUnit"" varchar(100),
+                    ""LifecycleStatus"" varchar(20) NOT NULL DEFAULT 'active',
+                    ""Source"" varchar(20) NOT NULL DEFAULT 'catalog',
+                    ""AvailableUpstream"" boolean,
+                    ""FirstSeenAt"" timestamp with time zone NOT NULL,
+                    ""LastSeenAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ModelCatalogSnapshots_ModelId"" ON ""ModelCatalogSnapshots"" (""ModelId"")", log);
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ModelCatalogChanges"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ScanId"" uuid NOT NULL,
+                    ""ModelId"" varchar(200) NOT NULL,
+                    ""Provider"" varchar(100) NOT NULL,
+                    ""ChangeType"" varchar(40) NOT NULL,
+                    ""Field"" varchar(60),
+                    ""OldValue"" varchar(200),
+                    ""NewValue"" varchar(200),
+                    ""Note"" text,
+                    ""DetectedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModelCatalogChanges_DetectedAt"" ON ""ModelCatalogChanges"" (""DetectedAt"")", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModelCatalogChanges_ScanId"" ON ""ModelCatalogChanges"" (""ScanId"")", log);
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ModelScanRuns"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""StartedAt"" timestamp with time zone NOT NULL,
+                    ""FinishedAt"" timestamp with time zone,
+                    ""Status"" varchar(20) NOT NULL DEFAULT 'ok',
+                    ""Trigger"" varchar(20) NOT NULL DEFAULT 'manual',
+                    ""ModelsScanned"" integer NOT NULL DEFAULT 0,
+                    ""ChangesDetected"" integer NOT NULL DEFAULT 0,
+                    ""NewModels"" integer NOT NULL DEFAULT 0,
+                    ""PriceChanges"" integer NOT NULL DEFAULT 0,
+                    ""ProvidersQueried"" varchar(300),
+                    ""IsBaseline"" boolean NOT NULL DEFAULT false,
+                    ""Error"" text
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ModelScanRuns_StartedAt"" ON ""ModelScanRuns"" (""StartedAt"")", log);
         }
 
         private static void RunSafe(UserDbContext ctx, string sql, ILogger? log = null)

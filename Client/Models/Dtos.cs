@@ -27,14 +27,40 @@ public record ModelLifecycleResponse(
 /// Tarifa de un modelo. <paramref name="Kind"/> ("text" o "image") dice qué campos
 /// vienen rellenos: los de tokens o los de coste por imagen.
 /// </summary>
+/// <param name="Capabilities">
+/// Etiquetas de lo que sabe hacer el modelo ("text", "vision", "reasoning",
+/// "streaming", "image-generation"...). La pantalla las cruza con el precio para
+/// poder filtrar por "lo que necesito" antes de comparar cuanto cuesta.
+/// </param>
+/// <param name="ContextTokens">
+/// Ventana de contexto en tokens; null en imagen, audio y diseño, donde no aplica.
+/// </param>
 public record ModelPriceResponse(
     string Id, string DisplayName, string Provider, string Kind,
     decimal? InputPerMTok, decimal? OutputPerMTok,
     decimal? ImageLow, decimal? ImageMedium, decimal? ImageHigh,
     decimal? AuxAmount, string? AuxUnit, string? AuxNote,
     string ModuleType,
-    ModelLifecycleResponse Lifecycle)
+    ModelLifecycleResponse Lifecycle,
+    string[]? Capabilities = null,
+    int? ContextTokens = null)
 {
+    /// <summary>Capacidades del modelo, nunca null: la lista vacia es "no se sabe".</summary>
+    public string[] Caps => Capabilities ?? [];
+
+    /// <summary>
+    /// Precio de referencia con el que se ordena y se escala cualquier grafica,
+    /// sea cual sea la unidad de facturacion del modelo. Comparar entre unidades
+    /// distintas no tiene sentido, asi que cada grafica agrupa por <see cref="Kind"/>
+    /// y usa esto solo dentro del grupo.
+    /// </summary>
+    public decimal ReferenceCost(int inputTokens, int outputTokens) => Kind switch
+    {
+        "text"  => CostFor(inputTokens, outputTokens),
+        "image" => ImageMedium ?? 0m,
+        _       => AuxAmount ?? 0m,
+    };
+
     /// <summary>Coste de una ejecución con los tokens indicados.</summary>
     public decimal CostFor(int inputTokens, int outputTokens) =>
         (InputPerMTok ?? 0m) * inputTokens / 1_000_000m
@@ -55,6 +81,36 @@ public record ModelPriceResponse(
         }
     }
 }
+
+// ── Deteccion de cambios en el catalogo de modelos ──
+
+/// <summary>
+/// Un cambio detectado por el escaneo. <paramref name="ChangeType"/> es "new_model",
+/// "provider_new_model", "price_change", "lifecycle_change", "availability_change"
+/// o "removed_model".
+/// </summary>
+public record ModelScanChangeResponse(
+    Guid Id, Guid ScanId, string ModelId, string Provider, string ChangeType,
+    string? Field, string? OldValue, string? NewValue, string? Note, DateTime DetectedAt);
+
+/// <param name="IsBaseline">
+/// Primera pasada del tenant: solo deja la foto inicial, sin generar historico —
+/// si no, los 72 modelos del catalogo apareceran como "nuevos" el primer dia.
+/// </param>
+public record ModelScanRunResponse(
+    Guid Id, DateTime StartedAt, DateTime? FinishedAt, string Status, string Trigger,
+    int ModelsScanned, int ChangesDetected, int NewModels, int PriceChanges,
+    string? ProvidersQueried, bool IsBaseline, string? Error);
+
+/// <summary>Resultado de lanzar el escaneo desde la pantalla: la ejecucion y lo que encontro.</summary>
+public record ModelScanResultResponse(
+    ModelScanRunResponse Run, List<ModelScanChangeResponse> Changes);
+
+/// <summary>Historico: ultimas ejecuciones del servicio y ultimos cambios detectados.</summary>
+public record ModelScanHistoryResponse(
+    ModelScanRunResponse? LastRun,
+    List<ModelScanRunResponse> Runs,
+    List<ModelScanChangeResponse> Changes);
 
 // ── Rule ──
 public record CreateRuleRequest(string Title, string Content, bool IsActive = true, int SortOrder = 0);

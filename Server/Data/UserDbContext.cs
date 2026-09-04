@@ -28,6 +28,9 @@ namespace Server.Data
         public DbSet<ExecutionFeedback> ExecutionFeedbacks => Set<ExecutionFeedback>();
         public DbSet<ProjectLearningDoc> ProjectLearningDocs => Set<ProjectLearningDoc>();
         public DbSet<LearningEntry> LearningEntries => Set<LearningEntry>();
+        public DbSet<ModelCatalogSnapshot> ModelCatalogSnapshots => Set<ModelCatalogSnapshot>();
+        public DbSet<ModelCatalogChange> ModelCatalogChanges => Set<ModelCatalogChange>();
+        public DbSet<ModelScanRun> ModelScanRuns => Set<ModelScanRun>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -377,6 +380,46 @@ namespace Server.Data
                 e.Property(x => x.Error).HasColumnType("text");
                 e.HasIndex(x => x.ProjectId);
                 e.HasIndex(x => x.ExecutionId);
+            });
+
+            // ── Catalogo de modelos: foto, historico de cambios y ejecuciones ──
+            modelBuilder.Entity<ModelCatalogSnapshot>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.ModelId).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Provider).IsRequired().HasMaxLength(100);
+                e.Property(x => x.DisplayName).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Kind).IsRequired().HasMaxLength(20).HasDefaultValue("text");
+                e.Property(x => x.AuxUnit).HasMaxLength(100);
+                e.Property(x => x.LifecycleStatus).IsRequired().HasMaxLength(20).HasDefaultValue("active");
+                e.Property(x => x.Source).IsRequired().HasMaxLength(20).HasDefaultValue("catalog");
+                // Un modelo, una foto: el diff se hace buscando por id, y dos filas para
+                // el mismo id harian que un cambio se detectase (o se perdiese) dos veces.
+                e.HasIndex(x => x.ModelId).IsUnique();
+            });
+
+            modelBuilder.Entity<ModelCatalogChange>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.ModelId).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Provider).IsRequired().HasMaxLength(100);
+                e.Property(x => x.ChangeType).IsRequired().HasMaxLength(40);
+                e.Property(x => x.Field).HasMaxLength(60);
+                e.Property(x => x.OldValue).HasMaxLength(200);
+                e.Property(x => x.NewValue).HasMaxLength(200);
+                e.Property(x => x.Note).HasColumnType("text");
+                e.HasIndex(x => x.DetectedAt);
+                e.HasIndex(x => x.ScanId);
+            });
+
+            modelBuilder.Entity<ModelScanRun>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Status).IsRequired().HasMaxLength(20).HasDefaultValue("ok");
+                e.Property(x => x.Trigger).IsRequired().HasMaxLength(20).HasDefaultValue("manual");
+                e.Property(x => x.ProvidersQueried).HasMaxLength(300);
+                e.Property(x => x.Error).HasColumnType("text");
+                e.HasIndex(x => x.StartedAt);
             });
 
             // ── ModuleFile ──

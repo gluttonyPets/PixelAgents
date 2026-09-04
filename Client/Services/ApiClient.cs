@@ -66,6 +66,28 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ModelPriceResponse>>() ?? [];
     }
 
+    // ── Deteccion de cambios en el catalogo ──
+
+    /// <summary>
+    /// Lanza el servicio de deteccion: compara catalogo y tarifas contra la ultima
+    /// foto y apunta las diferencias. Devuelve null si la llamada falla, para que la
+    /// pantalla pueda decir "no se ha podido" en vez de fingir que no habia cambios.
+    /// </summary>
+    public async Task<ModelScanResultResponse?> RunModelScanAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/models/scan");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<ModelScanResultResponse>();
+    }
+
+    /// <summary>Ejecuciones del servicio y cambios que ha detectado, de mas reciente a mas antiguo.</summary>
+    public async Task<ModelScanHistoryResponse?> GetModelScanHistoryAsync(int runs = 20, int changes = 200)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/models/scan/history?runs={runs}&changes={changes}");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<ModelScanHistoryResponse>();
+    }
+
     // ── ApiKeys ──
 
     public async Task<List<ApiKeyResponse>> GetApiKeysAsync()

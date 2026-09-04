@@ -1,0 +1,142 @@
+@* Grafico de barras horizontales para comparar modelos.
+
+   Horizontal y no vertical porque lo que hay que leer es el nombre del modelo, y
+   "gemini-3.1-flash-image-preview" no cabe girado bajo una columna. Las barras se
+   pintan con CSS en vez de SVG: el texto queda nitido a cualquier ancho y la fila
+   se adapta sola al contenedor.
+
+   Uso:
+     <ModelBarChart Title="Coste por ejecucion" Bars="@bars" Log="true"
+                    SeriesNames="@(["entrada","salida"])" /> *@
+
+<div class="chart-card">
+    <div class="chart-head">
+        <h4>@Title</h4>
+        @if (!string.IsNullOrWhiteSpace(Note))
+        {
+            <span class="chart-note">@Note</span>
+        }
+    </div>
+
+    @if (SeriesNames.Length > 1)
+    {
+        <div class="chart-legend">
+            @for (var i = 0; i < SeriesNames.Length; i++)
+            {
+                <span class="chart-legend-item">
+                    <span class="chart-legend-dot" style="opacity:@SeriesOpacity(i)"></span>
+                    @SeriesNames[i]
+                </span>
+            }
+        </div>
+    }
+
+    @if (Bars.Count == 0)
+    {
+        <p class="chart-empty">Ningun modelo del filtro entra en esta comparativa.</p>
+    }
+    else
+    {
+        var visible = Bars.Take(MaxRows).ToList();
+        var max = Bars.SelectMany(b => b.Values).Select(v => v.Value).DefaultIfEmpty(0m).Max();
+        var min = Bars.SelectMany(b => b.Values).Select(v => v.Value)
+                      .Where(v => v > 0m).DefaultIfEmpty(0m).Min();
+
+        <div class="chart-bars">
+            @foreach (var bar in visible)
+            {
+                var color = ProviderPalette.Color(bar.Provider);
+                <div class="chart-row">
+                    @* El id completo va en el tooltip: en la fila solo cabe el nombre
+                       comercial, y truncar el id dejaria "gemini-3.1-flash-imag...". *@
+                    <div class="chart-row-label" title="@Tooltip(bar)">
+                        <span class="chart-dot" style="background:@color"></span>
+                        <span class="chart-label-main">@bar.Label</span>
+                        @if (bar.Sublabel is not null)
+                        {
+                            <span class="chart-label-sub">@bar.Sublabel</span>
+                        }
+                    </div>
+                    <div class="chart-row-tracks">
+                        @for (var i = 0; i < bar.Values.Count; i++)
+                        {
+                            var v = bar.Values[i];
+                            <div class="chart-track">
+                                <span class="chart-fill"
+                                      style="width:@Width(v.Value, min, max); background:@color; opacity:@SeriesOpacity(i)"></span>
+                                <span class="chart-fill-value">@v.Text</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        @if (Bars.Count > visible.Count)
+        {
+            <p class="chart-more">
+                +@(Bars.Count - visible.Count) modelos mas. Afina el filtro para verlos.
+            </p>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    /// <summary>Que unidad se esta comparando; va junto al titulo, en pequeño.</summary>
+    [Parameter] public string? Note { get; set; }
+
+    [Parameter] public IReadOnlyList<ChartBar> Bars { get; set; } = [];
+
+    /// <summary>Nombre de cada serie. Con una sola no se pinta leyenda.</summary>
+    [Parameter] public string[] SeriesNames { get; set; } = [];
+
+    /// <summary>
+    /// Escala logaritmica. Entre el modelo mas barato y el mas caro del catalogo hay
+    /// tres ordenes de magnitud: en lineal, todo lo que no sea un modelo Pro es una
+    /// barra invisible y la grafica no compara nada.
+    /// </summary>
+    [Parameter] public bool Log { get; set; }
+
+    /// <summary>Filas que se pintan. El resto se resume en una linea al pie.</summary>
+    [Parameter] public int MaxRows { get; set; } = 18;
+
+    /// <summary>
+    /// Ancho de la barra. En logaritmica se escala entre el minimo y el maximo de
+    /// todas las series a la vez, para que dos filas se puedan comparar entre si.
+    /// </summary>
+    private string Width(decimal value, decimal min, decimal max)
+    {
+        if (value <= 0m || max <= 0m) return "0%";
+
+        double pct;
+        if (Log && min > 0m && max > min)
+        {
+            var ratio = (Math.Log10((double)value) - Math.Log10((double)min))
+                      / (Math.Log10((double)max) - Math.Log10((double)min));
+            // El 4% de suelo evita que el modelo mas barato se quede sin barra y
+            // parezca que no tiene dato.
+            pct = 4 + 96 * Math.Clamp(ratio, 0, 1);
+        }
+        else
+        {
+            pct = 100 * Math.Clamp((double)(value / max), 0, 1);
+        }
+
+        return pct.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%";
+    }
+
+    private static string Tooltip(ChartBar bar) =>
+        bar.Sublabel is null ? bar.Label : $"{bar.Label} ({bar.Sublabel})";
+
+    // Las series comparten color de proveedor y se distinguen por intensidad: usar
+    // colores distintos por serie chocaria con el color del proveedor, que es la
+    // dimension que de verdad se busca con la vista.
+    private static string SeriesOpacity(int index) => index switch
+    {
+        0 => "1",
+        1 => "0.62",
+        _ => "0.35",
+    };
+}

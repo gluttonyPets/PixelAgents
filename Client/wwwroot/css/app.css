@@ -5061,7 +5061,7 @@ a.link:hover { text-decoration: underline; }
 
 .model-lifecycle-notice.is-retired strong { color: var(--danger); }
 
-/* ── Pantalla de precios de modelos ── */
+/* ── Pantalla de modelos: tarifas, comparativas y cambios ── */
 .pricing-lede {
     max-width: 68ch;
     margin-bottom: 1.25rem;
@@ -5194,6 +5194,427 @@ a.link:hover { text-decoration: underline; }
     display: block;
     font-size: 0.72rem;
     color: var(--text-muted);
+}
+
+/* ── Pantalla de modelos: pestañas, filtros y graficas ── */
+
+.models-tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.25rem;
+}
+
+.models-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.55rem 0.9rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    /* -1px para que el borde inferior activo tape el de la barra, en vez de
+       quedar los dos y verse una linea doble. */
+    margin-bottom: -1px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.models-tab:hover { color: var(--text); }
+
+.models-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.models-filters {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+.models-filter-group {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+}
+
+/* Ancho fijo para que las tres filas de pastillas empiecen en la misma columna:
+   si cada etiqueta midiese lo suyo, los filtros se leerian como una escalera. */
+.models-filter-label {
+    flex: 0 0 8.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.models-filter-group .apikeys-filters { margin-bottom: 0; }
+
+.models-clear { color: var(--text-muted); }
+
+.models-check {
+    flex-direction: row !important;
+    align-items: center;
+    gap: 0.4rem !important;
+    white-space: nowrap;
+}
+
+.models-check input { width: auto !important; }
+
+.models-count {
+    margin-bottom: 1rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.models-count-note { opacity: 0.75; }
+
+.cap-chip {
+    display: inline-block;
+    margin: 0 0.25rem 0.2rem 0;
+    padding: 0.05rem 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* ── Graficas ── */
+
+/* El minimo es alto a proposito: por debajo de ~430px la columna de nombres se come
+   el espacio de la barra y las graficas dejan de comparar nada. En una pantalla
+   normal salen dos columnas, y tres solo en monitores anchos. */
+.charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
+    gap: 1rem;
+}
+
+/* La nube de puntos necesita las dos columnas: comprimida a la mitad, los modelos
+   se solapan y no se distingue cual es cual. */
+.charts-wide { grid-column: 1 / -1; }
+
+.chart-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem 1.1rem;
+    min-width: 0;
+}
+
+.chart-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.85rem;
+}
+
+.chart-head h4 {
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.chart-note {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.chart-empty,
+.chart-more {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.chart-more { margin-top: 0.6rem; }
+
+.chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.chart-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.chart-legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 2px;
+    background: var(--text-muted);
+}
+
+.chart-legend-providers { margin: 0.6rem 0 0; }
+
+.chart-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
+.chart-row {
+    display: grid;
+    grid-template-columns: minmax(0, 11rem) 1fr;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.chart-row-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    font-size: 0.76rem;
+}
+
+.chart-dot {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+
+.chart-label-main {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* El id completo solo se enseña al pasar el raton: en la fila cabe el nombre
+   comercial, que es por el que se busca. */
+.chart-label-sub { display: none; }
+
+.chart-row-tracks {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+/* Rejilla y no flex: con la columna del valor de ancho fijo, todas las barras
+   arrancan y miden sobre el mismo espacio, que es lo unico que hace comparables
+   dos filas. En flex, un valor mas largo encogia su barra. */
+.chart-track {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 4.5rem;
+    align-items: center;
+    column-gap: 0.45rem;
+    height: 14px;
+}
+
+.chart-fill {
+    display: block;
+    height: 100%;
+    border-radius: 0 3px 3px 0;
+    background: var(--accent);
+    min-width: 2px;
+}
+
+.chart-fill-value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.chart-scatter {
+    width: 100%;
+    height: auto;
+    overflow: visible;
+}
+
+.chart-grid { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 4; }
+.chart-axis { stroke: var(--border); stroke-width: 1; }
+
+.chart-axis-text {
+    fill: var(--text-muted);
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.chart-axis-title {
+    fill: var(--text-muted);
+    font-size: 11px;
+}
+
+.chart-point-label {
+    fill: var(--text);
+    font-size: 11px;
+}
+
+.chart-point circle { transition: r 0.1s ease; }
+.chart-point:hover circle { r: 9; }
+
+@media (max-width: 720px) {
+    .models-filter-group { flex-direction: column; gap: 0.35rem; }
+    .models-filter-label { flex: none; }
+    .chart-row { grid-template-columns: minmax(0, 7rem) 1fr; }
+}
+
+/* ── Deteccion de cambios del catalogo ── */
+
+.scan-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.scan-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.scan-title { font-size: 1rem; margin-bottom: 0.35rem; }
+
+.scan-lede {
+    max-width: 64ch;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.scan-alert {
+    padding: 0.65rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 0.84rem;
+}
+
+.scan-alert.is-ok { border-color: var(--success); color: var(--success); }
+.scan-alert.is-error { border-color: var(--danger); color: var(--danger); }
+
+.scan-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.75rem;
+}
+
+.scan-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.75rem 0.9rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.scan-stat-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.scan-stat-value { font-size: 1.05rem; font-weight: 600; }
+
+.scan-stat-note {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.scan-empty { max-width: 64ch; font-size: 0.85rem; }
+
+.scan-filters { margin-bottom: 0 !important; }
+
+.scan-history {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.scan-history-day {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-top: 0.9rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.scan-history-day:first-child { margin-top: 0; }
+
+.scan-history-count { text-transform: none; letter-spacing: normal; opacity: 0.7; }
+
+.scan-history-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.45rem 0;
+    font-size: 0.82rem;
+}
+
+.scan-history-item .badge { flex: 0 0 auto; margin-top: 0.1rem; }
+
+.scan-history-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.scan-history-model {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+}
+
+.scan-history-note { font-size: 0.78rem; color: var(--text-muted); }
+
+/* El "de X a Y" a la derecha y en monoespaciada: es la cifra que se compara de un
+   vistazo bajando por la lista. */
+.scan-history-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: 0 0 auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.scan-old { color: var(--text-muted); text-decoration: line-through; }
+.scan-new { color: var(--text); font-weight: 600; }
+
+.scan-runs summary {
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.scan-runs-table { margin-top: 0.75rem; }
+.scan-runs-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.scan-run-providers {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+}
+
+@media (max-width: 720px) {
+    .scan-history-item { flex-wrap: wrap; }
+    .scan-history-delta { padding-left: 2.5rem; }
 }
 
 /* ── Modulo Directorio de archivos: explorador de carpetas ──

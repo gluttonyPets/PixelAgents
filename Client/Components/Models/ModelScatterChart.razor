@@ -1,0 +1,228 @@
+@* Nube de puntos precio/capacidad.
+
+   Responde a la pregunta que no contesta ninguna tabla ordenada por precio: cual de
+   los modelos que me valen es el que menos cuesta. Los dos ejes van en logaritmica
+   porque tanto el precio como el contexto se mueven en ordenes de magnitud —de 8K a
+   2M de tokens, de centimos a decenas de dolares—, y en lineal todos los modelos se
+   amontonarian en la esquina de abajo a la izquierda.
+
+   Los puntos de abajo a la derecha son los interesantes: mucha capacidad, poco coste. *@
+
+<div class="chart-card">
+    <div class="chart-head">
+        <h4>@Title</h4>
+        @if (!string.IsNullOrWhiteSpace(Note))
+        {
+            <span class="chart-note">@Note</span>
+        }
+    </div>
+
+    @if (_points.Count == 0)
+    {
+        <p class="chart-empty">Hacen falta al menos dos modelos con precio y contexto conocidos.</p>
+    }
+    else
+    {
+        <svg class="chart-scatter" viewBox="0 0 @W @H" role="img" aria-label="@Title"
+             preserveAspectRatio="xMidYMid meet">
+            @* Rejilla y marcas. Van antes que los puntos para que no los tapen. *@
+            @foreach (var t in _xTicks)
+            {
+                var x = PlotX(t);
+                <line x1="@F(x)" y1="@F(PadTop)" x2="@F(x)" y2="@F(H - PadBottom)" class="chart-grid" />
+                <SvgText X="x" Y="H - PadBottom + 18" Class="chart-axis-text" Anchor="middle"
+                         Text="@XTickText(t)" />
+            }
+            @foreach (var t in _yTicks)
+            {
+                var y = PlotY(t);
+                <line x1="@F(PadLeft)" y1="@F(y)" x2="@F(W - PadRight)" y2="@F(y)" class="chart-grid" />
+                <SvgText X="PadLeft - 8" Y="y + 4" Class="chart-axis-text" Anchor="end"
+                         Text="@YTickText(t)" />
+            }
+
+            <line x1="@F(PadLeft)" y1="@F(H - PadBottom)" x2="@F(W - PadRight)" y2="@F(H - PadBottom)"
+                  class="chart-axis" />
+            <line x1="@F(PadLeft)" y1="@F(PadTop)" x2="@F(PadLeft)" y2="@F(H - PadBottom)"
+                  class="chart-axis" />
+
+            <SvgText X="W - PadRight" Y="H - 6" Class="chart-axis-title" Anchor="end" Text="@XLabel" />
+            <SvgText X="PadLeft" Y="PadTop - 12" Class="chart-axis-title" Anchor="start" Text="@YLabel" />
+
+            @foreach (var p in _points)
+            {
+                var cx = PlotX(p.X);
+                var cy = PlotY(p.Y);
+                var color = ProviderPalette.Color(p.Provider);
+                <g class="chart-point">
+                    <circle cx="@F(cx)" cy="@F(cy)" r="6" fill="@color" fill-opacity="0.75"
+                            stroke="@color" stroke-width="1.5" />
+                    <title>@p.Tooltip</title>
+                </g>
+            }
+
+            @* Solo se etiquetan los extremos: con 40 modelos, poner el nombre a todos
+               deja la grafica ilegible. El resto se lee al pasar el raton. *@
+            @foreach (var p in _labelled)
+            {
+                var cx = PlotX(p.X);
+                var cy = PlotY(p.Y);
+                var anchor = cx > W * 0.7 ? "end" : "start";
+                var dx = anchor == "end" ? -10 : 10;
+                <SvgText X="cx + dx" Y="cy + 4" Class="chart-point-label" Anchor="@anchor"
+                         Text="@p.Label" />
+            }
+        </svg>
+
+        <div class="chart-legend chart-legend-providers">
+            @foreach (var provider in _points.Select(p => p.Provider).Distinct().OrderBy(p => p))
+            {
+                <span class="chart-legend-item">
+                    <span class="chart-legend-dot" style="background:@ProviderPalette.Color(provider)"></span>
+                    @provider
+                </span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Note { get; set; }
+    [Parameter] public IReadOnlyList<ChartPoint> Points { get; set; } = [];
+    [Parameter] public string XLabel { get; set; } = "";
+    [Parameter] public string YLabel { get; set; } = "";
+
+    /// <summary>Sufijo del eje X ("$" delante, o unidades detras).</summary>
+    [Parameter] public bool XIsMoney { get; set; } = true;
+
+    private const double W = 820;
+    private const double H = 420;
+    private const double PadLeft = 62;
+    private const double PadRight = 24;
+    private const double PadTop = 30;
+    private const double PadBottom = 42;
+
+    private List<ChartPoint> _points = [];
+    private List<ChartPoint> _labelled = [];
+    private List<double> _xTicks = [];
+    private List<double> _yTicks = [];
+    private double _xMin, _xMax, _yMin, _yMax;
+
+    protected override void OnParametersSet()
+    {
+        // Un cero no tiene logaritmo: un modelo sin tarifa conocida no se puede
+        // colocar en el eje, y colocarlo en el origen mentiria diciendo que es gratis.
+        _points = Points.Where(p => p.X > 0 && p.Y > 0).ToList();
+
+        if (_points.Count == 0)
+        {
+            // Al cambiar el filtro y quedarse sin puntos hay que soltar tambien los
+            // ejes: si no, los de la seleccion anterior sobreviven a la siguiente.
+            _labelled = [];
+            _xTicks = [];
+            _yTicks = [];
+            return;
+        }
+
+        (_xMin, _xMax) = Bounds(_points.Select(p => p.X));
+        (_yMin, _yMax) = Bounds(_points.Select(p => p.Y));
+
+        _xTicks = Decades(_xMin, _xMax);
+        _yTicks = Decades(_yMin, _yMax);
+
+        // El mas barato, el mas caro, el de mas contexto y el de menos: los cuatro
+        // que alguien buscaria con el dedo.
+        _labelled = new[]
+            {
+                _points.MinBy(p => p.X),
+                _points.MaxBy(p => p.X),
+                _points.MaxBy(p => p.Y),
+                _points.MinBy(p => p.Y),
+            }
+            .Where(p => p is not null)
+            .Select(p => p!)
+            .DistinctBy(p => p.Label)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Margen de media decada a cada lado para que los puntos extremos no queden
+    /// pegados al eje, y un rango minimo cuando todos los modelos valen lo mismo.
+    /// </summary>
+    private static (double Min, double Max) Bounds(IEnumerable<double> values)
+    {
+        var list = values.ToList();
+        var min = list.Min();
+        var max = list.Max();
+
+        if (max <= min) return (min / 2, max * 2);
+
+        var logMin = Math.Log10(min) - 0.15;
+        var logMax = Math.Log10(max) + 0.15;
+
+        return (Math.Pow(10, logMin), Math.Pow(10, logMax));
+    }
+
+    /// <summary>Una marca por decada, y las intermedias cuando el rango es corto.</summary>
+    private static List<double> Decades(double min, double max)
+    {
+        var ticks = new List<double>();
+        var from = (int)Math.Floor(Math.Log10(min));
+        var to = (int)Math.Ceiling(Math.Log10(max));
+
+        var step = to - from > 5 ? 2 : 1;
+
+        for (var e = from; e <= to; e += step)
+        {
+            var v = Math.Pow(10, e);
+            if (v >= min && v <= max) ticks.Add(v);
+        }
+
+        // Con menos de tres marcas la rejilla no ayuda a situar nada: se rellena con
+        // los medios de cada decada.
+        if (ticks.Count < 3)
+        {
+            for (var e = from; e <= to; e++)
+            {
+                var v = Math.Pow(10, e) * 5;
+                if (v >= min && v <= max) ticks.Add(v);
+            }
+            ticks.Sort();
+        }
+
+        return ticks;
+    }
+
+    private double PlotX(double value) =>
+        PadLeft + (W - PadLeft - PadRight) * LogRatio(value, _xMin, _xMax);
+
+    private double PlotY(double value) =>
+        H - PadBottom - (H - PadTop - PadBottom) * LogRatio(value, _yMin, _yMax);
+
+    private static double LogRatio(double value, double min, double max)
+    {
+        if (value <= 0 || min <= 0 || max <= min) return 0;
+
+        return Math.Clamp(
+            (Math.Log10(value) - Math.Log10(min)) / (Math.Log10(max) - Math.Log10(min)), 0, 1);
+    }
+
+    private string XTickText(double v) => XIsMoney
+        ? "$" + v.ToString(v < 1 ? "0.####" : "0.##", System.Globalization.CultureInfo.InvariantCulture)
+        : Compact(v);
+
+    private static string YTickText(double v) => Compact(v);
+
+    /// <summary>1_000_000 → "1M". Las cifras completas no caben en el eje.</summary>
+    private static string Compact(double v) =>
+        v >= 1_000_000 ? (v / 1_000_000).ToString("0.#") + "M"
+        : v >= 1_000 ? (v / 1_000).ToString("0.#") + "K"
+        : v.ToString("0.##");
+
+    /// <summary>
+    /// Coordenadas siempre con punto decimal: en un SVG, un "12,5" es dos numeros.
+    /// </summary>
+    private static string F(double v) =>
+        v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+}

@@ -66,8 +66,11 @@ almacenan el estado de interacciones externas pendientes de respuesta.
 **UserDb** (nombre dinamico, uno por cuenta) almacena todos los datos funcionales del tenant:
 `ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `ShopifyConnections`,
 `Projects`, `ProjectModules`, `ModuleConnections`, `ProjectExecutions`, `StepExecutions`,
-`ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs`, `Rules` y
-`PromptVersions` (historial de versiones del prompt de cada modulo). Las
+`ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs`, `Rules`,
+`PromptVersions` (historial de versiones del prompt de cada modulo) y las tres tablas del
+servicio de deteccion de cambios del catalogo de modelos: `ModelCatalogSnapshots` (la
+ultima foto conocida de cada modelo), `ModelCatalogChanges` (historico append-only de lo
+que ha cambiado) y `ModelScanRuns` (cada pasada del servicio). Las
 credenciales de redes sociales (Buffer), mensajeria (Telegram) y Shopify son conexiones
 reutilizables que los proyectos referencian por Id.
 No hay migraciones EF formales: la BD se crea con `EnsureCreated` y los cambios de

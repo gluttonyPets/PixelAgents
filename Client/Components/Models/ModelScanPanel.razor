@@ -1,0 +1,316 @@
+@* Servicio de deteccion de cambios del catalogo, lanzado desde la propia pantalla.
+
+   Que hace cada pasada:
+     - pregunta a cada proveedor con API key configurada que modelos tiene y apunta
+       los que el catalogo todavia no conoce;
+     - compara tarifas y ciclo de vida contra la foto que dejo la pasada anterior y
+       apunta lo que haya cambiado;
+     - deja la foto al dia, para que la siguiente pasada compare contra esto.
+
+   El historico es la parte que aporta: el catalogo compilado dice cuanto cuesta un
+   modelo hoy, y esta lista dice cuando cambio y de cuanto a cuanto. *@
+
+@inject ApiClient Api
+
+<div class="scan-panel">
+    <div class="scan-toolbar">
+        <div>
+            <h3 class="scan-title">Deteccion de cambios</h3>
+            <p class="scan-lede">
+                Busca modelos nuevos en las APIs de los proveedores y compara las tarifas
+                con la ultima revision guardada. Solo apunta lo que cambia: si no hay
+                novedades, la pasada queda registrada igual.
+            </p>
+        </div>
+        <button class="btn btn-primary" @onclick="RunAsync" disabled="@_running">
+            @if (_running)
+            {
+                <span>Buscando...</span>
+            }
+            else
+            {
+                <span><i class="bi bi-arrow-repeat"></i> Buscar cambios ahora</span>
+            }
+        </button>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="scan-alert is-error">@_error</div>
+    }
+
+    @if (_justRan is not null)
+    {
+        <div class="scan-alert @(_justRan.Run.Status == "error" ? "is-error" : "is-ok")">
+            @ResultSummary(_justRan)
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <p class="text-muted">Cargando historico...</p>
+    }
+    else
+    {
+        var last = _history?.LastRun;
+
+        <div class="scan-stats">
+            <div class="scan-stat">
+                <span class="scan-stat-label">Ultima revision</span>
+                <span class="scan-stat-value">@(last is null ? "nunca" : Ago(last.StartedAt))</span>
+                @if (last is not null)
+                {
+                    <span class="scan-stat-note">@last.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                }
+            </div>
+            <div class="scan-stat">
+                <span class="scan-stat-label">Modelos vigilados</span>
+                <span class="scan-stat-value">@(last?.ModelsScanned ?? 0)</span>
+                <span class="scan-stat-note">@(last?.ProvidersQueried ?? "sin proveedores consultados")</span>
+            </div>
+            <div class="scan-stat">
+                <span class="scan-stat-label">Cambios registrados</span>
+                @* El endpoint devuelve como mucho ChangeLimit: al llegar al tope el
+                   numero deja de ser el total, y decir "312" cuando son mas seria
+                   mentir con precision. *@
+                <span class="scan-stat-value">
+                    @(_history?.Changes.Count ?? 0)@(_history?.Changes.Count >= ChangeLimit ? "+" : "")
+                </span>
+                <span class="scan-stat-note">@(_history?.Runs.Count ?? 0) pasadas guardadas</span>
+            </div>
+        </div>
+
+        @if (_history is null)
+        {
+            <p class="text-muted">No se ha podido cargar el historico.</p>
+        }
+        else if (_history.Changes.Count == 0)
+        {
+            <p class="text-muted scan-empty">
+                @if (last is null)
+                {
+                    <text>
+                        Todavia no se ha lanzado ninguna vez. La primera pasada solo toma la
+                        foto de referencia: a partir de la segunda ya puede decir que ha cambiado.
+                    </text>
+                }
+                else if (last.IsBaseline)
+                {
+                    <text>
+                        Foto de referencia tomada con @last.ModelsScanned modelos. La proxima
+                        pasada ya comparara contra ella.
+                    </text>
+                }
+                else
+                {
+                    <text>Sin cambios detectados desde que se vigila el catalogo.</text>
+                }
+            </p>
+        }
+        else
+        {
+            var types = _history.Changes.Select(c => c.ChangeType).Distinct().OrderBy(t => t).ToList();
+            var visible = _history.Changes
+                .Where(c => _filterType is null || c.ChangeType == _filterType)
+                .ToList();
+
+            <div class="apikeys-filters scan-filters">
+                <button class="filter-pill @(_filterType is null ? "active" : "")"
+                        @onclick="() => _filterType = null">
+                    Todos <span class="filter-count">@_history.Changes.Count</span>
+                </button>
+                @foreach (var t in types)
+                {
+                    var count = _history.Changes.Count(c => c.ChangeType == t);
+                    <button class="filter-pill @(_filterType == t ? "active" : "")"
+                            @onclick="() => _filterType = t">
+                        @TypeLabel(t) <span class="filter-count">@count</span>
+                    </button>
+                }
+            </div>
+
+            <ul class="scan-history">
+                @foreach (var group in visible.GroupBy(c => c.DetectedAt))
+                {
+                    <li class="scan-history-day">
+                        <span class="scan-history-date">
+                            @group.Key.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                        </span>
+                        <span class="scan-history-count">@group.Count() cambios</span>
+                    </li>
+                    @foreach (var c in group)
+                    {
+                        <li class="scan-history-item">
+                            <span class="badge @TypeBadge(c.ChangeType)">@TypeLabel(c.ChangeType)</span>
+                            <div class="scan-history-body">
+                                <span class="scan-history-model">@c.ModelId</span>
+                                <span class="scan-history-note">@c.Note</span>
+                            </div>
+                            @if (c.OldValue is not null || c.NewValue is not null)
+                            {
+                                <span class="scan-history-delta">
+                                    <span class="scan-old">@(c.OldValue ?? "—")</span>
+                                    <i class="bi bi-arrow-right"></i>
+                                    <span class="scan-new">@(c.NewValue ?? "—")</span>
+                                </span>
+                            }
+                        </li>
+                    }
+                }
+            </ul>
+        }
+
+        @if (_history?.Runs.Count > 0)
+        {
+            <details class="scan-runs">
+                <summary>Pasadas del servicio (@_history.Runs.Count)</summary>
+                <table class="data-table scan-runs-table">
+                    <thead>
+                        <tr>
+                            <th>Cuando</th>
+                            <th>Origen</th>
+                            <th class="num">Modelos</th>
+                            <th class="num">Cambios</th>
+                            <th>Proveedores</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in _history.Runs)
+                        {
+                            <tr>
+                                <td>@r.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                <td>@(r.Trigger == "manual" ? "manual" : r.Trigger)</td>
+                                <td class="num">@r.ModelsScanned</td>
+                                <td class="num">@r.ChangesDetected</td>
+                                <td class="scan-run-providers">@(r.ProvidersQueried ?? "—")</td>
+                                <td>
+                                    @if (r.Status == "error")
+                                    {
+                                        <span class="badge badge-danger" title="@r.Error">Error</span>
+                                    }
+                                    else if (r.IsBaseline)
+                                    {
+                                        <span class="badge badge-muted">Foto inicial</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge badge-success">OK</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </details>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// Se dispara cuando una pasada encuentra algo: la pantalla recarga las tarifas
+    /// para que las tablas y las graficas no sigan mostrando el estado anterior.
+    /// </summary>
+    [Parameter] public EventCallback OnScanned { get; set; }
+
+    /// <summary>Cambios que se piden al servidor. Mas de esto no cabe en la lista.</summary>
+    private const int ChangeLimit = 200;
+
+    private ModelScanHistoryResponse? _history;
+    private ModelScanResultResponse? _justRan;
+    private string? _filterType;
+    private string? _error;
+    private bool _loading = true;
+    private bool _running;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _history = await Api.GetModelScanHistoryAsync(changes: ChangeLimit);
+        _loading = false;
+    }
+
+    private async Task RunAsync()
+    {
+        _running = true;
+        _error = null;
+        _justRan = null;
+
+        try
+        {
+            _justRan = await Api.RunModelScanAsync();
+
+            if (_justRan is null)
+            {
+                _error = "No se ha podido lanzar la deteccion. Reintentalo en un momento.";
+            }
+            else
+            {
+                _history = await Api.GetModelScanHistoryAsync(changes: ChangeLimit);
+                if (_justRan.Changes.Count > 0) await OnScanned.InvokeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = "No se ha podido lanzar la deteccion: " + ex.Message;
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    private static string ResultSummary(ModelScanResultResponse r)
+    {
+        if (r.Run.Status == "error")
+            return "La pasada fallo: " + (r.Run.Error ?? "motivo desconocido");
+
+        if (r.Run.IsBaseline)
+            return $"Foto de referencia tomada con {r.Run.ModelsScanned} modelos. "
+                 + "A partir de la proxima pasada ya se detectan cambios.";
+
+        if (r.Changes.Count == 0)
+            return $"Revisados {r.Run.ModelsScanned} modelos: nada ha cambiado.";
+
+        var parts = new List<string>();
+        if (r.Run.NewModels > 0) parts.Add($"{r.Run.NewModels} modelos nuevos");
+        if (r.Run.PriceChanges > 0) parts.Add($"{r.Run.PriceChanges} cambios de precio");
+
+        var detail = parts.Count > 0 ? " (" + string.Join(", ", parts) + ")" : "";
+        return $"{r.Changes.Count} cambios detectados{detail}.";
+    }
+
+    private static string TypeLabel(string type) => type switch
+    {
+        "new_model"          => "Alta en catalogo",
+        "provider_new_model" => "Nuevo en el proveedor",
+        "price_change"       => "Cambio de precio",
+        "lifecycle_change"   => "Ciclo de vida",
+        "availability_change"=> "Disponibilidad",
+        "removed_model"      => "Baja",
+        _                    => type,
+    };
+
+    private static string TypeBadge(string type) => type switch
+    {
+        "price_change"       => "badge-warning",
+        "new_model"          => "badge-success",
+        "provider_new_model" => "badge-openai",
+        "removed_model"      => "badge-danger",
+        "lifecycle_change"   => "badge-danger",
+        _                    => "badge-muted",
+    };
+
+    /// <summary>"hace 3 dias". La fecha exacta va debajo, en pequeño.</summary>
+    private static string Ago(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+
+        if (span.TotalMinutes < 2) return "hace un momento";
+        if (span.TotalHours < 1) return $"hace {(int)span.TotalMinutes} min";
+        if (span.TotalHours < 24) return $"hace {(int)span.TotalHours} h";
+        if (span.TotalDays < 30) return $"hace {(int)span.TotalDays} dias";
+
+        return $"hace {(int)(span.TotalDays / 30)} meses";
+    }
+}

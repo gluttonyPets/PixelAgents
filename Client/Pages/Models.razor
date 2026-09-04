@@ -1,0 +1,627 @@
+@* Catalogo de modelos: que hay, que sabe hacer cada uno y cuanto cuesta.
+
+   La ruta /precios se mantiene porque la pantalla se llamaba asi y hay enlaces
+   guardados apuntando ahi. *@
+@page "/modelos"
+@page "/precios"
+@inject ApiClient Api
+
+<div class="apikeys-page-header">
+    <h2>Modelos</h2>
+</div>
+
+@if (_loading)
+{
+    <p class="text-muted">Cargando catalogo...</p>
+}
+else if (_models.Count == 0)
+{
+    <p class="text-muted">No se ha podido cargar el catalogo de modelos.</p>
+}
+else
+{
+    <div class="models-tabs">
+        <button class="models-tab @(_view == View.Charts ? "active" : "")"
+                @onclick="() => _view = View.Charts">
+            <i class="bi bi-bar-chart-line"></i> Comparativa
+        </button>
+        <button class="models-tab @(_view == View.Table ? "active" : "")"
+                @onclick="() => _view = View.Table">
+            <i class="bi bi-table"></i> Tabla
+        </button>
+        <button class="models-tab @(_view == View.Changes ? "active" : "")"
+                @onclick="() => _view = View.Changes">
+            <i class="bi bi-clock-history"></i> Cambios
+        </button>
+    </div>
+
+    @if (_view == View.Changes)
+    {
+        <ModelScanPanel OnScanned="ReloadAsync" />
+    }
+    else
+    {
+        var visible = _models.Where(Matches).ToList();
+
+        @* ── Filtros ── *@
+        <div class="models-filters">
+            <div class="models-filter-group">
+                <span class="models-filter-label">Empresa</span>
+                <div class="apikeys-filters">
+                    <button class="filter-pill @(_provider is null ? "active" : "")"
+                            @onclick="() => _provider = null">
+                        Todas <span class="filter-count">@_models.Count</span>
+                    </button>
+                    @foreach (var p in _providers)
+                    {
+                        var count = _models.Count(m => m.Provider == p);
+                        <button class="filter-pill @ProviderPalette.PillClass(p) @(_provider == p ? "active" : "")"
+                                @onclick="() => _provider = p">
+                            @p <span class="filter-count">@count</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="models-filter-group">
+                <span class="models-filter-label">Tipo de generacion</span>
+                <div class="apikeys-filters">
+                    <button class="filter-pill @(_moduleType is null ? "active" : "")"
+                            @onclick="() => _moduleType = null">
+                        Todos
+                    </button>
+                    @foreach (var t in _moduleTypes)
+                    {
+                        var count = _models.Count(m => m.ModuleType == t);
+                        <button class="filter-pill @(_moduleType == t ? "active" : "")"
+                                @onclick="() => _moduleType = t">
+                            @ModuleTypeLabel(t) <span class="filter-count">@count</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            @* Las capacidades se acumulan: marcar "vision" y "razonamiento" busca
+               modelos que tengan las dos, que es como se elige un modelo de verdad. *@
+            <div class="models-filter-group">
+                <span class="models-filter-label">Capacidades</span>
+                <div class="apikeys-filters">
+                    @foreach (var cap in _capabilities)
+                    {
+                        <button class="filter-pill @(_caps.Contains(cap) ? "active" : "")"
+                                @onclick="() => ToggleCap(cap)">
+                            @CapLabel(cap)
+                        </button>
+                    }
+                    @if (_caps.Count > 0)
+                    {
+                        <button class="filter-pill models-clear" @onclick="() => _caps.Clear()">
+                            <i class="bi bi-x"></i> Quitar
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="pricing-toolbar">
+            @* Los campos se recalculan al salir del campo, no en cada tecla: con binding a
+               int, el instante en que el campo queda vacio al reescribirlo es un error de
+               parseo y Blazor revierte el valor delante del usuario. *@
+            <div class="pricing-tokens">
+                <label>
+                    Tokens de entrada
+                    <input type="number" min="0" step="500" @bind="_inputTokens" />
+                </label>
+                <label>
+                    Tokens de salida
+                    <input type="number" min="0" step="500" @bind="_outputTokens" />
+                </label>
+                <button class="btn btn-sm btn-secondary" @onclick="ResetTokens">Restablecer</button>
+                <label class="models-check">
+                    <input type="checkbox" @bind="_hideRetired" />
+                    Ocultar retirados
+                </label>
+            </div>
+
+            <div class="pricing-search-wrap">
+                <input class="apikeys-search" type="text" @bind="_search" @bind:event="oninput"
+                       placeholder="🔍 Buscar modelo..." />
+            </div>
+        </div>
+
+        <p class="models-count">
+            @visible.Count de @_models.Count modelos
+            @if (visible.Count > 0)
+            {
+                <span class="models-count-note">
+                    · coste calculado sobre @_inputTokens.ToString("N0") tokens de entrada
+                    y @_outputTokens.ToString("N0") de salida
+                </span>
+            }
+        </p>
+
+        @if (visible.Count == 0)
+        {
+            <p class="text-muted">Ningun modelo cumple todos los filtros.</p>
+        }
+        else if (_view == View.Charts)
+        {
+            var text = visible.Where(m => m.Kind == "text").ToList();
+            var image = visible.Where(m => m.Kind == "image").ToList();
+
+            <div class="charts-grid">
+                @if (text.Count > 0)
+                {
+                    <ModelBarChart
+                        Title="Coste por ejecucion"
+                        Note="@($"{_inputTokens:N0} tokens dentro, {_outputTokens:N0} fuera · escala logaritmica")"
+                        Log="true"
+                        Bars="@CostBars(text)" />
+
+                    <ModelBarChart
+                        Title="Tarifa por millon de tokens"
+                        Note="entrada y salida por separado · escala logaritmica"
+                        Log="true"
+                        SeriesNames="@(new[] { "entrada", "salida" })"
+                        Bars="@RateBars(text)" />
+
+                    <div class="charts-wide">
+                        <ModelScatterChart
+                            Title="Precio frente a capacidad"
+                            Note="cuanto mas abajo y a la derecha, mas contexto por dolar"
+                            XLabel="coste por ejecucion (USD)"
+                            YLabel="ventana de contexto (tokens)"
+                            Points="@CostVsContext(text)" />
+                    </div>
+
+                    <ModelBarChart
+                        Title="Ventana de contexto"
+                        Note="tokens que caben en una llamada"
+                        Bars="@ContextBars(text)" />
+                }
+
+                @* Fuera de gpt-image la calidad no cambia el precio: tres barras
+                   identicas por modelo no comparan nada, asi que los planos van en
+                   su propia grafica con una sola barra. *@
+                @if (image.Any(ByQuality))
+                {
+                    <ModelBarChart
+                        Title="Coste por imagen segun calidad"
+                        Note="1024x1024 · escala logaritmica"
+                        Log="true"
+                        SeriesNames="@(new[] { "baja", "media", "alta" })"
+                        Bars="@ImageBars(image.Where(ByQuality).ToList())" />
+                }
+
+                @if (image.Any(m => !ByQuality(m)))
+                {
+                    <ModelBarChart
+                        Title="Coste por imagen"
+                        Note="precio unico por imagen de 1024x1024 · escala logaritmica"
+                        Log="true"
+                        Bars="@FlatImageBars(image.Where(m => !ByQuality(m)).ToList())" />
+                }
+
+                @* Embeddings, audio y transcripcion no comparten unidad de facturacion:
+                   una grafica por unidad, porque un grafico que mezcle dolares por
+                   minuto con dolares por millon de tokens compara cosas distintas. *@
+                @foreach (var group in AuxGroups(visible))
+                {
+                    <ModelBarChart
+                        Title="@($"Precio por {group.Key}")"
+                        Note="@AuxNoteFor(group.Key)"
+                        Log="true"
+                        Bars="@group.Value" />
+                }
+            </div>
+        }
+        else
+        {
+            @RenderTables(visible)
+        }
+
+        <p class="text-muted pricing-footnote">
+            Ningun proveedor publica sus tarifas por API, asi que estan en una tabla revisada
+            a mano (<code>Server/Services/Ai/PricingCatalog.cs</code>) y son las mismas que usa
+            la app para estimar el gasto de cada ejecucion. El coste real depende de los tokens
+            que gaste cada una, y en los modelos de razonamiento el pensar se factura como
+            salida. La pestaña <strong>Cambios</strong> lleva el registro de cuando se movio
+            cada precio y de que modelos nuevos han aparecido en los proveedores.
+        </p>
+    }
+}
+
+@code {
+    private enum View { Charts, Table, Changes }
+
+    private List<ModelPriceResponse> _models = [];
+    private List<string> _providers = [];
+    private List<string> _moduleTypes = [];
+    private List<string> _capabilities = [];
+
+    private bool _loading = true;
+    private View _view = View.Charts;
+
+    private string? _provider;
+    private string? _moduleType;
+    private readonly HashSet<string> _caps = [];
+    private string _search = "";
+    private bool _hideRetired;
+
+    // Un paso de texto tipico del pipeline: un articulo corto con su prompt de sistema.
+    private const int DefaultInputTokens = 10_000;
+    private const int DefaultOutputTokens = 2_000;
+
+    private int _inputTokens = DefaultInputTokens;
+    private int _outputTokens = DefaultOutputTokens;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        try { _models = await Api.GetModelPricingAsync(); }
+        catch { }
+
+        _providers = _models.Select(m => m.Provider).Distinct().OrderBy(p => p).ToList();
+
+        // El orden no es alfabetico a proposito: texto e imagen son el 90% del uso.
+        string[] order = ["Text", "Image", "Embeddings", "Audio", "Transcription", "Design"];
+        _moduleTypes = order.Where(t => _models.Any(m => m.ModuleType == t)).ToList();
+
+        _capabilities = _models
+            .SelectMany(m => m.Caps)
+            .Distinct()
+            .OrderBy(CapLabel)
+            .ToList();
+
+        _loading = false;
+    }
+
+    private void ResetTokens()
+    {
+        _inputTokens = DefaultInputTokens;
+        _outputTokens = DefaultOutputTokens;
+    }
+
+    private void ToggleCap(string cap)
+    {
+        if (!_caps.Add(cap)) _caps.Remove(cap);
+    }
+
+    private bool Matches(ModelPriceResponse m) =>
+        (_provider is null || m.Provider == _provider)
+        && (_moduleType is null || m.ModuleType == _moduleType)
+        && (!_hideRetired || m.Lifecycle.Status != "retired")
+        && _caps.All(c => m.Caps.Contains(c))
+        && (string.IsNullOrWhiteSpace(_search)
+            || m.Id.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || m.DisplayName.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    // ────────────────────────────── graficas ──────────────────────────────
+
+    /// <summary>Coste de una ejecucion con los tokens que tenga puestos el usuario.</summary>
+    private List<ChartBar> CostBars(List<ModelPriceResponse> models) => models
+        .OrderBy(m => m.CostFor(_inputTokens, _outputTokens))
+        .Select(m => new ChartBar(m.DisplayName, m.Id, m.Provider,
+            [new ChartValue(m.CostFor(_inputTokens, _outputTokens),
+                Money(m.CostFor(_inputTokens, _outputTokens), 4))]))
+        .ToList();
+
+    /// <summary>
+    /// Entrada y salida por separado. La salida cuesta entre cuatro y ocho veces mas
+    /// que la entrada segun el modelo, y esa diferencia decide que modelo compensa
+    /// para un pipeline que escribe mucho.
+    /// </summary>
+    private List<ChartBar> RateBars(List<ModelPriceResponse> models) => models
+        .OrderBy(m => m.OutputPerMTok ?? 0m)
+        .Select(m => new ChartBar(m.DisplayName, m.Id, m.Provider,
+        [
+            new ChartValue(m.InputPerMTok ?? 0m, Money(m.InputPerMTok, 3)),
+            new ChartValue(m.OutputPerMTok ?? 0m, Money(m.OutputPerMTok, 2)),
+        ]))
+        .ToList();
+
+    private static List<ChartBar> ContextBars(List<ModelPriceResponse> models) => models
+        .Where(m => m.ContextTokens is > 0)
+        .OrderByDescending(m => m.ContextTokens)
+        .Select(m => new ChartBar(m.DisplayName, m.Id, m.Provider,
+            [new ChartValue(m.ContextTokens!.Value, Tokens(m.ContextTokens.Value))]))
+        .ToList();
+
+    private List<ChartPoint> CostVsContext(List<ModelPriceResponse> models) => models
+        .Where(m => m.ContextTokens is > 0)
+        .Select(m =>
+        {
+            var cost = m.CostFor(_inputTokens, _outputTokens);
+            return new ChartPoint(m.DisplayName, (double)cost, m.ContextTokens!.Value, m.Provider,
+                $"{m.DisplayName} ({m.Id})\n{Money(cost, 4)} por ejecucion\n"
+                + $"{Tokens(m.ContextTokens.Value)} de contexto");
+        })
+        .ToList();
+
+    /// <summary>True cuando el modelo cobra distinto segun la calidad pedida.</summary>
+    private static bool ByQuality(ModelPriceResponse m) =>
+        !(m.ImageLow == m.ImageMedium && m.ImageMedium == m.ImageHigh);
+
+    private static List<ChartBar> FlatImageBars(List<ModelPriceResponse> models) => models
+        .OrderBy(m => m.ImageMedium ?? 0m)
+        .Select(m => new ChartBar(m.DisplayName, m.Id, m.Provider,
+            [new ChartValue(m.ImageMedium ?? 0m, Money(m.ImageMedium, 4))]))
+        .ToList();
+
+    private static List<ChartBar> ImageBars(List<ModelPriceResponse> models) => models
+        .OrderBy(m => m.ImageMedium ?? 0m)
+        .Select(m => new ChartBar(m.DisplayName, m.Id, m.Provider,
+        [
+            new ChartValue(m.ImageLow ?? 0m, Money(m.ImageLow, 4)),
+            new ChartValue(m.ImageMedium ?? 0m, Money(m.ImageMedium, 4)),
+            new ChartValue(m.ImageHigh ?? 0m, Money(m.ImageHigh, 4)),
+        ]))
+        .ToList();
+
+    /// <summary>
+    /// Modelos que no se facturan ni por token ni por imagen, agrupados por su unidad.
+    /// Mezclar dolares por minuto con dolares por millon de caracteres en la misma
+    /// escala seria equivocarse por tres ordenes de magnitud.
+    /// </summary>
+    private static Dictionary<string, List<ChartBar>> AuxGroups(List<ModelPriceResponse> models) => models
+        .Where(m => m.Kind == "other" && m.AuxAmount is > 0m && m.AuxUnit is not null)
+        .GroupBy(m => m.AuxUnit!)
+        .OrderBy(g => g.Key)
+        .ToDictionary(
+            g => g.Key,
+            g => g.OrderBy(m => m.AuxAmount)
+                  .Select(m => new ChartBar(m.DisplayName, m.Id, m.Provider,
+                      [new ChartValue(m.AuxAmount!.Value, Money(m.AuxAmount, m.AuxAmount < 1m ? 4 : 2))]))
+                  .ToList());
+
+    private static string AuxNoteFor(string unit) =>
+        unit.Contains("minuto") ? "transcripcion · escala logaritmica"
+        : unit.Contains("caracter") ? "voz · escala logaritmica"
+        : "escala logaritmica";
+
+    // ────────────────────────────── tablas ──────────────────────────────
+
+    private RenderFragment RenderTables(List<ModelPriceResponse> visible) => __builder =>
+    {
+        var text = visible.Where(m => m.Kind == "text").ToList();
+        var image = visible.Where(m => m.Kind == "image").ToList();
+        var other = visible.Where(m => m.Kind == "other").ToList();
+
+        @if (text.Count > 0)
+        {
+            @* El coste por ejecucion es lo que de verdad se pregunta el usuario al montar
+               un pipeline; el precio por millon de tokens es dificil de traducir a dinero
+               real de un vistazo. *@
+            <h3 class="pricing-section-title">
+                Texto
+                <span class="pricing-section-note">
+                    coste de una ejecucion de @_inputTokens.ToString("N0") tokens de entrada
+                    y @_outputTokens.ToString("N0") de salida
+                </span>
+            </h3>
+
+            <table class="data-table pricing-table">
+                <thead>
+                    <tr>
+                        <th>Modelo</th>
+                        <th class="num">$ / 1M entrada</th>
+                        <th class="num">$ / 1M salida</th>
+                        <th class="num">Por ejecucion</th>
+                        <th class="num">Contexto</th>
+                        <th>Capacidades</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var group in GroupByProvider(text))
+                    {
+                        <tr class="pricing-group-row">
+                            <td colspan="7">@group.Key <span class="pricing-group-count">@group.Count() modelos</span></td>
+                        </tr>
+                        @foreach (var m in group)
+                        {
+                            <tr>
+                                <td>
+                                    <span class="pricing-id">@m.Id</span>
+                                    <span class="pricing-provider">@m.DisplayName</span>
+                                </td>
+                                <td class="num">@Money(m.InputPerMTok, 3)</td>
+                                <td class="num">@Money(m.OutputPerMTok, 2)</td>
+                                <td class="num num-strong">@Money(m.CostFor(_inputTokens, _outputTokens), 4)</td>
+                                <td class="num">@(m.ContextTokens is > 0 ? Tokens(m.ContextTokens.Value) : "—")</td>
+                                <td>@CapChips(m)</td>
+                                <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (image.Count > 0)
+        {
+            <h3 class="pricing-section-title">
+                Imagen
+                <span class="pricing-section-note">coste por imagen de 1024x1024</span>
+            </h3>
+
+            <table class="data-table pricing-table">
+                <thead>
+                    <tr>
+                        <th>Modelo</th>
+                        <th class="num">Baja</th>
+                        <th class="num">Media</th>
+                        <th class="num">Alta</th>
+                        <th>Capacidades</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var group in GroupByProvider(image))
+                    {
+                        <tr class="pricing-group-row">
+                            <td colspan="6">@group.Key <span class="pricing-group-count">@group.Count() modelos</span></td>
+                        </tr>
+                        @foreach (var m in group)
+                        {
+                            <tr>
+                                <td>
+                                    <span class="pricing-id">@m.Id</span>
+                                    <span class="pricing-provider">@m.DisplayName</span>
+                                </td>
+                                @if (m.ImageLow == m.ImageMedium && m.ImageMedium == m.ImageHigh)
+                                {
+                                    @* Fuera de gpt-image la calidad no cambia el precio: repetir
+                                       tres veces la misma cifra solo invita a leerla mal. *@
+                                    <td class="num" colspan="3">
+                                        @Money(m.ImageMedium, 4) <span class="pricing-flat">precio unico</span>
+                                    </td>
+                                }
+                                else
+                                {
+                                    <td class="num">@Money(m.ImageLow, 4)</td>
+                                    <td class="num">@Money(m.ImageMedium, 4)</td>
+                                    <td class="num num-strong">@Money(m.ImageHigh, 4)</td>
+                                }
+                                <td>@CapChips(m)</td>
+                                <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (other.Count > 0)
+        {
+            @* Embeddings, audio y transcripcion no comparten unidad de facturacion entre
+               si, asi que cada fila trae la suya en vez de forzarlas a una columna comun. *@
+            <h3 class="pricing-section-title">
+                Embeddings, audio y diseno
+                <span class="pricing-section-note">cada uno con su unidad de facturacion</span>
+            </h3>
+
+            <table class="data-table pricing-table">
+                <thead>
+                    <tr>
+                        <th>Modelo</th>
+                        <th>Tipo</th>
+                        <th class="num">Precio</th>
+                        <th>Unidad</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var group in GroupByProvider(other))
+                    {
+                        <tr class="pricing-group-row">
+                            <td colspan="5">@group.Key <span class="pricing-group-count">@group.Count() modelos</span></td>
+                        </tr>
+                        @foreach (var m in group)
+                        {
+                            <tr>
+                                <td>
+                                    <span class="pricing-id">@m.Id</span>
+                                    <span class="pricing-provider">@m.DisplayName</span>
+                                </td>
+                                <td class="pricing-kind">@ModuleTypeLabel(m.ModuleType)</td>
+                                <td class="num num-strong">
+                                    @(m.AuxAmount is null ? "—" : Money(m.AuxAmount, m.AuxAmount < 1m ? 4 : 2))
+                                </td>
+                                <td class="pricing-unit">
+                                    @if (m.AuxUnit is not null)
+                                    {
+                                        <span>por @m.AuxUnit</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="pricing-flat">sin coste por uso</span>
+                                    }
+                                    @if (m.AuxNote is not null)
+                                    {
+                                        <span class="pricing-aux-note">@m.AuxNote</span>
+                                    }
+                                </td>
+                                <td><ModelLifecycleBadge Info="@m.Lifecycle" Compact="true" /></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+    };
+
+    private RenderFragment CapChips(ModelPriceResponse m) => __builder =>
+    {
+        @foreach (var cap in m.Caps)
+        {
+            <span class="cap-chip">@CapLabel(cap)</span>
+        }
+    };
+
+    /// <summary>
+    /// Agrupa por proveedor y, dentro de cada uno, mantiene juntas las familias.
+    ///
+    /// Ordenar solo por precio separaba a los hermanos: gpt-image-1-mini acababa seis
+    /// filas por encima de gpt-image-2, con Leonardo y DALL-E en medio, y parecia que
+    /// faltaba del catalogo. Las familias se ordenan entre si por su miembro mas
+    /// barato, asi que sigue leyendose de mas barato a mas caro.
+    /// </summary>
+    private IEnumerable<IGrouping<string, ModelPriceResponse>> GroupByProvider(
+        List<ModelPriceResponse> models)
+    {
+        decimal Cost(ModelPriceResponse m) => m.ReferenceCost(_inputTokens, _outputTokens);
+
+        var familyFloor = models
+            .GroupBy(m => m.Family)
+            .ToDictionary(g => g.Key, g => g.Min(Cost));
+
+        return models
+            .OrderBy(m => m.Provider)
+            .ThenBy(m => familyFloor[m.Family])
+            .ThenBy(m => m.Family)
+            .ThenBy(Cost)
+            .GroupBy(m => m.Provider);
+    }
+
+    // ────────────────────────────── formato ──────────────────────────────
+
+    private static string ModuleTypeLabel(string moduleType) => moduleType switch
+    {
+        "Text"          => "Texto",
+        "Image"         => "Imagen",
+        "Embeddings"    => "Embeddings",
+        "Audio"         => "Audio (TTS)",
+        "Transcription" => "Transcripcion",
+        "Design"        => "Diseno",
+        _               => moduleType,
+    };
+
+    private static string CapLabel(string cap) => cap switch
+    {
+        "text"             => "Texto",
+        "vision"           => "Vision",
+        "reasoning"        => "Razonamiento",
+        "streaming"        => "Streaming",
+        "image-generation" => "Genera imagen",
+        "image-edit"       => "Edita imagen",
+        "image-editing"    => "Edita imagen",
+        "embeddings"       => "Embeddings",
+        "text-to-speech"   => "Voz",
+        "speech-to-text"   => "Transcribe",
+        "design-creation"  => "Diseno",
+        "autofill"         => "Autofill",
+        "export"           => "Exporta",
+        _                  => cap,
+    };
+
+    private static string Money(decimal? value, int decimals) =>
+        value is null ? "—" : "$" + value.Value.ToString("N" + decimals);
+
+    /// <summary>1_000_000 → "1M". El numero completo no aporta y no cabe en la barra.</summary>
+    private static string Tokens(int tokens) =>
+        tokens >= 1_000_000 ? (tokens / 1_000_000d).ToString("0.#") + "M"
+        : tokens >= 1_000 ? (tokens / 1_000d).ToString("0") + "K"
+        : tokens.ToString();
+}

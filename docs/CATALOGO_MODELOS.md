@@ -1,7 +1,8 @@
-# Catálogo de modelos: alta, precios y ciclo de vida
+# Catálogo de modelos: alta, precios, ciclo de vida y detección de cambios
 
 Cómo se mantiene la lista de modelos que el usuario puede elegir, cómo se calcula
-su coste y cómo se avisa de que un modelo va a dejar de funcionar.
+su coste, cómo se avisa de que un modelo va a dejar de funcionar y cómo se detecta que
+ha aparecido uno nuevo o que ha cambiado una tarifa.
 
 ---
 
@@ -12,14 +13,19 @@ La lista está **duplicada a propósito** en dos sitios, y hay que tocar los dos
 | Fichero | Para qué | Qué guarda |
 |---------|----------|------------|
 | `Client/Pages/Modules.razor` → `AllModels` | Alta de módulos en la UI | id, nombre, tipos, capacidades, descripción, contexto |
-| `Server/Services/Ai/ModelCatalog.cs` → `AllModels` | Todo lo que no pasa por la UI (bot de Telegram, ejecutor, endpoints) | id, nombre, proveedor, tipos |
+| `Server/Services/Ai/ModelCatalog.cs` → `AllModels` | Todo lo que no pasa por la UI (bot de Telegram, ejecutor, endpoints) | id, nombre, proveedor, tipos, capacidades, contexto |
 
 Los dos tienen que contener **exactamente los mismos ids**. Si solo añades uno, el
 modelo aparece en la UI pero el bot de Telegram no lo ofrece y no sale en la pantalla
-de precios, o al revés. Ya pasó: el catálogo del servidor arrastraba diez modelos de
+de modelos, o al revés. Ya pasó: el catálogo del servidor arrastraba diez modelos de
 menos (embeddings, audio, transcripción y Canva) y nadie se enteró hasta que la
 pantalla de precios los expuso. Hay un test que compara los dos ficheros
 (`ModelPricingEndpointTests.ElCatalogoDelServidorTieneLosMismosModelosQueElDelCliente`).
+
+Las **capacidades** y la **ventana de contexto** también tienen que coincidir: la
+pantalla de modelos filtra por ellas y las cruza con el precio, y para eso tienen que
+viajar por la API, no quedarse en el Razor. Otro test las compara capacidad a capacidad
+(`LasCapacidadesDelServidorCoincidenConLasDelCliente`).
 
 Alrededor hay tres tablas más que se sincronizan con estas:
 
@@ -127,11 +133,16 @@ como "sin coste por uso", que es distinto de un precio que falta.
 ## 5. Añadir un modelo nuevo
 
 1. `Client/Pages/Modules.razor` → `AllModels`.
-2. `Server/Services/Ai/ModelCatalog.cs` → `AllModels`.
+2. `Server/Services/Ai/ModelCatalog.cs` → `AllModels`, con **las mismas capacidades
+   y el mismo contexto** que pusiste en el paso 1.
 3. `Server/Services/Ai/PricingCatalog.cs` → su tarifa **propia** (no confiar en el
    match por prefijo).
 4. Si el proveedor ya anunció su retirada, `ModelLifecycle` con fecha y sustituto.
 5. Si acepta imágenes de entrada, `VisionCapability`.
+
+El servicio de deteccion (§7) avisa de los modelos que hay que dar de alta: cuando el
+proveedor lista un id que el catálogo no conoce, aparece en el histórico como
+"Nuevo en el proveedor" con los tres ficheros que hay que tocar.
 
 Los tests de `Server.Tests/CatalogoModelos/` fallan si te saltas el paso 3: hay una
 comprobación de que **todo** modelo del catálogo tiene tarifa propia, y otra de que
@@ -139,7 +150,7 @@ todo modelo retirado indica un sustituto que sigue vivo.
 
 ---
 
-## 6. Endpoints y pantalla de precios
+## 6. Endpoints y pantalla de modelos
 
 Los dos endpoints los sirve `ModelCatalogService`, que une catálogo, tarifas y ciclo
 de vida y los resuelve contra las API keys del tenant.
@@ -163,9 +174,10 @@ de vida y los resuelve contra las API keys del tenant.
 Lo consume `Client/Components/ModelLifecycleBadge.razor`, que pinta la etiqueta
 compacta en las tablas y el aviso completo bajo el modelo seleccionado.
 
-`GET /api/models/pricing` añade a lo anterior las tarifas de los modelos de texto e
-imagen (los de embeddings y audio no entran). Alimenta la pantalla **Precios**
-(`/precios`, `Client/Pages/ModelPricing.razor`).
+`GET /api/models/pricing` añade a lo anterior las tarifas de **todos** los modelos
+—texto, imagen y los que se facturan por otra unidad—, sus capacidades y su ventana
+de contexto. Alimenta la pantalla **Modelos** (`/modelos`, `Client/Pages/Models.razor`;
+la ruta antigua `/precios` sigue apuntando ahí para no romper enlaces guardados).
 
 El servidor manda las tarifas **por millón de tokens**, no el coste por ejecución: es
 el cliente quien multiplica, para que el usuario pueda cambiar los tokens de entrada y
@@ -185,3 +197,96 @@ separaba a los hermanos: `gpt-image-1-mini` acababa seis filas por encima de
 familia sale del id (`ModelPriceResponse.Family`: los segmentos iniciales sin dígitos,
 así que `gpt-image-1-mini` y `gpt-image-2` caen los dos en `gpt-image`), y las familias
 se ordenan entre sí por su miembro más barato para no perder la lectura de precio.
+
+La pantalla tiene tres pestañas:
+
+- **Comparativa** — gráficas. Coste por ejecución, tarifa de entrada frente a la de
+  salida, coste por imagen y ventana de contexto, más una nube de puntos que cruza
+  precio y contexto para responder a "de los modelos que me valen, cuál sale más
+  barato". Todas se recalculan con los filtros y con los tokens que ponga el usuario.
+- **Tabla** — las tarifas fila a fila, con capacidades y contexto.
+- **Cambios** — el servicio de detección y su histórico (§7).
+
+Los filtros son tres y se combinan: **empresa** (proveedor), **tipo de generación**
+(el `ModuleType`: texto, imagen, embeddings, audio, transcripción, diseño) y
+**capacidades**, que se acumulan —marcar "visión" y "razonamiento" busca los que
+tienen las dos—. Los componentes de gráfica viven en `Client/Components/Models/`.
+
+Las gráficas se pintan con CSS (barras) y SVG inline (la nube): no hay ninguna
+librería de charting, así que no hay nada que cargar de un CDN ni que actualizar.
+`Client/Components/Models/SvgText.cs` existe porque Razor se reserva la etiqueta
+`<text>` y no deja escribirla dentro de un bloque de código.
+
+Cada gráfica compara **una sola unidad de facturación**. Los modelos de embeddings,
+voz y transcripción se agrupan por unidad y cada grupo tiene la suya: mezclar dólares
+por minuto con dólares por millón de caracteres en la misma escala compara cosas
+distintas. Por el mismo motivo los modelos de imagen de precio plano van aparte de los
+que cobran según la calidad.
+
+---
+
+## 7. Servicio de detección de cambios
+
+`Server/Services/Ai/ModelCatalogScanService.cs`, lanzado a mano desde la pestaña
+**Cambios** (`POST /api/models/scan`) y consultable en `GET /api/models/scan/history`.
+
+Responde a dos preguntas distintas con dos fuentes distintas:
+
+| Pregunta | Fuente | Qué apunta |
+|----------|--------|------------|
+| ¿Hay modelos nuevos? | El listado de modelos del proveedor | `provider_new_model`: el proveedor lo tiene y el catálogo no |
+| ¿Han cambiado los precios? | La foto que dejó la pasada anterior | `price_change`, con el antes, el después y el porcentaje |
+
+La segunda merece explicación: **ningún proveedor publica sus tarifas por API** (§3),
+así que no hay nada contra lo que contrastar el precio de hoy salvo el precio que
+había ayer. Por eso cada pasada guarda una foto del catálogo
+(`ModelCatalogSnapshot`, una fila por modelo) y la siguiente compara contra ella.
+Cuando alguien revisa `PricingCatalog.cs` y despliega, la pasada siguiente detecta qué
+modelo cambió, de cuánto a cuánto y qué día. Sin la foto, esa información solo estaría
+en el historial de git.
+
+**"Actualizar" aquí es dejar la foto al día, no reescribir las tarifas.** El precio con
+el que se factura sigue saliendo del código revisado a mano, que es lo único fiable
+para cobrar.
+
+Además de esos dos, apunta `lifecycle_change` (un modelo pasa a deprecated o retired),
+`availability_change` (el proveedor deja de listar un modelo del catálogo, o vuelve a
+listarlo) y `removed_model` (desaparece del catálogo del repo).
+
+Tres decisiones que evitan que el histórico se llene de ruido:
+
+- **La primera pasada de cada tenant solo fotografía** (`IsBaseline`). Si generase
+  histórico, el día que se estrena la pantalla aparecerían los 72 modelos del catálogo
+  como "nuevos" y el histórico nacería inservible.
+- **Los snapshots con fecha no cuentan como modelo nuevo.** `gpt-5.6-sol-2026-03-11` es
+  el mismo modelo que `gpt-5.6-sol`, y anunciarlo cada vez que OpenAI publica una
+  instantánea sería un falso positivo semanal.
+- **Cada hallazgo se anuncia una sola vez.** Un id que el proveedor lista y el catálogo
+  no tiene se guarda como foto con `Source = "provider"`, así que sigue apareciendo en
+  la lista de pendientes pero no se repite en cada pasada. El tope es de 40 hallazgos
+  por pasada: OpenAI lista más de cien ids y volcarlos todos sería ruido.
+
+`null` sigue significando **"no lo sé"**: si no se ha podido preguntar al proveedor, la
+disponibilidad conocida no se pisa. Un corte de red no puede marcar medio catálogo como
+retirado.
+
+Las pasadas se guardan enteras (`ModelScanRun`), también las que no encuentran nada y
+las que fallan: "se miró y no había cambios" es información, y sin ella no hay forma de
+saber si el servicio se está lanzando. Las tres tablas son *tenant-scoped* y se crean
+en `TenantDbContextFactory.ApplyPendingColumns`, como el resto del esquema.
+
+### Listado de modelos por proveedor
+
+`ModelAvailabilityService` pregunta a los cuatro proveedores que tienen endpoint de
+listado; cada uno con su forma de autenticar, que es lo único que cambia:
+
+| Proveedor | Endpoint | Key | Lista en |
+|-----------|----------|-----|----------|
+| OpenAI | `/v1/models` | `Authorization: Bearer` | `data[].id` |
+| Anthropic | `/v1/models` | `x-api-key` + `anthropic-version` | `data[].id` |
+| xAI | `/v1/models` | `Authorization: Bearer` | `data[].id` |
+| Google | `/v1beta/models` | parámetro `key` | `models[].name`, con prefijo `models/` |
+
+Leonardo y Canva no tienen listado: sus modelos solo salen del catálogo local. El
+resultado se cachea 6 h, así que lanzar el escaneo dos veces seguidas no repite las
+llamadas.

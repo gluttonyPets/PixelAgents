@@ -103,6 +103,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<IModelAvailabilityService, ModelAvailabilityService>();
 builder.Services.AddScoped<IModelCatalogService, ModelCatalogService>();
+builder.Services.AddScoped<IModelCatalogScanService, ModelCatalogScanService>();
 // Analista de aprendizaje: self-contained (crea su propio DbContext), singleton para
 // poder dispararlo en segundo plano tras un abort sin depender del scope de la petición.
 builder.Services.AddSingleton<ILearningAnalysisService, LearningAnalysisService>();
@@ -2064,6 +2065,32 @@ app.MapGet("/api/models/pricing", async (
     if (db is null) return Results.Unauthorized();
 
     return Results.Ok(await catalogSvc.GetPricingAsync(db, ct));
+}).RequireAuthorization();
+
+// ── Deteccion de cambios en el catalogo de modelos ──
+
+// Lanza el escaneo desde la pantalla de modelos: pregunta a los proveedores que
+// modelos tienen, compara tarifas y ciclo de vida contra la ultima foto guardada y
+// apunta las diferencias en el historico. Es POST porque escribe.
+app.MapPost("/api/models/scan", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IModelCatalogScanService scanSvc, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    return Results.Ok(await scanSvc.RunScanAsync(db, "manual", ct));
+}).RequireAuthorization();
+
+// Historico: ultimas ejecuciones del servicio y ultimos cambios detectados.
+app.MapGet("/api/models/scan/history", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IModelCatalogScanService scanSvc, int? runs, int? changes, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    return Results.Ok(await scanSvc.GetHistoryAsync(db, runs ?? 20, changes ?? 200, ct));
 }).RequireAuthorization();
 
 // ── Aprendizaje: config del modelo analista, documento vivo e histórico ──

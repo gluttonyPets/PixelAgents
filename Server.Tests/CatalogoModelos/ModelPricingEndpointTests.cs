@@ -122,6 +122,75 @@ public class ModelPricingEndpointTests
             "en Modules.razor faltan: " + string.Join(", ", faltanEnElCliente));
     }
 
+    [Fact]
+    public void LasCapacidadesDelServidorCoincidenConLasDelCliente()
+    {
+        // Las capacidades vivian solo en Modules.razor, donde ninguna API podia leerlas.
+        // Ahora tambien estan en el catalogo del servidor, que es de donde las saca la
+        // pantalla de modelos para filtrar por "lo que necesito". Si se desincronizan,
+        // el filtro esconde modelos que si valen y nadie sabe por que.
+        var razor = File.ReadAllText(RutaDelCatalogoDelCliente());
+
+        var enElCliente = Regex
+            .Matches(razor,
+                @"new\(""(?<id>[^""]+)"",\s*""[^""]+"",\s*""[^""]+"",\s*\[[^\]]*\],\s*\[(?<caps>[^\]]*)\]")
+            .ToDictionary(
+                m => m.Groups["id"].Value,
+                m => m.Groups["caps"].Value
+                    .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(c => c.Trim().Trim('"'))
+                    .ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+
+        Assert.True(enElCliente.Count > 50,
+            $"solo se han parseado {enElCliente.Count} modelos del catalogo del cliente");
+
+        foreach (var model in ModelCatalog.AllModels)
+        {
+            Assert.True(enElCliente.TryGetValue(model.Id, out var esperadas),
+                $"{model.Id} no aparece en Modules.razor");
+
+            Assert.True(
+                esperadas.OrderBy(c => c).SequenceEqual((model.Capabilities ?? []).OrderBy(c => c)),
+                $"{model.Id}: en Modules.razor tiene [{string.Join(", ", esperadas)}] y en "
+                + $"ModelCatalog.cs [{string.Join(", ", model.Capabilities ?? [])}]");
+        }
+    }
+
+    [Fact]
+    public void TodoModeloDeTextoDeclaraSuVentanaDeContexto()
+    {
+        // Es la unica medida de capacidad comparable entre proveedores, y la grafica de
+        // precio/capacidad deja fuera a los modelos que no la traen: uno sin contexto
+        // desaparece de la comparativa sin decir por que.
+        foreach (var model in ModelCatalog.AllModels
+            .Where(m => m.Types.Contains("Text", StringComparer.OrdinalIgnoreCase)))
+        {
+            Assert.True(model.ContextTokens is > 0,
+                $"{model.Id} es de texto y no dice cuanto contexto admite");
+        }
+    }
+
+    [Fact]
+    public void LaTarifaQueViajaAlClienteLlevaCapacidadesYContexto()
+    {
+        // La pantalla filtra por capacidades y pinta la nube precio/contexto con lo que
+        // venga en este DTO: si llegase vacio, los filtros no encontrarian nada y la
+        // grafica saldria en blanco sin ningun error.
+        var modelo = ModelCatalog.AllModels.First(m => m.Id == "gpt-5.6-sol");
+        var rates = ModelCatalogService.ResolveRates(modelo);
+
+        var dto = new ModelPriceResponse(
+            modelo.Id, modelo.DisplayName, modelo.Provider, rates.Kind,
+            rates.InputPerMTok, rates.OutputPerMTok, null, null, null, null, null, null, "Text",
+            new ModelLifecycleResponse(modelo.Id, modelo.Provider, "active",
+                null, null, null, null, null, true),
+            modelo.Capabilities, modelo.ContextTokens);
+
+        Assert.Contains("reasoning", dto.Capabilities!);
+        Assert.Equal(1_000_000, dto.ContextTokens);
+    }
+
     private static string RutaDelCatalogoDelCliente()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

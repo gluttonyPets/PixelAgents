@@ -45,36 +45,70 @@ public class ModelCatalogService : IModelCatalogService
 
         foreach (var m in ModelCatalog.AllModels)
         {
-            var isText = m.Types.Contains("Text", StringComparer.OrdinalIgnoreCase);
-            var isImage = m.Types.Contains("Image", StringComparer.OrdinalIgnoreCase);
-
-            // Texto e imagen tienen tabla propia; embeddings, audio, transcripcion y
-            // diseño caen en "other", donde cada uno trae su unidad de facturacion.
-            // Ninguno se descarta: un modelo que no aparece aqui es indistinguible de
-            // uno que no existe, y esa confusion ya costo un rato de busqueda.
-            var kind = isText ? "text" : isImage ? "image" : "other";
-
-            var rate = isText ? PricingCatalog.GetTextRate(m.Id) : null;
-            var aux = kind == "other" ? PricingCatalog.GetAuxiliaryRate(m.Id) : null;
+            var rates = ResolveRates(m);
 
             result.Add(new ModelPriceResponse(
                 m.Id,
                 m.DisplayName,
                 m.Provider,
-                kind,
-                rate?.InputPerMTok,
-                rate?.OutputPerMTok,
-                isImage ? ImageCost(m.Id, "low") : null,
-                isImage ? ImageCost(m.Id, "medium") : null,
-                isImage ? ImageCost(m.Id, "high") : null,
-                aux?.Amount,
-                aux?.Unit,
-                aux?.Note,
+                rates.Kind,
+                rates.InputPerMTok,
+                rates.OutputPerMTok,
+                rates.ImageLow,
+                rates.ImageMedium,
+                rates.ImageHigh,
+                rates.AuxAmount,
+                rates.AuxUnit,
+                rates.AuxNote,
                 PrimaryModuleType(m),
-                BuildLifecycle(m, today, available)));
+                BuildLifecycle(m, today, available),
+                m.Capabilities ?? [],
+                m.ContextTokens));
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Tarifas de un modelo del catalogo, ya resueltas segun como se facture.
+    /// Los campos que no aplican a su <paramref name="Kind"/> vienen a null.
+    /// </summary>
+    public record ModelRates(
+        string Kind,
+        decimal? InputPerMTok, decimal? OutputPerMTok,
+        decimal? ImageLow, decimal? ImageMedium, decimal? ImageHigh,
+        decimal? AuxAmount, string? AuxUnit, string? AuxNote);
+
+    /// <summary>
+    /// Resuelve como se factura un modelo. Vive aqui y no repetido en cada llamante
+    /// porque la pantalla de modelos y el servicio de deteccion de cambios tienen que
+    /// leer exactamente el mismo precio: si divergieran, el escaneo detectaria cambios
+    /// que la tabla no muestra.
+    /// </summary>
+    public static ModelRates ResolveRates(ModelCatalog.CatalogModel m)
+    {
+        var isText = m.Types.Contains("Text", StringComparer.OrdinalIgnoreCase);
+        var isImage = m.Types.Contains("Image", StringComparer.OrdinalIgnoreCase);
+
+        // Texto e imagen tienen tabla propia; embeddings, audio, transcripcion y
+        // diseño caen en "other", donde cada uno trae su unidad de facturacion.
+        // Ninguno se descarta: un modelo que no aparece aqui es indistinguible de
+        // uno que no existe, y esa confusion ya costo un rato de busqueda.
+        var kind = isText ? "text" : isImage ? "image" : "other";
+
+        var rate = isText ? PricingCatalog.GetTextRate(m.Id) : null;
+        var aux = kind == "other" ? PricingCatalog.GetAuxiliaryRate(m.Id) : null;
+
+        return new ModelRates(
+            kind,
+            rate?.InputPerMTok,
+            rate?.OutputPerMTok,
+            isImage ? ImageCost(m.Id, "low") : null,
+            isImage ? ImageCost(m.Id, "medium") : null,
+            isImage ? ImageCost(m.Id, "high") : null,
+            aux?.Amount,
+            aux?.Unit,
+            aux?.Note);
     }
 
     /// <summary>
