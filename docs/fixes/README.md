@@ -21,6 +21,7 @@ histórica, no documentación viva del sistema.
 | [`CONFIG_CASILLAS_BOOLEANAS.md`](CONFIG_CASILLAS_BOOLEANAS.md) | Las casillas del inspector se guardan como cadena y `GetConfigBool` solo leía booleanos JSON: "Publicar" no se aplicaba. ShopifyBlog publica visible por defecto. |
 | [`COSTE_EJECUCION_PRICING.md`](COSTE_EJECUCION_PRICING.md) | El gasto salía 0 (oculto) porque faltaban modelos actuales en `PricingCatalog`; después, el que sí salía usaba la tarifa del hermano más antiguo de la familia. La API no da coste por petición, solo tokens. |
 | [`COSTE_TOKENS_OPENAI.md`](COSTE_TOKENS_OPENAI.md) | Las imágenes gpt-image salían siempre en `high` (90 % de la factura) porque la UI ofrecía valores de DALL-E y nunca escribía `quality`; + contexto duplicado en el planner, orden del system prompt anti-caché y `reasoning_effort` inexistente. |
+| [`SHOPIFY_HANDLE_DUPLICADO.md`](SHOPIFY_HANDLE_DUPLICADO.md) | Shopify rechazaba el artículo con "Handle has already been taken" al repetirse el slug; ahora se reintenta con sufijo (`-2`, `-3`, fecha) y solo se avisa en el log. |
 | [`IMAGEN_MULTIPLE_N.md`](IMAGEN_MULTIPLE_N.md) | Un modulo de imagen con varias salidas devolvia la misma composicion repetida: `n` son muestras del mismo prompt, no partes. Ahora se reparte el texto por escenas y se hace una llamada por imagen. |
 
 ## Convención

@@ -21,6 +21,10 @@ namespace Server.Services.Shopify
         private const string ApiVersion = "2025-07";
         private static readonly TimeSpan Timeout = TimeSpan.FromMinutes(3);
 
+        // Intentos totales al crear un articulo cuando el handle ya existe en la tienda:
+        // el primero con el handle pedido y el resto con sufijo (-2, -3, -4, fecha).
+        private const int MaxHandleAttempts = 5;
+
         public ShopifyService(HttpClient http)
         {
             _http = http;
@@ -487,7 +491,22 @@ namespace Server.Services.Shopify
             if (metafields.Count > 0)
                 article["metafields"] = metafields;
 
-            var (result, imageError) = await TryCreateAsync(article);
+            var (result, imageError, handleTaken) = await TryCreateAsync(article);
+
+            // El handle es unico por tienda: si el articulo (o su slug) ya existe, Shopify
+            // responde "Handle has already been taken". En vez de perder el articulo,
+            // reintentamos con sufijo (-2, -3, ...) igual que hace el propio admin.
+            string? requestedHandle = null;
+            if (handleTaken)
+            {
+                requestedHandle = ShopifyHandle.Slugify(
+                    string.IsNullOrWhiteSpace(handle) ? title : handle);
+                for (var attempt = 2; attempt <= MaxHandleAttempts && handleTaken; attempt++)
+                {
+                    article["handle"] = ShopifyHandle.Candidate(requestedHandle, attempt, DateTime.UtcNow);
+                    (result, imageError, handleTaken) = await TryCreateAsync(article);
+                }
+            }
 
             // Si lo unico que Shopify rechaza es la imagen, no tiramos el articulo entero:
             // reintentamos sin imagen destacada y avisamos.
@@ -496,11 +515,27 @@ namespace Server.Services.Shopify
                 warning = warning is null
                     ? $"Shopify rechazo la imagen destacada ({imageError}); el articulo se publico SIN imagen."
                     : $"{warning}. Ademas Shopify rechazo la imagen ({imageError}); el articulo se publico SIN imagen.";
-                (result, _) = await TryCreateAsync(article);
+                (result, _, _) = await TryCreateAsync(article);
             }
 
             if (!result.Success)
+            {
+                // Se agotaron los reintentos: que el error diga que el choque es de slug.
+                if (handleTaken)
+                    result = result with
+                    {
+                        Error = $"{result.Error} (el identificador URL '{requestedHandle}' ya existe en la tienda; " +
+                                "cambia el titulo o el campo 'Identificador URL' del nodo)",
+                    };
                 return result with { Warning = warning };
+            }
+
+            if (requestedHandle is not null && !string.Equals(result.Handle, requestedHandle, StringComparison.OrdinalIgnoreCase))
+            {
+                var renamed = $"El identificador URL '{requestedHandle}' ya estaba en uso en la tienda; " +
+                              $"el articulo se publico como '{result.Handle}'.";
+                warning = warning is null ? renamed : $"{warning}. {renamed}";
+            }
 
             // URLs para revisar el articulo. La del admin siempre vale; la publica solo
             // responde si el articulo esta publicado.
@@ -512,8 +547,9 @@ namespace Server.Services.Shopify
                 PublicUrl = BuildPublicUrl(storeUrl, blogHandle, result.Handle),
             };
 
-            // Envia la mutacion y separa el caso "solo falla la imagen" del resto.
-            async Task<(ShopifyArticleResult Result, string? ImageError)> TryCreateAsync(
+            // Envia la mutacion y separa los casos que sabemos reintentar ("solo falla la
+            // imagen" y "el handle ya existe") del resto de errores.
+            async Task<(ShopifyArticleResult Result, string? ImageError, bool HandleTaken)> TryCreateAsync(
                 Dictionary<string, object?> articleInput)
             {
                 var payload = new { query = mutation, variables = new { article = articleInput } };
@@ -525,17 +561,20 @@ namespace Server.Services.Shopify
                     userErrors.ValueKind == JsonValueKind.Array && userErrors.GetArrayLength() > 0)
                 {
                     var errorList = userErrors.EnumerateArray()
-                        .Select(e => e.TryGetProperty("message", out var m) ? m.GetString() : null)
-                        .Where(m => !string.IsNullOrWhiteSpace(m))
+                        .Select(ReadUserError)
+                        .Where(e => !string.IsNullOrWhiteSpace(e.Message))
                         .ToList();
-                    var joined = string.Join("; ", errorList);
+                    var joined = string.Join("; ", errorList.Select(e => e.Message));
 
                     var onlyImageFailed = articleInput.ContainsKey("image")
                         && errorList.Count > 0
-                        && errorList.All(m => m!.Contains("image", StringComparison.OrdinalIgnoreCase));
+                        && errorList.All(e => e.Message!.Contains("image", StringComparison.OrdinalIgnoreCase));
+
+                    var handleAlreadyTaken = errorList.Any(e => ShopifyHandle.IsTakenError(e.Field, e.Message));
 
                     return (new ShopifyArticleResult(false, null, null, joined),
-                            onlyImageFailed ? joined : null);
+                            onlyImageFailed ? joined : null,
+                            handleAlreadyTaken);
                 }
 
                 if (createNode.TryGetProperty("article", out var articleNode) &&
@@ -547,11 +586,36 @@ namespace Server.Services.Shopify
                         blogNode.ValueKind == JsonValueKind.Object &&
                         blogNode.TryGetProperty("handle", out var bhEl))
                         blogHandle = bhEl.GetString();
-                    return (new ShopifyArticleResult(true, id, createdHandle, null), null);
+                    return (new ShopifyArticleResult(true, id, createdHandle, null), null, false);
                 }
 
-                return (new ShopifyArticleResult(false, null, null, "Shopify no devolvio el articulo creado."), null);
+                return (new ShopifyArticleResult(false, null, null, "Shopify no devolvio el articulo creado."), null, false);
             }
+        }
+
+        /// <summary>
+        /// Lee un userError de Shopify. El campo "field" es una lista de rutas
+        /// (p. ej. ["article", "handle"]), asi que se aplana para poder buscar en el.
+        /// </summary>
+        private static (string? Field, string? Message) ReadUserError(JsonElement error)
+        {
+            string? field = null;
+            if (error.TryGetProperty("field", out var f))
+                field = f.ValueKind switch
+                {
+                    JsonValueKind.Array => string.Join(
+                        ".", f.EnumerateArray()
+                              .Where(x => x.ValueKind == JsonValueKind.String)
+                              .Select(x => x.GetString())),
+                    JsonValueKind.String => f.GetString(),
+                    _ => null,
+                };
+
+            var message = error.TryGetProperty("message", out var m) && m.ValueKind == JsonValueKind.String
+                ? m.GetString()
+                : null;
+
+            return (field, message);
         }
 
         /// <summary>

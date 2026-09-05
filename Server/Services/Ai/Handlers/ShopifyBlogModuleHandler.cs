@@ -84,7 +84,7 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         // Identificador URL (slug). Config -> JSON. Si va vacio se deja en null para
         // que Shopify lo genere a partir del titulo; si llega algo, se normaliza.
         var handleSource = FromNodeOr("handle", structured?.Slug);
-        var handle = string.IsNullOrWhiteSpace(handleSource) ? null : Slugify(handleSource);
+        var handle = string.IsNullOrWhiteSpace(handleSource) ? null : ShopifyHandle.Slugify(handleSource);
 
         // Imagen destacada: si hay un modulo de imagen (u otro) conectado al puerto
         // "input_image", tomamos el primer archivo y enviamos sus BYTES a Shopify, que los
@@ -324,23 +324,6 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         return cut.TrimEnd() + "…";
     }
 
-    /// <summary>Convierte un texto en un slug valido para la URL (handle de Shopify).</summary>
-    private static string Slugify(string text)
-    {
-        var normalized = (text ?? "").Trim().ToLowerInvariant();
-        // Descomponer acentos (á -> a) y descartar los diacriticos.
-        normalized = normalized.Normalize(System.Text.NormalizationForm.FormD);
-        var sb = new StringBuilder();
-        foreach (var c in normalized)
-        {
-            var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
-            if (cat == System.Globalization.UnicodeCategory.NonSpacingMark) continue;
-            if (char.IsLetterOrDigit(c)) sb.Append(c);
-            else if (c is ' ' or '-' or '_' or '.') sb.Append('-');
-        }
-        var slug = System.Text.RegularExpressions.Regex.Replace(sb.ToString(), "-+", "-").Trim('-');
-        return slug.Length > 0 ? slug : "articulo";
-    }
 }
 
 /// <summary>
