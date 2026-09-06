@@ -65,7 +65,8 @@ almacenan el estado de interacciones externas pendientes de respuesta.
 
 **UserDb** (nombre dinamico, uno por cuenta) almacena todos los datos funcionales del tenant:
 `ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `ShopifyConnections`,
-`Projects`, `ProjectModules`, `ModuleConnections`, `ProjectExecutions`, `StepExecutions`,
+`Projects`, `ProjectConstants` (constantes del pipeline, ver mas abajo), `ProjectModules`,
+`ModuleConnections`, `ProjectExecutions`, `StepExecutions`,
 `ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs`, `Rules`,
 `PromptVersions` (historial de versiones del prompt de cada modulo) y las tres tablas del
 servicio de deteccion de cambios del catalogo de modelos: `ModelCatalogSnapshots` (la
@@ -103,6 +104,41 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 10. Si un nodo `Conditional` descarta una rama, sus modulos quedan en `Skipped` y el
     resto del grafo sigue con normalidad (ver "Modulo Condicional" mas abajo).
 11. Al terminar todos los nodos, la ejecucion queda en `Completed`, `Failed` o `Cancelled`.
+
+---
+
+## Constantes de ejecucion
+
+Un pipeline puede declarar **constantes** — por ejemplo `tematica` y `keyword` — cuyo valor
+se elige en cada ejecucion. La definicion vive en el proyecto (`ProjectConstants`: clave,
+descripcion y valor por defecto) y el valor efectivo se guarda en la ejecucion
+(`ProjectExecutions.ConstantsJson`) o en la programacion (`ProjectSchedules.ConstantsJson`).
+
+El valor efectivo es "lo que aporte la ejecucion; si no aporta nada, el valor por defecto de
+la constante". Una constante que se quede sin valor **no se sustituye**: el marcador queda
+visible y el executor lo avisa en el log, en vez de mandar al modelo un hueco vacio sin rastro.
+
+`GraphPipelineExecutor` las resuelve una sola vez al arrancar (`LoadConstantsAsync`) y las
+deja en el grafo, de modo que todos los modulos ven exactamente los mismos valores. Se aplican
+de dos formas complementarias (`Server/Services/Ai/ExecutionConstants.cs`):
+
+1. **Sustitucion**: cualquier `{{clave}}` del prompt inicial o de la configuracion de un modulo
+   (systemPrompt, imagePrompt, contenido estatico, caption, condicion...) se reemplaza por el
+   valor. Los marcadores que no correspondan a una constante con valor se dejan intactos, para
+   no romper plantillas ajenas ni ejemplos de JSON.
+2. **Inyeccion**: los valores viajan ademas como bloque etiquetado
+   (`=== CONSTANTES DE LA EJECUCION ===`) dentro del system prompt de cada llamada a IA, asi que
+   un modulo puede usarlas aunque su prompt no lleve el marcador. `SystemPromptComposer` lo
+   coloca detras del contexto del proyecto y delante del historial: es invariante durante toda
+   la ejecucion, asi que no rompe el prefijo cacheable.
+
+Como los valores quedan guardados en la ejecucion, reintentar desde un modulo, reanudar una
+pausa o reiniciar desde Telegram usan **los mismos** valores que la corrida original. Un nodo
+`SubProject` pasa sus valores al pipeline insertado: este aplica los suyos propios para cada
+constante que declare con el mismo nombre (las que no declare, se ignoran).
+
+Endpoints: `GET|POST|PUT|DELETE /api/projects/{projectId}/constants`. En la UI se definen en
+Configuracion > Constantes y se rellenan en el panel de ejecucion y en la programacion.
 
 ---
 
@@ -481,7 +517,8 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Modules      | `GET|POST|PUT|DELETE /api/modules`                | Definiciones de modulos reutilizables + archivos  |
 |              | `GET /api/modules/{id}/prompt-history`            | Historial de versiones del prompt del modulo (systemPrompt/imagePrompt); se registra una version en cada `PUT` que cambie el prompt, restaurable desde la UI |
 | Projects     | `GET|POST|PUT|DELETE /api/projects`               | Pipeline; incluye graph save y duplicar           |
-| Executions   | `POST /api/projects/{id}/execute`                 | Lanza ejecucion                                   |
+| Constantes   | `GET|POST|PUT|DELETE /api/projects/{id}/constants`| Constantes del pipeline; su valor se fija en cada ejecucion |
+| Executions   | `POST /api/projects/{id}/execute`                 | Lanza ejecucion (acepta el valor de las constantes) |
 |              | `POST /api/projects/{id}/cancel`                  | Cancela ejecucion activa                          |
 |              | `POST /api/executions/{id}/retry-from-module`     | Reintenta desde un nodo concreto del grafo        |
 |              | `GET /api/executions/{id}/logs`                   | Logs persistidos; progreso en tiempo real por SignalR |

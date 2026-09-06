@@ -5,7 +5,10 @@ namespace Server.Services.Ai
 {
     public interface IPipelineExecutor
     {
-        Task<ProjectExecution> ExecuteAsync(Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default, bool useHistory = true);
+        /// <param name="constantValues">Valores de las constantes del pipeline para esta
+        /// ejecucion ("tematica", "keyword"...). Las que no vengan aqui caen a su valor
+        /// por defecto; las que no declare el proyecto se ignoran.</param>
+        Task<ProjectExecution> ExecuteAsync(Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default, bool useHistory = true, IReadOnlyDictionary<string, string>? constantValues = null);
         Task<ProjectExecution> RetryFromModuleAsync(Guid executionId, Guid moduleId, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default);
         Task<ProjectExecution> ResumeFromInteractionAsync(Guid executionId, string responseText, UserDbContext db, string tenantDbName, CancellationToken ct = default);
         Task<ProjectExecution> AbortFromInteractionAsync(Guid executionId, UserDbContext db, string tenantDbName);

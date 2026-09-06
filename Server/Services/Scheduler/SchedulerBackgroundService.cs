@@ -209,7 +209,9 @@ namespace Server.Services.Scheduler
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userToken, ct);
                     try
                     {
-                        await executor.ExecuteAsync(schedule.ProjectId, effectiveInput, execDb, dbName, linkedCts.Token, schedule.UseHistory);
+                        await executor.ExecuteAsync(
+                            schedule.ProjectId, effectiveInput, execDb, dbName, linkedCts.Token, schedule.UseHistory,
+                            Server.Services.Ai.ExecutionConstants.Parse(schedule.ConstantsJson));
                     }
                     finally
                     {

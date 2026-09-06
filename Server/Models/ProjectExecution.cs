@@ -11,6 +11,10 @@ namespace Server.Models
         public Guid? PausedAtModuleId { get; set; }
         public string? PausedStepData { get; set; }
         public string? UserInput { get; set; }
+        /// <summary>Valores de las constantes del pipeline usados en esta ejecucion,
+        /// serializados como objeto JSON { "clave": "valor" }. Se guardan al lanzarla
+        /// para que reintentos y reanudaciones usen exactamente los mismos.</summary>
+        public string? ConstantsJson { get; set; }
         public decimal TotalEstimatedCost { get; set; }
         /// <summary>AI-generated summary of what was produced in this execution, used as context for future runs.</summary>
         public string? ExecutionSummary { get; set; }

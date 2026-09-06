@@ -394,11 +394,47 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
+    // ── Constantes del pipeline ──
+    // Se declaran en el proyecto ("tematica", "keyword") y su valor se elige en
+    // cada ejecucion; el servidor lo sustituye en los prompts de todos los modulos.
+
+    public async Task<List<ProjectConstantResponse>> GetProjectConstantsAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/constants");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ProjectConstantResponse>>() ?? [];
+    }
+
+    public async Task<(bool Ok, string? Error)> CreateProjectConstantAsync(Guid projectId, CreateProjectConstantRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/constants", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateProjectConstantAsync(
+        Guid projectId, Guid constantId, UpdateProjectConstantRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/constants/{constantId}", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteProjectConstantAsync(Guid projectId, Guid constantId)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/constants/{constantId}");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Executions ──
 
-    public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(Guid projectId, string? userInput, bool useHistory = true)
+    public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(
+        Guid projectId, string? userInput, bool useHistory = true,
+        Dictionary<string, string>? constants = null)
     {
-        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute", new ExecuteProjectRequest(userInput, useHistory));
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute",
+            new ExecuteProjectRequest(userInput, useHistory, constants));
         if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
             return (false, await ReadErrorAsync(resp));

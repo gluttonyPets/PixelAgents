@@ -70,8 +70,21 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record SceneCountEntry(Guid ModuleId, int SceneCount);
     public record ModuleConfigEntry(Guid ModuleId, string Key, string Value);
 
+    // ── Constantes del pipeline ──
+    /// <summary>Constante declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
+    public record ProjectConstantResponse(
+        Guid Id, Guid ProjectId, string Key, string? Description, string? DefaultValue,
+        int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
+    public record CreateProjectConstantRequest(
+        string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
+    public record UpdateProjectConstantRequest(
+        string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
+
     // ── Execution ──
-    public record ExecuteProjectRequest(string? UserInput, bool UseHistory = true);
+    /// <param name="Constants">Valor de cada constante del pipeline para esta ejecucion,
+    /// por clave. Las que falten usan el valor por defecto de la constante.</param>
+    public record ExecuteProjectRequest(
+        string? UserInput, bool UseHistory = true, Dictionary<string, string>? Constants = null);
     public record RetryFromModuleRequest(Guid ProjectModuleId, string? Comment);
     public record OrchestratorReviewRequest(bool Approved, string? Comment);
     public record CheckpointReviewRequest(bool Approved);
@@ -83,12 +96,14 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record ExecutionResponse(
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
         DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
-        decimal TotalEstimatedCost);
+        decimal TotalEstimatedCost,
+        Dictionary<string, string>? Constants = null);
     public record ExecutionDetailResponse(
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
         DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
         decimal TotalEstimatedCost,
-        List<StepExecutionResponse> Steps);
+        List<StepExecutionResponse> Steps,
+        Dictionary<string, string>? Constants = null);
     public record StepExecutionResponse(
         Guid Id, Guid ProjectModuleId, string ModuleName, string ModuleType,
         string Status, string? InputData, string? OutputData, string? ErrorMessage,
@@ -243,13 +258,14 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         List<string> Folders, List<DirectoryIndexEntryResponse> Files, List<string> Errors);
 
     // ── Schedule ──
-    public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false);
-    public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true, bool UsePromptQueue = false);
+    public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Constants = null);
+    public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Constants = null);
     public record ScheduleResponse(
         Guid Id, Guid ProjectId, bool IsEnabled, string CronExpression, string TimeZone,
         string? UserInput, bool UseHistory, bool UsePromptQueue,
         DateTime? LastRunAt, DateTime? NextRunAt,
-        DateTime CreatedAt, DateTime UpdatedAt);
+        DateTime CreatedAt, DateTime UpdatedAt,
+        Dictionary<string, string>? Constants = null);
 
     /// <summary>Una ejecucion futura proyectada: cuando se lanzara y con que prompt de la cola.</summary>
     public record UpcomingRunResponse(

@@ -127,6 +127,23 @@ else
                             <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
                         }
                         <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
+                        @if (_constants.Count > 0)
+                        {
+                            <div class="execute-constants">
+                                <div class="execute-constants-title" title="Se sustituyen en los prompts de todos los modulos">Constantes de esta ejecucion</div>
+                                @foreach (var c in _constants)
+                                {
+                                    var key = c.Key;
+                                    <div class="execute-constant-row">
+                                        <span class="execute-constant-key" title="@ConstantHint(c)">@ConstantMarker(key)</span>
+                                        <input type="text" class="execute-inline-input execute-constant-input"
+                                               value="@GetConstantValue(key)"
+                                               placeholder="@ConstantPlaceholder(c)"
+                                               @onchange="e => SetConstantValue(key, e.Value?.ToString())" />
+                                    </div>
+                                }
+                            </div>
+                        }
                         <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas">
                             <input type="checkbox" @bind="_useHistory" />
                             <span>No repetir tematicas anteriores</span>
@@ -378,13 +395,22 @@ else
                                                     <span class="planner-history-date">@exec.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
                                                     <button class="btn btn-ghost btn-xs" title="Repetir esta ejecución"
                                                             disabled="@_executing"
-                                                            @onclick="() => RepeatExecution(exec.UserInput)">
+                                                            @onclick="() => RepeatExecution(exec)">
                                                         &#x27F3; Repetir
                                                     </button>
                                                 </div>
                                                 <div class="planner-prompt-content">
                                                     @(string.IsNullOrWhiteSpace(exec.UserInput) ? "(sin input)" : exec.UserInput)
                                                 </div>
+                                                @if (exec.Constants is { Count: > 0 })
+                                                {
+                                                    <div class="constants-chips">
+                                                        @foreach (var kv in exec.Constants.OrderBy(k => k.Key))
+                                                        {
+                                                            <span class="constants-chip"><strong>@kv.Key</strong>: @kv.Value</span>
+                                                        }
+                                                    </div>
+                                                }
                                             </div>
                                         }
                                     </div>
@@ -642,6 +668,15 @@ else
                                         {
                                             <span class="hc-prompt-empty">Sin prompt</span>
                                         }
+                                        @if (e.Constants is { Count: > 0 })
+                                        {
+                                            <div class="constants-chips">
+                                                @foreach (var kv in e.Constants.OrderBy(k => k.Key))
+                                                {
+                                                    <span class="constants-chip"><strong>@kv.Key</strong>: @kv.Value</span>
+                                                }
+                                            </div>
+                                        }
                                     </div>
                                 </div>
                                 <div class="history-card-actions">
@@ -843,6 +878,18 @@ else
                             {
                                 <div class="output-block" style="font-size: 0.8rem; margin-bottom: 0.5rem; max-height: 60px; overflow-y: auto;">
                                     <strong>Prompt:</strong> @_execDetailModal.UserInput
+                                </div>
+                            }
+                            @if (_execDetailModal.Constants is { Count: > 0 })
+                            {
+                                <div class="output-block" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
+                                    <strong>Constantes:</strong>
+                                    <span class="constants-chips">
+                                        @foreach (var kv in _execDetailModal.Constants.OrderBy(k => k.Key))
+                                        {
+                                            <span class="constants-chip"><strong>@kv.Key</strong>: @kv.Value</span>
+                                        }
+                                    </span>
                                 </div>
                             }
                         </div>
@@ -1213,6 +1260,10 @@ else
                             @onclick='() => _settingsTab = "shopify"'>
                         Shopify
                     </button>
+                    <button class="settings-tab @(_settingsTab == "constants" ? "settings-tab-active" : "")"
+                            @onclick='() => _settingsTab = "constants"'>
+                        Constantes
+                    </button>
                     <button class="settings-tab @(_settingsTab == "schedule" ? "settings-tab-active" : "")"
                             @onclick='() => _settingsTab = "schedule"'>
                         Programacion
@@ -1527,6 +1578,27 @@ else
                                 </div>
                             </div>
 
+                            @if (_constants.Count > 0)
+                            {
+                                <div class="form-group">
+                                    <label>
+                                        Constantes de las ejecuciones programadas
+                                        <span class="text-sm text-muted">(vacio = valor por defecto de la constante)</span>
+                                    </label>
+                                    @foreach (var c in _constants)
+                                    {
+                                        var key = c.Key;
+                                        <div class="constants-form-row">
+                                            <span class="constants-form-key" title="@ConstantHint(c)">@ConstantMarker(key)</span>
+                                            <input type="text"
+                                                   value="@GetScheduleConstantValue(key)"
+                                                   placeholder="@ConstantPlaceholder(c)"
+                                                   @onchange="e => SetScheduleConstantValue(key, e.Value?.ToString())" />
+                                        </div>
+                                    }
+                                </div>
+                            }
+
                             <label class="execute-history-toggle" title="Incluir resumen de ejecuciones anteriores para evitar repetir tematicas en ejecuciones programadas">
                                 <input type="checkbox" @bind="_schedUseHistory" />
                                 <span>No repetir tematicas anteriores</span>
@@ -1550,6 +1622,121 @@ else
                                     </button>
                                 }
                             </div>
+                        </div>
+                    }
+
+                    <!-- CONSTANTES TAB -->
+                    @if (_settingsTab == "constants")
+                    {
+                        <div class="settings-block">
+                            <div class="settings-block-header">
+                                <strong>Constantes del pipeline</strong>
+                                @if (_constants.Count > 0)
+                                {
+                                    <span class="badge badge-success">@_constants.Count definida(s)</span>
+                                }
+                            </div>
+                            <p class="text-sm text-muted">
+                                Declara aqui los valores que cambian en cada ejecucion (por ejemplo
+                                <code>tematica</code> o <code>keyword</code>). El valor se elige al lanzar la
+                                ejecucion o en la programacion, y el servidor lo aplica a <strong>todos los
+                                modulos</strong>: sustituye <code>@ConstantMarker("clave")</code> en cualquier prompt
+                                o campo de texto de la configuracion, y ademas envia la lista de constantes con su
+                                valor en el system prompt de cada llamada a la IA.
+                            </p>
+
+                            @if (_constantsError is not null)
+                            {
+                                <div class="alert alert-error">@_constantsError</div>
+                            }
+                            @if (_constantsMsg is not null)
+                            {
+                                <div class="alert alert-success">@_constantsMsg</div>
+                            }
+
+                            @if (_constants.Count == 0)
+                            {
+                                <p class="text-sm text-muted">Todavia no hay constantes en este proyecto.</p>
+                            }
+                            else
+                            {
+                                <div class="constants-list">
+                                    @foreach (var c in _constants)
+                                    {
+                                        var constant = c;
+                                        <div class="constants-item">
+                                            @if (_editingConstantId == constant.Id)
+                                            {
+                                                <div class="form-row">
+                                                    <div class="form-group">
+                                                        <label>Clave</label>
+                                                        <input type="text" @bind="_editConstantKey" />
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label>Valor por defecto</label>
+                                                        <input type="text" @bind="_editConstantDefault" />
+                                                    </div>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>Descripcion (se envia al modelo junto al valor)</label>
+                                                    <input type="text" @bind="_editConstantDescription" />
+                                                </div>
+                                                <div style="display: flex; gap: 0.5rem;">
+                                                    <button class="btn btn-primary btn-sm" disabled="@_constantsSaving"
+                                                            @onclick="SaveEditedConstant">Guardar</button>
+                                                    <button class="btn btn-secondary btn-sm" disabled="@_constantsSaving"
+                                                            @onclick="CancelEditConstant">Cancelar</button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <div class="constants-item-head">
+                                                    <code class="constants-item-key">@ConstantMarker(constant.Key)</code>
+                                                    @if (!string.IsNullOrWhiteSpace(constant.DefaultValue))
+                                                    {
+                                                        <span class="text-sm text-muted">por defecto: @constant.DefaultValue</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-sm text-muted">sin valor por defecto</span>
+                                                    }
+                                                    <div class="constants-item-actions">
+                                                        <button class="btn btn-sm" @onclick="() => StartEditConstant(constant)">Editar</button>
+                                                        <button class="btn btn-danger btn-sm" disabled="@_constantsSaving"
+                                                                @onclick="() => DeleteConstant(constant)">Eliminar</button>
+                                                    </div>
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(constant.Description))
+                                                {
+                                                    <div class="text-sm text-muted">@constant.Description</div>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            }
+
+                            <div class="settings-block-header" style="margin-top: 0.8rem;">
+                                <strong>Nueva constante</strong>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Clave</label>
+                                    <input type="text" @bind="_newConstantKey" placeholder="tematica" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Valor por defecto (opcional)</label>
+                                    <input type="text" @bind="_newConstantDefault" placeholder="cafe de especialidad" />
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Descripcion (opcional)</label>
+                                <input type="text" @bind="_newConstantDescription"
+                                       placeholder="Tema principal sobre el que gira toda la ejecucion" />
+                            </div>
+                            <button class="btn btn-primary" disabled="@_constantsSaving" @onclick="CreateConstant">
+                                @(_constantsSaving ? "Guardando..." : "Anadir constante")
+                            </button>
                         </div>
                     }
 
@@ -2029,6 +2216,22 @@ else
     private bool _useHistory = true;
     private string? _execError;
 
+    // Constantes del pipeline: la definicion vive en el proyecto y el valor se
+    // elige en cada ejecucion (o en la programacion).
+    private List<ProjectConstantResponse> _constants = new();
+    private Dictionary<string, string> _constantValues = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _schedConstantValues = new(StringComparer.OrdinalIgnoreCase);
+    private string _newConstantKey = "";
+    private string _newConstantDescription = "";
+    private string _newConstantDefault = "";
+    private Guid? _editingConstantId;
+    private string _editConstantKey = "";
+    private string _editConstantDescription = "";
+    private string _editConstantDefault = "";
+    private bool _constantsSaving;
+    private string? _constantsError;
+    private string? _constantsMsg;
+
     // Planner: vive en su propio panel, abierto desde la barra del canvas.
     private List<PlannedPromptResponse> _plannedPrompts = new();
     private List<PlannerModelOption> _plannerModels = new();
@@ -2360,6 +2563,8 @@ else
             _executions = await Api.GetExecutionsAsync(ProjectId);
             try { _projectFeedback = await Api.GetProjectFeedbackAsync(ProjectId); } catch { _projectFeedback = []; }
             try { _tenantRules = await Api.GetRulesAsync(); } catch { _tenantRules = []; }
+            try { _constants = await Api.GetProjectConstantsAsync(ProjectId); } catch { _constants = []; }
+            SyncConstantValues();
             // Check if latest execution is running, waiting for checkpoint, or waiting for orchestrator review
             var latestExec = _executions.FirstOrDefault();
             if (latestExec is not null && (latestExec.Status == "Running" || latestExec.Status == "WaitingForCheckpoint" || latestExec.Status == "WaitingForReview"))
@@ -2417,6 +2622,9 @@ else
                 _schedCron = _schedule.CronExpression;
                 _schedTimeZone = _schedule.TimeZone;
                 _schedUserInput = _schedule.UserInput ?? "";
+                _schedConstantValues = _schedule.Constants is null
+                    ? new(StringComparer.OrdinalIgnoreCase)
+                    : new(_schedule.Constants, StringComparer.OrdinalIgnoreCase);
                 _schedUseHistory = _schedule.UseHistory;
                 _schedUsePromptQueue = _schedule.UsePromptQueue;
                 // Try to detect preset from cron
@@ -2640,7 +2848,8 @@ else
             if (_schedule is null)
             {
                 var (ok, result, error) = await Api.CreateScheduleAsync(ProjectId,
-                    new CreateScheduleRequest(cron, _schedTimeZone, input, _schedUseHistory, _schedUsePromptQueue));
+                    new CreateScheduleRequest(cron, _schedTimeZone, input, _schedUseHistory, _schedUsePromptQueue,
+                        BuildConstantPayload(_schedConstantValues)));
                 if (ok)
                 {
                     _schedule = result;
@@ -2652,7 +2861,8 @@ else
             else
             {
                 var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
-                    new UpdateScheduleRequest(cron, _schedTimeZone, input, _schedule.IsEnabled, _schedUseHistory, _schedUsePromptQueue));
+                    new UpdateScheduleRequest(cron, _schedTimeZone, input, _schedule.IsEnabled, _schedUseHistory, _schedUsePromptQueue,
+                        BuildConstantPayload(_schedConstantValues)));
                 if (ok)
                 {
                     _schedule = result;
@@ -2680,7 +2890,8 @@ else
             var newEnabled = !_schedule.IsEnabled;
 
             var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
-                new UpdateScheduleRequest(cron, tz, input, newEnabled, _schedule.UseHistory, _schedule.UsePromptQueue));
+                new UpdateScheduleRequest(cron, tz, input, newEnabled, _schedule.UseHistory, _schedule.UsePromptQueue,
+                    _schedule.Constants));
             if (ok)
             {
                 _schedule = result;
@@ -2999,6 +3210,170 @@ else
         catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
     }
 
+    // ── Constantes del pipeline ──
+
+    /// <summary>Marcador que hay que escribir en el prompt para usar la constante.</summary>
+    private static string ConstantMarker(string key) => "{{" + key + "}}";
+
+    private static string ConstantHint(ProjectConstantResponse c) =>
+        string.IsNullOrWhiteSpace(c.Description)
+            ? $"Se sustituye en los prompts de todos los modulos como {ConstantMarker(c.Key)}"
+            : c.Description!;
+
+    private static string ConstantPlaceholder(ProjectConstantResponse c) =>
+        string.IsNullOrWhiteSpace(c.DefaultValue) ? "(sin valor)" : c.DefaultValue!;
+
+    /// <summary>Deja un valor por constante declarada (arrancando por su valor por
+    /// defecto) y descarta los de constantes que ya no existen.</summary>
+    private void SyncConstantValues()
+    {
+        var keys = _constants.Select(c => c.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var stale in _constantValues.Keys.Where(k => !keys.Contains(k)).ToList())
+            _constantValues.Remove(stale);
+        foreach (var stale in _schedConstantValues.Keys.Where(k => !keys.Contains(k)).ToList())
+            _schedConstantValues.Remove(stale);
+
+        foreach (var c in _constants)
+        {
+            if (!_constantValues.ContainsKey(c.Key))
+                _constantValues[c.Key] = c.DefaultValue ?? "";
+        }
+    }
+
+    private string GetConstantValue(string key) =>
+        _constantValues.TryGetValue(key, out var v) ? v : "";
+
+    private void SetConstantValue(string key, string? value) =>
+        _constantValues[key] = value ?? "";
+
+    private string GetScheduleConstantValue(string key) =>
+        _schedConstantValues.TryGetValue(key, out var v) ? v : "";
+
+    private void SetScheduleConstantValue(string key, string? value) =>
+        _schedConstantValues[key] = value ?? "";
+
+    /// <summary>Valores no vacios que se mandan al servidor; null cuando no hay ninguno
+    /// (el servidor cae entonces al valor por defecto de cada constante).</summary>
+    private Dictionary<string, string>? BuildConstantPayload(Dictionary<string, string> source)
+    {
+        var payload = source
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .ToDictionary(kv => kv.Key, kv => kv.Value.Trim());
+
+        return payload.Count > 0 ? payload : null;
+    }
+
+    private async Task ReloadConstantsAsync()
+    {
+        _constants = await Api.GetProjectConstantsAsync(ProjectId);
+        SyncConstantValues();
+    }
+
+    private async Task CreateConstant()
+    {
+        _constantsError = null; _constantsMsg = null;
+
+        if (string.IsNullOrWhiteSpace(_newConstantKey))
+        {
+            _constantsError = "La clave es obligatoria.";
+            return;
+        }
+
+        _constantsSaving = true;
+        try
+        {
+            var (ok, error) = await Api.CreateProjectConstantAsync(ProjectId,
+                new CreateProjectConstantRequest(
+                    _newConstantKey.Trim(),
+                    string.IsNullOrWhiteSpace(_newConstantDescription) ? null : _newConstantDescription.Trim(),
+                    string.IsNullOrWhiteSpace(_newConstantDefault) ? null : _newConstantDefault.Trim(),
+                    _constants.Count));
+
+            if (ok)
+            {
+                _newConstantKey = "";
+                _newConstantDescription = "";
+                _newConstantDefault = "";
+                await ReloadConstantsAsync();
+                _constantsMsg = "Constante creada.";
+            }
+            else _constantsError = error;
+        }
+        catch (Exception ex) { _constantsError = $"Error: {ex.Message}"; }
+        _constantsSaving = false;
+    }
+
+    private void StartEditConstant(ProjectConstantResponse c)
+    {
+        _constantsError = null; _constantsMsg = null;
+        _editingConstantId = c.Id;
+        _editConstantKey = c.Key;
+        _editConstantDescription = c.Description ?? "";
+        _editConstantDefault = c.DefaultValue ?? "";
+    }
+
+    private void CancelEditConstant() => _editingConstantId = null;
+
+    private async Task SaveEditedConstant()
+    {
+        if (_editingConstantId is null) return;
+        _constantsError = null; _constantsMsg = null;
+
+        if (string.IsNullOrWhiteSpace(_editConstantKey))
+        {
+            _constantsError = "La clave es obligatoria.";
+            return;
+        }
+
+        var current = _constants.FirstOrDefault(c => c.Id == _editingConstantId);
+        _constantsSaving = true;
+        try
+        {
+            var (ok, error) = await Api.UpdateProjectConstantAsync(ProjectId, _editingConstantId.Value,
+                new UpdateProjectConstantRequest(
+                    _editConstantKey.Trim(),
+                    string.IsNullOrWhiteSpace(_editConstantDescription) ? null : _editConstantDescription.Trim(),
+                    string.IsNullOrWhiteSpace(_editConstantDefault) ? null : _editConstantDefault.Trim(),
+                    current?.SortOrder ?? 0));
+
+            if (ok)
+            {
+                // Al renombrar, el valor tecleado seguia colgado de la clave vieja.
+                if (current is not null && !string.Equals(current.Key, _editConstantKey.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    _constantValues.Remove(current.Key);
+                    _schedConstantValues.Remove(current.Key);
+                }
+                _editingConstantId = null;
+                await ReloadConstantsAsync();
+                _constantsMsg = "Constante actualizada.";
+            }
+            else _constantsError = error;
+        }
+        catch (Exception ex) { _constantsError = $"Error: {ex.Message}"; }
+        _constantsSaving = false;
+    }
+
+    private async Task DeleteConstant(ProjectConstantResponse c)
+    {
+        _constantsError = null; _constantsMsg = null;
+        _constantsSaving = true;
+        try
+        {
+            var (ok, error) = await Api.DeleteProjectConstantAsync(ProjectId, c.Id);
+            if (ok)
+            {
+                if (_editingConstantId == c.Id) _editingConstantId = null;
+                await ReloadConstantsAsync();
+                _constantsMsg = $"Constante '{c.Key}' eliminada.";
+            }
+            else _constantsError = error;
+        }
+        catch (Exception ex) { _constantsError = $"Error: {ex.Message}"; }
+        _constantsSaving = false;
+    }
+
     private async Task Execute()
     {
         _execError = null; _executing = true; _result = null;
@@ -3008,14 +3383,17 @@ else
 
         try
         {
-            var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput, _useHistory);
+            var (ok, error) = await Api.ExecuteProjectAsync(
+                ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput, _useHistory,
+                BuildConstantPayload(_constantValues));
             if (!ok) { _execError = error; _executing = false; }
             else StartPolling(); // Safety net in case SignalR misses completion
         }
         catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; _executing = false; }
     }
 
-    private async Task RepeatExecution(string? userInput)
+    /// <summary>Relanza una ejecucion anterior con su mismo prompt y sus mismas constantes.</summary>
+    private async Task RepeatExecution(ExecutionResponse exec)
     {
         _execError = null; _executing = true; _result = null;
         _logEntries.Clear();
@@ -3024,7 +3402,12 @@ else
 
         try
         {
-            var (ok, error) = await Api.ExecuteProjectAsync(ProjectId, string.IsNullOrWhiteSpace(userInput) ? null : userInput, _useHistory);
+            var constants = exec.Constants is { Count: > 0 }
+                ? new Dictionary<string, string>(exec.Constants)
+                : BuildConstantPayload(_constantValues);
+
+            var (ok, error) = await Api.ExecuteProjectAsync(
+                ProjectId, string.IsNullOrWhiteSpace(exec.UserInput) ? null : exec.UserInput, _useHistory, constants);
             if (!ok) { _execError = error; _executing = false; }
             else StartPolling();
         }

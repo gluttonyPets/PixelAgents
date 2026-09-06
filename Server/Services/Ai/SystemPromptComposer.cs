@@ -16,9 +16,10 @@ namespace Server.Services.Ai
     ///   1. Reglas de formato/contenido  -> constante de compilacion
     ///   2. Reglas obligatorias          -> invariante por tenant
     ///   3. Contexto del proyecto        -> invariante por proyecto
-    ///   4. Historial de ejecuciones     -> invariante por ejecucion
-    ///   5. Prompt del modulo            -> cambia en cada modulo
-    ///   6. Aprendizaje pasado           -> filtrado por modulo, cambia
+    ///   4. Constantes de la ejecucion   -> invariante por ejecucion
+    ///   5. Historial de ejecuciones     -> invariante por ejecucion
+    ///   6. Prompt del modulo            -> cambia en cada modulo
+    ///   7. Aprendizaje pasado           -> filtrado por modulo, cambia
     ///
     /// El prompt del usuario baja de posicion pero sigue etiquetado como directiva
     /// prioritaria, y queda mas cerca del mensaje de usuario, que es donde mas peso
@@ -28,7 +29,7 @@ namespace Server.Services.Ai
     {
         public static string Build(AiExecutionContext context)
         {
-            var parts = new List<string>(6);
+            var parts = new List<string>(7);
 
             parts.Add(OutputSchemaHelper.GetTextContentRules());
 
@@ -37,6 +38,9 @@ namespace Server.Services.Ai
 
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 parts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
+
+            if (!string.IsNullOrWhiteSpace(context.ConstantsBlock))
+                parts.Add(context.ConstantsBlock!);
 
             if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
                 parts.Add(context.PreviousExecutionsSummary!);

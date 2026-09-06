@@ -42,6 +42,7 @@ namespace Server.Models
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 
+        public ICollection<ProjectConstant> Constants { get; set; } = new List<ProjectConstant>();
         public ICollection<ProjectModule> ProjectModules { get; set; } = new List<ProjectModule>();
         public ICollection<ProjectExecution> Executions { get; set; } = new List<ProjectExecution>();
     }

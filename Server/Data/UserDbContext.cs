@@ -13,6 +13,7 @@ namespace Server.Data
         public DbSet<MessagingConnection> MessagingConnections => Set<MessagingConnection>();
         public DbSet<ShopifyConnection> ShopifyConnections => Set<ShopifyConnection>();
         public DbSet<Project> Projects => Set<Project>();
+        public DbSet<ProjectConstant> ProjectConstants => Set<ProjectConstant>();
         public DbSet<ProjectModule> ProjectModules => Set<ProjectModule>();
         public DbSet<ProjectExecution> ProjectExecutions => Set<ProjectExecution>();
         public DbSet<StepExecution> StepExecutions => Set<StepExecution>();
@@ -133,6 +134,25 @@ namespace Server.Data
                     .OnDelete(DeleteBehavior.SetNull);
             });
 
+            // ── ProjectConstant ──
+            modelBuilder.Entity<ProjectConstant>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Key).IsRequired().HasMaxLength(50);
+                e.Property(x => x.Description).HasMaxLength(500);
+                e.Property(x => x.DefaultValue).HasColumnType("text");
+                e.Property(x => x.SortOrder).HasDefaultValue(0);
+
+                e.HasOne(x => x.Project)
+                    .WithMany(p => p.Constants)
+                    .HasForeignKey(x => x.ProjectId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                // Una clave, una constante: dos filas con el mismo nombre harian
+                // que el valor sustituido dependiese del orden de carga.
+                e.HasIndex(x => new { x.ProjectId, x.Key }).IsUnique();
+            });
+
             // ── ProjectModule ──
             modelBuilder.Entity<ProjectModule>(e =>
             {
@@ -200,6 +220,7 @@ namespace Server.Data
                 e.Property(x => x.PausedAtModuleId);
                 e.Property(x => x.PausedStepData).HasColumnType("text");
                 e.Property(x => x.UserInput).HasColumnType("text");
+                e.Property(x => x.ConstantsJson).HasColumnType("text");
             });
 
             // ── StepExecution ──
@@ -232,6 +253,7 @@ namespace Server.Data
                 e.Property(x => x.CronExpression).IsRequired().HasMaxLength(100);
                 e.Property(x => x.TimeZone).IsRequired().HasMaxLength(100).HasDefaultValue("UTC");
                 e.Property(x => x.UserInput).HasColumnType("text");
+                e.Property(x => x.ConstantsJson).HasColumnType("text");
                 e.Property(x => x.IsEnabled).HasDefaultValue(true);
                 e.Property(x => x.UseHistory).HasDefaultValue(true);
                 e.Property(x => x.UsePromptQueue).HasDefaultValue(false);

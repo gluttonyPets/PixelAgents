@@ -101,7 +101,7 @@ public class NextExecutionHandlerTests
         executor.Setup(e => e.AbortFromInteractionAsync(executionId, It.IsAny<UserDbContext>(), userDbName))
             .ReturnsAsync(new ProjectExecution { Id = executionId, ProjectId = projectId, Status = "Cancelled", WorkspacePath = "/tmp/ws" });
         executor.Setup(e => e.CancelQueuedInteractionsAsync(executionId)).Returns(Task.CompletedTask);
-        executor.Setup(e => e.ExecuteAsync(projectId, "Tema siguiente", It.IsAny<UserDbContext>(), userDbName, It.IsAny<CancellationToken>(), It.IsAny<bool>()))
+        executor.Setup(e => e.ExecuteAsync(projectId, "Tema siguiente", It.IsAny<UserDbContext>(), userDbName, It.IsAny<CancellationToken>(), It.IsAny<bool>(), It.IsAny<IReadOnlyDictionary<string, string>?>()))
             .ReturnsAsync(new ProjectExecution { Id = newExecutionId, ProjectId = projectId, Status = "Running", WorkspacePath = "/tmp/ws2" });
 
         var planner = new Mock<IPromptPlannerService>();
@@ -114,7 +114,7 @@ public class NextExecutionHandlerTests
 
         // La ejecución actual se canceló y se lanzó la siguiente temática con su contenido.
         executor.Verify(e => e.AbortFromInteractionAsync(executionId, It.IsAny<UserDbContext>(), userDbName), Times.Once);
-        executor.Verify(e => e.ExecuteAsync(projectId, "Tema siguiente", It.IsAny<UserDbContext>(), userDbName, It.IsAny<CancellationToken>(), It.IsAny<bool>()), Times.Once);
+        executor.Verify(e => e.ExecuteAsync(projectId, "Tema siguiente", It.IsAny<UserDbContext>(), userDbName, It.IsAny<CancellationToken>(), It.IsAny<bool>(), It.IsAny<IReadOnlyDictionary<string, string>?>()), Times.Once);
 
         // La correlación queda resuelta.
         var corr = await coreDb.TelegramCorrelations.FirstAsync();
@@ -203,7 +203,7 @@ public class NextExecutionHandlerTests
 
         // La ejecución actual se canceló pero no se lanzó ninguna nueva (cola vacía).
         executor.Verify(e => e.AbortFromInteractionAsync(executionId, It.IsAny<UserDbContext>(), userDbName), Times.Once);
-        executor.Verify(e => e.ExecuteAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<UserDbContext>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()), Times.Never);
+        executor.Verify(e => e.ExecuteAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<UserDbContext>(), It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<bool>(), It.IsAny<IReadOnlyDictionary<string, string>?>()), Times.Never);
 
         // Se abrió una petición de planificación para el proyecto.
         var planningReq = await coreDb.TelegramCorrelations

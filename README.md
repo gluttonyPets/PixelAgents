@@ -148,8 +148,8 @@ El servidor usa dos contextos EF Core:
   Contiene usuarios, roles, `Accounts`, `WhatsAppCorrelations` y
   `TelegramCorrelations`.
 - `UserDbContext`: base por tenant. Contiene claves, modulos, proyectos,
-  conexiones, ejecuciones, logs, archivos, schedules, salidas de orquestador y
-  reglas.
+  constantes de proyecto, conexiones, ejecuciones, logs, archivos, schedules,
+  salidas de orquestador y reglas.
 
 El tenancy se resuelve desde el usuario autenticado. Durante el registro,
 `AccountService` crea una cuenta y una base tenant. Luego los endpoints usan
@@ -322,6 +322,10 @@ Conceptos:
 - `ModuleNode` representa estado, entradas, salidas y output de cada nodo.
 - `PortDataResolver` transforma `StepOutput` en datos por puerto.
 - `PausedGraphState` serializa estado para pausa/reanudacion.
+- `ExecutionConstants` resuelve las constantes del pipeline (`tematica`,
+  `keyword`...): sustituye `{{clave}}` en el prompt inicial y en la config de
+  cada modulo, e inyecta los valores como bloque en el system prompt de todas
+  las llamadas a IA.
 - Cada tipo de modulo se ejecuta mediante un `IModuleHandler`.
 
 Estados de nodo:
@@ -339,7 +343,9 @@ El flujo general de ejecucion:
 1. El executor carga proyecto, modulos activos y conexiones.
 2. Valida que exista exactamente un modulo `Start`; ese modulo es el unico
    punto de entrada.
-3. Crea un `ProjectExecution` y un workspace bajo `GeneratedMedia`.
+3. Crea un `ProjectExecution` y un workspace bajo `GeneratedMedia`, y fija en el
+   las constantes con las que corre (`ConstantsJson`), para que reintentos y
+   reanudaciones usen los mismos valores.
 4. Construye `ExecutionGraph`.
 5. Marca el modulo `Start` como `Ready` y lanza cualquier nodo en ese estado.
 6. Cuando un handler termina, persiste `StepExecution`, archivos y logs.
@@ -513,11 +519,25 @@ Gestion de pipelines:
 El orden de ejecucion no se guarda en `ProjectModule`: lo determina el modulo
 `Start` y las conexiones `OutgoingConnections`/`IncomingConnections`.
 
+### Constantes Del Pipeline
+
+Valores que el proyecto declara una vez (`tematica`, `keyword`...) y cuyo valor
+se elige en cada ejecucion. Se sustituyen en los prompts (`{{clave}}`) y se
+inyectan como bloque en el system prompt de todos los modulos; ver
+`docs/architecture.md` > "Constantes de ejecucion".
+
+- `GET /api/projects/{projectId}/constants`: lista las constantes del proyecto.
+- `POST /api/projects/{projectId}/constants`: crea una constante.
+- `PUT /api/projects/{projectId}/constants/{constantId}`: actualiza clave,
+  descripcion o valor por defecto.
+- `DELETE /api/projects/{projectId}/constants/{constantId}`: elimina una constante.
+
 ### Ejecuciones
 
 Ejecucion y revision:
 
-- `/api/projects/{projectId}/execute`: inicia ejecucion.
+- `/api/projects/{projectId}/execute`: inicia ejecucion; acepta el valor de las
+  constantes del pipeline para esa corrida.
 - `/api/projects/{projectId}/executions`: lista ejecuciones del proyecto.
 - `/api/executions/{id}`: detalle de ejecucion.
 - `/api/executions/{executionId}/logs`: logs persistidos.
@@ -559,7 +579,8 @@ Cada proyecto puede tener una programacion:
 - `DELETE /api/projects/{projectId}/schedule`.
 
 `SchedulerBackgroundService` calcula proximas ejecuciones con Cronos y ejecuta
-proyectos habilitados.
+proyectos habilitados. La programacion tambien guarda el valor de las constantes
+del pipeline que usara en cada corrida.
 
 ### Integraciones De Mensajeria Y Publicacion
 

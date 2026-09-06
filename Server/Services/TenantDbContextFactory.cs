@@ -94,6 +94,22 @@ namespace Server.Services
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" DROP COLUMN IF EXISTS \"PausedAtStepOrder\"", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"UserInput\" text", log);
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"ConstantsJson\" text", log);
+
+            // ── Constantes del pipeline: se declaran en el proyecto y su valor se
+            //    fija en cada ejecucion (tematica, keyword...) ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ProjectConstants"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
+                    ""Key"" varchar(50) NOT NULL,
+                    ""Description"" varchar(500),
+                    ""DefaultValue"" text,
+                    ""SortOrder"" integer NOT NULL DEFAULT 0,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectConstants_ProjectId_Key"" ON ""ProjectConstants"" (""ProjectId"", ""Key"")", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ExecutionLogs"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
@@ -135,6 +151,7 @@ namespace Server.Services
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_IsEnabled_NextRunAt"" ON ""ProjectSchedules"" (""IsEnabled"", ""NextRunAt"")", log);
             RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""UseHistory"" boolean NOT NULL DEFAULT true", log);
             RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""UsePromptQueue"" boolean NOT NULL DEFAULT false", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""ConstantsJson"" text", log);
 
             // ── Planned Prompts queue (planificador de ejecuciones) ──
             RunSafe(ctx, @"

@@ -1590,6 +1590,23 @@ app.MapPost("/api/projects/{id}/duplicate", async (
         }
     }
 
+    // Copy pipeline constants (definitions + defaults)
+    var sourceConstants = await db.ProjectConstants.Where(c => c.ProjectId == id).ToListAsync();
+    foreach (var c in sourceConstants)
+    {
+        db.ProjectConstants.Add(new ProjectConstant
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = newProject.Id,
+            Key = c.Key,
+            Description = c.Description,
+            DefaultValue = c.DefaultValue,
+            SortOrder = c.SortOrder,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        });
+    }
+
     // Copy schedule if the source project has one
     var sourceSchedule = await db.ProjectSchedules.FirstOrDefaultAsync(s => s.ProjectId == id);
     if (sourceSchedule is not null)
@@ -1602,6 +1619,7 @@ app.MapPost("/api/projects/{id}/duplicate", async (
             CronExpression = sourceSchedule.CronExpression,
             TimeZone = sourceSchedule.TimeZone,
             UserInput = sourceSchedule.UserInput,
+            ConstantsJson = sourceSchedule.ConstantsJson,
             UseHistory = sourceSchedule.UseHistory,
             UsePromptQueue = sourceSchedule.UsePromptQueue,
             CreatedAt = DateTime.UtcNow,
@@ -1836,6 +1854,111 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+// ==================== Project Constants Endpoints ====================
+// Constantes del pipeline: se declaran una vez en el proyecto ("tematica", "keyword")
+// y su valor se elige en cada ejecucion. Ver Server/Services/Ai/ExecutionConstants.cs.
+
+static ProjectConstantResponse ToConstantResponse(ProjectConstant c) =>
+    new(c.Id, c.ProjectId, c.Key, c.Description, c.DefaultValue, c.SortOrder, c.CreatedAt, c.UpdatedAt);
+
+app.MapGet("/api/projects/{projectId:guid}/constants", async (
+    Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var constants = await db.ProjectConstants
+        .Where(c => c.ProjectId == projectId)
+        .OrderBy(c => c.SortOrder).ThenBy(c => c.CreatedAt)
+        .ToListAsync();
+
+    return Results.Ok(constants.Select(ToConstantResponse).ToList());
+}).RequireAuthorization();
+
+app.MapPost("/api/projects/{projectId:guid}/constants", async (
+    Guid projectId, CreateProjectConstantRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null) return Results.NotFound();
+
+    if (!ExecutionConstants.IsValidKey(req.Key))
+        return Results.BadRequest(new { error = "La clave solo admite letras, digitos y guion bajo, no puede empezar por digito y tiene un maximo de 50 caracteres." });
+
+    var key = req.Key.Trim();
+    var duplicated = await db.ProjectConstants
+        .AnyAsync(c => c.ProjectId == projectId && c.Key.ToLower() == key.ToLower());
+    if (duplicated)
+        return Results.BadRequest(new { error = $"Ya existe una constante '{key}' en este proyecto." });
+
+    var now = DateTime.UtcNow;
+    var constant = new ProjectConstant
+    {
+        Id = Guid.NewGuid(),
+        ProjectId = projectId,
+        Key = key,
+        Description = req.Description,
+        DefaultValue = req.DefaultValue,
+        SortOrder = req.SortOrder,
+        CreatedAt = now,
+        UpdatedAt = now,
+    };
+
+    db.ProjectConstants.Add(constant);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/projects/{projectId}/constants/{constant.Id}", ToConstantResponse(constant));
+}).RequireAuthorization();
+
+app.MapPut("/api/projects/{projectId:guid}/constants/{constantId:guid}", async (
+    Guid projectId, Guid constantId, UpdateProjectConstantRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var constant = await db.ProjectConstants
+        .FirstOrDefaultAsync(c => c.Id == constantId && c.ProjectId == projectId);
+    if (constant is null) return Results.NotFound();
+
+    if (!ExecutionConstants.IsValidKey(req.Key))
+        return Results.BadRequest(new { error = "La clave solo admite letras, digitos y guion bajo, no puede empezar por digito y tiene un maximo de 50 caracteres." });
+
+    var key = req.Key.Trim();
+    var duplicated = await db.ProjectConstants
+        .AnyAsync(c => c.ProjectId == projectId && c.Id != constantId && c.Key.ToLower() == key.ToLower());
+    if (duplicated)
+        return Results.BadRequest(new { error = $"Ya existe una constante '{key}' en este proyecto." });
+
+    constant.Key = key;
+    constant.Description = req.Description;
+    constant.DefaultValue = req.DefaultValue;
+    constant.SortOrder = req.SortOrder;
+    constant.UpdatedAt = DateTime.UtcNow;
+
+    await db.SaveChangesAsync();
+    return Results.Ok(ToConstantResponse(constant));
+}).RequireAuthorization();
+
+app.MapDelete("/api/projects/{projectId:guid}/constants/{constantId:guid}", async (
+    Guid projectId, Guid constantId,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var constant = await db.ProjectConstants
+        .FirstOrDefaultAsync(c => c.Id == constantId && c.ProjectId == projectId);
+    if (constant is null) return Results.NotFound();
+
+    db.ProjectConstants.Remove(constant);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
 // ==================== Execution Endpoints ====================
 
 app.MapPost("/api/projects/{projectId}/execute", async (
@@ -1863,7 +1986,8 @@ app.MapPost("/api/projects/{projectId}/execute", async (
             await using var bgDb = bgFactory.Create(tenantDbName);
             var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
-            var execution = await executor.ExecuteAsync(projectId, req.UserInput, bgDb, tenantDbName, ct, req.UseHistory);
+            var execution = await executor.ExecuteAsync(
+                projectId, req.UserInput, bgDb, tenantDbName, ct, req.UseHistory, req.Constants);
 
             // Load full result for client
             var exec = await bgDb.ProjectExecutions
@@ -1886,7 +2010,8 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
+                ExecutionConstants.Parse(exec.ConstantsJson));
 
             // Notify client via SignalR — use specific event based on status
             if (exec.Status == "WaitingForReview")
@@ -1957,14 +2082,22 @@ app.MapGet("/api/projects/{projectId}/executions", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
+    // Se materializa antes de proyectar: ExecutionConstants.Parse no es traducible a SQL.
     var executions = await db.ProjectExecutions
         .Where(e => e.ProjectId == projectId)
         .OrderByDescending(e => e.CreatedAt)
-        .Select(e => new ExecutionResponse(e.Id, e.ProjectId, e.Status,
-            e.WorkspacePath, e.CreatedAt, e.CompletedAt, e.UserInput, e.TotalEstimatedCost))
+        .Select(e => new
+        {
+            e.Id, e.ProjectId, e.Status, e.WorkspacePath, e.CreatedAt,
+            e.CompletedAt, e.UserInput, e.TotalEstimatedCost, e.ConstantsJson,
+        })
         .ToListAsync();
 
-    return Results.Ok(executions);
+    return Results.Ok(executions
+        .Select(e => new ExecutionResponse(e.Id, e.ProjectId, e.Status,
+            e.WorkspacePath, e.CreatedAt, e.CompletedAt, e.UserInput, e.TotalEstimatedCost,
+            ExecutionConstants.Parse(e.ConstantsJson)))
+        .ToList());
 }).RequireAuthorization();
 
 app.MapGet("/api/executions/{id}", async (
@@ -1996,7 +2129,8 @@ app.MapGet("/api/executions/{id}", async (
 
     return Results.Ok(new ExecutionDetailResponse(
         exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-        exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps));
+        exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
+        ExecutionConstants.Parse(exec.ConstantsJson)));
 }).RequireAuthorization();
 
 // Feedback (humano) de todas las ejecuciones de un proyecto, para pintarlo en el historial.
@@ -2296,7 +2430,8 @@ app.MapPost("/api/executions/{executionId}/retry-from-module", async (
 
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
+                ExecutionConstants.Parse(exec.ConstantsJson));
 
             if (exec.Status == "WaitingForReview")
             {
@@ -2381,7 +2516,8 @@ app.MapPost("/api/executions/{executionId}/orchestrator-review", async (
 
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
+                ExecutionConstants.Parse(exec.ConstantsJson));
 
             await hub.Clients.Group(projectId.ToString())
                 .SendAsync("ExecutionCompleted", detail);
@@ -2457,7 +2593,8 @@ app.MapPost("/api/executions/{executionId}/checkpoint-review", async (
 
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
+                ExecutionConstants.Parse(exec.ConstantsJson));
 
             if (exec.Status == "WaitingForCheckpoint")
             {
@@ -2836,7 +2973,8 @@ app.MapGet("/api/projects/{projectId:guid}/schedule", async (
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
         schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
-        schedule.CreatedAt, schedule.UpdatedAt));
+        schedule.CreatedAt, schedule.UpdatedAt,
+        ExecutionConstants.Parse(schedule.ConstantsJson)));
 }).RequireAuthorization();
 
 // Proyecta las proximas ejecuciones programadas encadenando el cron sobre si mismo.
@@ -2910,6 +3048,7 @@ app.MapPost("/api/projects/{projectId:guid}/schedule", async (
         CronExpression = req.CronExpression,
         TimeZone = req.TimeZone,
         UserInput = req.UserInput,
+        ConstantsJson = ExecutionConstants.Serialize(req.Constants),
         UseHistory = req.UseHistory,
         UsePromptQueue = req.UsePromptQueue,
         NextRunAt = nextRun,
@@ -2924,7 +3063,8 @@ app.MapPost("/api/projects/{projectId:guid}/schedule", async (
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
         schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
-        schedule.CreatedAt, schedule.UpdatedAt));
+        schedule.CreatedAt, schedule.UpdatedAt,
+        ExecutionConstants.Parse(schedule.ConstantsJson)));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId:guid}/schedule", async (
@@ -2942,6 +3082,7 @@ app.MapPut("/api/projects/{projectId:guid}/schedule", async (
     schedule.CronExpression = req.CronExpression;
     schedule.TimeZone = req.TimeZone;
     schedule.UserInput = req.UserInput;
+    schedule.ConstantsJson = ExecutionConstants.Serialize(req.Constants);
     schedule.IsEnabled = req.IsEnabled;
     schedule.UseHistory = req.UseHistory;
     schedule.UsePromptQueue = req.UsePromptQueue;
@@ -2956,7 +3097,8 @@ app.MapPut("/api/projects/{projectId:guid}/schedule", async (
         schedule.Id, schedule.ProjectId, schedule.IsEnabled,
         schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
-        schedule.CreatedAt, schedule.UpdatedAt));
+        schedule.CreatedAt, schedule.UpdatedAt,
+        ExecutionConstants.Parse(schedule.ConstantsJson)));
 }).RequireAuthorization();
 
 app.MapDelete("/api/projects/{projectId:guid}/schedule", async (
@@ -3303,7 +3445,8 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}/exec
 
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
-                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps);
+                exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
+                ExecutionConstants.Parse(exec.ConstantsJson));
 
             if (exec.Status == "WaitingForReview")
                 await hub.Clients.Group(projectId.ToString()).SendAsync("OrchestratorWaitingForReview", detail);

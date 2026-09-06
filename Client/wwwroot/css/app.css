@@ -6178,3 +6178,120 @@ a.link:hover { text-decoration: underline; }
     color: var(--danger);
     border-color: var(--danger);
 }
+
+/* ── Constantes del pipeline ──
+   Valores que se declaran en el proyecto y se fijan en cada ejecucion; se
+   sustituyen en los prompts de todos los modulos. */
+.execute-constants {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+    padding: 0.35rem 0.4rem;
+    background: rgba(108, 99, 255, 0.06);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+.execute-constants-title {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+}
+
+.execute-constant-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.execute-constant-key {
+    flex: 0 0 auto;
+    max-width: 45%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: help;
+}
+
+.execute-constant-input {
+    flex: 1 1 auto;
+    min-height: 0;
+    resize: none;
+}
+
+.constants-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+.constants-chip {
+    padding: 0.05rem 0.35rem;
+    background: rgba(108, 99, 255, 0.12);
+    border-radius: 999px;
+    font-size: 0.68rem;
+    color: var(--text-muted);
+}
+
+.constants-chip strong {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.constants-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-bottom: 0.6rem;
+}
+
+.constants-item {
+    padding: 0.45rem 0.55rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.constants-item-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.constants-item-key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--accent);
+}
+
+.constants-item-actions {
+    display: flex;
+    gap: 0.35rem;
+    margin-left: auto;
+}
+
+.constants-form-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.constants-form-row input {
+    flex: 1 1 auto;
+}
+
+.constants-form-key {
+    flex: 0 0 auto;
+    min-width: 8rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.78rem;
+    color: var(--accent);
+    cursor: help;
+}

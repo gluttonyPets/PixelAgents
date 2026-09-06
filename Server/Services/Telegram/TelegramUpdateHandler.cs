@@ -168,7 +168,11 @@ namespace Server.Services.Telegram
                             ? originalInput
                             : $"{originalInput}\n\nAclaracion del usuario: {clarification}";
 
-                        await _executor.ExecuteAsync(projectIdForRestart.Value, restartInput, db, correlation.TenantDbName);
+                        // Se reinicia lo mismo: las constantes de la ejecucion original
+                        // (tematica, keyword...) tienen que seguir siendo las mismas.
+                        await _executor.ExecuteAsync(
+                            projectIdForRestart.Value, restartInput, db, correlation.TenantDbName,
+                            constantValues: ExecutionConstants.Parse(execForRestart?.ConstantsJson));
 
                         var tgConfig = await GetTgConfigAsync();
                         if (tgConfig is not null)
@@ -666,10 +670,16 @@ namespace Server.Services.Telegram
                 catch { /* non-critical */ }
             }
 
+            // Cambia la tematica del prompt, no la configuracion del pipeline: la nueva
+            // ejecucion arranca con las mismas constantes que la que se acaba de abortar.
+            var abortedExecution = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
+
             ProjectExecution newExecution;
             try
             {
-                newExecution = await _executor.ExecuteAsync(projectId, nextPrompt.Content, db, correlation.TenantDbName);
+                newExecution = await _executor.ExecuteAsync(
+                    projectId, nextPrompt.Content, db, correlation.TenantDbName,
+                    constantValues: ExecutionConstants.Parse(abortedExecution?.ConstantsJson));
             }
             catch (Exception ex)
             {

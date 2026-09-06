@@ -93,8 +93,12 @@ public class SubProjectModuleHandler : IModuleHandler
             var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
             // useHistory:false — el "no repetir tematicas" es responsabilidad del
             // pipeline padre; la ejecucion hija no debe arrastrar su propio historial.
+            // Las constantes del padre se pasan como valores del hijo: el proyecto
+            // insertado usa las suyas propias, y para cada clave que declare con el
+            // mismo nombre recibe el valor de esta ejecucion en vez de su defecto.
             childExecution = await executor.ExecuteAsync(
-                subProjectId.Value, input, childDb, ctx.TenantDbName, ctx.CancellationToken, useHistory: false);
+                subProjectId.Value, input, childDb, ctx.TenantDbName, ctx.CancellationToken,
+                useHistory: false, constantValues: ctx.Constants);
         }
         finally
         {
