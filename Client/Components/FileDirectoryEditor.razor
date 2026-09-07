@@ -265,6 +265,57 @@
     </div>
 
     <div class="fd-field">
+        <label>Carpeta que usa cada ejecucion (opcional)</label>
+        <input type="text" placeholder="Todo el directorio"
+               list="@FolderOptionsId"
+               value="@Folder"
+               @onchange="@(e => FolderChanged.InvokeAsync(e.Value?.ToString() ?? ""))" />
+        <datalist id="@FolderOptionsId">
+            @foreach (var f in AllFolders())
+            {
+                <option value="@f"></option>
+            }
+            @foreach (var key in VariableKeys)
+            {
+                <option value="@VariableMarker(key)"></option>
+            }
+        </datalist>
+        <p class="text-sm text-muted">
+            Vacio publica el directorio entero. Escribe una carpeta para que el modulo
+            solo entregue sus archivos (y los de sus subcarpetas), o el marcador de una
+            variable para elegirla al lanzar cada ejecucion.
+        </p>
+        @if (VariableKeys.Count > 0)
+        {
+            <div class="fd-var-chips">
+                <span class="text-sm text-muted">Variables del pipeline:</span>
+                @foreach (var key in VariableKeys)
+                {
+                    <button type="button" class="btn btn-xs"
+                            title="Usar el valor de esta variable como carpeta"
+                            @onclick="@(() => FolderChanged.InvokeAsync(VariableMarker(key)))">
+                        @VariableMarker(key)
+                    </button>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="text-sm text-muted">
+                Para elegir la carpeta en cada ejecucion, declara antes una variable en el
+                panel "Variables" del pipeline.
+            </p>
+        }
+        @if (FolderUsesVariable)
+        {
+            <p class="text-sm text-muted">
+                La carpeta se resuelve al ejecutar: si la variable se queda sin valor, el
+                modulo para en vez de publicar el directorio entero.
+            </p>
+        }
+    </div>
+
+    <div class="fd-field">
         <label>Formato de salida</label>
         <select value="@(string.IsNullOrWhiteSpace(Format) ? "markdown" : Format)"
                 @onchange="@(e => FormatChanged.InvokeAsync(e.Value?.ToString() ?? "markdown"))">
@@ -285,6 +336,16 @@
             <button type="button" class="btn btn-sm" @onclick="LoadPreview" disabled="@_previewLoading">
                 <i class="bi bi-arrow-clockwise"></i> @(_previewLoading ? "Cargando..." : "Actualizar")
             </button>
+            @if (PreviewFolder is not null)
+            {
+                <span class="text-sm text-muted">Limitado a @PreviewFolder</span>
+            }
+            else if (FolderUsesVariable)
+            {
+                <span class="text-sm text-muted">
+                    Directorio completo: en cada ejecucion se recorta a @Folder
+                </span>
+            }
         }
     </div>
 
@@ -360,6 +421,25 @@
     /// <summary>Formato con el que el modulo emite el indice: markdown o json.</summary>
     [Parameter] public string? Format { get; set; }
     [Parameter] public EventCallback<string> FormatChanged { get; set; }
+
+    /// <summary>Carpeta a la que el nodo limita cada ejecucion. Vacia = todo el
+    /// directorio; admite el marcador de una variable del pipeline.</summary>
+    [Parameter] public string? Folder { get; set; }
+    [Parameter] public EventCallback<string> FolderChanged { get; set; }
+
+    /// <summary>Claves de las variables del pipeline, para ofrecerlas como carpeta.</summary>
+    [Parameter] public IReadOnlyList<string> VariableKeys { get; set; } = [];
+
+    /// <summary>True si la carpeta se decide en cada ejecucion (lleva un marcador).</summary>
+    private bool FolderUsesVariable => (Folder ?? "").Contains("{{", StringComparison.Ordinal);
+
+    /// <summary>Carpeta ya fija que puede aplicarse a la vista previa; null si depende
+    /// de una variable, porque su valor no se conoce hasta ejecutar.</summary>
+    private string? PreviewFolder => FolderUsesVariable || string.IsNullOrWhiteSpace(Folder) ? null : Folder;
+
+    private string FolderOptionsId => $"fd-folders-{ProjectModuleId?.ToString() ?? "nuevo"}";
+
+    private static string VariableMarker(string key) => "{{" + key + "}}";
 
     private const long MaxUploadFileSize = 512L * 1024 * 1024;
 
@@ -611,7 +691,7 @@
 
         try
         {
-            _preview = await Api.GetDirectoryIndexAsync(nodeId);
+            _preview = await Api.GetDirectoryIndexAsync(nodeId, PreviewFolder);
             if (_preview is null)
                 _previewError = "No se pudo leer el indice del directorio.";
         }

@@ -713,7 +713,10 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                                  BaseUrl='@GetModuleConfig(sel.Id, "baseUrl", "")'
                                                  BaseUrlChanged='@(v => SetModuleConfig(sel.Id, "baseUrl", v))'
                                                  Format='@GetModuleConfig(sel.Id, "format", "markdown")'
-                                                 FormatChanged='@(v => SetModuleConfig(sel.Id, "format", v))' />
+                                                 FormatChanged='@(v => SetModuleConfig(sel.Id, "format", v))'
+                                                 Folder='@GetModuleConfig(sel.Id, "folder", "")'
+                                                 FolderChanged='@(v => SetModuleConfig(sel.Id, "folder", v))'
+                                                 VariableKeys="@VariableKeys" />
                         </div>
                     }
 
@@ -1244,7 +1247,10 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                              BaseUrl='@GetModuleConfig(dirNode.Id, "baseUrl", "")'
                                              BaseUrlChanged='@(v => SetModuleConfig(dirNode.Id, "baseUrl", v))'
                                              Format='@GetModuleConfig(dirNode.Id, "format", "markdown")'
-                                             FormatChanged='@(v => SetModuleConfig(dirNode.Id, "format", v))' />
+                                             FormatChanged='@(v => SetModuleConfig(dirNode.Id, "format", v))'
+                                             Folder='@GetModuleConfig(dirNode.Id, "folder", "")'
+                                             FolderChanged='@(v => SetModuleConfig(dirNode.Id, "folder", v))'
+                                             VariableKeys="@VariableKeys" />
                     </fieldset>
                 }
             </div>
@@ -1288,6 +1294,14 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     /// forman parte de la definicion del pipeline y no de la configuracion del proyecto.
     /// Si no se pasa, el boton no aparece.</summary>
     [Parameter] public RenderFragment? VariablesPanel { get; set; }
+
+    /// <summary>Variables declaradas por el pipeline. El canvas no las edita (de eso se
+    /// encarga <see cref="VariablesPanel"/>), pero si las ofrece donde un campo puede
+    /// resolverse por variable, como la carpeta del Directorio de archivos.</summary>
+    [Parameter] public List<ProjectVariableResponse>? ProjectVariables { get; set; }
+
+    private IReadOnlyList<string> VariableKeys =>
+        ProjectVariables?.Select(v => v.Key).ToList() ?? [];
 
     /// <summary>Se dispara al abrir el panel, para que la pagina cargue sus datos.</summary>
     [Parameter] public EventCallback OnPlannerPanelOpened { get; set; }

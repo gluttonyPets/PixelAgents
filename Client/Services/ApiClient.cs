@@ -287,9 +287,15 @@ public class ApiClient
     /// de destino, con la URL de cada fichero ya montada sobre el dominio
     /// publico, mas los errores de validacion si el indice no es valido.
     /// </summary>
-    public async Task<DirectoryIndexPreviewResponse?> GetDirectoryIndexAsync(Guid projectModuleId)
+    /// <param name="folder">Carpeta a la que limita el nodo la ejecucion, si la hay:
+    /// la vista previa ensena entonces lo mismo que recibira el modulo.</param>
+    public async Task<DirectoryIndexPreviewResponse?> GetDirectoryIndexAsync(
+        Guid projectModuleId, string? folder = null)
     {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/project-modules/{projectModuleId}/directory-index");
+        var query = string.IsNullOrWhiteSpace(folder)
+            ? ""
+            : $"?folder={Uri.EscapeDataString(folder.Trim())}";
+        var resp = await SendAsync(HttpMethod.Get, $"/api/project-modules/{projectModuleId}/directory-index{query}");
         if (!resp.IsSuccessStatusCode) return null;
         return await resp.Content.ReadFromJsonAsync<DirectoryIndexPreviewResponse>();
     }

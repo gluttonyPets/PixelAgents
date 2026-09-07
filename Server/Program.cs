@@ -967,8 +967,10 @@ app.MapGet("/api/project-modules/{projectModuleId}/files", async (
 // comprobar desde el inspector que las rutas responden, sin lanzar el pipeline.
 // A diferencia del endpoint publico, este pide sesion y devuelve tambien los
 // errores de validacion, que es lo que el usuario necesita para arreglarlos.
+// La vista previa del explorador. Acepta ?folder= para ensenar el indice tal y como
+// lo recibira el modulo cuando el nodo limita la ejecucion a una carpeta.
 app.MapGet("/api/project-modules/{projectModuleId:guid}/directory-index", async (
-    Guid projectModuleId, HttpContext ctx,
+    Guid projectModuleId, string? folder, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
     IConfiguration configuration) =>
 {
@@ -985,7 +987,9 @@ app.MapGet("/api/project-modules/{projectModuleId:guid}/directory-index", async 
     if (directory is null) return Results.NotFound();
 
     var publicBaseUrl = (configuration["BaseUrl"] ?? configuration["AllowedOrigin"] ?? "").TrimEnd('/');
-    var index = FileDirectoryPublisher.Resolve(directory, tenantDbName, publicBaseUrl);
+    var index = FileDirectoryPublisher.Resolve(
+        directory, tenantDbName, publicBaseUrl,
+        FileDirectoryIndex.ParseFolderSelection(folder));
 
     return Results.Ok(new DirectoryIndexPreviewResponse(
         index.IsValid,

@@ -13,6 +13,11 @@ namespace Server.Services.Ai.Handlers;
 /// Los ficheros subidos a este nodo se exponen por la URL publica del
 /// directorio; los que ya viven en un repositorio externo expuesto se referencian
 /// con su propia URL.
+///
+/// Que documentos entran en cada ejecucion se elige con la carpeta configurada en
+/// el nodo (<c>folder</c>): vacia publica el directorio entero, y escrita como
+/// marcador de variable (<c>{{carpeta}}</c>) la decide el valor que se da al
+/// lanzar cada ejecucion.
 /// </summary>
 public class FileDirectoryModuleHandler : IModuleHandler
 {
@@ -32,6 +37,22 @@ public class FileDirectoryModuleHandler : IModuleHandler
         var baseUrl = ctx.GetConfig(FileDirectoryIndex.BaseUrlConfigKey);
         var format = ctx.GetConfig(FileDirectoryIndex.FormatConfigKey, "markdown");
 
+        // La carpeta se lee de la configuracion ya sustituida: puede estar escrita a
+        // mano o venir del valor que la variable tome en esta ejecucion.
+        var folderConfig = ctx.GetConfig(FileDirectoryIndex.FolderConfigKey);
+        var unresolved = ExecutionVariables.UnresolvedKeys(folderConfig);
+        if (unresolved.Count > 0)
+        {
+            // Sin valor no se puede adivinar el alcance: publicar el directorio entero
+            // seria darle al modelo documentos que esta ejecucion no habia pedido.
+            var markers = string.Join(", ", unresolved.Select(ExecutionVariables.Marker));
+            return ModuleResult.Failed(
+                $"La carpeta del directorio sale de {markers}, que esta ejecucion ha dejado sin valor. "
+                + "Dale valor al lanzar la ejecucion o quita la carpeta de la configuracion del nodo.");
+        }
+
+        var folderSelection = FileDirectoryIndex.ParseFolderSelection(folderConfig);
+
         var legacyIndex = FileDirectoryIndex.ReadConfig(
             ctx.Node.AiModule.Configuration, null, FileDirectoryIndex.IndexConfigKey);
         if (legacyIndex is not null)
@@ -47,7 +68,8 @@ public class FileDirectoryModuleHandler : IModuleHandler
             ctx.ModuleFiles.Select(f => new FileDirectoryIndex.HostedFile(f.Id, f.FileName)),
             path => FileDirectoryIndex.Absolutize(
                 ctx.PublicBaseUrl,
-                FileDirectoryIndex.BuildPublicPath(ctx.TenantDbName, ctx.Node.ModuleId, path)));
+                FileDirectoryIndex.BuildPublicPath(ctx.TenantDbName, ctx.Node.ModuleId, path)),
+            folderSelection);
 
         await ctx.LogDebugAsync(
             $"Directorio: {ctx.ModuleFiles.Count} fichero(s) subidos al nodo, "
@@ -63,15 +85,19 @@ public class FileDirectoryModuleHandler : IModuleHandler
 
         var content = FileDirectoryIndex.Render(result, format);
 
+        var scope = result.SelectedFolders.Count > 0
+            ? $" (carpeta de esta ejecucion: {string.Join(", ", result.SelectedFolders)})"
+            : "";
+
         await ctx.LogInfoAsync(
-            $"Directorio publicado: {result.Entries.Count} fichero(s) en {result.Folders.Count} carpeta(s).");
+            $"Directorio publicado: {result.Entries.Count} fichero(s) en {result.Folders.Count} carpeta(s){scope}.");
 
         var output = new StepOutput
         {
             Type = "text",
             Title = ctx.Node.ProjectModule.StepName ?? ctx.Node.AiModule.Name,
             Content = content,
-            Summary = $"Indice de {result.Entries.Count} fichero(s) en {result.Folders.Count} carpeta(s).",
+            Summary = $"Indice de {result.Entries.Count} fichero(s) en {result.Folders.Count} carpeta(s){scope}.",
             Metadata =
             {
                 ["fileCount"] = result.Entries.Count,
@@ -84,6 +110,9 @@ public class FileDirectoryModuleHandler : IModuleHandler
 
         if (result.BaseUrl is not null)
             output.Metadata["baseUrl"] = result.BaseUrl;
+
+        if (result.SelectedFolders.Count > 0)
+            output.Metadata["folders"] = string.Join(", ", result.SelectedFolders);
 
         return ModuleResult.Completed(output);
     }

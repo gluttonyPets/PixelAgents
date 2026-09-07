@@ -47,11 +47,18 @@ public static class FileDirectoryPublisher
         return new DirectoryNode(node, files);
     }
 
-    /// <summary>Resuelve el indice del nodo con las URLs publicas ya absolutas.</summary>
+    /// <summary>
+    /// Resuelve el indice del nodo con las URLs publicas ya absolutas.
+    ///
+    /// <paramref name="folderSelection"/> limita el resultado a unas carpetas, igual
+    /// que hace la ejecucion. La URL publica de los ficheros NO se filtra: el filtro
+    /// elige que ve el modulo en su indice, no quien puede descargar un fichero.
+    /// </summary>
     public static FileDirectoryIndex.ParseResult Resolve(
         DirectoryNode directory,
         string tenant,
-        string? publicBaseUrl)
+        string? publicBaseUrl,
+        IEnumerable<string>? folderSelection = null)
     {
         var moduleConfig = directory.Node.AiModule?.Configuration;
         var nodeConfig = directory.Node.Configuration;
@@ -65,7 +72,8 @@ public static class FileDirectoryPublisher
             directory.Files.Select(f => new FileDirectoryIndex.HostedFile(f.Id, f.FileName)),
             path => FileDirectoryIndex.Absolutize(
                 publicBaseUrl,
-                FileDirectoryIndex.BuildPublicPath(tenant, directory.Node.Id, path)));
+                FileDirectoryIndex.BuildPublicPath(tenant, directory.Node.Id, path)),
+            folderSelection);
     }
 
     /// <summary>

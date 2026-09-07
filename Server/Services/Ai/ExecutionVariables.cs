@@ -175,6 +175,22 @@ public static class ExecutionVariables
     }
 
     /// <summary>
+    /// Marcadores <c>{{clave}}</c> que siguen sin sustituir en un texto ya procesado,
+    /// es decir, variables que esta ejecucion ha dejado sin valor. Sirve para que un
+    /// modulo que depende del valor (y no solo lo cita en un prompt) pueda parar con
+    /// un mensaje claro en vez de trabajar con el marcador como si fuese texto.
+    /// </summary>
+    public static List<string> UnresolvedKeys(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return [];
+
+        return PlaceholderPattern.Matches(text)
+            .Select(m => m.Groups[1].Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
     /// Aplica la sustitucion a la configuracion combinada de un modulo (prompts,
     /// captions, condiciones...). Solo toca valores de texto de primer nivel; los
     /// numeros, booleanos y objetos anidados se copian sin cambios.

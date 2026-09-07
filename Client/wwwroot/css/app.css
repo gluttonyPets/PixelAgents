@@ -6283,6 +6283,15 @@ a.link:hover { text-decoration: underline; }
 
 .fd-field p { margin: 0; }
 
+/* Variables ofrecidas como carpeta de la ejecucion */
+.fd-var-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.15rem;
+}
+
 @media (max-width: 780px) {
     .fd-explorer { flex-direction: column; }
     .fd-tree {

@@ -509,6 +509,12 @@ indice pueda descargar):
 - `/api/public/directory/{tenant}/{moduleId}`: indice resuelto del directorio.
 - `/api/public/directory/{tenant}/{moduleId}/{ruta}`: fichero declarado en el indice.
 
+El nodo Directorio (la "biblioteca" del pipeline) puede limitar cada ejecucion a
+una carpeta con su ajuste `folder`: vacio publica todo, una ruta publica esa
+carpeta y sus subcarpetas, y el marcador de una variable (`{{carpeta}}`) deja
+elegir los documentos al lanzar cada ejecucion. Si la variable se queda sin valor
+o la carpeta no existe, el modulo falla en vez de publicar el directorio entero.
+
 Si se solicita crear un modulo de sistema conocido, `SystemModuleCatalog`
 garantiza o actualiza su definicion.
 

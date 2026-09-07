@@ -32,6 +32,14 @@ public static class FileDirectoryIndex
     /// <summary>Clave de configuracion con el formato de salida.</summary>
     public const string FormatConfigKey = "format";
 
+    /// <summary>
+    /// Clave de configuracion con la carpeta (o carpetas) que publica el modulo en
+    /// cada ejecucion. Vacia = el directorio entero. Admite el marcador de una
+    /// variable (<c>{{carpeta}}</c>), que el executor sustituye antes de ejecutar:
+    /// asi se elige que documentos entran en cada corrida sin tocar el pipeline.
+    /// </summary>
+    public const string FolderConfigKey = "folder";
+
     /// <summary>Segmento raiz de la URL publica del directorio.</summary>
     public const string PublicRoute = "/api/public/directory";
 
@@ -87,6 +95,12 @@ public static class FileDirectoryIndex
         /// desaparezca por no tener ficheros todavia.
         /// </summary>
         public List<string> DeclaredFolders { get; } = [];
+
+        /// <summary>
+        /// Carpetas a las que se ha limitado esta resolucion (la eleccion de la
+        /// ejecucion). Vacio = se publica el directorio entero.
+        /// </summary>
+        public List<string> SelectedFolders { get; } = [];
 
         public bool IsValid => Errors.Count == 0 && Entries.Count > 0;
 
@@ -279,11 +293,14 @@ public static class FileDirectoryIndex
     /// <param name="configBaseUrl">URL base declarada aparte en la configuracion.</param>
     /// <param name="hostedFiles">Nombres de fichero subidos a este nodo.</param>
     /// <param name="hostedUrlFactory">Construye la URL publica de un fichero alojado.</param>
+    /// <param name="folderSelection">Carpetas a publicar en esta ejecucion; vacio o
+    /// null publica el directorio entero.</param>
     public static ParseResult Resolve(
         string? indexJson,
         string? configBaseUrl = null,
         IEnumerable<HostedFile>? hostedFiles = null,
-        Func<string, string>? hostedUrlFactory = null)
+        Func<string, string>? hostedUrlFactory = null,
+        IEnumerable<string>? folderSelection = null)
     {
         var result = new ParseResult();
 
@@ -357,7 +374,87 @@ public static class FileDirectoryIndex
                 new ResolvedEntry(path, folder, name, description!, url, source, sourceFile, sourceFileId));
         }
 
+        ApplyFolderSelection(result, folderSelection);
+
         return result;
+    }
+
+    // ── Seleccion de carpetas ──
+
+    /// <summary>
+    /// Interpreta la carpeta escrita en el nodo. Admite varias separadas por comas,
+    /// puntos y coma o saltos de linea. Vacio, "/" o cualquier cosa que no deje ruta
+    /// util significa "todo el directorio": el filtro es opcional.
+    /// </summary>
+    public static List<string> ParseFolderSelection(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return [];
+
+        return raw
+            .Split([',', ';', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(NormalizePath)
+            .Where(f => f is not null && !HasTraversal(f))
+            .Select(f => f!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>True si la carpeta es la elegida o cuelga de ella (subcarpetas incluidas).</summary>
+    public static bool IsInFolder(string? entryFolder, string folder)
+    {
+        var current = entryFolder ?? "";
+        return current.Equals(folder, StringComparison.OrdinalIgnoreCase)
+            || current.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Recorta el indice a las carpetas elegidas para esta ejecucion.
+    ///
+    /// Una carpeta que no existe es un error, no un filtro que no filtra: si se
+    /// ignorase, el modulo publicaria la biblioteca entera justo cuando el usuario
+    /// pidio una parte, y el modelo trabajaria con documentos que nadie eligio.
+    /// </summary>
+    private static void ApplyFolderSelection(ParseResult result, IEnumerable<string>? selection)
+    {
+        var folders = (selection ?? [])
+            .Select(NormalizePath)
+            .Where(f => f is not null && !HasTraversal(f))
+            .Select(f => f!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (folders.Count == 0) return;
+
+        result.SelectedFolders.AddRange(folders);
+
+        var known = result.Entries
+            .Select(e => e.Folder)
+            .Concat(result.DeclaredFolders)
+            .Where(f => !string.IsNullOrEmpty(f))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        foreach (var folder in folders)
+        {
+            if (known.Any(k => IsInFolder(k, folder))) continue;
+            result.Errors.Add(
+                $"La carpeta \"{folder}\" no existe en el directorio. {DescribeFolders(known)}");
+        }
+
+        result.Entries.RemoveAll(e => !folders.Any(f => IsInFolder(e.Folder, f)));
+        result.DeclaredFolders.RemoveAll(d => !folders.Any(f => IsInFolder(d, f)));
+
+        if (result.Entries.Count == 0 && result.Errors.Count == 0)
+            result.Errors.Add(
+                $"La carpeta \"{string.Join("\", \"", folders)}\" no tiene ningun fichero indexado.");
+    }
+
+    private static string DescribeFolders(List<string> folders)
+    {
+        if (folders.Count == 0) return "El directorio no tiene carpetas: sus ficheros estan en la raiz.";
+        var names = string.Join(", ", folders.OrderBy(f => f, StringComparer.OrdinalIgnoreCase).Take(15));
+        var more = folders.Count > 15 ? $" y {folders.Count - 15} mas" : "";
+        return $"Carpetas disponibles: {names}{more}.";
     }
 
     private static (string? Url, string Source, string? SourceFile, Guid? SourceFileId) ResolveUrl(
@@ -501,6 +598,13 @@ public static class FileDirectoryIndex
         // despues para adjuntar el fichero.
         sb.AppendLine("Para usar un fichero, copia su URL tal cual en tu respuesta. El sistema la");
         sb.AppendLine("descargara y la adjuntara como referencia. Cita solo los que necesites.");
+        if (result.SelectedFolders.Count > 0)
+        {
+            // Sin esto el modelo cree tener delante la biblioteca entera y puede
+            // dar por hecho que un documento que no ve simplemente no existe.
+            sb.AppendLine($"Esta ejecucion trabaja solo con: {string.Join(", ", result.SelectedFolders)}. "
+                + "El resto del directorio no esta disponible aqui.");
+        }
         sb.AppendLine();
 
         foreach (var group in result.Entries
@@ -524,6 +628,7 @@ public static class FileDirectoryIndex
         var payload = new
         {
             baseUrl = result.BaseUrl,
+            selectedFolders = result.SelectedFolders.Count > 0 ? result.SelectedFolders : null,
             fileCount = result.Entries.Count,
             files = result.Entries.Select(e => new
             {

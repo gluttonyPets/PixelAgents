@@ -437,8 +437,8 @@ El indice tambien lleva `folders`, la lista de carpetas del directorio, para que
 una carpeta recien creada no desaparezca por no tener ficheros todavia.
 
 Configuracion, en el nodo (no en el modulo de catalogo, que es unico y comun a
-todos los directorios): `index` (JSON), `baseUrl` (opcional) y `format`
-(`markdown`, por defecto, o `json`).
+todos los directorios): `index` (JSON), `baseUrl` (opcional), `format`
+(`markdown`, por defecto, o `json`) y `folder` (opcional, ver abajo).
 
 El `index` se lee **solo** de la configuracion del nodo, no de la mezcla
 catalogo + nodo que arma el executor. Un indice en el catalogo se aplicaria a
@@ -446,6 +446,37 @@ todos los directorios a la vez, con ids de ficheros subidos a otro nodo, y el
 explorador (que siempre lee la del nodo) ensenaria una cosa mientras la ejecucion
 usaria otra. Si el catalogo arrastra uno antiguo, se ignora y se avisa en el log.
 `baseUrl` y `format` si se heredan, porque no referencian ficheros.
+
+### Elegir los documentos de cada ejecucion
+
+Una biblioteca sirve para varias cosas a la vez (manuales, legal, campanas), y
+casi nunca hace falta toda: `folder` decide que parte entrega el modulo.
+
+- Vacio: el directorio entero, como siempre.
+- Una carpeta (`manuales/2024`): solo sus ficheros y los de sus subcarpetas.
+  Se admiten varias separadas por comas.
+- El marcador de una variable del pipeline (`{{carpeta}}`): la carpeta la decide
+  el valor que se da **al lanzar cada ejecucion**. Es el caso que motiva la
+  opcion: el mismo pipeline trabaja hoy con `manuales` y manana con `legal` sin
+  tocar el grafo.
+
+Funciona porque `folder` se lee de `ctx.Config`, que es la configuracion del nodo
+ya pasada por `ExecutionVariables.ApplyToConfig`: cuando llega al handler el
+marcador ya es un valor. Si la ejecucion deja la variable sin valor, el marcador
+sobrevive intacto (`ExecutionVariables.UnresolvedKeys` lo detecta) y el modulo
+**falla**: publicar el directorio entero seria darle al modelo documentos que esa
+ejecucion no pidio. Por lo mismo, una carpeta que no existe es un error con la
+lista de carpetas disponibles, no un filtro que se ignora.
+
+El indice que sale lleva escrito su alcance ("Esta ejecucion trabaja solo con
+...") para que el modelo no de por hecho que un documento que no ve no existe;
+en formato JSON viaja como `selectedFolders`.
+
+El filtro decide **que ve el modulo**, no quien puede descargar un fichero: las
+URL publicas del directorio siguen sirviendo todo lo que el indice declara. La
+vista previa del explorador acepta `?folder=` y ensena el recorte cuando la
+carpeta es fija; si depende de una variable, avisa de que se resolvera al
+ejecutar.
 
 ### Del indice a los bytes: imagenes de referencia
 
