@@ -2,7 +2,9 @@
    Muestra el prompt dividido en las secciones que lo componen, detectadas por
    sus encabezados en mayusculas (p.ej. ROL, TAREA, [ROL/CONTEXTO], RESTRICCIONES:,
    ## TAREA). Cada bloque se ve en solo lectura; para editarlo se pulsa el lapiz,
-   que abre un popup con el texto y botones Cancelar / Guardar.
+   que abre un popup con el texto y botones Cancelar / Guardar. La papelera de
+   cada bloque borra esa seccion y "Vaciar todo" deja el prompt en blanco para
+   escribirlo de cero; ambos piden confirmacion en el sitio (Si / No).
    Two-way binding mediante @bind-Value. *@
 
 <div class="spb">
@@ -24,10 +26,27 @@
             <div class="spb-block">
                 <div class="spb-block-head">
                     <span class="spb-block-title">@(string.IsNullOrEmpty(b.Label) ? "Prompt" : b.Label)</span>
-                    <button type="button" class="spb-edit-btn" title="Editar bloque"
-                            aria-label="Editar bloque" @onclick="() => OpenBlockEditor(idx)">
-                        <i class="bi bi-pencil"></i>
-                    </button>
+                    @if (_confirmDeleteIndex == idx)
+                    {
+                        <span class="spb-confirm">
+                            <span class="text-sm text-muted">¿Borrar seccion?</span>
+                            <button type="button" class="btn btn-danger btn-xs" @onclick="() => DeleteBlock(idx)">Si</button>
+                            <button type="button" class="btn btn-xs" @onclick="CancelConfirm">No</button>
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="spb-block-actions">
+                            <button type="button" class="spb-edit-btn" title="Editar bloque"
+                                    aria-label="Editar bloque" @onclick="() => OpenBlockEditor(idx)">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button type="button" class="spb-edit-btn spb-del-btn" title="Borrar seccion"
+                                    aria-label="Borrar seccion" @onclick="() => RequestDeleteBlock(idx)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </span>
+                    }
                 </div>
                 @if (!string.IsNullOrWhiteSpace(b.Body))
                 {
@@ -39,6 +58,22 @@
                 }
             </div>
         }
+
+        <div class="spb-actions">
+            @if (_confirmClear)
+            {
+                <span class="text-sm text-muted">¿Vaciar todo el prompt?</span>
+                <button type="button" class="btn btn-danger btn-xs" @onclick="ClearAll">Si, vaciar</button>
+                <button type="button" class="btn btn-xs" @onclick="CancelConfirm">No</button>
+            }
+            else
+            {
+                <button type="button" class="btn btn-xs spb-clear-btn" @onclick="RequestClear"
+                        title="Borra todo el prompt para escribirlo de cero">
+                    <i class="bi bi-trash"></i> Vaciar todo
+                </button>
+            }
+        </div>
     }
 </div>
 
@@ -75,6 +110,11 @@
 
     private readonly List<Block> _blocks = new();
     private string _lastParsed = "\0"; // centinela para forzar el primer parseo
+
+    // Borrados: se confirman en el sitio (un clic arma, el segundo borra), como en
+    // el resto de listas de la app. -1 / false => nada pendiente de confirmar.
+    private int _confirmDeleteIndex = -1;
+    private bool _confirmClear;
 
     private bool _editing;
     private int _editIndex = -1;   // -1 => editar el prompt completo (caso vacio / sin estructura)
@@ -151,10 +191,53 @@
         await ValueChanged.InvokeAsync(newValue);
     }
 
+    // ── Borrado de secciones ──
+
+    private void RequestDeleteBlock(int idx)
+    {
+        _confirmDeleteIndex = idx;
+        _confirmClear = false;
+    }
+
+    private void RequestClear()
+    {
+        _confirmClear = true;
+        _confirmDeleteIndex = -1;
+    }
+
+    private void CancelConfirm()
+    {
+        _confirmDeleteIndex = -1;
+        _confirmClear = false;
+    }
+
+    /// <summary>Quita una seccion (encabezado incluido) y reconstruye el prompt.</summary>
+    private async Task DeleteBlock(int idx)
+    {
+        CancelConfirm();
+        if (idx < 0 || idx >= _blocks.Count) return;
+
+        _blocks.RemoveAt(idx);
+        var newValue = Reconstruct();
+        _lastParsed = newValue;
+        Parse(newValue);
+        await ValueChanged.InvokeAsync(newValue);
+    }
+
+    /// <summary>Deja el prompt vacio para escribir uno nuevo desde cero.</summary>
+    private async Task ClearAll()
+    {
+        CancelConfirm();
+        _blocks.Clear();
+        _lastParsed = "";
+        await ValueChanged.InvokeAsync("");
+    }
+
     // ── Parseo / reconstruccion ──
 
     private void Parse(string text)
     {
+        CancelConfirm();
         _blocks.Clear();
         if (string.IsNullOrWhiteSpace(text)) return;
 

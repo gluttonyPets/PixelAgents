@@ -5132,6 +5132,34 @@ a.link:hover { text-decoration: underline; }
     color: var(--text-muted);
     font-style: italic;
 }
+.spb-block-actions {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+}
+.spb-del-btn:hover {
+    background: rgba(244, 67, 54, 0.15);
+    border-color: rgba(244, 67, 54, 0.4);
+    color: var(--danger);
+}
+/* Confirmacion en linea del borrado de una seccion. */
+.spb-confirm {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.spb-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.3rem;
+}
+.spb-clear-btn:hover {
+    color: var(--danger);
+    border-color: rgba(244, 67, 54, 0.4);
+}
 
 /* ── Aviso de ciclo de vida de modelos ── */
 /* Los modelos retirados o proximos a retirarse siguen en el catalogo: el aviso es
