@@ -12,6 +12,7 @@ namespace Server.Data
         public DbSet<SocialConnection> SocialConnections => Set<SocialConnection>();
         public DbSet<MessagingConnection> MessagingConnections => Set<MessagingConnection>();
         public DbSet<ShopifyConnection> ShopifyConnections => Set<ShopifyConnection>();
+        public DbSet<ProjectGroup> ProjectGroups => Set<ProjectGroup>();
         public DbSet<Project> Projects => Set<Project>();
         public DbSet<ProjectVariable> ProjectVariables => Set<ProjectVariable>();
         public DbSet<ProjectModule> ProjectModules => Set<ProjectModule>();
@@ -98,6 +99,16 @@ namespace Server.Data
                 e.Property(x => x.ClientSecret).IsRequired();
             });
 
+            // ── ProjectGroup (el "Proyecto" de alto nivel que agrupa pipelines) ──
+            modelBuilder.Entity<ProjectGroup>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.Name).IsRequired().HasMaxLength(200);
+                e.Property(x => x.Description).HasMaxLength(2000);
+                e.Property(x => x.SortOrder).HasDefaultValue(0);
+                e.HasIndex(x => x.SortOrder);
+            });
+
             // ── Project ──
             modelBuilder.Entity<Project>(e =>
             {
@@ -107,6 +118,14 @@ namespace Server.Data
                 e.Property(x => x.Context).HasColumnType("text");
                 e.Property(x => x.GraphLayout).HasColumnType("text");
                 e.Property(x => x.LearningEnabled).HasDefaultValue(true);
+
+                // La agrupacion es organizativa: borrar el proyecto deja sus pipelines
+                // sin agrupar, nunca los borra.
+                e.HasOne(x => x.ProjectGroup)
+                    .WithMany(g => g.Projects)
+                    .HasForeignKey(x => x.ProjectGroupId)
+                    .OnDelete(DeleteBehavior.SetNull);
+                e.HasIndex(x => x.ProjectGroupId);
 
                 e.HasOne(x => x.InstagramConnection)
                     .WithMany()

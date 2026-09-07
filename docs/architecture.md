@@ -65,6 +65,7 @@ almacenan el estado de interacciones externas pendientes de respuesta.
 
 **UserDb** (nombre dinamico, uno por cuenta) almacena todos los datos funcionales del tenant:
 `ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `ShopifyConnections`,
+`ProjectGroups` (proyectos de alto nivel que agrupan pipelines; ver mas abajo),
 `Projects`, `ProjectVariables` (variables del pipeline, ver mas abajo), `ProjectModules`,
 `ModuleConnections`, `ProjectExecutions`, `StepExecutions`,
 `ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs`, `Rules`,
@@ -77,6 +78,34 @@ reutilizables que los proyectos referencian por Id.
 No hay migraciones EF formales: la BD se crea con `EnsureCreated` y los cambios de
 esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXISTS`,
 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`) al arrancar el servidor.
+
+---
+
+## Proyectos y pipelines
+
+La pagina `/projects` trabaja con dos niveles:
+
+- **Proyecto** (`ProjectGroup`): agrupacion de alto nivel con titulo y descripcion. Es
+  **puramente organizativa**: no interviene en la ejecucion, no aporta contexto ni
+  configuracion, y su unico efecto es como se lista el trabajo.
+- **Pipeline** (`Project`): lo que se edita en el canvas y se ejecuta. Pertenece como
+  mucho a un proyecto (`Project.ProjectGroupId`, `null` = sin agrupar).
+
+Consecuencias de que la agrupacion sea organizativa:
+
+- Borrar un proyecto (`DELETE /api/project-groups/{id}`) deja sus pipelines sin agrupar;
+  nunca los borra.
+- Anadir un pipeline que ya estaba en otro proyecto lo mueve: un pipeline no puede estar
+  en dos sitios a la vez.
+- Duplicar un pipeline deja la copia en el mismo proyecto que el original.
+- Los pipelines sin agrupar se listan al final, en la seccion "Sin proyecto"; los
+  marcados como prueba (`IsTestProject`) y sin agrupar, en "Pipelines de prueba". Dentro
+  de cada proyecto el orden es el mismo del listado general: fijados primero, pruebas al
+  final y, a igualdad, los mas recientes antes.
+
+Endpoints: `GET|POST /api/project-groups`, `PUT|DELETE /api/project-groups/{id}`,
+`POST /api/project-groups/{id}/projects` (anade pipelines existentes) y
+`PUT /api/projects/{id}/group` (mueve un pipeline; `null` lo saca del proyecto).
 
 ---
 
@@ -559,7 +588,10 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Rules        | `GET|POST|PUT|DELETE /api/rules`                  | Reglas obligatorias inyectadas en cada ejecucion  |
 | Modules      | `GET|POST|PUT|DELETE /api/modules`                | Definiciones de modulos reutilizables + archivos  |
 |              | `GET /api/modules/{id}/prompt-history`            | Historial de versiones del prompt del modulo (systemPrompt/imagePrompt); se registra una version en cada `PUT` que cambie el prompt, restaurable desde la UI |
+| ProjectGroups| `GET|POST /api/project-groups`, `PUT|DELETE /api/project-groups/{id}` | Proyectos de alto nivel que agrupan pipelines (organizativo) |
+|              | `POST /api/project-groups/{id}/projects`          | Anade pipelines existentes al proyecto            |
 | Projects     | `GET|POST|PUT|DELETE /api/projects`               | Pipeline; incluye graph save y duplicar           |
+|              | `PUT /api/projects/{id}/group`                    | Mueve el pipeline de proyecto (`null` = sin proyecto) |
 | Variables   | `GET|POST|PUT|DELETE /api/projects/{id}/variables`| Variables del pipeline; su valor se fija en cada ejecucion |
 | Executions   | `POST /api/projects/{id}/execute`                 | Lanza ejecucion (acepta el valor de las variables) |
 |              | `POST /api/projects/{id}/cancel`                  | Cancela ejecucion activa                          |

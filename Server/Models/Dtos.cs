@@ -29,14 +29,27 @@ namespace Server.Models
     // Uso de un modulo de catalogo a traves de los proyectos.
     public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
 
+    // ── ProjectGroup (el "Proyecto" de alto nivel que agrupa pipelines) ──
+    public record CreateProjectGroupRequest(string Name, string? Description);
+    public record UpdateProjectGroupRequest(string Name, string? Description);
+    // Anade pipelines ya existentes a la agrupacion en una sola llamada.
+    public record AddProjectsToGroupRequest(List<Guid> ProjectIds);
+    // Mueve un pipeline: null lo deja sin agrupar.
+    public record SetProjectGroupRequest(Guid? ProjectGroupId);
+    public record ProjectGroupResponse(
+        Guid Id, string Name, string? Description, int SortOrder,
+        DateTime CreatedAt, DateTime UpdatedAt, int PipelineCount = 0);
+
     // ── Project ──
-    public record CreateProjectRequest(string Name, string? Description, string? Context, bool IsTestProject = false);
+    // ProjectGroupId es opcional: permite crear el pipeline ya dentro de un proyecto.
+    public record CreateProjectRequest(string Name, string? Description, string? Context, bool IsTestProject = false,
+        Guid? ProjectGroupId = null);
     // IsTestProject es opcional: null deja la marca de proyecto de prueba como estaba,
     // asi las pantallas que solo editan nombre/contexto no la pisan sin querer.
     public record UpdateProjectRequest(string Name, string? Description, string? Context, bool? IsTestProject = null);
     public record GraphLayoutRequest(string? GraphLayout);
     public record SetProjectPinRequest(bool IsPinned);
-    public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false, bool IsTestProject = false);
+    public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false, bool IsTestProject = false, Guid? ProjectGroupId = null);
     public record ProjectDetailResponse(
         Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt,
         List<ProjectModuleResponse> Modules, string? GraphLayout = null,

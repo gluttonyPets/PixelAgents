@@ -28,7 +28,8 @@ El flujo principal es:
 2. La aplicacion crea una cuenta y una base de datos tenant para ese usuario.
 3. El usuario guarda API keys para proveedores externos.
 4. El usuario crea modulos IA o modulos de sistema.
-5. El usuario crea proyectos y conecta modulos en un canvas visual.
+5. El usuario crea pipelines y conecta modulos en un canvas visual; puede
+   agruparlos en proyectos para organizarlos.
 6. El servidor ejecuta el grafo con `GraphPipelineExecutor`.
 7. Los logs, progreso y estados llegan al cliente en tiempo real por SignalR.
 8. Los archivos producidos quedan asociados a ejecuciones y pueden descargarse.
@@ -38,7 +39,9 @@ Entidades funcionales principales:
 - `Account` y `ApplicationUser`: identidad, cuenta y tenancy.
 - `ApiKey`: credenciales por proveedor, guardadas por tenant.
 - `AiModule`: definicion reutilizable de un modulo.
-- `Project`: pipeline editable.
+- `ProjectGroup`: proyecto de alto nivel; agrupa pipelines de forma puramente
+  organizativa (titulo y descripcion, sin efecto en la ejecucion).
+- `Project`: pipeline editable; pertenece como mucho a un `ProjectGroup`.
 - `ProjectModule`: instancia de un `AiModule` dentro de un proyecto.
 - `ModuleConnection`: arista entre puertos del grafo.
 - `ProjectExecution`: ejecucion de un proyecto.
@@ -91,10 +94,13 @@ Rutas actuales:
 - `/`: registro, login y estado de usuario.
 - `/modules`: catalogo y configuracion de modulos.
 - `/biblioteca`: archivos subidos a modulos.
-- `/projects`: listado y creacion de proyectos. Los proyectos fijados se
-  muestran primero.
+- `/projects`: listado de proyectos y pipelines. Cada proyecto es una agrupacion
+  plegable (titulo, descripcion y sus pipelines dentro) a la que se pueden anadir
+  pipelines nuevos o ya existentes; los que no pertenecen a ninguno se listan al
+  final en "Sin proyecto" y "Pipelines de prueba". Dentro de cada seccion, los
+  pipelines fijados se muestran primero.
 - `/projects/{ProjectId:guid}`: detalle, editor visual, ejecuciones e
-  integraciones del proyecto.
+  integraciones del pipeline.
 - `/configuracion/{seccion?}`: ajustes del tenant en una sola pagina, con una
   pestana por seccion: `apikeys` (claves de proveedor), `redes-sociales`,
   `mensajeria`, `shopify` y `reglas` (reglas obligatorias). Cada seccion es un
@@ -504,12 +510,26 @@ garantiza o actualiza su definicion.
 
 ### Proyectos Y Grafo
 
+Agrupacion de pipelines en proyectos (organizativa: borrar un proyecto no borra sus
+pipelines):
+
+- `GET /api/project-groups`: lista los proyectos con su numero de pipelines.
+- `POST /api/project-groups`: crear proyecto (titulo y descripcion).
+- `PUT /api/project-groups/{id}`: renombrar o cambiar la descripcion.
+- `DELETE /api/project-groups/{id}`: eliminar el proyecto; sus pipelines pasan a
+  quedar sin agrupar.
+- `POST /api/project-groups/{id}/projects`: anadir pipelines existentes al proyecto
+  (si estaban en otro, se mueven).
+
 Gestion de pipelines:
 
-- `/api/projects`: crear y listar proyectos.
+- `/api/projects`: crear y listar pipelines.
 - `/api/projects/{id}`: obtener detalle, actualizar o eliminar.
-- `/api/projects/{id}/duplicate`: duplicar proyecto completo.
-- `PUT /api/projects/{id}/pin`: fijar o desfijar el proyecto en el listado.
+- `/api/projects/{id}/duplicate`: duplicar pipeline completo (la copia se queda en
+  el mismo proyecto que el original).
+- `PUT /api/projects/{id}/pin`: fijar o desfijar el pipeline en el listado.
+- `PUT /api/projects/{id}/group`: mover el pipeline a otro proyecto; `null` lo deja
+  sin agrupar.
 - `/api/projects/{id}/graph`: guardar layout bruto.
 - `/api/projects/{projectId}/graph/save`: guardar posiciones, conexiones,
   conteos de escenas y configs de modulos.

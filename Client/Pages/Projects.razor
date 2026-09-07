@@ -2,117 +2,235 @@
 @inject ApiClient Api
 @inject NavigationManager Nav
 
+@* La pagina organiza el trabajo en dos niveles: un "proyecto" es una agrupacion
+   con titulo y descripcion (ProjectGroup) y dentro viven los pipelines, que son
+   los que se editan y ejecutan. La agrupacion es solo organizativa. *@
+
 <div class="projects-page-header">
     <h2>Proyectos</h2>
-    <button class="btn btn-primary" @onclick="OpenCreateModal">+ Crear nuevo</button>
+    <div class="projects-page-actions">
+        <button class="btn btn-secondary" @onclick="OpenCreateGroupModal">+ Nuevo proyecto</button>
+        <button class="btn btn-primary" @onclick="() => OpenCreateModal(null)">+ Nuevo pipeline</button>
+    </div>
 </div>
 
 @if (_pinError is not null)
 {
     <div class="alert alert-error">@_pinError</div>
 }
-
-@if (_projects.Count > 0)
+@if (_groupError is not null)
 {
-    @foreach (var grp in BuildSections())
-    {
-        @if (grp.Title is not null)
+    <div class="alert alert-error">@_groupError</div>
+}
+
+@foreach (var g in _groups)
+{
+    var pipelines = PipelinesOf(g.Id);
+    var collapsed = _collapsedGroups.Contains(g.Id);
+
+    <div class="project-group @(collapsed ? "is-collapsed" : "")">
+        @if (_editingGroupId == g.Id)
         {
-            <div class="projects-section-header">
-                <h3>@grp.Title</h3>
-                <span class="projects-section-count">@grp.Projects.Count</span>
+            <div class="project-group-edit">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Nombre del proyecto</label>
+                        <input type="text" @bind="_groupName" />
+                    </div>
+                    <div class="form-group">
+                        <label>Descripcion</label>
+                        <input type="text" @bind="_groupDesc" />
+                    </div>
+                </div>
+                <div class="project-card-edit-actions">
+                    <button class="btn btn-xs btn-success" @onclick="SaveGroupEdit">Guardar</button>
+                    <button class="btn btn-xs" @onclick="CancelGroupEdit">Cancelar</button>
+                </div>
             </div>
         }
-
-        <div class="project-grid @(grp.IsTest ? "is-test-section" : "")">
-            @foreach (var p in grp.Projects)
-            {
-                var isEditing = _editingId == p.Id;
-                <div class="project-card @(p.IsPinned ? "is-pinned" : "") @(p.IsTestProject ? "is-test" : "")">
-                    @if (isEditing)
+        else
+        {
+            <div class="project-group-header">
+                <button class="project-group-toggle" @onclick="() => ToggleGroup(g.Id)"
+                        title="@(collapsed ? "Desplegar" : "Plegar")">
+                    @if (collapsed)
                     {
-                        <div class="project-card-edit">
-                            <div class="form-group">
-                                <label>Nombre</label>
-                                <input type="text" @bind="_editName" />
-                            </div>
-                            <div class="form-group">
-                                <label>Descripcion</label>
-                                <input type="text" @bind="_editDesc" />
-                            </div>
-                            <div class="form-group">
-                                <label>Contexto</label>
-                                <textarea @bind="_editContext" rows="2"></textarea>
-                            </div>
-                            <label class="project-test-toggle" title="Los proyectos de prueba se agrupan en una sección aparte al final del listado">
-                                <input type="checkbox" @bind="_editIsTest" />
-                                <span>Proyecto de prueba</span>
-                            </label>
-                            <div class="project-card-edit-actions">
-                                <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
-                                <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
-                            </div>
-                        </div>
+                        <span>&#x25B8;</span>
                     }
                     else
                     {
-                        <div class="project-card-body" @onclick="() => GoTo(p.Id)">
-                            <div class="project-card-avatar">@(p.Name.Length > 0 ? p.Name[0].ToString().ToUpper() : "P")</div>
-                            <div class="project-card-title">
-                                @if (p.IsPinned)
-                                {
-                                    <span class="project-card-pin-badge" title="Proyecto fijado">&#x1F4CC;</span>
-                                }
-                                @p.Name
-                                @if (p.IsTestProject)
-                                {
-                                    <span class="project-card-test-badge" title="Proyecto de prueba">prueba</span>
-                                }
-                            </div>
-                            <div class="project-card-desc">@(p.Description ?? "Sin descripción")</div>
-                            @if (!string.IsNullOrEmpty(p.Context))
-                            {
-                                <div class="project-card-context">@Truncate(p.Context, 90)</div>
-                            }
-                            <div class="project-card-meta">
-                                <span title="Creado el @p.CreatedAt.ToString("dd MMM yyyy")">
-                                    &#x1F4C5; @p.CreatedAt.ToString("dd MMM yyyy")
-                                </span>
-                                <span title="Última actualización">
-                                    &#x1F504; @RelativeTime(p.UpdatedAt)
-                                </span>
-                            </div>
-                        </div>
-                        <div class="project-card-actions">
-                            <button class="project-action-btn action-pin @(p.IsPinned ? "is-pinned" : "")"
-                                    @onclick="() => TogglePin(p)"
-                                    aria-pressed="@p.IsPinned.ToString().ToLowerInvariant()"
-                                    title="@(p.IsPinned ? "Desfijar proyecto" : "Fijar proyecto")">&#x1F4CC;</button>
-                            <button class="project-action-btn action-edit" @onclick="() => StartEdit(p)" title="Editar">&#x270E;</button>
-                            <button class="project-action-btn action-duplicate" @onclick="() => Duplicate(p.Id)" title="Duplicar">&#x2398;</button>
-                            <button class="project-action-btn action-delete" @onclick="() => Delete(p.Id)" title="Eliminar">&#x2715;</button>
-                        </div>
+                        <span>&#x25BE;</span>
+                    }
+                </button>
+                <div class="project-group-info">
+                    <h3>@g.Name</h3>
+                    @if (!string.IsNullOrWhiteSpace(g.Description))
+                    {
+                        <p class="project-group-desc">@g.Description</p>
+                    }
+                </div>
+                <span class="projects-section-count" title="Pipelines en este proyecto">@pipelines.Count</span>
+                <div class="project-group-actions">
+                    <button class="btn btn-xs" @onclick="() => OpenCreateModal(g.Id)">+ Nuevo pipeline</button>
+                    <button class="btn btn-xs" @onclick="() => OpenAddPipelinesModal(g)">Anadir existentes</button>
+                    <button class="project-action-btn action-edit" @onclick="() => StartGroupEdit(g)"
+                            title="Editar proyecto">&#x270E;</button>
+                    <button class="project-action-btn action-delete" @onclick="() => DeleteGroup(g)"
+                            title="Eliminar proyecto (sus pipelines no se borran)">&#x2715;</button>
+                </div>
+            </div>
+        }
+
+        @if (!collapsed)
+        {
+            @if (pipelines.Count > 0)
+            {
+                <div class="project-grid">
+                    @foreach (var p in pipelines)
+                    {
+                        @PipelineCard(p)
                     }
                 </div>
             }
-        </div>
-    }
-}
-else if (!_loading)
-{
-    <div class="projects-empty">
-        <div class="projects-empty-icon">&#x1F4C1;</div>
-        <p>No hay proyectos creados todavía.</p>
-        <button class="btn btn-primary" @onclick="OpenCreateModal">+ Crear tu primer proyecto</button>
+            else
+            {
+                <div class="project-group-empty">
+                    Este proyecto todavia no tiene pipelines. Crea uno nuevo o anade los que ya existen.
+                </div>
+            }
+        }
     </div>
 }
 
+@foreach (var block in BuildLooseSections())
+{
+    @if (block.Title is not null)
+    {
+        <div class="projects-section-header">
+            <h3>@block.Title</h3>
+            <span class="projects-section-count">@block.Projects.Count</span>
+        </div>
+    }
+
+    <div class="project-grid @(block.IsTest ? "is-test-section" : "")">
+        @foreach (var p in block.Projects)
+        {
+            @PipelineCard(p)
+        }
+    </div>
+}
+
+@if (_groups.Count == 0 && _projects.Count == 0 && !_loading)
+{
+    <div class="projects-empty">
+        <div class="projects-empty-icon">&#x1F4C1;</div>
+        <p>No hay nada creado todavia.</p>
+        <p class="text-sm text-muted">
+            Un proyecto agrupa pipelines: crealo primero si quieres organizar el trabajo por tematica o cliente.
+        </p>
+        <div class="projects-empty-actions">
+            <button class="btn btn-secondary" @onclick="OpenCreateGroupModal">+ Crear proyecto</button>
+            <button class="btn btn-primary" @onclick="() => OpenCreateModal(null)">+ Crear pipeline</button>
+        </div>
+    </div>
+}
+
+@* ── Modal: nuevo proyecto (agrupacion) ── *@
+@if (_showCreateGroupModal)
+{
+    <div class="modal-overlay" @onclick="CloseCreateGroupModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <span style="font-size:1.1rem; font-weight:600;">Nuevo Proyecto</span>
+                <button class="modal-close-btn" @onclick="CloseCreateGroupModal" title="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_groupModalError is not null)
+                {
+                    <div class="alert alert-error">@_groupModalError</div>
+                }
+                <div class="form-group">
+                    <label>Nombre</label>
+                    <input type="text" @bind="_groupName" placeholder="Marca PetWorld" />
+                </div>
+                <div class="form-group">
+                    <label>Descripcion</label>
+                    <textarea @bind="_groupDesc" rows="3" placeholder="Todos los pipelines de contenido de la marca"></textarea>
+                    <span class="text-sm text-muted">
+                        El proyecto solo organiza: agrupa pipelines para encontrarlos rapido. No afecta a las ejecuciones.
+                    </span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="CloseCreateGroupModal">Cancelar</button>
+                <button class="btn btn-primary" @onclick="CreateGroup" disabled="@_savingGroup">
+                    @(_savingGroup ? "Creando..." : "Crear Proyecto")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Modal: anadir pipelines existentes a un proyecto ── *@
+@if (_addTargetGroup is not null)
+{
+    var candidates = PipelinesOutside(_addTargetGroup.Id);
+    <div class="modal-overlay" @onclick="CloseAddPipelinesModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <span style="font-size:1.1rem; font-weight:600;">Anadir pipelines a @_addTargetGroup.Name</span>
+                <button class="modal-close-btn" @onclick="CloseAddPipelinesModal" title="Cerrar">&#x2715;</button>
+            </div>
+            <div class="modal-body">
+                @if (_addError is not null)
+                {
+                    <div class="alert alert-error">@_addError</div>
+                }
+                @if (candidates.Count == 0)
+                {
+                    <p class="text-muted">Todos los pipelines estan ya en este proyecto.</p>
+                }
+                else
+                {
+                    <div class="pipeline-picker">
+                        @foreach (var p in candidates)
+                        {
+                            var currentGroup = GroupName(p.ProjectGroupId);
+                            <label class="pipeline-picker-item">
+                                <input type="checkbox"
+                                       checked="@_addSelection.Contains(p.Id)"
+                                       @onchange="e => ToggleAddSelection(p.Id, e)" />
+                                <span class="pipeline-picker-name">@p.Name</span>
+                                @if (currentGroup is not null)
+                                {
+                                    <span class="pipeline-picker-group" title="Se movera desde este proyecto">@currentGroup</span>
+                                }
+                            </label>
+                        }
+                    </div>
+                    <span class="text-sm text-muted">
+                        Un pipeline solo puede estar en un proyecto: los que ya esten en otro se mueven aqui.
+                    </span>
+                }
+            </div>
+            <div class="modal-footer">
+                <button class="btn" @onclick="CloseAddPipelinesModal">Cancelar</button>
+                <button class="btn btn-primary" @onclick="ConfirmAddPipelines"
+                        disabled="@(_addSelection.Count == 0 || _savingGroup)">
+                    @(_savingGroup ? "Anadiendo..." : $"Anadir ({_addSelection.Count})")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Modal: nuevo pipeline ── *@
 @if (_showCreateModal)
 {
     <div class="modal-overlay" @onclick="CloseCreateModal">
         <div class="modal-content" @onclick:stopPropagation="true">
             <div class="modal-header">
-                <span style="font-size:1.1rem; font-weight:600;">Nuevo Proyecto</span>
+                <span style="font-size:1.1rem; font-weight:600;">Nuevo Pipeline</span>
                 <button class="modal-close-btn" @onclick="CloseCreateModal" title="Cerrar">&#x2715;</button>
             </div>
             <div class="modal-body">
@@ -126,27 +244,38 @@ else if (!_loading)
                         <input type="text" @bind="_name" placeholder="Mi pipeline de IA" />
                     </div>
                     <div class="form-group">
-                        <label>Descripción</label>
+                        <label>Descripcion</label>
                         <input type="text" @bind="_desc" placeholder="Pipeline que genera texto e imagen" />
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Contexto del proyecto</label>
-                    <textarea @bind="_context" rows="4" placeholder="Ej: Este proyecto genera contenido para una marca de mascotas llamada 'PetWorld'. El tono debe ser amigable, cercano y dirigido a dueños de perros y gatos. Las imágenes deben incluir mascotas felices."></textarea>
-                    <span class="text-sm text-muted">Este contexto se inyecta automáticamente en todos los módulos del proyecto.</span>
+                    <label>Proyecto</label>
+                    <select @bind="_createGroupSel">
+                        <option value="">Sin proyecto</option>
+                        @foreach (var g in _groups)
+                        {
+                            <option value="@g.Id">@g.Name</option>
+                        }
+                    </select>
+                    <span class="text-sm text-muted">Solo organiza el listado; puedes cambiarlo despues.</span>
+                </div>
+                <div class="form-group">
+                    <label>Contexto del pipeline</label>
+                    <textarea @bind="_context" rows="4" placeholder="Ej: Este pipeline genera contenido para una marca de mascotas llamada 'PetWorld'. El tono debe ser amigable, cercano y dirigido a duenos de perros y gatos. Las imagenes deben incluir mascotas felices."></textarea>
+                    <span class="text-sm text-muted">Este contexto se inyecta automaticamente en todos los modulos del pipeline.</span>
                 </div>
                 <div class="form-group">
                     <label class="project-test-toggle">
                         <input type="checkbox" @bind="_isTestProject" />
-                        <span>Proyecto de prueba</span>
+                        <span>Pipeline de prueba</span>
                     </label>
-                    <span class="text-sm text-muted">Se agrupa en la sección "Proyectos de prueba", al final del listado.</span>
+                    <span class="text-sm text-muted">Se agrupa en la seccion "Pipelines de prueba", al final del listado.</span>
                 </div>
             </div>
             <div class="modal-footer">
                 <button class="btn" @onclick="CloseCreateModal">Cancelar</button>
                 <button class="btn btn-primary" @onclick="Create" disabled="@_loading">
-                    @(_loading ? "Creando..." : "Crear Proyecto")
+                    @(_loading ? "Creando..." : "Crear Pipeline")
                 </button>
             </div>
         </div>
@@ -155,59 +284,333 @@ else if (!_loading)
 
 @code {
     private List<ProjectResponse> _projects = [];
+    private List<ProjectGroupResponse> _groups = [];
+    private readonly HashSet<Guid> _collapsedGroups = [];
     private bool _loading;
     private string? _error;
     private string? _pinError;
+    private string? _groupError;
 
+    // Alta de pipeline
     private bool _showCreateModal;
     private string _name = "";
     private string _desc = "";
     private string _context = "";
     private bool _isTestProject;
+    private string _createGroupSel = "";
 
-    // Edit state
+    // Alta y edicion de proyecto (agrupacion)
+    private bool _showCreateGroupModal;
+    private bool _savingGroup;
+    private string? _groupModalError;
+    private Guid? _editingGroupId;
+    private string _groupName = "";
+    private string _groupDesc = "";
+
+    // Anadir pipelines existentes a un proyecto
+    private ProjectGroupResponse? _addTargetGroup;
+    private readonly HashSet<Guid> _addSelection = [];
+    private string? _addError;
+
+    // Edicion de pipeline
     private Guid? _editingId;
     private string _editName = "";
     private string _editDesc = "";
     private string _editContext = "";
     private bool _editIsTest;
+    private string _editGroupSel = "";
 
-    /// <summary>Un bloque del listado: los proyectos reales arriba (sin titulo) y los de prueba
-    /// agrupados debajo. Solo se devuelven las secciones que tienen proyectos.</summary>
-    private sealed record ProjectSection(string? Title, bool IsTest, List<ProjectResponse> Projects);
+    /// <summary>Tarjeta de un pipeline. Se pinta igual dentro de un proyecto que fuera de el.</summary>
+    private RenderFragment<ProjectResponse> PipelineCard => p =>
+        @<div class="project-card @(p.IsPinned ? "is-pinned" : "") @(p.IsTestProject ? "is-test" : "")">
+            @if (_editingId == p.Id)
+            {
+                <div class="project-card-edit">
+                    <div class="form-group">
+                        <label>Nombre</label>
+                        <input type="text" @bind="_editName" />
+                    </div>
+                    <div class="form-group">
+                        <label>Descripcion</label>
+                        <input type="text" @bind="_editDesc" />
+                    </div>
+                    <div class="form-group">
+                        <label>Proyecto</label>
+                        <select @bind="_editGroupSel">
+                            <option value="">Sin proyecto</option>
+                            @foreach (var g in _groups)
+                            {
+                                <option value="@g.Id">@g.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Contexto</label>
+                        <textarea @bind="_editContext" rows="2"></textarea>
+                    </div>
+                    <label class="project-test-toggle" title="Los pipelines de prueba se agrupan en una seccion aparte al final del listado">
+                        <input type="checkbox" @bind="_editIsTest" />
+                        <span>Pipeline de prueba</span>
+                    </label>
+                    <div class="project-card-edit-actions">
+                        <button class="btn btn-xs btn-success" @onclick="SaveEdit">Guardar</button>
+                        <button class="btn btn-xs" @onclick="CancelEdit">Cancelar</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="project-card-body" @onclick="() => GoTo(p.Id)">
+                    <div class="project-card-avatar">@(p.Name.Length > 0 ? p.Name[0].ToString().ToUpper() : "P")</div>
+                    <div class="project-card-title">
+                        @if (p.IsPinned)
+                        {
+                            <span class="project-card-pin-badge" title="Pipeline fijado">&#x1F4CC;</span>
+                        }
+                        @p.Name
+                        @if (p.IsTestProject)
+                        {
+                            <span class="project-card-test-badge" title="Pipeline de prueba">prueba</span>
+                        }
+                    </div>
+                    <div class="project-card-desc">@(p.Description ?? "Sin descripcion")</div>
+                    @if (!string.IsNullOrEmpty(p.Context))
+                    {
+                        <div class="project-card-context">@Truncate(p.Context, 90)</div>
+                    }
+                    <div class="project-card-meta">
+                        <span title="Creado el @p.CreatedAt.ToString("dd MMM yyyy")">
+                            &#x1F4C5; @p.CreatedAt.ToString("dd MMM yyyy")
+                        </span>
+                        <span title="Ultima actualizacion">
+                            &#x1F504; @RelativeTime(p.UpdatedAt)
+                        </span>
+                    </div>
+                </div>
+                <div class="project-card-actions">
+                    <button class="project-action-btn action-pin @(p.IsPinned ? "is-pinned" : "")"
+                            @onclick="() => TogglePin(p)"
+                            aria-pressed="@p.IsPinned.ToString().ToLowerInvariant()"
+                            title="@(p.IsPinned ? "Desfijar pipeline" : "Fijar pipeline")">&#x1F4CC;</button>
+                    <button class="project-action-btn action-edit" @onclick="() => StartEdit(p)" title="Editar">&#x270E;</button>
+                    <button class="project-action-btn action-duplicate" @onclick="() => Duplicate(p.Id)" title="Duplicar">&#x2398;</button>
+                    <button class="project-action-btn action-delete" @onclick="() => Delete(p.Id)" title="Eliminar">&#x2715;</button>
+                </div>
+            }
+        </div>;
 
-    private List<ProjectSection> BuildSections()
-    {
-        var sections = new List<ProjectSection>();
+    /// <summary>Un bloque del listado fuera de los proyectos: primero los pipelines sin
+    /// agrupar y despues los de prueba. Solo se devuelven las secciones con contenido.</summary>
+    private sealed record PipelineSection(string? Title, bool IsTest, List<ProjectResponse> Projects);
 
-        var real = _projects.Where(p => !p.IsTestProject).ToList();
-        if (real.Count > 0) sections.Add(new ProjectSection(null, false, real));
-
-        var tests = _projects.Where(p => p.IsTestProject).ToList();
-        if (tests.Count > 0) sections.Add(new ProjectSection("Proyectos de prueba", true, tests));
-
-        return sections;
-    }
-
-    protected override async Task OnInitializedAsync()
-    {
-        await Load();
-    }
+    protected override async Task OnInitializedAsync() => await Load();
 
     private async Task Load()
     {
         _loading = true;
-        try { _projects = await Api.GetProjectsAsync(); } catch { }
+        try
+        {
+            _groups = await Api.GetProjectGroupsAsync();
+            _projects = await Api.GetProjectsAsync();
+        }
+        catch { }
         _loading = false;
     }
 
-    private void OpenCreateModal()
+    /// <summary>Pipelines de un proyecto, con el mismo criterio de orden que el listado
+    /// general: los de prueba al final y, dentro de cada grupo, fijados y mas recientes primero.</summary>
+    private List<ProjectResponse> PipelinesOf(Guid groupId) => Sort(
+        _projects.Where(p => p.ProjectGroupId == groupId));
+
+    /// <summary>Pipelines que todavia no estan en ese proyecto (candidatos a anadir).</summary>
+    private List<ProjectResponse> PipelinesOutside(Guid groupId) => _projects
+        .Where(p => p.ProjectGroupId != groupId)
+        .OrderBy(p => p.Name)
+        .ToList();
+
+    /// <summary>Secciones de los pipelines que no pertenecen a ningun proyecto. El titulo
+    /// "Sin proyecto" solo aparece si hay algun proyecto creado: sin ellos seria ruido.</summary>
+    private List<PipelineSection> BuildLooseSections()
+    {
+        var sections = new List<PipelineSection>();
+        var loose = _projects.Where(p => p.ProjectGroupId is null).ToList();
+
+        var real = Sort(loose.Where(p => !p.IsTestProject));
+        if (real.Count > 0)
+            sections.Add(new PipelineSection(_groups.Count > 0 ? "Sin proyecto" : null, false, real));
+
+        var tests = Sort(loose.Where(p => p.IsTestProject));
+        if (tests.Count > 0)
+            sections.Add(new PipelineSection("Pipelines de prueba", true, tests));
+
+        return sections;
+    }
+
+    /// <summary>Mismo criterio que el backend: los de prueba al final, dentro de cada grupo
+    /// los fijados primero y luego por fecha de creacion.</summary>
+    private static List<ProjectResponse> Sort(IEnumerable<ProjectResponse> projects) => projects
+        .OrderBy(x => x.IsTestProject)
+        .ThenByDescending(x => x.IsPinned)
+        .ThenByDescending(x => x.CreatedAt)
+        .ToList();
+
+    private string? GroupName(Guid? groupId) =>
+        groupId is { } id ? _groups.FirstOrDefault(g => g.Id == id)?.Name : null;
+
+    private void ToggleGroup(Guid groupId)
+    {
+        if (!_collapsedGroups.Remove(groupId)) _collapsedGroups.Add(groupId);
+    }
+
+    // ── Proyecto (agrupacion) ──
+
+    private void OpenCreateGroupModal()
+    {
+        _groupModalError = null;
+        _groupError = null;
+        _editingGroupId = null;
+        _groupName = "";
+        _groupDesc = "";
+        _showCreateGroupModal = true;
+    }
+
+    private void CloseCreateGroupModal()
+    {
+        _showCreateGroupModal = false;
+        _groupModalError = null;
+        _groupName = ""; _groupDesc = "";
+    }
+
+    private async Task CreateGroup()
+    {
+        _groupModalError = null;
+        if (string.IsNullOrWhiteSpace(_groupName))
+        {
+            _groupModalError = "El nombre del proyecto es obligatorio.";
+            return;
+        }
+        _savingGroup = true;
+        try
+        {
+            var (ok, error) = await Api.CreateProjectGroupAsync(new CreateProjectGroupRequest(
+                _groupName.Trim(),
+                string.IsNullOrWhiteSpace(_groupDesc) ? null : _groupDesc.Trim()));
+            if (ok)
+            {
+                CloseCreateGroupModal();
+                await Load();
+            }
+            else _groupModalError = error;
+        }
+        catch (Exception ex) { _groupModalError = $"Error de conexion: {ex.Message}"; }
+        _savingGroup = false;
+    }
+
+    private void StartGroupEdit(ProjectGroupResponse g)
+    {
+        _groupError = null;
+        _editingGroupId = g.Id;
+        _groupName = g.Name;
+        _groupDesc = g.Description ?? "";
+    }
+
+    private void CancelGroupEdit()
+    {
+        _editingGroupId = null;
+        _groupName = ""; _groupDesc = "";
+    }
+
+    private async Task SaveGroupEdit()
+    {
+        if (_editingGroupId is null) return;
+        _groupError = null;
+        if (string.IsNullOrWhiteSpace(_groupName))
+        {
+            _groupError = "El nombre del proyecto es obligatorio.";
+            return;
+        }
+        try
+        {
+            var (ok, error) = await Api.UpdateProjectGroupAsync(_editingGroupId.Value,
+                new UpdateProjectGroupRequest(
+                    _groupName.Trim(),
+                    string.IsNullOrWhiteSpace(_groupDesc) ? null : _groupDesc.Trim()));
+            if (ok)
+            {
+                CancelGroupEdit();
+                await Load();
+            }
+            else _groupError = error;
+        }
+        catch (Exception ex) { _groupError = $"Error de conexion: {ex.Message}"; }
+    }
+
+    /// <summary>Borra la agrupacion. Los pipelines que contenia pasan a "Sin proyecto".</summary>
+    private async Task DeleteGroup(ProjectGroupResponse g)
+    {
+        _groupError = null;
+        try
+        {
+            var (ok, error) = await Api.DeleteProjectGroupAsync(g.Id);
+            if (ok)
+            {
+                _collapsedGroups.Remove(g.Id);
+                await Load();
+            }
+            else _groupError = error;
+        }
+        catch (Exception ex) { _groupError = $"Error de conexion: {ex.Message}"; }
+    }
+
+    private void OpenAddPipelinesModal(ProjectGroupResponse g)
+    {
+        _addError = null;
+        _addSelection.Clear();
+        _addTargetGroup = g;
+    }
+
+    private void CloseAddPipelinesModal()
+    {
+        _addTargetGroup = null;
+        _addSelection.Clear();
+        _addError = null;
+    }
+
+    private void ToggleAddSelection(Guid projectId, ChangeEventArgs e)
+    {
+        if (e.Value is true) _addSelection.Add(projectId);
+        else _addSelection.Remove(projectId);
+    }
+
+    private async Task ConfirmAddPipelines()
+    {
+        if (_addTargetGroup is null || _addSelection.Count == 0) return;
+        _addError = null;
+        _savingGroup = true;
+        try
+        {
+            var (ok, error) = await Api.AddProjectsToGroupAsync(_addTargetGroup.Id, _addSelection.ToList());
+            if (ok)
+            {
+                CloseAddPipelinesModal();
+                await Load();
+            }
+            else _addError = error;
+        }
+        catch (Exception ex) { _addError = $"Error de conexion: {ex.Message}"; }
+        _savingGroup = false;
+    }
+
+    // ── Pipeline ──
+
+    private void OpenCreateModal(Guid? groupId)
     {
         _error = null;
         _name = "";
         _desc = "";
         _context = "";
         _isTestProject = false;
+        _createGroupSel = groupId?.ToString() ?? "";
         _showCreateModal = true;
     }
 
@@ -215,7 +618,7 @@ else if (!_loading)
     {
         _showCreateModal = false;
         _error = null;
-        _name = ""; _desc = ""; _context = ""; _isTestProject = false;
+        _name = ""; _desc = ""; _context = ""; _isTestProject = false; _createGroupSel = "";
     }
 
     private async Task Create()
@@ -223,7 +626,7 @@ else if (!_loading)
         _error = null;
         if (string.IsNullOrWhiteSpace(_name))
         {
-            _error = "El nombre del proyecto es obligatorio.";
+            _error = "El nombre del pipeline es obligatorio.";
             return;
         }
         _loading = true;
@@ -233,23 +636,23 @@ else if (!_loading)
                 _name.Trim(),
                 string.IsNullOrWhiteSpace(_desc) ? null : _desc.Trim(),
                 string.IsNullOrWhiteSpace(_context) ? null : _context.Trim(),
-                _isTestProject));
+                _isTestProject,
+                ParseGroup(_createGroupSel)));
             if (ok)
             {
-                _showCreateModal = false;
-                _name = ""; _desc = ""; _context = ""; _isTestProject = false;
+                CloseCreateModal();
                 await Load();
             }
             else _error = error;
         }
-        catch (Exception ex) { _error = $"Error de conexión: {ex.Message}"; }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
         _loading = false;
     }
 
     private void GoTo(Guid id) => Nav.NavigateTo($"/projects/{id}");
 
     /// <summary>
-    /// Fija o desfija un proyecto. Actualiza la tarjeta al momento y solo revierte
+    /// Fija o desfija un pipeline. Actualiza la tarjeta al momento y solo revierte
     /// si el backend rechaza el cambio, para no esperar a recargar todo el listado.
     /// </summary>
     private async Task TogglePin(ProjectResponse p)
@@ -261,7 +664,6 @@ else if (!_loading)
         var snapshot = _projects.ToList();
 
         _projects[idx] = p with { IsPinned = !p.IsPinned };
-        SortProjects();
 
         try
         {
@@ -275,17 +677,9 @@ else if (!_loading)
         catch (Exception ex)
         {
             _projects = snapshot;
-            _pinError = $"Error de conexión: {ex.Message}";
+            _pinError = $"Error de conexion: {ex.Message}";
         }
     }
-
-    /// <summary>Mismo criterio que el backend: los de prueba al final, dentro de cada grupo
-    /// los fijados primero y luego por fecha de creacion.</summary>
-    private void SortProjects() => _projects = _projects
-        .OrderBy(x => x.IsTestProject)
-        .ThenByDescending(x => x.IsPinned)
-        .ThenByDescending(x => x.CreatedAt)
-        .ToList();
 
     private void StartEdit(ProjectResponse p)
     {
@@ -294,6 +688,7 @@ else if (!_loading)
         _editDesc = p.Description ?? "";
         _editContext = p.Context ?? "";
         _editIsTest = p.IsTestProject;
+        _editGroupSel = p.ProjectGroupId?.ToString() ?? "";
     }
 
     private void CancelEdit() => _editingId = null;
@@ -301,6 +696,7 @@ else if (!_loading)
     private async Task SaveEdit()
     {
         if (_editingId is null) return;
+        var id = _editingId.Value;
         try
         {
             var req = new UpdateProjectRequest(
@@ -308,8 +704,17 @@ else if (!_loading)
                 string.IsNullOrWhiteSpace(_editDesc) ? null : _editDesc,
                 string.IsNullOrWhiteSpace(_editContext) ? null : _editContext,
                 _editIsTest);
-            var (ok, _) = await Api.UpdateProjectAsync(_editingId.Value, req);
-            if (ok) { _editingId = null; await Load(); }
+            var (ok, _) = await Api.UpdateProjectAsync(id, req);
+            if (!ok) return;
+
+            // El proyecto al que pertenece viaja aparte: es una relacion, no un campo
+            // del pipeline, y solo se toca si el usuario la ha cambiado.
+            var newGroup = ParseGroup(_editGroupSel);
+            var current = _projects.FirstOrDefault(x => x.Id == id)?.ProjectGroupId;
+            if (newGroup != current) await Api.SetProjectGroupAsync(id, newGroup);
+
+            _editingId = null;
+            await Load();
         }
         catch { }
     }
@@ -325,6 +730,9 @@ else if (!_loading)
         try { await Api.DuplicateProjectAsync(id); await Load(); }
         catch { }
     }
+
+    private static Guid? ParseGroup(string value) =>
+        Guid.TryParse(value, out var id) ? id : null;
 
     private static string Truncate(string? text, int max)
     {

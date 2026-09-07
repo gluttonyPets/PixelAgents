@@ -1077,6 +1077,134 @@ app.MapDelete("/api/module-files/{fileId}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+// ==================== Project Group Endpoints ====================
+// Un "proyecto" del listado /projects: agrupacion de alto nivel, con titulo y
+// descripcion, que organiza varios pipelines. Es puramente organizativa: no
+// interviene en la ejecucion y borrarla nunca borra los pipelines que agrupa.
+
+static ProjectGroupResponse ToProjectGroupResponse(ProjectGroup g, int pipelineCount) =>
+    new(g.Id, g.Name, g.Description, g.SortOrder, g.CreatedAt, g.UpdatedAt, pipelineCount);
+
+app.MapGet("/api/project-groups", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var groups = await db.ProjectGroups
+        .OrderBy(g => g.SortOrder).ThenBy(g => g.CreatedAt)
+        .Select(g => new ProjectGroupResponse(
+            g.Id, g.Name, g.Description, g.SortOrder, g.CreatedAt, g.UpdatedAt,
+            db.Projects.Count(p => p.ProjectGroupId == g.Id)))
+        .ToListAsync();
+
+    return Results.Ok(groups);
+}).RequireAuthorization();
+
+app.MapPost("/api/project-groups", async (
+    CreateProjectGroupRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var name = req.Name?.Trim();
+    if (string.IsNullOrWhiteSpace(name))
+        return Results.BadRequest(new { error = "El nombre del proyecto es obligatorio." });
+
+    var now = DateTime.UtcNow;
+    // Nuevo proyecto al final del listado: no reordena lo que el usuario ya tenia.
+    var lastOrder = await db.ProjectGroups.MaxAsync(g => (int?)g.SortOrder) ?? -1;
+
+    var group = new ProjectGroup
+    {
+        Id = Guid.NewGuid(),
+        Name = name,
+        Description = string.IsNullOrWhiteSpace(req.Description) ? null : req.Description.Trim(),
+        SortOrder = lastOrder + 1,
+        CreatedAt = now,
+        UpdatedAt = now,
+    };
+
+    db.ProjectGroups.Add(group);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/project-groups/{group.Id}", ToProjectGroupResponse(group, 0));
+}).RequireAuthorization();
+
+app.MapPut("/api/project-groups/{id:guid}", async (
+    Guid id, UpdateProjectGroupRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var group = await db.ProjectGroups.FindAsync(id);
+    if (group is null) return Results.NotFound();
+
+    var name = req.Name?.Trim();
+    if (string.IsNullOrWhiteSpace(name))
+        return Results.BadRequest(new { error = "El nombre del proyecto es obligatorio." });
+
+    group.Name = name;
+    group.Description = string.IsNullOrWhiteSpace(req.Description) ? null : req.Description.Trim();
+    group.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    var count = await db.Projects.CountAsync(p => p.ProjectGroupId == id);
+    return Results.Ok(ToProjectGroupResponse(group, count));
+}).RequireAuthorization();
+
+// Borra la agrupacion. Los pipelines que contenia se quedan sin agrupar: la
+// agrupacion es organizativa, no es duena de los pipelines.
+app.MapDelete("/api/project-groups/{id:guid}", async (
+    Guid id, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var group = await db.ProjectGroups.FindAsync(id);
+    if (group is null) return Results.NotFound();
+
+    var projects = await db.Projects.Where(p => p.ProjectGroupId == id).ToListAsync();
+    foreach (var p in projects) p.ProjectGroupId = null;
+
+    db.ProjectGroups.Remove(group);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+// Anade pipelines existentes al proyecto. Mover un pipeline que ya estaba en otro
+// proyecto lo saca del anterior: un pipeline pertenece como mucho a un proyecto.
+app.MapPost("/api/project-groups/{id:guid}/projects", async (
+    Guid id, AddProjectsToGroupRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var group = await db.ProjectGroups.FindAsync(id);
+    if (group is null) return Results.NotFound();
+
+    var ids = (req.ProjectIds ?? []).Distinct().ToList();
+    if (ids.Count == 0) return Results.BadRequest(new { error = "No se ha indicado ningun pipeline." });
+
+    var projects = await db.Projects.Where(p => ids.Contains(p.Id)).ToListAsync();
+    if (projects.Count == 0) return Results.NotFound();
+
+    foreach (var p in projects)
+    {
+        p.ProjectGroupId = id;
+        p.UpdatedAt = DateTime.UtcNow;
+    }
+
+    await db.SaveChangesAsync();
+
+    var count = await db.Projects.CountAsync(p => p.ProjectGroupId == id);
+    return Results.Ok(ToProjectGroupResponse(group, count));
+}).RequireAuthorization();
+
 // ==================== Project Endpoints ====================
 
 app.MapPost("/api/projects", async (
@@ -1093,6 +1221,10 @@ app.MapPost("/api/projects", async (
         Description = req.Description,
         Context = req.Context,
         IsTestProject = req.IsTestProject,
+        // Solo se agrupa si el proyecto existe: un id fantasma dejaria el pipeline
+        // invisible en el listado (agrupado bajo una seccion que no se pinta).
+        ProjectGroupId = req.ProjectGroupId is { } gid
+            && await db.ProjectGroups.AnyAsync(g => g.Id == gid) ? req.ProjectGroupId : null,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
     };
@@ -1137,7 +1269,8 @@ app.MapPost("/api/projects", async (
 
     return Results.Created($"/api/projects/{project.Id}",
         new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-            project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject));
+            project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject,
+            project.ProjectGroupId));
 }).RequireAuthorization();
 
 app.MapGet("/api/projects", async (
@@ -1151,7 +1284,7 @@ app.MapGet("/api/projects", async (
         .OrderBy(p => p.IsTestProject)
         .ThenByDescending(p => p.IsPinned)
         .ThenByDescending(p => p.CreatedAt)
-        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt, p.IsPinned, p.IsTestProject))
+        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt, p.IsPinned, p.IsTestProject, p.ProjectGroupId))
         .ToListAsync();
 
     return Results.Ok(projects);
@@ -1299,7 +1432,7 @@ app.MapPut("/api/projects/{id}", async (
 
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
 }).RequireAuthorization();
 
 // Fija o desfija un proyecto para que aparezca primero en el listado.
@@ -1318,7 +1451,32 @@ app.MapPut("/api/projects/{id}/pin", async (
     await db.SaveChangesAsync();
 
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
+}).RequireAuthorization();
+
+// Mueve un pipeline de proyecto (agrupacion). null lo deja sin agrupar.
+// No toca UpdatedAt del pipeline salvo el propio cambio de agrupacion.
+app.MapPut("/api/projects/{id}/group", async (
+    Guid id, SetProjectGroupRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(id);
+    if (project is null) return Results.NotFound();
+
+    if (req.ProjectGroupId is { } groupId)
+    {
+        var exists = await db.ProjectGroups.AnyAsync(g => g.Id == groupId);
+        if (!exists) return Results.BadRequest(new { error = "El proyecto indicado no existe." });
+    }
+
+    project.ProjectGroupId = req.ProjectGroupId;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{id}/graph", async (
@@ -1514,6 +1672,8 @@ app.MapPost("/api/projects/{id}/duplicate", async (
         Description = source.Description,
         Context = source.Context,
         IsTestProject = source.IsTestProject,
+        // La copia se queda en el mismo proyecto que el original.
+        ProjectGroupId = source.ProjectGroupId,
         InstagramConnectionId = source.InstagramConnectionId,
         TikTokConnectionId = source.TikTokConnectionId,
         PinterestConnectionId = source.PinterestConnectionId,
@@ -1631,7 +1791,7 @@ app.MapPost("/api/projects/{id}/duplicate", async (
     return Results.Created($"/api/projects/{newProject.Id}",
         new ProjectResponse(newProject.Id, newProject.Name, newProject.Description,
             newProject.Context, newProject.CreatedAt, newProject.UpdatedAt,
-            newProject.IsPinned, newProject.IsTestProject));
+            newProject.IsPinned, newProject.IsTestProject, newProject.ProjectGroupId));
 }).RequireAuthorization();
 
 // ==================== ProjectModule (Pipeline) Endpoints ====================

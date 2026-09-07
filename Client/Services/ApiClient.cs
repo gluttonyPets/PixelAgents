@@ -299,6 +299,57 @@ public class ApiClient
         await SendAsync(HttpMethod.Delete, $"/api/module-files/{fileId}");
     }
 
+    // ── Proyectos (agrupacion de pipelines) ──
+    // El "Proyecto" del listado /projects: titulo, descripcion y los pipelines
+    // que agrupa. Organizativo: borrarlo no borra ningun pipeline.
+
+    public async Task<List<ProjectGroupResponse>> GetProjectGroupsAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/project-groups");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<ProjectGroupResponse>>() ?? [];
+    }
+
+    public async Task<(bool Ok, string? Error)> CreateProjectGroupAsync(CreateProjectGroupRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/project-groups", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateProjectGroupAsync(Guid id, UpdateProjectGroupRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/project-groups/{id}", req);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    /// <summary>Borra la agrupacion; sus pipelines se quedan sin agrupar.</summary>
+    public async Task<(bool Ok, string? Error)> DeleteProjectGroupAsync(Guid id)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/project-groups/{id}");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    /// <summary>Anade pipelines existentes al proyecto (los saca del que tuvieran).</summary>
+    public async Task<(bool Ok, string? Error)> AddProjectsToGroupAsync(Guid groupId, List<Guid> projectIds)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/project-groups/{groupId}/projects",
+            new AddProjectsToGroupRequest(projectIds));
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    /// <summary>Mueve un pipeline a otro proyecto; null lo deja sin agrupar.</summary>
+    public async Task<(bool Ok, string? Error)> SetProjectGroupAsync(Guid projectId, Guid? groupId)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/group",
+            new SetProjectGroupRequest(groupId));
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Projects ──
 
     public async Task<List<ProjectResponse>> GetProjectsAsync()

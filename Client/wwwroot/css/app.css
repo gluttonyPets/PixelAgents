@@ -2036,6 +2036,146 @@ a.link:hover { text-decoration: underline; }
     font-size: 0.95rem;
 }
 
+.projects-empty-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+/* ── Proyectos (agrupaciones) del listado /projects ── */
+.projects-page-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.project-group {
+    margin-top: 1.4rem;
+}
+
+.project-group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.project-group-toggle {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    line-height: 1;
+    padding: 0.15rem 0.25rem;
+}
+
+.project-group-toggle:hover {
+    color: var(--text);
+}
+
+.project-group-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.project-group-info h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.project-group-desc {
+    margin: 0.1rem 0 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.project-group-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+/* Dentro de la cabecera los iconos no reparten ancho: son botones sueltos. */
+.project-group-actions .project-action-btn {
+    flex: 0 0 auto;
+    border: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.25rem 0.5rem;
+}
+
+.project-group-empty {
+    padding: 1rem 0.8rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    border: 1px dashed var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.project-group-edit {
+    padding: 0.8rem;
+    background: var(--bg-card);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+}
+
+.project-group .project-grid {
+    margin-top: 0.6rem;
+}
+
+/* Selector de pipelines existentes al anadirlos a un proyecto */
+.pipeline-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    max-height: 320px;
+    overflow-y: auto;
+    margin-bottom: 0.5rem;
+}
+
+.pipeline-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.pipeline-picker-item:hover {
+    border-color: var(--accent);
+}
+
+.pipeline-picker-item input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent, #7c5cfc);
+    cursor: pointer;
+    margin: 0;
+}
+
+.pipeline-picker-name {
+    flex: 1;
+    min-width: 0;
+}
+
+.pipeline-picker-group {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.4rem;
+}
+
 /* ═══════════ EXECUTION HISTORY (redesign) ═══════════ */
 
 /* Summary stats */

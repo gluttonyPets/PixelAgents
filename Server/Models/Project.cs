@@ -15,6 +15,11 @@ namespace Server.Models
         /// para no mezclar los experimentos con los proyectos reales.</summary>
         public bool IsTestProject { get; set; }
 
+        /// <summary>Proyecto (agrupacion organizativa) al que pertenece este pipeline.
+        /// null = pipeline sin agrupar. Solo afecta a como se lista en /projects.</summary>
+        public Guid? ProjectGroupId { get; set; }
+        public ProjectGroup? ProjectGroup { get; set; }
+
         // ── Aprendizaje: modelo "analista" que procesa el feedback de abortos ──
         /// <summary>Si está activo, cada abort con comentario dispara el analista de aprendizaje.
         /// Activado por defecto: sin configurar nada, el aprendizaje funciona con un modelo por defecto.</summary>

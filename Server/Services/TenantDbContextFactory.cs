@@ -38,6 +38,22 @@ namespace Server.Services
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""IsPinned"" boolean NOT NULL DEFAULT false", log);
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""IsTestProject"" boolean NOT NULL DEFAULT false", log);
 
+            // ── Proyectos de alto nivel: agrupacion organizativa de pipelines ──
+            // ON DELETE SET NULL: borrar la agrupacion deja los pipelines sin agrupar,
+            // nunca los borra.
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ProjectGroups"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""Name"" varchar(200) NOT NULL,
+                    ""Description"" varchar(2000),
+                    ""SortOrder"" integer NOT NULL DEFAULT 0,
+                    ""CreatedAt"" timestamp with time zone NOT NULL,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectGroups_SortOrder"" ON ""ProjectGroups"" (""SortOrder"")", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""ProjectGroupId"" uuid REFERENCES ""ProjectGroups""(""Id"") ON DELETE SET NULL", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_Projects_ProjectGroupId"" ON ""Projects"" (""ProjectGroupId"")", log);
+
             // ── Conexiones reutilizables (redes sociales + mensajeria) ──
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""SocialConnections"" (
