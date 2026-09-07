@@ -36,6 +36,16 @@ namespace Server.Models
         /// </summary>
         public Guid? SourceModuleId { get; set; }
 
+        /// <summary>
+        /// Carpeta elegida al declarar una variable de tipo carpeta: es lo que la
+        /// biblioteca entrega mientras la ejecucion no diga otra cosa.
+        ///
+        /// No es el "valor fijo" que las variables no tienen: no se mete en ningun
+        /// prompt por su cuenta. Es la seleccion de que parte de la biblioteca viaja,
+        /// que se hace una vez y cada ejecucion puede cambiar en su desplegable.
+        /// </summary>
+        public string? FolderPath { get; set; }
+
         public int SortOrder { get; set; }
 
         public DateTime CreatedAt { get; set; }
@@ -55,7 +65,9 @@ namespace Server.Models
         /// <summary>Texto libre: el comportamiento de siempre.</summary>
         public const string Text = "text";
 
-        /// <summary>Carpeta de un nodo Directorio de archivos del pipeline.</summary>
+        /// <summary>Carpeta de un nodo Directorio de archivos del pipeline. La carpeta
+        /// se elige al declarar la variable (<see cref="ProjectVariable.FolderPath"/>) y
+        /// cada ejecucion puede cambiarla.</summary>
         public const string Folder = "folder";
 
         public static readonly string[] All = [Text, Folder];

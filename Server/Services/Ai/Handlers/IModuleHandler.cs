@@ -67,6 +67,10 @@ public class ModuleExecutionContext
     public IReadOnlyDictionary<string, string> Variables { get; init; } = ExecutionVariables.None;
     /// <summary>Bloque etiquetado con esas variables para el system prompt.</summary>
     public string? VariablesBlock { get; init; }
+    /// <summary>Definicion de las variables del pipeline (tipo, directorio y carpeta
+    /// elegida). El nodo Directorio la necesita para saber cuales son de tipo carpeta
+    /// y a que biblioteca apuntan; los valores solos no lo dicen.</summary>
+    public IReadOnlyList<Server.Models.ProjectVariable> VariableDefinitions { get; init; } = [];
     /// <summary>Bloque etiquetado de "Aprendizaje de ejecuciones pasadas" que aplica a este
     /// módulo (aprendizajes generales + los específicos del módulo). Se inyecta como capa
     /// aparte; nunca modifica el prompt configurado por el usuario.</summary>

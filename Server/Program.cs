@@ -2145,22 +2145,28 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
 
 static ProjectVariableResponse ToVariableResponse(ProjectVariable c) =>
     new(c.Id, c.ProjectId, c.Key, c.Description, c.SortOrder, c.CreatedAt, c.UpdatedAt,
-        c.Type, c.SourceModuleId);
+        c.Type, c.SourceModuleId, c.FolderPath);
 
 // Valida el tipo de una variable y, si es de carpeta, el directorio del que salen sus
 // opciones: un nodo que no existe (o que no es un Directorio) dejaria el desplegable
 // vacio sin explicar por que.
-static async Task<(string? Type, Guid? SourceModuleId, string? Error)> ResolveVariableTypeAsync(
-    UserDbContext db, Guid projectId, string? rawType, Guid? sourceModuleId)
+static async Task<(string? Type, Guid? SourceModuleId, string? FolderPath, string? Error)> ResolveVariableTypeAsync(
+    UserDbContext db, Guid projectId, string? rawType, Guid? sourceModuleId, string? folderPath)
 {
     var type = ProjectVariableTypes.Normalize(rawType);
     if (type is null)
-        return (null, null, $"Tipo de variable no reconocido. Admitidos: {string.Join(", ", ProjectVariableTypes.All)}.");
+        return (null, null, null, $"Tipo de variable no reconocido. Admitidos: {string.Join(", ", ProjectVariableTypes.All)}.");
 
+    // El directorio y la carpeta solo tienen sentido en las variables de carpeta:
+    // guardarlos en una de texto dejaria una seleccion invisible que nadie aplica.
     if (!ProjectVariableTypes.IsFolder(type))
-        return (type, null, null);   // el directorio solo tiene sentido en las de carpeta
+        return (type, null, null, null);
 
-    if (sourceModuleId is not { } moduleId) return (type, null, null);
+    var folder = FileDirectoryIndex.NormalizePath(folderPath);
+    if (folder is not null && FileDirectoryIndex.HasTraversal(folder))
+        return (null, null, null, "La carpeta no puede salir del directorio ni usar segmentos \".\" o \"..\".");
+
+    if (sourceModuleId is not { } moduleId) return (type, null, folder, null);
 
     var isDirectory = await db.ProjectModules
         .Include(pm => pm.AiModule)
@@ -2168,8 +2174,8 @@ static async Task<(string? Type, Guid? SourceModuleId, string? Error)> ResolveVa
             && pm.AiModule.ModuleType == FileDirectoryIndex.ModuleType);
 
     return isDirectory
-        ? (type, moduleId, null)
-        : (null, null, "El directorio indicado no es un nodo Directorio de archivos de este pipeline.");
+        ? (type, moduleId, folder, null)
+        : (null, null, null, "El directorio indicado no es un nodo Directorio de archivos de este pipeline.");
 }
 
 app.MapGet("/api/projects/{projectId:guid}/variables", async (
@@ -2246,8 +2252,8 @@ app.MapPost("/api/projects/{projectId:guid}/variables", async (
     if (duplicated)
         return Results.BadRequest(new { error = $"Ya existe una variable '{key}' en este proyecto." });
 
-    var (type, sourceModuleId, typeError) =
-        await ResolveVariableTypeAsync(db, projectId, req.Type, req.SourceModuleId);
+    var (type, sourceModuleId, folderPath, typeError) =
+        await ResolveVariableTypeAsync(db, projectId, req.Type, req.SourceModuleId, req.FolderPath);
     if (typeError is not null) return Results.BadRequest(new { error = typeError });
 
     var now = DateTime.UtcNow;
@@ -2259,6 +2265,7 @@ app.MapPost("/api/projects/{projectId:guid}/variables", async (
         Description = req.Description,
         Type = type!,
         SourceModuleId = sourceModuleId,
+        FolderPath = folderPath,
         SortOrder = req.SortOrder,
         CreatedAt = now,
         UpdatedAt = now,
@@ -2290,14 +2297,15 @@ app.MapPut("/api/projects/{projectId:guid}/variables/{variableId:guid}", async (
     if (duplicated)
         return Results.BadRequest(new { error = $"Ya existe una variable '{key}' en este proyecto." });
 
-    var (type, sourceModuleId, typeError) =
-        await ResolveVariableTypeAsync(db, projectId, req.Type, req.SourceModuleId);
+    var (type, sourceModuleId, folderPath, typeError) =
+        await ResolveVariableTypeAsync(db, projectId, req.Type, req.SourceModuleId, req.FolderPath);
     if (typeError is not null) return Results.BadRequest(new { error = typeError });
 
     variable.Key = key;
     variable.Description = req.Description;
     variable.Type = type!;
     variable.SourceModuleId = sourceModuleId;
+    variable.FolderPath = folderPath;
     variable.SortOrder = req.SortOrder;
     variable.UpdatedAt = DateTime.UtcNow;
 

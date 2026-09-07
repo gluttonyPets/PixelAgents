@@ -14,10 +14,15 @@ namespace Server.Services.Ai.Handlers;
 /// directorio; los que ya viven en un repositorio externo expuesto se referencian
 /// con su propia URL.
 ///
-/// Que documentos entran en cada ejecucion se elige con la carpeta configurada en
-/// el nodo (<c>folder</c>): vacia publica el directorio entero, y escrita como
-/// marcador de variable (<c>{{carpeta}}</c>) la decide el valor que se da al
-/// lanzar cada ejecucion.
+/// Que documentos entran en cada ejecucion se decide en dos sitios:
+///
+///   1. La carpeta escrita en el nodo (<c>folder</c>), a mano o como marcador de
+///      variable (<c>{{carpeta}}</c>). Lo explicito manda.
+///   2. Si el nodo no dice nada, las variables de tipo carpeta del pipeline que
+///      apunten a este directorio (o a ninguno): la biblioteca entrega solo la
+///      carpeta que la variable trae, sin tener que cablear el marcador aqui.
+///
+/// Sin lo uno ni lo otro se publica el directorio entero, como siempre.
 /// </summary>
 public class FileDirectoryModuleHandler : IModuleHandler
 {
@@ -52,6 +57,15 @@ public class FileDirectoryModuleHandler : IModuleHandler
         }
 
         var folderSelection = FileDirectoryIndex.ParseFolderSelection(folderConfig);
+
+        // Sin carpeta escrita en el nodo mandan las variables de tipo carpeta: si la
+        // ejecucion trae una, la biblioteca entrega solo lo que esa variable dice.
+        var fromVariables = folderSelection.Count == 0;
+        if (fromVariables)
+        {
+            folderSelection = VariableFolders.ForModule(
+                ctx.VariableDefinitions, ctx.Variables, ctx.Node.ModuleId);
+        }
 
         var legacyIndex = FileDirectoryIndex.ReadConfig(
             ctx.Node.AiModule.Configuration, null, FileDirectoryIndex.IndexConfigKey);
@@ -88,6 +102,16 @@ public class FileDirectoryModuleHandler : IModuleHandler
         var scope = result.SelectedFolders.Count > 0
             ? $" (carpeta de esta ejecucion: {string.Join(", ", result.SelectedFolders)})"
             : "";
+
+        if (fromVariables && result.SelectedFolders.Count > 0)
+        {
+            var keys = VariableFolders.KeysForModule(
+                ctx.VariableDefinitions, ctx.Variables, ctx.Node.ModuleId);
+            // Deja claro de donde sale el recorte: el nodo no lo tiene escrito.
+            await ctx.LogInfoAsync(
+                $"Carpeta tomada de {string.Join(", ", keys.Select(ExecutionVariables.Marker))}: "
+                + string.Join(", ", result.SelectedFolders));
+        }
 
         await ctx.LogInfoAsync(
             $"Directorio publicado: {result.Entries.Count} fichero(s) en {result.Folders.Count} carpeta(s){scope}.");

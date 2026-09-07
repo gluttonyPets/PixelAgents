@@ -26,6 +26,11 @@ public class ExecutionGraph
     /// <summary>Bloque etiquetado con esas variables, listo para el system prompt.</summary>
     public string? VariablesBlock { get; set; }
 
+    /// <summary>Definicion de esas variables (tipo, directorio y carpeta elegida). Los
+    /// valores solos no bastan para el nodo Directorio: necesita saber cuales son de
+    /// tipo carpeta y a que biblioteca apuntan.</summary>
+    public IReadOnlyList<ProjectVariable> VariableDefinitions { get; set; } = [];
+
     /// <summary>Aprendizajes activos del proyecto en JSON (ProjectLearningDoc.ActiveLearningsJson).
     /// Se carga una vez por ejecución; cada nodo filtra los que le aplican para inyectarlos.</summary>
     public string? ActiveLearningsJson { get; set; }

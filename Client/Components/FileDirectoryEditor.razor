@@ -281,9 +281,10 @@
             }
         </datalist>
         <p class="text-sm text-muted">
-            Vacio publica el directorio entero. Escribe una carpeta para que el modulo
-            solo entregue sus archivos (y los de sus subcarpetas), o el marcador de una
-            variable para elegirla al lanzar cada ejecucion.
+            Escribe una carpeta para que el modulo solo entregue sus archivos (y los de
+            sus subcarpetas). Vacio publica el directorio entero, salvo que el pipeline
+            tenga una variable de tipo carpeta: entonces se envia la carpeta de esa
+            variable sin necesidad de escribir nada aqui.
         </p>
         @if (Variables.Count > 0)
         {
@@ -301,11 +302,19 @@
                     </button>
                 }
             </div>
-            @if (!Variables.Any(v => ProjectVariableTypes.IsFolder(v.Type)))
+            @if (FolderVariables.Count > 0)
+            {
+                <p class="text-sm text-muted">
+                    @string.Join(", ", FolderVariables.Select(v => VariableMarker(v.Key)))
+                    ya recorta este directorio por su cuenta. Escribe una carpeta aqui solo si
+                    quieres que este nodo ignore la variable.
+                </p>
+            }
+            else
             {
                 <p class="text-sm text-muted">
                     Ninguna variable es de tipo "Carpeta de la biblioteca": cambia su tipo en el
-                    panel "Variables" y su valor se elegira de un desplegable en vez de escribirse.
+                    panel "Variables" y la carpeta se elegira ahi, con desplegable.
                 </p>
             }
         }
@@ -444,6 +453,13 @@
     private IEnumerable<ProjectVariableResponse> OrderedVariables => Variables
         .OrderByDescending(v => ProjectVariableTypes.IsFolder(v.Type))
         .ThenBy(v => v.Key, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Variables de carpeta que aplican a este nodo: sin escribir nada en el
+    /// campo, son las que deciden que parte del directorio viaja.</summary>
+    private List<ProjectVariableResponse> FolderVariables => Variables
+        .Where(v => ProjectVariableTypes.IsFolder(v.Type))
+        .Where(v => v.SourceModuleId is null || v.SourceModuleId == ProjectModuleId)
+        .ToList();
 
     /// <summary>True si la carpeta se decide en cada ejecucion (lleva un marcador).</summary>
     private bool FolderUsesVariable => (Folder ?? "").Contains("{{", StringComparison.Ordinal);

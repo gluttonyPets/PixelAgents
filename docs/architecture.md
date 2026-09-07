@@ -209,16 +209,28 @@ corre sin sustituir.
 Cada variable declara **como se pide su valor** (`ProjectVariable.Type`); lo que
 recibe el modulo es siempre el mismo texto, el tipo solo cambia la interfaz:
 
-| Tipo | Al lanzar la ejecucion |
-|------|------------------------|
-| `text` (por defecto) | campo de texto libre, como siempre |
-| `folder` | desplegable con las carpetas que tiene la biblioteca del pipeline |
+| Tipo | Como se declara | Al lanzar la ejecucion |
+|------|-----------------|------------------------|
+| `text` (por defecto) | nombre y descripcion | campo de texto libre, como siempre |
+| `folder` | nombre y **carpeta elegida** (`FolderPath`), en vez de descripcion | desplegable con las carpetas de la biblioteca, con la elegida ya puesta |
 
 Una variable `folder` puede fijar de que nodo Directorio salen las opciones
 (`SourceModuleId`); sin el, se ofrecen las de todos los directorios del pipeline,
 agrupadas por nodo. Las carpetas las sirve
 `GET /api/projects/{projectId}/directory-folders`, que resuelve el indice de cada
 nodo Directorio y devuelve sus carpetas (las declaradas vacias incluidas).
+
+En una variable `folder` la carpeta no es descripcion sino **seleccion**: es lo que
+la biblioteca entrega. Por eso `ExecutionVariables.Resolve` cae a `FolderPath`
+cuando la ejecucion no trae valor — la unica excepcion a "una variable no tiene
+valor fijo", y se sostiene porque esa carpeta no entra en ningun prompt: dice que
+parte del directorio viaja. Una variable de texto sigue sin respaldo: sin valor, no
+se sustituye.
+
+Y el nodo Directorio la aplica solo: `VariableFolders.ForModule` recorta el
+directorio con las carpetas de las variables `folder` que apuntan a ese nodo (o a
+ninguno), sin necesidad de escribir `{{carpeta}}` en su configuracion. Lo escrito en
+el nodo gana: las variables solo entran cuando el campo `folder` esta vacio.
 
 El desplegable lo pinta `Client/Components/VariableValueInput.razor`, que se usa en
 los tres sitios donde se da valor a una variable: la ejecucion manual, la cola del
@@ -484,8 +496,11 @@ casi nunca hace falta toda: `folder` decide que parte entrega el modulo.
 - El marcador de una variable del pipeline (`{{carpeta}}`): la carpeta la decide
   el valor que se da **al lanzar cada ejecucion**. Es el caso que motiva la
   opcion: el mismo pipeline trabaja hoy con `manuales` y manana con `legal` sin
-  tocar el grafo. Si esa variable se declara de tipo `folder` (ver "Tipo de
-  variable"), al lanzar se elige de un desplegable con las carpetas reales.
+  tocar el grafo.
+
+Y si el campo se deja vacio pero el pipeline tiene variables de tipo `folder` (ver
+"Tipo de variable"), el nodo entrega la carpeta de esas variables: la eleccion vive
+en la variable y no hay que cablear el marcador en cada directorio.
 
 Funciona porque `folder` se lee de `ctx.Config`, que es la configuracion del nodo
 ya pasada por `ExecutionVariables.ApplyToConfig`: cuando llega al handler el

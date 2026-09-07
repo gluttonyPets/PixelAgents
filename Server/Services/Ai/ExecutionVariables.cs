@@ -104,20 +104,31 @@ public static class ExecutionVariables
     /// proyecto, lo que aporte esta ejecucion. Las claves que la ejecucion trae
     /// pero el proyecto ya no declara se descartan (variable borrada despues de
     /// programarla), y las que se quedan sin valor no se sustituyen.
+    ///
+    /// Unica excepcion: una variable de tipo carpeta cae a la carpeta elegida al
+    /// declararla. No es un "valor fijo" encubierto —no es contenido que entre en
+    /// ningun prompt—, es que parte de la biblioteca viaja mientras la ejecucion no
+    /// elija otra cosa.
     /// </summary>
     public static Dictionary<string, string> Resolve(
         IEnumerable<ProjectVariable>? definitions,
         IReadOnlyDictionary<string, string>? overrides)
     {
         var resolved = NewMap();
-        if (definitions is null || overrides is null) return resolved;
+        if (definitions is null) return resolved;
 
         foreach (var def in definitions)
         {
             if (!IsValidKey(def.Key)) continue;
             var key = def.Key.Trim();
 
-            if (!overrides.TryGetValue(key, out var value)) continue;
+            var value = overrides is not null && overrides.TryGetValue(key, out var fromRun)
+                ? fromRun
+                : null;
+
+            if (string.IsNullOrWhiteSpace(value) && ProjectVariableTypes.IsFolder(def.Type))
+                value = def.FolderPath;
+
             if (string.IsNullOrWhiteSpace(value)) continue;   // sin valor: no se sustituye
 
             resolved[key] = value.Trim();

@@ -863,6 +863,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             MandatoryRules = graph.MandatoryRules,
             Variables = graph.Variables,
             VariablesBlock = graph.VariablesBlock,
+            VariableDefinitions = graph.VariableDefinitions,
             PastExecutionsLearning = LearningInjection.BuildBlock(
                 graph.ActiveLearningsJson, node.AiModule.Name, node.ProjectModule.StepName),
             CancellationToken = ct,
@@ -1848,6 +1849,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         {
             graph.Variables = Values;
             graph.VariablesBlock = Block;
+            graph.VariableDefinitions = Definitions;
             graph.UserInput = ExecutionVariables.Apply(graph.UserInput, Values);
         }
     }
