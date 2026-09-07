@@ -379,6 +379,33 @@ public static class FileDirectoryIndex
         return result;
     }
 
+    /// <summary>
+    /// Carpetas que declara un indice, sin validar rutas accesibles: las de las rutas
+    /// de sus ficheros y las declaradas aparte (incluidas las vacias).
+    ///
+    /// Va aparte de <see cref="Resolve"/> porque quien solo quiere saber que carpetas
+    /// hay —el desplegable de una variable, el planificador— no necesita URLs, y con
+    /// Resolve un indice a medias se quedaria sin carpetas que ofrecer.
+    /// </summary>
+    public static List<string> ReadFolders(string? indexJson)
+    {
+        var entries = ParseEntries(indexJson, out _, out var parseError, out var declaredFolders);
+        if (parseError is not null) return [];
+
+        var fromPaths = entries
+            .Select(e => NormalizePath(e.Path))
+            .Where(p => p is not null && !HasTraversal(p))
+            .Select(p => p!)
+            .Select(p => p.LastIndexOf('/') is var i && i < 0 ? "" : p[..p.LastIndexOf('/')]);
+
+        return fromPaths
+            .Concat(declaredFolders)
+            .Where(f => !string.IsNullOrEmpty(f))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     // ── Seleccion de carpetas ──
 
     /// <summary>

@@ -97,14 +97,13 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record ProjectVariableResponse(
         Guid Id, Guid ProjectId, string Key, string? Description,
         int SortOrder, DateTime CreatedAt, DateTime UpdatedAt,
-        string Type = ProjectVariableTypes.Text, Guid? SourceModuleId = null,
-        string? FolderPath = null);
+        string Type = ProjectVariableTypes.Text, Guid? SourceModuleId = null);
     public record CreateProjectVariableRequest(
         string Key, string? Description = null, int SortOrder = 0,
-        string? Type = null, Guid? SourceModuleId = null, string? FolderPath = null);
+        string? Type = null, Guid? SourceModuleId = null);
     public record UpdateProjectVariableRequest(
         string Key, string? Description = null, int SortOrder = 0,
-        string? Type = null, Guid? SourceModuleId = null, string? FolderPath = null);
+        string? Type = null, Guid? SourceModuleId = null);
 
     /// <summary>Carpetas de un nodo Directorio de archivos, para ofrecerlas como
     /// opciones de una variable de tipo carpeta.</summary>

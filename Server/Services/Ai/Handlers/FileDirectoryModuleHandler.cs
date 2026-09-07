@@ -59,12 +59,23 @@ public class FileDirectoryModuleHandler : IModuleHandler
         var folderSelection = FileDirectoryIndex.ParseFolderSelection(folderConfig);
 
         // Sin carpeta escrita en el nodo mandan las variables de tipo carpeta: si la
-        // ejecucion trae una, la biblioteca entrega solo lo que esa variable dice.
+        // ejecucion (o la planificacion) eligio una, la biblioteca entrega solo eso.
         var fromVariables = folderSelection.Count == 0;
         if (fromVariables)
         {
             folderSelection = VariableFolders.ForModule(
                 ctx.VariableDefinitions, ctx.Variables, ctx.Node.ModuleId);
+
+            // Hay variable de carpeta pero esta ejecucion no eligio ninguna: publicar
+            // la biblioteca entera seria justo lo contrario de lo que pide el pipeline.
+            var applicable = VariableFolders.Applicable(ctx.VariableDefinitions, ctx.Node.ModuleId);
+            if (applicable.Count > 0 && folderSelection.Count == 0)
+            {
+                var markers = string.Join(", ", applicable.Select(v => ExecutionVariables.Marker(v.Key)));
+                return ModuleResult.Failed(
+                    $"Este directorio lo recorta {markers}, y esta ejecucion no ha elegido carpeta. "
+                    + "Elige una al lanzar la ejecucion o en la planificacion, o quita la variable del pipeline.");
+            }
         }
 
         var legacyIndex = FileDirectoryIndex.ReadConfig(

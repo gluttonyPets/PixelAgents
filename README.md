@@ -513,9 +513,10 @@ El nodo Directorio (la "biblioteca" del pipeline) puede limitar cada ejecucion a
 una carpeta con su ajuste `folder`: vacio publica todo, una ruta publica esa
 carpeta y sus subcarpetas, y el marcador de una variable (`{{carpeta}}`) deja
 elegir los documentos al lanzar cada ejecucion. Si el ajuste esta vacio pero el
-pipeline tiene variables de tipo `folder`, el nodo entrega la carpeta de esas
-variables sin necesidad de escribir nada en el. Si la variable se queda sin valor
-o la carpeta no existe, el modulo falla en vez de publicar el directorio entero.
+pipeline tiene variables de tipo `folder`, el nodo entrega la carpeta que esas
+variables traigan en cada ejecucion, sin necesidad de escribir nada en el. Si la
+variable se queda sin carpeta o la carpeta no existe, el modulo falla en vez de
+publicar el directorio entero.
 
 Si se solicita crear un modulo de sistema conocido, `SystemModuleCatalog`
 garantiza o actualiza su definicion.
@@ -574,8 +575,8 @@ inyectan como bloque en el system prompt de todos los modulos; ver
 
 - `GET /api/projects/{projectId}/variables`: lista las variables del proyecto. Cada
   una lleva su tipo: `text` (valor escrito a mano) o `folder`, que en vez de
-  descripcion lleva la carpeta elegida de la biblioteca del pipeline y es la que se
-  envia mientras la ejecucion no elija otra.
+  descripcion declara de que biblioteca del pipeline se elige la carpeta. El valor,
+  como el de cualquier variable, lo pone la ejecucion o la planificacion.
 - `GET /api/projects/{projectId}/directory-folders`: carpetas de cada nodo Directorio,
   que son las opciones de las variables de tipo `folder`.
 - `POST /api/projects/{projectId}/variables`: crea una variable.

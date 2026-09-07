@@ -165,9 +165,9 @@ namespace Server.Services
             // Tipo de la variable: texto libre (por defecto) o carpeta de la biblioteca.
             RunSafe(ctx, @"ALTER TABLE ""ProjectVariables"" ADD COLUMN IF NOT EXISTS ""Type"" varchar(30) NOT NULL DEFAULT 'text'", log);
             RunSafe(ctx, @"ALTER TABLE ""ProjectVariables"" ADD COLUMN IF NOT EXISTS ""SourceModuleId"" uuid", log);
-            // Carpeta elegida al declarar la variable: lo que la biblioteca entrega
-            // mientras la ejecucion no elija otra.
-            RunSafe(ctx, @"ALTER TABLE ""ProjectVariables"" ADD COLUMN IF NOT EXISTS ""FolderPath"" varchar(500)", log);
+            // Intento anterior de guardar la carpeta en la propia variable: el valor de
+            // una variable lo pone la ejecucion (o la planificacion), nunca su definicion.
+            RunSafe(ctx, @"ALTER TABLE ""ProjectVariables"" DROP COLUMN IF EXISTS ""FolderPath""", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ExecutionLogs"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,

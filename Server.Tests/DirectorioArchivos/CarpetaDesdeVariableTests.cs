@@ -5,86 +5,69 @@ using Xunit;
 namespace Server.Tests.DirectorioArchivos;
 
 /// <summary>
-/// La carpeta se elige al declarar la variable y la biblioteca la aplica sola: si el
-/// pipeline tiene una variable de tipo carpeta, el nodo Directorio entrega solo esa
-/// carpeta sin que haya que escribir el marcador en su configuracion. Lo escrito en el
-/// nodo manda sobre la variable, y cada ejecucion puede cambiar la carpeta.
+/// La biblioteca entrega la carpeta que trae la variable de esa ejecucion. La variable
+/// declara de que biblioteca se elige; el valor lo pone siempre la ejecucion (o la
+/// planificacion), como el de cualquier otra variable. Lo escrito en el nodo manda
+/// sobre la variable, y una variable de carpeta sin valor no publica el directorio
+/// entero: para la ejecucion.
 /// </summary>
 public class CarpetaDesdeVariableTests
 {
     private static readonly Guid Biblioteca = Guid.NewGuid();
     private static readonly Guid OtraBiblioteca = Guid.NewGuid();
 
-    // ── La carpeta configurada es lo que corre si la ejecucion no dice otra cosa ──
+    // ── El valor viene de la ejecucion, no de la definicion ──
 
     [Fact]
-    public void SinValorEnLaEjecucion_ValeLaCarpetaElegidaAlDeclararla()
+    public void SinValorEnLaEjecucion_LaVariableNoAportaCarpeta()
     {
-        var definiciones = new[] { CarpetaVar("carpeta", "manuales") };
-
-        var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
-
-        Assert.Equal("manuales", valores["carpeta"]);
-    }
-
-    [Fact]
-    public void LaEjecucionPuedeCambiarLaCarpeta()
-    {
-        var definiciones = new[] { CarpetaVar("carpeta", "manuales") };
-
-        var valores = ExecutionVariables.Resolve(
-            definiciones,
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["carpeta"] = "legal" });
-
-        Assert.Equal("legal", valores["carpeta"]);
-    }
-
-    [Fact]
-    public void UnaVariableDeTextoNoTieneValorDeRespaldo()
-    {
-        // El resto de variables sigue sin valor fijo: si la ejecucion no lo trae, no
-        // se sustituye. La carpeta es la excepcion porque no es contenido del prompt.
-        var definiciones = new[]
-        {
-            new ProjectVariable { Key = "tematica", Type = ProjectVariableTypes.Text, FolderPath = "manuales" },
-        };
+        var definiciones = new[] { CarpetaVar("carpeta") };
 
         var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
 
         Assert.Empty(valores);
+        Assert.Empty(VariableFolders.ForModule(definiciones, valores, Biblioteca));
     }
 
     [Fact]
-    public void UnaVariableDeCarpetaSinCarpeta_SigueSinValor()
+    public void LaEjecucionElijeLaCarpeta()
     {
-        var definiciones = new[] { CarpetaVar("carpeta", folder: null) };
+        var definiciones = new[] { CarpetaVar("carpeta") };
+
+        var valores = ExecutionVariables.Resolve(definiciones, Valores(("carpeta", "legal")));
+
+        Assert.Equal(["legal"], VariableFolders.ForModule(definiciones, valores, Biblioteca));
+    }
+
+    [Fact]
+    public void UnaVariableDeCarpetaNoTieneValorDeRespaldo()
+    {
+        // Igual que el resto: la definicion dice de donde se elige, no que se elige.
+        var definiciones = new[] { CarpetaVar("carpeta") };
 
         var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
 
-        Assert.Empty(valores);
         Assert.Equal(["carpeta"], ExecutionVariables.MissingKeys(definiciones, valores));
     }
 
-    // ── Que carpetas aplican a cada nodo Directorio ──
+    // ── Que variables mandan sobre cada nodo Directorio ──
 
     [Fact]
     public void LaVariableRecortaElDirectorioSinTocarSuConfiguracion()
     {
-        var definiciones = new[] { CarpetaVar("carpeta", "manuales") };
-        var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
+        var definiciones = new[] { CarpetaVar("carpeta") };
+        var valores = ExecutionVariables.Resolve(definiciones, Valores(("carpeta", "manuales")));
 
-        var carpetas = VariableFolders.ForModule(definiciones, valores, Biblioteca);
-
-        Assert.Equal(["manuales"], carpetas);
+        Assert.Equal(["manuales"], VariableFolders.ForModule(definiciones, valores, Biblioteca));
     }
 
     [Fact]
     public void UnaVariableAtadaAOtraBiblioteca_NoRecortaEsta()
     {
-        // Su carpeta no tiene por que existir en este directorio: aplicarla dejaria el
-        // nodo vacio (o fallando) por una eleccion que no era suya.
-        var definiciones = new[] { CarpetaVar("carpeta", "manuales", source: OtraBiblioteca) };
-        var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
+        // Su carpeta no tiene por que existir en este directorio: aplicarla lo dejaria
+        // vacio (o fallando) por una eleccion que no era suya.
+        var definiciones = new[] { CarpetaVar("carpeta", source: OtraBiblioteca) };
+        var valores = ExecutionVariables.Resolve(definiciones, Valores(("carpeta", "manuales")));
 
         Assert.Empty(VariableFolders.ForModule(definiciones, valores, Biblioteca));
         Assert.Equal(["manuales"], VariableFolders.ForModule(definiciones, valores, OtraBiblioteca));
@@ -93,8 +76,8 @@ public class CarpetaDesdeVariableTests
     [Fact]
     public void UnaVariableSinBiblioteca_AplicaATodosLosDirectorios()
     {
-        var definiciones = new[] { CarpetaVar("carpeta", "manuales") };
-        var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
+        var definiciones = new[] { CarpetaVar("carpeta") };
+        var valores = ExecutionVariables.Resolve(definiciones, Valores(("carpeta", "manuales")));
 
         Assert.Equal(["manuales"], VariableFolders.ForModule(definiciones, valores, Biblioteca));
         Assert.Equal(["manuales"], VariableFolders.ForModule(definiciones, valores, OtraBiblioteca));
@@ -105,10 +88,11 @@ public class CarpetaDesdeVariableTests
     {
         var definiciones = new[]
         {
-            CarpetaVar("carpeta", "manuales"),
-            CarpetaVar("extra", "legal", source: Biblioteca),
+            CarpetaVar("carpeta"),
+            CarpetaVar("extra", source: Biblioteca),
         };
-        var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
+        var valores = ExecutionVariables.Resolve(
+            definiciones, Valores(("carpeta", "manuales"), ("extra", "legal")));
 
         Assert.Equal(new[] { "legal", "manuales" },
             VariableFolders.ForModule(definiciones, valores, Biblioteca).OrderBy(f => f));
@@ -117,36 +101,42 @@ public class CarpetaDesdeVariableTests
     [Fact]
     public void LasVariablesDeTexto_NoRecortanNada()
     {
-        var definiciones = new[]
-        {
-            new ProjectVariable { Key = "tematica", Type = ProjectVariableTypes.Text },
-        };
-        var valores = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["tematica"] = "gatos",
-        };
+        var definiciones = new[] { new ProjectVariable { Key = "tematica", Type = ProjectVariableTypes.Text } };
+        var valores = Valores(("tematica", "gatos"));
 
         Assert.Empty(VariableFolders.ForModule(definiciones, valores, Biblioteca));
+        Assert.Empty(VariableFolders.Applicable(definiciones, Biblioteca));
+    }
+
+    [Fact]
+    public void HayVariableDeCarpetaAunqueLaEjecucionNoLaRellene()
+    {
+        // Applicable no mira valores: es lo que permite al modulo distinguir "no hay
+        // variable" (publica todo) de "hay variable sin valor" (para y avisa).
+        var definiciones = new[] { CarpetaVar("carpeta") };
+
+        Assert.Single(VariableFolders.Applicable(definiciones, Biblioteca));
+        Assert.Empty(VariableFolders.ForModule(definiciones, ExecutionVariables.None, Biblioteca));
     }
 
     [Fact]
     public void ElLogDiceDeQueVariableSaleLaCarpeta()
     {
-        var definiciones = new[] { CarpetaVar("carpeta", "manuales") };
-        var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
+        var definiciones = new[] { CarpetaVar("carpeta") };
+        var valores = ExecutionVariables.Resolve(definiciones, Valores(("carpeta", "manuales")));
 
         Assert.Equal(["carpeta"], VariableFolders.KeysForModule(definiciones, valores, Biblioteca));
     }
 
-    // ── Lo escrito en el nodo manda ──
+    // ── Precedencia y efecto sobre el indice ──
 
     [Fact]
     public void LaCarpetaEscritaEnElNodo_GanaALaVariable()
     {
         // Misma precedencia que aplica el handler: solo se miran las variables cuando
         // el nodo no trae carpeta escrita.
-        var definiciones = new[] { CarpetaVar("carpeta", "manuales") };
-        var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
+        var definiciones = new[] { CarpetaVar("carpeta") };
+        var valores = ExecutionVariables.Resolve(definiciones, Valores(("carpeta", "manuales")));
 
         var delNodo = FileDirectoryIndex.ParseFolderSelection("legal");
         var efectiva = delNodo.Count > 0
@@ -169,33 +159,62 @@ public class CarpetaDesdeVariableTests
     [Fact]
     public void LaCarpetaDeLaVariableRecortaElIndiceIgualQueLaEscrita()
     {
-        var indice = """
-        {
-          "baseUrl": "https://cdn.ejemplo.com/marca",
-          "files": [
-            { "path": "manuales/guia.pdf", "description": "Guia" },
-            { "path": "legal/aviso.pdf",   "description": "Aviso" }
-          ]
-        }
-        """;
-
-        var definiciones = new[] { CarpetaVar("carpeta", "manuales") };
-        var valores = ExecutionVariables.Resolve(definiciones, ExecutionVariables.None);
+        var definiciones = new[] { CarpetaVar("carpeta") };
+        var valores = ExecutionVariables.Resolve(definiciones, Valores(("carpeta", "manuales")));
 
         var result = FileDirectoryIndex.Resolve(
-            indice,
+            Indice,
             folderSelection: VariableFolders.ForModule(definiciones, valores, Biblioteca));
 
         var entrada = Assert.Single(result.Entries);
         Assert.Equal("manuales/guia.pdf", entrada.Path);
     }
 
-    private static ProjectVariable CarpetaVar(string key, string? folder, Guid? source = null) => new()
+    // ── Carpetas que se ofrecen para elegir ──
+
+    [Fact]
+    public void LasCarpetasDelIndiceSeLeenSinResolverUrls()
+    {
+        // El desplegable y el planificador solo necesitan saber que carpetas hay: un
+        // indice con entradas sin ruta accesible seguiria ofreciendolas.
+        var carpetas = FileDirectoryIndex.ReadFolders("""
+        {
+          "folders": ["vacia"],
+          "files": [
+            { "path": "manuales/guia.pdf", "description": "Guia" },
+            { "path": "legal/roto.pdf" }
+          ]
+        }
+        """);
+
+        Assert.Equal(new[] { "legal", "manuales", "vacia" }, carpetas);
+    }
+
+    [Fact]
+    public void UnIndiceIlegibleNoOfreceCarpetas()
+    {
+        Assert.Empty(FileDirectoryIndex.ReadFolders("{ esto no es json "));
+        Assert.Empty(FileDirectoryIndex.ReadFolders(null));
+    }
+
+    private const string Indice = """
+    {
+      "baseUrl": "https://cdn.ejemplo.com/marca",
+      "files": [
+        { "path": "manuales/guia.pdf", "description": "Guia" },
+        { "path": "legal/aviso.pdf",   "description": "Aviso" }
+      ]
+    }
+    """;
+
+    private static ProjectVariable CarpetaVar(string key, Guid? source = null) => new()
     {
         Id = Guid.NewGuid(),
         Key = key,
         Type = ProjectVariableTypes.Folder,
-        FolderPath = folder,
         SourceModuleId = source,
     };
+
+    private static Dictionary<string, string> Valores(params (string Key, string Value)[] pares) =>
+        pares.ToDictionary(p => p.Key, p => p.Value, StringComparer.OrdinalIgnoreCase);
 }

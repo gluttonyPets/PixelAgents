@@ -88,7 +88,8 @@ namespace Server.Services.Ai
 
             return await AskModelAsync(
                 db, projectId, modelName, count,
-                (project, variables) => BuildPlannerPrompt(count, instructions, project.Context, variables),
+                (project, variables, folders) =>
+                    BuildPlannerPrompt(count, instructions, project.Context, variables, folders),
                 ct);
         }
 
@@ -108,8 +109,8 @@ namespace Server.Services.Ai
 
             return await AskModelAsync(
                 db, projectId, modelName, 1,
-                (project, variables) => BuildDraftPrompt(
-                    idea, project.Context, variables, currentContent, currentVariables),
+                (project, variables, folders) => BuildDraftPrompt(
+                    idea, project.Context, variables, currentContent, currentVariables, folders),
                 ct);
         }
 
@@ -123,7 +124,7 @@ namespace Server.Services.Ai
             Guid projectId,
             string modelName,
             int expected,
-            Func<Project, IReadOnlyList<ProjectVariable>, string> buildPrompt,
+            Func<Project, IReadOnlyList<ProjectVariable>, IReadOnlyDictionary<string, List<string>>, string> buildPrompt,
             CancellationToken ct)
         {
             if (string.IsNullOrWhiteSpace(modelName))
@@ -158,7 +159,12 @@ namespace Server.Services.Ai
                 .OrderBy(v => v.SortOrder).ThenBy(v => v.CreatedAt)
                 .ToListAsync(ct);
 
-            var systemPrompt = buildPrompt(project, variables);
+            // Las variables de tipo carpeta no se inventan: el planificador elige entre
+            // las carpetas que la biblioteca tiene de verdad, y lo que no sea una de
+            // ellas se descarta al leer la respuesta.
+            var folderOptions = await LoadFolderOptionsAsync(db, projectId, variables, ct);
+
+            var systemPrompt = buildPrompt(project, variables, folderOptions);
 
             // OJO: el contexto del proyecto ya va embebido en el prompt que construyen
             // BuildPlannerPrompt / BuildDraftPrompt. Si ademas se pasara por ProjectContext,
@@ -180,7 +186,7 @@ namespace Server.Services.Ai
                     return new PromptPlannerResult(false, new(), result.Error ?? "Error generando prompts");
 
                 var raw = result.TextOutput ?? "";
-                var prompts = PlannerSchema.ParsePrompts(raw, expected, variables);
+                var prompts = PlannerSchema.ParsePrompts(raw, expected, variables, folderOptions);
                 if (prompts.Count == 0)
                     return new PromptPlannerResult(false, new(), "El modelo no devolvio ningun prompt valido");
 
@@ -199,7 +205,9 @@ namespace Server.Services.Ai
         /// las variables del pipeline que hay que rellenar en cada ejecucion.
         /// </summary>
         private static string BuildPlannerPrompt(
-            int count, string instructions, string? projectContext, IReadOnlyList<ProjectVariable> variables)
+            int count, string instructions, string? projectContext,
+            IReadOnlyList<ProjectVariable> variables,
+            IReadOnlyDictionary<string, List<string>>? folderOptions = null)
         {
             var ctxBlock = string.IsNullOrWhiteSpace(projectContext)
                 ? ""
@@ -212,7 +220,7 @@ Cada prompt debe ser autocontenido, claro y listo para ejecutarse en una corrida
 Necesidades / instrucciones del usuario:
 {instructions}
 
-" + PlannerSchema.BuildInstruction(count, variables);
+" + PlannerSchema.BuildInstruction(count, variables, folderOptions);
         }
 
         /// <summary>
@@ -227,7 +235,8 @@ Necesidades / instrucciones del usuario:
             string? projectContext,
             IReadOnlyList<ProjectVariable> variables,
             string? currentContent = null,
-            IReadOnlyDictionary<string, string>? currentVariables = null)
+            IReadOnlyDictionary<string, string>? currentVariables = null,
+            IReadOnlyDictionary<string, List<string>>? folderOptions = null)
         {
             var ctxBlock = string.IsNullOrWhiteSpace(projectContext)
                 ? ""
@@ -261,7 +270,52 @@ El prompt debe ser autocontenido, claro y listo para ejecutarse tal cual en una 
 Idea del usuario para esta ejecucion:
 {ideaBlock}
 
-" + PlannerSchema.BuildInstruction(1, variables);
+" + PlannerSchema.BuildInstruction(1, variables, folderOptions);
+        }
+
+        /// <summary>
+        /// Carpetas que puede elegir cada variable de tipo carpeta: las del nodo
+        /// Directorio que la variable indique o, si no indica ninguno, las de todas las
+        /// bibliotecas del pipeline. Es la misma lista que ve el usuario en su
+        /// desplegable, para que planificar a mano y planificar con IA elijan de lo mismo.
+        /// </summary>
+        private static async Task<IReadOnlyDictionary<string, List<string>>> LoadFolderOptionsAsync(
+            UserDbContext db,
+            Guid projectId,
+            IReadOnlyList<ProjectVariable> variables,
+            CancellationToken ct)
+        {
+            var folderVariables = variables
+                .Where(v => ProjectVariableTypes.IsFolder(v.Type))
+                .ToList();
+
+            var options = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            if (folderVariables.Count == 0) return options;
+
+            var directories = await db.ProjectModules
+                .Include(pm => pm.AiModule)
+                .Where(pm => pm.ProjectId == projectId
+                    && pm.AiModule.ModuleType == FileDirectoryIndex.ModuleType)
+                .ToListAsync(ct);
+
+            var foldersByNode = directories.ToDictionary(
+                node => node.Id,
+                node => FileDirectoryIndex.ReadFolders(FileDirectoryIndex.ReadConfig(
+                    node.AiModule.Configuration, node.Configuration, FileDirectoryIndex.IndexConfigKey)));
+
+            foreach (var variable in folderVariables)
+            {
+                var folders = foldersByNode
+                    .Where(kv => variable.SourceModuleId is not { } source || kv.Key == source)
+                    .SelectMany(kv => kv.Value)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                options[variable.Key.Trim()] = folders;
+            }
+
+            return options;
         }
     }
 }

@@ -253,22 +253,12 @@ else
                                             @if (ProjectVariableTypes.IsFolder(_editVariableType))
                                             {
                                                 <div class="form-group">
-                                                    <label>Biblioteca</label>
+                                                    <label>Biblioteca de la que se elige la carpeta</label>
                                                     <select @bind="_editVariableSource">
                                                         <option value="">Todas las del pipeline</option>
                                                         @foreach (var dir in _directoryFolders)
                                                         {
                                                             <option value="@dir.ModuleId">@dir.ModuleName</option>
-                                                        }
-                                                    </select>
-                                                </div>
-                                                <div class="form-group">
-                                                    <label>Carpeta que se envia</label>
-                                                    <select @bind="_editVariableFolder">
-                                                        <option value="">Sin elegir</option>
-                                                        @foreach (var folder in FolderOptions(_editVariableSource))
-                                                        {
-                                                            <option value="@folder">@folder</option>
                                                         }
                                                     </select>
                                                     <span class="text-sm text-muted">@FolderSourceHint()</span>
@@ -304,9 +294,8 @@ else
                                             <div class="text-sm text-muted">
                                                 @if (ProjectVariableTypes.IsFolder(variable.Type))
                                                 {
-                                                    @(string.IsNullOrWhiteSpace(variable.FolderPath)
-                                                        ? "Sin carpeta elegida: la ejecucion tendra que elegirla"
-                                                        : $"Carpeta: {variable.FolderPath}")
+                                                    @($"Carpeta de {VariableSourceLabel(variable)}, "
+                                                        + "elegida en cada ejecucion o planificacion")
                                                 }
                                                 else
                                                 {
@@ -334,29 +323,21 @@ else
                                     <option value="@ProjectVariableTypes.Folder">Carpeta de la biblioteca</option>
                                 </select>
                                 <span class="text-sm text-muted">
-                                    "Texto" se escribe en cada ejecucion; "Carpeta de la biblioteca" se
-                                    elige aqui y es lo unico que la biblioteca enviara.
+                                    El valor se da siempre al lanzar la ejecucion, al programarla o en la
+                                    cola del planificador. El tipo decide como: "Texto" se escribe y
+                                    "Carpeta de la biblioteca" se elige de un desplegable con las carpetas
+                                    que existen, y es lo unico que esa biblioteca entregara.
                                 </span>
                             </div>
                             @if (ProjectVariableTypes.IsFolder(_newVariableType))
                             {
                                 <div class="form-group">
-                                    <label>Biblioteca</label>
+                                    <label>Biblioteca de la que se elige la carpeta</label>
                                     <select @bind="_newVariableSource">
                                         <option value="">Todas las del pipeline</option>
                                         @foreach (var dir in _directoryFolders)
                                         {
                                             <option value="@dir.ModuleId">@dir.ModuleName</option>
-                                        }
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Carpeta que se envia</label>
-                                    <select @bind="_newVariableFolder">
-                                        <option value="">Sin elegir</option>
-                                        @foreach (var folder in FolderOptions(_newVariableSource))
-                                        {
-                                            <option value="@folder">@folder</option>
                                         }
                                     </select>
                                     <span class="text-sm text-muted">@FolderSourceHint()</span>
@@ -2393,13 +2374,11 @@ else
     private string _newVariableDescription = "";
     private string _newVariableType = ProjectVariableTypes.Text;
     private string _newVariableSource = "";
-    private string _newVariableFolder = "";
     private Guid? _editingVariableId;
     private string _editVariableKey = "";
     private string _editVariableDescription = "";
     private string _editVariableType = ProjectVariableTypes.Text;
     private string _editVariableSource = "";
-    private string _editVariableFolder = "";
 
     /// <summary>Carpetas de las bibliotecas del pipeline: opciones de las variables
     /// de tipo carpeta, tanto al declararlas como al dar valor a una ejecucion.</summary>
@@ -3405,9 +3384,7 @@ else
     private static string VariableHint(ProjectVariableResponse c)
     {
         if (ProjectVariableTypes.IsFolder(c.Type))
-            return string.IsNullOrWhiteSpace(c.FolderPath)
-                ? "Carpeta de la biblioteca: elige cual se envia en esta ejecucion"
-                : $"Carpeta de la biblioteca (configurada: {c.FolderPath})";
+            return "Carpeta de la biblioteca: elige cual se envia en esta ejecucion";
 
         return string.IsNullOrWhiteSpace(c.Description)
             ? $"Se sustituye en los prompts de todos los modulos como {VariableMarker(c.Key)}"
@@ -3417,11 +3394,7 @@ else
     private static string VariablePlaceholder(ProjectVariableResponse c) =>
         string.IsNullOrWhiteSpace(c.Description) ? "(sin valor)" : c.Description!;
 
-    /// <summary>
-    /// Descarta los valores tecleados de variables que ya no existen y deja las de
-    /// carpeta con la carpeta elegida al declararlas, que es lo que el servidor usara
-    /// si la ejecucion no cambia nada: el desplegable ensena lo que de verdad ira.
-    /// </summary>
+    /// <summary>Descarta los valores tecleados de variables que ya no existen.</summary>
     private void SyncVariableValues()
     {
         var keys = _variables.Select(c => c.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -3430,15 +3403,6 @@ else
             _variableValues.Remove(stale);
         foreach (var stale in _schedVariableValues.Keys.Where(k => !keys.Contains(k)).ToList())
             _schedVariableValues.Remove(stale);
-
-        foreach (var variable in _variables)
-        {
-            if (!ProjectVariableTypes.IsFolder(variable.Type)) continue;
-            if (string.IsNullOrWhiteSpace(variable.FolderPath)) continue;
-
-            if (string.IsNullOrWhiteSpace(GetVariableValue(variable.Key)))
-                _variableValues[variable.Key] = variable.FolderPath!;
-        }
     }
 
     private string GetVariableValue(string key) =>
@@ -3490,8 +3454,7 @@ else
                     string.IsNullOrWhiteSpace(_newVariableDescription) ? null : _newVariableDescription.Trim(),
                     _variables.Count,
                     _newVariableType,
-                    ParseModuleId(_newVariableSource),
-                    string.IsNullOrWhiteSpace(_newVariableFolder) ? null : _newVariableFolder));
+                    ParseModuleId(_newVariableSource)));
 
             if (ok)
             {
@@ -3499,7 +3462,6 @@ else
                 _newVariableDescription = "";
                 _newVariableType = ProjectVariableTypes.Text;
                 _newVariableSource = "";
-                _newVariableFolder = "";
                 await ReloadVariablesAsync();
                 _variablesMsg = "Variable creada.";
             }
@@ -3517,20 +3479,14 @@ else
         _editVariableDescription = c.Description ?? "";
         _editVariableType = string.IsNullOrWhiteSpace(c.Type) ? ProjectVariableTypes.Text : c.Type;
         _editVariableSource = c.SourceModuleId?.ToString() ?? "";
-        _editVariableFolder = c.FolderPath ?? "";
     }
 
-    /// <summary>Carpetas que puede elegir una variable: las de la biblioteca indicada o,
-    /// sin biblioteca, las de todas (una carpeta puede existir en una y no en otra).</summary>
-    private List<string> FolderOptions(string sourceModuleId)
+    /// <summary>De donde salen las carpetas de una variable, para la ficha.</summary>
+    private string VariableSourceLabel(ProjectVariableResponse variable)
     {
-        var source = ParseModuleId(sourceModuleId);
-        return _directoryFolders
-            .Where(d => source is null || d.ModuleId == source)
-            .SelectMany(d => d.Folders)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        if (variable.SourceModuleId is not { } source) return "la biblioteca del pipeline";
+        var directory = _directoryFolders.FirstOrDefault(d => d.ModuleId == source);
+        return directory is null ? "una biblioteca que ya no existe" : directory.ModuleName;
     }
 
     private static Guid? ParseModuleId(string value) =>
@@ -3572,8 +3528,7 @@ else
                     string.IsNullOrWhiteSpace(_editVariableDescription) ? null : _editVariableDescription.Trim(),
                     current?.SortOrder ?? 0,
                     _editVariableType,
-                    ParseModuleId(_editVariableSource),
-                    string.IsNullOrWhiteSpace(_editVariableFolder) ? null : _editVariableFolder));
+                    ParseModuleId(_editVariableSource)));
 
             if (ok)
             {

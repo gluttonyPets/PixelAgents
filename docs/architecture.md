@@ -209,28 +209,35 @@ corre sin sustituir.
 Cada variable declara **como se pide su valor** (`ProjectVariable.Type`); lo que
 recibe el modulo es siempre el mismo texto, el tipo solo cambia la interfaz:
 
-| Tipo | Como se declara | Al lanzar la ejecucion |
-|------|-----------------|------------------------|
-| `text` (por defecto) | nombre y descripcion | campo de texto libre, como siempre |
-| `folder` | nombre y **carpeta elegida** (`FolderPath`), en vez de descripcion | desplegable con las carpetas de la biblioteca, con la elegida ya puesta |
+| Tipo | Que declara | Como se le da valor |
+|------|-------------|---------------------|
+| `text` (por defecto) | nombre y descripcion | campo de texto libre |
+| `folder` | nombre y de que biblioteca se elige (`SourceModuleId`), sin descripcion | desplegable con las carpetas que esa biblioteca tiene |
 
-Una variable `folder` puede fijar de que nodo Directorio salen las opciones
-(`SourceModuleId`); sin el, se ofrecen las de todos los directorios del pipeline,
-agrupadas por nodo. Las carpetas las sirve
-`GET /api/projects/{projectId}/directory-folders`, que resuelve el indice de cada
-nodo Directorio y devuelve sus carpetas (las declaradas vacias incluidas).
+**El valor sigue siendo siempre de la ejecucion**: se da al lanzarla, al programarla
+o en la cola del planificador. La definicion de una variable `folder` no guarda
+carpeta —eso seria un valor fijo, que las variables no tienen—, solo dice de donde
+se elige. Sin `SourceModuleId` se ofrecen las carpetas de todos los directorios del
+pipeline, agrupadas por nodo. Las sirve
+`GET /api/projects/{projectId}/directory-folders`, que lee las carpetas del indice
+de cada nodo Directorio (`FileDirectoryIndex.ReadFolders`, sin resolver URLs, para
+que un indice con alguna entrada rota siga ofreciendo las suyas).
 
-En una variable `folder` la carpeta no es descripcion sino **seleccion**: es lo que
-la biblioteca entrega. Por eso `ExecutionVariables.Resolve` cae a `FolderPath`
-cuando la ejecucion no trae valor — la unica excepcion a "una variable no tiene
-valor fijo", y se sostiene porque esa carpeta no entra en ningun prompt: dice que
-parte del directorio viaja. Una variable de texto sigue sin respaldo: sin valor, no
-se sustituye.
+El nodo Directorio las aplica solo: `VariableFolders.ForModule` recorta el directorio
+con las carpetas que las variables `folder` traen en esa ejecucion, sin necesidad de
+escribir `{{carpeta}}` en su configuracion. Reglas:
 
-Y el nodo Directorio la aplica solo: `VariableFolders.ForModule` recorta el
-directorio con las carpetas de las variables `folder` que apuntan a ese nodo (o a
-ninguno), sin necesidad de escribir `{{carpeta}}` en su configuracion. Lo escrito en
-el nodo gana: las variables solo entran cuando el campo `folder` esta vacio.
+- Lo escrito en el nodo gana: las variables solo entran si su campo `folder` esta vacio.
+- Una variable atada a otra biblioteca no recorta esta.
+- Si hay variable de carpeta aplicable y la ejecucion no eligio ninguna, el modulo
+  **falla**. Publicar la biblioteca entera seria lo contrario de lo que pide el
+  pipeline, y es el error que el usuario puede arreglar eligiendo carpeta.
+
+En la planificacion con IA el modelo tambien rellena estas variables: se le pasan las
+carpetas reales y se le exige elegir una (`PlannerSchema.BuildInstruction`), y al leer
+su respuesta se descarta lo que no sea una de ellas. La fila de la cola se queda
+entonces sin carpeta —visible, con su desplegable— en vez de salir a ejecutar con una
+carpeta inventada.
 
 El desplegable lo pinta `Client/Components/VariableValueInput.razor`, que se usa en
 los tres sitios donde se da valor a una variable: la ejecucion manual, la cola del
@@ -499,8 +506,9 @@ casi nunca hace falta toda: `folder` decide que parte entrega el modulo.
   tocar el grafo.
 
 Y si el campo se deja vacio pero el pipeline tiene variables de tipo `folder` (ver
-"Tipo de variable"), el nodo entrega la carpeta de esas variables: la eleccion vive
-en la variable y no hay que cablear el marcador en cada directorio.
+"Tipo de variable"), el nodo entrega la carpeta que esas variables traigan en cada
+ejecucion, sin cablear el marcador en cada directorio. Si no traen ninguna, el modulo
+falla en vez de publicar el directorio entero.
 
 Funciona porque `folder` se lee de `ctx.Config`, que es la configuracion del nodo
 ya pasada por `ExecutionVariables.ApplyToConfig`: cuando llega al handler el

@@ -2145,28 +2145,24 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
 
 static ProjectVariableResponse ToVariableResponse(ProjectVariable c) =>
     new(c.Id, c.ProjectId, c.Key, c.Description, c.SortOrder, c.CreatedAt, c.UpdatedAt,
-        c.Type, c.SourceModuleId, c.FolderPath);
+        c.Type, c.SourceModuleId);
 
 // Valida el tipo de una variable y, si es de carpeta, el directorio del que salen sus
 // opciones: un nodo que no existe (o que no es un Directorio) dejaria el desplegable
 // vacio sin explicar por que.
-static async Task<(string? Type, Guid? SourceModuleId, string? FolderPath, string? Error)> ResolveVariableTypeAsync(
-    UserDbContext db, Guid projectId, string? rawType, Guid? sourceModuleId, string? folderPath)
+static async Task<(string? Type, Guid? SourceModuleId, string? Error)> ResolveVariableTypeAsync(
+    UserDbContext db, Guid projectId, string? rawType, Guid? sourceModuleId)
 {
     var type = ProjectVariableTypes.Normalize(rawType);
     if (type is null)
-        return (null, null, null, $"Tipo de variable no reconocido. Admitidos: {string.Join(", ", ProjectVariableTypes.All)}.");
+        return (null, null, $"Tipo de variable no reconocido. Admitidos: {string.Join(", ", ProjectVariableTypes.All)}.");
 
-    // El directorio y la carpeta solo tienen sentido en las variables de carpeta:
-    // guardarlos en una de texto dejaria una seleccion invisible que nadie aplica.
+    // La biblioteca solo tiene sentido en las variables de carpeta: guardarla en una
+    // de texto dejaria una referencia invisible que nadie aplica.
     if (!ProjectVariableTypes.IsFolder(type))
-        return (type, null, null, null);
+        return (type, null, null);
 
-    var folder = FileDirectoryIndex.NormalizePath(folderPath);
-    if (folder is not null && FileDirectoryIndex.HasTraversal(folder))
-        return (null, null, null, "La carpeta no puede salir del directorio ni usar segmentos \".\" o \"..\".");
-
-    if (sourceModuleId is not { } moduleId) return (type, null, folder, null);
+    if (sourceModuleId is not { } moduleId) return (type, null, null);
 
     var isDirectory = await db.ProjectModules
         .Include(pm => pm.AiModule)
@@ -2174,8 +2170,8 @@ static async Task<(string? Type, Guid? SourceModuleId, string? FolderPath, strin
             && pm.AiModule.ModuleType == FileDirectoryIndex.ModuleType);
 
     return isDirectory
-        ? (type, moduleId, folder, null)
-        : (null, null, null, "El directorio indicado no es un nodo Directorio de archivos de este pipeline.");
+        ? (type, moduleId, null)
+        : (null, null, "El directorio indicado no es un nodo Directorio de archivos de este pipeline.");
 }
 
 app.MapGet("/api/projects/{projectId:guid}/variables", async (
@@ -2196,16 +2192,10 @@ app.MapGet("/api/projects/{projectId:guid}/variables", async (
 // variables de tipo carpeta, tanto al declararlas como al dar valor a una ejecucion.
 app.MapGet("/api/projects/{projectId:guid}/directory-folders", async (
     Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um,
-    ITenantDbContextFactory factory, IConfiguration configuration) =>
+    ITenantDbContextFactory factory) =>
 {
-    var user = await um.GetUserAsync(ctx.User);
-    if (user is null) return Results.Unauthorized();
-
-    var claims = await um.GetClaimsAsync(user);
-    var tenantDbName = claims.FirstOrDefault(c => c.Type == "db_name")?.Value;
-    if (tenantDbName is null) return Results.Unauthorized();
-
-    await using var db = factory.Create(tenantDbName);
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
 
     var directories = await db.ProjectModules
         .Include(pm => pm.AiModule)
@@ -2213,22 +2203,15 @@ app.MapGet("/api/projects/{projectId:guid}/directory-folders", async (
             && pm.AiModule.ModuleType == FileDirectoryIndex.ModuleType)
         .ToListAsync();
 
-    var publicBaseUrl = (configuration["BaseUrl"] ?? configuration["AllowedOrigin"] ?? "").TrimEnd('/');
-    var result = new List<DirectoryFoldersResponse>();
-
-    foreach (var node in directories)
-    {
-        var directory = await FileDirectoryPublisher.LoadAsync(db, node.Id);
-        if (directory is null) continue;
-
-        // Un indice roto no puede dejar sin desplegable al resto de directorios:
-        // ese nodo aporta las carpetas que se hayan podido resolver, o ninguna.
-        var index = FileDirectoryPublisher.Resolve(directory, tenantDbName, publicBaseUrl);
-        result.Add(new DirectoryFoldersResponse(
+    // Solo hacen falta las carpetas, no las URLs: asi un indice con alguna entrada
+    // rota sigue ofreciendo las carpetas que declara.
+    var result = directories
+        .Select(node => new DirectoryFoldersResponse(
             node.Id,
             node.StepName ?? node.AiModule.Name,
-            index.Folders.ToList()));
-    }
+            FileDirectoryIndex.ReadFolders(FileDirectoryIndex.ReadConfig(
+                node.AiModule.Configuration, node.Configuration, FileDirectoryIndex.IndexConfigKey))))
+        .ToList();
 
     return Results.Ok(result);
 }).RequireAuthorization();
@@ -2252,8 +2235,8 @@ app.MapPost("/api/projects/{projectId:guid}/variables", async (
     if (duplicated)
         return Results.BadRequest(new { error = $"Ya existe una variable '{key}' en este proyecto." });
 
-    var (type, sourceModuleId, folderPath, typeError) =
-        await ResolveVariableTypeAsync(db, projectId, req.Type, req.SourceModuleId, req.FolderPath);
+    var (type, sourceModuleId, typeError) =
+        await ResolveVariableTypeAsync(db, projectId, req.Type, req.SourceModuleId);
     if (typeError is not null) return Results.BadRequest(new { error = typeError });
 
     var now = DateTime.UtcNow;
@@ -2265,7 +2248,6 @@ app.MapPost("/api/projects/{projectId:guid}/variables", async (
         Description = req.Description,
         Type = type!,
         SourceModuleId = sourceModuleId,
-        FolderPath = folderPath,
         SortOrder = req.SortOrder,
         CreatedAt = now,
         UpdatedAt = now,
@@ -2297,15 +2279,14 @@ app.MapPut("/api/projects/{projectId:guid}/variables/{variableId:guid}", async (
     if (duplicated)
         return Results.BadRequest(new { error = $"Ya existe una variable '{key}' en este proyecto." });
 
-    var (type, sourceModuleId, folderPath, typeError) =
-        await ResolveVariableTypeAsync(db, projectId, req.Type, req.SourceModuleId, req.FolderPath);
+    var (type, sourceModuleId, typeError) =
+        await ResolveVariableTypeAsync(db, projectId, req.Type, req.SourceModuleId);
     if (typeError is not null) return Results.BadRequest(new { error = typeError });
 
     variable.Key = key;
     variable.Description = req.Description;
     variable.Type = type!;
     variable.SourceModuleId = sourceModuleId;
-    variable.FolderPath = folderPath;
     variable.SortOrder = req.SortOrder;
     variable.UpdatedAt = DateTime.UtcNow;
 
