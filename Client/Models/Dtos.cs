@@ -327,6 +327,10 @@ public record PlannerModelOption(string Provider, string ModelName, string Displ
 public record CreatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
 public record UpdatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
 public record ReorderPlannedPromptsRequest(List<Guid> OrderedIds);
+public record DraftPlannedPromptRequest(
+    string ModelName, string Idea, string? Content = null,
+    Dictionary<string, string>? Variables = null);
+public record PlannedPromptDraftResponse(string Content, Dictionary<string, string> Variables);
 public record PlannedPromptResponse(
     Guid Id, Guid ProjectId, int OrderIndex, string Content, string Status,
     DateTime CreatedAt, DateTime UpdatedAt, DateTime? UsedAt, Guid? ExecutionId,

@@ -186,6 +186,22 @@ programacion activa consumiendo la cola, la fecha estimada en que se lanzara. La
 fechas las proyecta `GET /api/projects/{projectId}/schedule/upcoming`, que encadena
 `SchedulerBackgroundService.ComputeNextRun` sobre su propio resultado.
 
+### Ejecuciones planificadas a mano (con ayuda de la IA)
+
+La cola no depende del generador: en "Cola de prompts" el boton "+ Anadir" abre un
+formulario donde el usuario escribe a mano el prompt y el valor de cada variable, y lo
+guarda con "Anadir a la cola" (al final, como una ejecucion pendiente mas) o con
+"Anadir y ejecutar", que ademas la lanza en el momento sin esperar al cron.
+
+Dentro de ese formulario esta el asistente: el usuario cuenta la idea en una linea y
+`POST /api/projects/{projectId}/planned-prompts/draft` devuelve el prompt redactado y el
+valor propuesto para las variables **sin guardar nada**, para que lo revise antes de
+anadirlo. Lo resuelve `PromptPlannerService.DraftAsync` con el mismo contrato de
+`PlannerSchema` que la generacion en lote, pero pidiendo una sola ejecucion; el borrador
+que el usuario ya tenga escrito viaja en la peticion para pulirlo en vez de tirarlo, y
+los valores de variable que haya fijado a mano se le declaran intocables al modelo (y
+tampoco se pisan al volver la propuesta).
+
 Cuando el planificador esta activo pero **no queda ningun prompt** (cola vacia y sin
 `UserInput`), el scheduler no ejecuta el pipeline con un prompt vacio: crea una correlacion
 Telegram en estado `awaiting_planning` (asociada al proyecto, sin ejecucion) y envia un mensaje

@@ -419,8 +419,70 @@ else
                             <div class="inspector-collapsible-body planner-queue">
                                 <div class="planner-queue-header">
                                     <span class="inspector-collapsible-spacer"></span>
-                                    <button class="btn btn-ghost btn-xs" @onclick="AddManualPrompt">+ Añadir</button>
+                                    <button class="btn btn-ghost btn-xs" @onclick="ToggleComposer"
+                                            title="Añadir una ejecucion a mano">
+                                        @(_composerOpen ? "Cerrar" : "+ Añadir")
+                                    </button>
                                 </div>
+
+                                @if (_composerOpen)
+                                {
+                                    <div class="planner-composer">
+                                        <div class="planner-composer-title">Nueva ejecucion a mano</div>
+                                        <textarea rows="3" class="planner-input planner-textarea"
+                                                  placeholder="Escribe el prompt de esta ejecucion..."
+                                                  @bind="_composerContent"></textarea>
+
+                                        @if (_variables.Count > 0)
+                                        {
+                                            <div class="planner-prompt-variables">
+                                                @foreach (var v in _variables)
+                                                {
+                                                    var key = v.Key;
+                                                    <div class="planner-prompt-variable-row">
+                                                        <span class="planner-prompt-variable-key" title="@VariableHint(v)">@key</span>
+                                                        <input type="text" class="planner-prompt-variable-input"
+                                                               value="@GetComposerVariable(key)"
+                                                               placeholder="@VariablePlaceholder(v)"
+                                                               @onchange="@(e => SetComposerVariable(key, e.Value?.ToString()))" />
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
+
+                                        <div class="planner-composer-ai">
+                                            <span class="planner-composer-ai-label">
+                                                ¿No sabes que poner? Cuentale la idea a la IA y te la redacta.
+                                            </span>
+                                            <input type="text" class="planner-input"
+                                                   placeholder="Ej: un analisis del mercado de zapatillas de trail"
+                                                   @bind="_composerIdea" />
+                                            <button class="btn btn-ghost btn-xs planner-composer-ai-btn"
+                                                    disabled="@_composerDrafting"
+                                                    @onclick="DraftComposerWithAi">
+                                                @if (_composerDrafting)
+                                                {
+                                                    <span class="spinner" style="width: 0.55rem; height: 0.55rem;"></span>
+                                                    <span>Redactando...</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>✨ Redactar con IA</span>
+                                                }
+                                            </button>
+                                        </div>
+
+                                        <div class="planner-composer-actions">
+                                            <button class="btn btn-primary btn-xs"
+                                                    disabled="@(_composerSaving || string.IsNullOrWhiteSpace(_composerContent))"
+                                                    @onclick="AddComposerPrompt">Añadir a la cola</button>
+                                            <button class="btn btn-success btn-xs"
+                                                    disabled="@(_composerSaving || _executing || string.IsNullOrWhiteSpace(_composerContent))"
+                                                    title="Añadir esta ejecucion y lanzarla ahora mismo"
+                                                    @onclick="AddComposerPromptAndRun">&#9654; Añadir y ejecutar</button>
+                                        </div>
+                                    </div>
+                                }
                                 @if (_plannedPrompts.Count == 0)
                                 {
                                     <div class="planner-queue-empty">No hay prompts en cola.</div>
@@ -2256,6 +2318,15 @@ else
     private bool _plannerBusy;
     private string? _plannerError;
     private Guid? _executingPromptId;
+
+    // Alta a mano de una ejecucion planificada: el formulario se rellena a mano o
+    // con la propuesta de la IA, y no se guarda nada hasta que el usuario lo anade.
+    private bool _composerOpen;
+    private string _composerContent = "";
+    private string _composerIdea = "";
+    private readonly Dictionary<string, string> _composerVariables = new(StringComparer.OrdinalIgnoreCase);
+    private bool _composerDrafting;
+    private bool _composerSaving;
 
     // Secciones plegables del panel derecho: solo una abierta a la vez para que
     // la cola y el historial no compitan por el alto del inspector.
@@ -4176,6 +4247,11 @@ else
         {
             if (_plannerModels.Count == 0)
                 _plannerModels = await Api.GetPlannerModelsAsync();
+            // El primero de la lista es el modelo actual: se preselecciona para que
+            // tanto el generador como el asistente de una ejecucion funcionen sin
+            // tener que elegir nada a mano.
+            if (string.IsNullOrWhiteSpace(_plannerModelName) && _plannerModels.Count > 0)
+                _plannerModelName = _plannerModels[0].ModelName;
             _plannedPrompts = await Api.GetPlannedPromptsAsync(_project.Id);
             _upcoming = await Api.GetUpcomingRunsAsync(_project.Id);
         }
@@ -4271,11 +4347,130 @@ else
         finally { _plannerBusy = false; }
     }
 
-    private async Task AddManualPrompt()
+    // ── Alta a mano de una ejecucion (con o sin ayuda de la IA) ────────────
+
+    private void ToggleComposer()
+    {
+        _composerOpen = !_composerOpen;
+        if (_composerOpen) _plannerError = null;
+        else ResetComposer();
+    }
+
+    private void ResetComposer()
+    {
+        _composerContent = "";
+        _composerIdea = "";
+        _composerVariables.Clear();
+    }
+
+    private string GetComposerVariable(string key) =>
+        _composerVariables.TryGetValue(key, out var value) ? value : "";
+
+    private void SetComposerVariable(string key, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) _composerVariables.Remove(key);
+        else _composerVariables[key] = value.Trim();
+    }
+
+    /// <summary>
+    /// Le pide a la IA el prompt (y el valor de las variables) de esta ejecucion.
+    /// Lo que el usuario ya haya escrito viaja como borrador para que la IA lo pula
+    /// en vez de tirarlo, y la propuesta se queda en el formulario para revisarla.
+    /// </summary>
+    private async Task DraftComposerWithAi()
     {
         if (_project is null) return;
-        var (ok, item, _) = await Api.CreatePlannedPromptAsync(_project.Id, "Nuevo prompt");
-        if (ok && item is not null) _plannedPrompts.Add(item);
+        _plannerError = null;
+
+        if (string.IsNullOrWhiteSpace(_plannerModelName))
+        {
+            _plannerError = "Elige arriba el modelo generador para que la IA redacte la ejecucion";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_composerIdea) && string.IsNullOrWhiteSpace(_composerContent))
+        {
+            _plannerError = "Escribe la idea de la ejecucion (o un borrador del prompt) antes de pedir ayuda";
+            return;
+        }
+
+        _composerDrafting = true;
+        try
+        {
+            var (ok, draft, error) = await Api.DraftPlannedPromptAsync(
+                _project.Id,
+                new DraftPlannedPromptRequest(
+                    _plannerModelName!, _composerIdea ?? "", _composerContent,
+                    new Dictionary<string, string>(_composerVariables)));
+
+            if (!ok || draft is null)
+            {
+                _plannerError = error ?? "La IA no devolvio ninguna propuesta";
+                return;
+            }
+
+            _composerContent = draft.Content;
+            // Los valores que el usuario habia fijado a mano se respetan: la propuesta
+            // solo rellena las variables que seguian vacias.
+            foreach (var kv in draft.Variables)
+            {
+                if (string.IsNullOrWhiteSpace(kv.Value)) continue;
+                if (_composerVariables.ContainsKey(kv.Key)) continue;
+                _composerVariables[kv.Key] = kv.Value;
+            }
+        }
+        catch (Exception ex) { _plannerError = $"Error de conexion: {ex.Message}"; }
+        finally { _composerDrafting = false; }
+    }
+
+    /// <summary>Guarda la ejecucion escrita en el formulario al final de la cola.</summary>
+    private async Task<PlannedPromptResponse?> SaveComposerPrompt()
+    {
+        if (_project is null) return null;
+        if (string.IsNullOrWhiteSpace(_composerContent))
+        {
+            _plannerError = "Escribe el prompt de la ejecucion";
+            return null;
+        }
+
+        _plannerError = null;
+        _composerSaving = true;
+        try
+        {
+            var (ok, item, error) = await Api.CreatePlannedPromptAsync(
+                _project.Id, _composerContent.Trim(),
+                _composerVariables.Count == 0 ? null : new Dictionary<string, string>(_composerVariables));
+
+            if (!ok || item is null)
+            {
+                _plannerError = error ?? "No se pudo anadir la ejecucion";
+                return null;
+            }
+
+            _plannedPrompts.Add(item);
+            ResetComposer();
+            return item;
+        }
+        catch (Exception ex)
+        {
+            _plannerError = $"Error de conexion: {ex.Message}";
+            return null;
+        }
+        finally { _composerSaving = false; }
+    }
+
+    private async Task AddComposerPrompt()
+    {
+        var item = await SaveComposerPrompt();
+        if (item is not null) _composerOpen = false;
+    }
+
+    /// <summary>Anade la ejecucion y la lanza en el momento, sin esperar al cron.</summary>
+    private async Task AddComposerPromptAndRun()
+    {
+        var item = await SaveComposerPrompt();
+        if (item is null) return;
+        _composerOpen = false;
+        await ExecutePlannedPrompt(item.Id);
     }
 
     private async Task DeletePrompt(Guid promptId)

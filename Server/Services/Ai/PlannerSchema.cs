@@ -20,6 +20,11 @@ public static class PlannerSchema
     /// </summary>
     public static string BuildInstruction(int count, IReadOnlyList<ProjectVariable> variables)
     {
+        // El asistente de una sola ejecucion pide el mismo contrato con un unico
+        // elemento, asi que la cuenta se escribe en singular cuando toca.
+        var promptsPedidos = count == 1 ? "1 prompt" : $"{count} prompts ordenados";
+        var ejecucionesPedidas = count == 1 ? "1 ejecucion" : $"{count} ejecuciones ordenadas";
+
         if (variables.Count == 0)
         {
             return
@@ -30,7 +35,7 @@ $@"Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adi
     ""segundo prompt""
   ]
 }}
-La lista debe contener exactamente {count} prompts ordenados.";
+La lista debe contener exactamente {promptsPedidos}.";
         }
 
         // Ficha de cada variable: su nombre y para que sirve, que es lo unico que
@@ -61,7 +66,7 @@ Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adicio
     }}
   ]
 }}
-La lista debe contener exactamente {count} ejecuciones ordenadas.";
+La lista debe contener exactamente {ejecucionesPedidas}.";
     }
 
     /// <summary>

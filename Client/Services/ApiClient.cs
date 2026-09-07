@@ -881,6 +881,18 @@ public class ApiClient
         return (true, result, null);
     }
 
+    /// <summary>Pide a la IA el borrador de UNA ejecucion (prompt + variables) sin
+    /// guardarlo: lo rellena en el formulario para que el usuario lo revise.</summary>
+    public async Task<(bool Ok, PlannedPromptDraftResponse? Result, string? Error)> DraftPlannedPromptAsync(
+        Guid projectId, DraftPlannedPromptRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/planned-prompts/draft", req);
+        if (!resp.IsSuccessStatusCode)
+            return (false, null, await ReadErrorAsync(resp));
+        var result = await resp.Content.ReadFromJsonAsync<PlannedPromptDraftResponse>();
+        return (true, result, null);
+    }
+
     public async Task<(bool Ok, PlannedPromptResponse? Result, string? Error)> CreatePlannedPromptAsync(
         Guid projectId, string content, Dictionary<string, string>? variables = null)
     {

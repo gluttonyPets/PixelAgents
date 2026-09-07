@@ -296,6 +296,14 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record CreatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
     public record UpdatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
     public record ReorderPlannedPromptsRequest(List<Guid> OrderedIds);
+    /// <summary>Peticion del asistente: la idea suelta del usuario y lo que ya lleve
+    /// escrito a mano en el formulario de "anadir ejecucion".</summary>
+    public record DraftPlannedPromptRequest(
+        string ModelName, string Idea, string? Content = null,
+        Dictionary<string, string>? Variables = null);
+    /// <summary>Propuesta del asistente para una ejecucion: no se guarda hasta que
+    /// el usuario la anade a la cola.</summary>
+    public record PlannedPromptDraftResponse(string Content, Dictionary<string, string> Variables);
     /// <param name="Variables">Valor de las variables del pipeline para esta ejecucion
     /// planificada; manda sobre lo que fije la programacion.</param>
     public record PlannedPromptResponse(

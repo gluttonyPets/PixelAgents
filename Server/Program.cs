@@ -3265,6 +3265,30 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/generate", async (
     return Results.Ok(created.Select(ToPlannedPromptResponse).ToList());
 }).RequireAuthorization();
 
+// Asistente de una sola ejecucion: redacta (o pule) el prompt y las variables que el
+// usuario esta escribiendo a mano en la cola. No persiste nada; el usuario revisa la
+// propuesta y la anade con el POST de abajo si le convence.
+app.MapPost("/api/projects/{projectId:guid}/planned-prompts/draft", async (
+    Guid projectId, DraftPlannedPromptRequest req,
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IPromptPlannerService planner, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(new object?[] { projectId }, ct);
+    if (project is null) return Results.NotFound();
+
+    var result = await planner.DraftAsync(
+        db, projectId, req.ModelName, req.Idea ?? "", req.Content, req.Variables, ct);
+
+    if (!result.Success || result.Prompts.Count == 0)
+        return Results.BadRequest(new { error = result.Error ?? "El modelo no devolvio ninguna propuesta" });
+
+    var draft = result.Prompts[0];
+    return Results.Ok(new PlannedPromptDraftResponse(draft.Content, draft.Variables));
+}).RequireAuthorization();
+
 app.MapPost("/api/projects/{projectId:guid}/planned-prompts", async (
     Guid projectId, CreatePlannedPromptRequest req,
     HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>

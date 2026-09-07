@@ -3505,6 +3505,51 @@ a.link:hover { text-decoration: underline; }
     gap: 0.4rem;
 }
 
+/* ── Alta a mano de una ejecucion planificada (con ayuda opcional de la IA) ── */
+.planner-composer {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.45rem;
+    margin-bottom: 0.35rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.planner-composer-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.planner-composer-ai {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-top: 0.35rem;
+    border-top: 1px dashed var(--border);
+}
+
+.planner-composer-ai-label {
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    line-height: 1.3;
+}
+
+.planner-composer-ai-btn {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.planner-composer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
 /* ── Secciones plegables del inspector (cola, historial, log) ── */
 .inspector-collapsible {
     border-top: 1px solid var(--border);

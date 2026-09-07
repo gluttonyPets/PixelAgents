@@ -536,7 +536,8 @@ En una ejecucion manual el prompt y el valor de cada variable se rellenan por
 separado en el panel de ejecucion. En una planificacion automatica es el
 planificador el que, ademas del prompt, propone el valor de cada variable para
 cada ejecucion futura (`PlannedPrompts.VariablesJson`), corregible a mano desde
-la cola.
+la cola. Una ejecucion planificada tambien se puede escribir entera a mano en la
+cola, con la IA redactando el prompt y las variables si se le pide.
 
 ### Ejecuciones
 
@@ -588,6 +589,25 @@ Cada proyecto puede tener una programacion:
 proyectos habilitados. La programacion tambien guarda el valor de las variables
 del pipeline que usara en cada corrida; cuando consume la cola del planificador,
 los valores que trae el prompt planificado mandan sobre los de la programacion.
+
+### Cola Del Planificador
+
+Las ejecuciones planificadas de un proyecto (`PlannedPrompt`): el prompt y el valor
+de las variables con que correra cada una. Se llenan en lote con el generador o
+**una a una a mano**, con la IA como ayuda opcional para redactarlas.
+
+- `GET /api/projects/{projectId}/planned-prompts`: lista la cola.
+- `POST /api/projects/{projectId}/planned-prompts/generate`: genera N ejecuciones
+  con el planificador.
+- `POST /api/projects/{projectId}/planned-prompts/draft`: redacta **una** ejecucion
+  (prompt + variables) a partir de la idea del usuario y del borrador que lleve
+  escrito. No guarda nada: la propuesta vuelve al formulario para revisarla.
+- `POST /api/projects/{projectId}/planned-prompts`: anade una ejecucion a la cola.
+- `PUT|DELETE /api/projects/{projectId}/planned-prompts/{promptId}`: edita o quita
+  una ejecucion pendiente.
+- `POST /api/projects/{projectId}/planned-prompts/reorder`: reordena la cola.
+- `POST /api/projects/{projectId}/planned-prompts/{promptId}/execute`: lanza esa
+  ejecucion ahora, sin esperar a la programacion.
 
 ### Integraciones De Mensajeria Y Publicacion
 

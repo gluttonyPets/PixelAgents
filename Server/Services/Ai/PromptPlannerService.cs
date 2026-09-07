@@ -15,6 +15,20 @@ namespace Server.Services.Ai
             string instructions,
             CancellationToken ct = default);
 
+        /// <summary>
+        /// Redacta UNA sola ejecucion planificada a partir de la idea suelta del usuario
+        /// (y del borrador que ya tenga escrito a mano, si lo hay). No guarda nada: la
+        /// propuesta vuelve a la cola para que el usuario la revise antes de anadirla.
+        /// </summary>
+        Task<PromptPlannerResult> DraftAsync(
+            UserDbContext db,
+            Guid projectId,
+            string modelName,
+            string idea,
+            string? currentContent = null,
+            IReadOnlyDictionary<string, string>? currentVariables = null,
+            CancellationToken ct = default);
+
         IReadOnlyList<PromptPlannerModelOption> GetAvailableModels();
     }
 
@@ -72,6 +86,46 @@ namespace Server.Services.Ai
             if (string.IsNullOrWhiteSpace(instructions))
                 return new PromptPlannerResult(false, new(), "Faltan instrucciones para el planificador");
 
+            return await AskModelAsync(
+                db, projectId, modelName, count,
+                (project, variables) => BuildPlannerPrompt(count, instructions, project.Context, variables),
+                ct);
+        }
+
+        public async Task<PromptPlannerResult> DraftAsync(
+            UserDbContext db,
+            Guid projectId,
+            string modelName,
+            string idea,
+            string? currentContent = null,
+            IReadOnlyDictionary<string, string>? currentVariables = null,
+            CancellationToken ct = default)
+        {
+            // Sin idea no hay nada que redactar, salvo que el usuario ya haya escrito
+            // el prompt a mano y solo quiera que la IA lo pula.
+            if (string.IsNullOrWhiteSpace(idea) && string.IsNullOrWhiteSpace(currentContent))
+                return new PromptPlannerResult(false, new(), "Escribe la idea de la ejecucion o el prompt a mano");
+
+            return await AskModelAsync(
+                db, projectId, modelName, 1,
+                (project, variables) => BuildDraftPrompt(
+                    idea, project.Context, variables, currentContent, currentVariables),
+                ct);
+        }
+
+        /// <summary>
+        /// Lo comun a generar la cola entera y a redactar una sola ejecucion: validar
+        /// modelo y API Key, cargar las variables del pipeline, llamar al proveedor y
+        /// leer la respuesta con el contrato de <see cref="PlannerSchema"/>.
+        /// </summary>
+        private async Task<PromptPlannerResult> AskModelAsync(
+            UserDbContext db,
+            Guid projectId,
+            string modelName,
+            int expected,
+            Func<Project, IReadOnlyList<ProjectVariable>, string> buildPrompt,
+            CancellationToken ct)
+        {
             if (string.IsNullOrWhiteSpace(modelName))
                 return new PromptPlannerResult(false, new(), "Falta indicar el modelo");
 
@@ -104,12 +158,12 @@ namespace Server.Services.Ai
                 .OrderBy(v => v.SortOrder).ThenBy(v => v.CreatedAt)
                 .ToListAsync(ct);
 
-            var systemPrompt = BuildPlannerPrompt(count, instructions, project.Context, variables);
+            var systemPrompt = buildPrompt(project, variables);
 
-            // OJO: el contexto del proyecto ya va embebido en el prompt que construye
-            // BuildPlannerPrompt. Si ademas se pasara por ProjectContext, el provider
-            // lo volveria a inyectar en el system prompt y se pagaria el mismo texto
-            // dos veces en cada llamada.
+            // OJO: el contexto del proyecto ya va embebido en el prompt que construyen
+            // BuildPlannerPrompt / BuildDraftPrompt. Si ademas se pasara por ProjectContext,
+            // el provider lo volveria a inyectar en el system prompt y se pagaria el mismo
+            // texto dos veces en cada llamada.
             var aiContext = new AiExecutionContext
             {
                 ModuleType = "Text",
@@ -126,7 +180,7 @@ namespace Server.Services.Ai
                     return new PromptPlannerResult(false, new(), result.Error ?? "Error generando prompts");
 
                 var raw = result.TextOutput ?? "";
-                var prompts = PlannerSchema.ParsePrompts(raw, count, variables);
+                var prompts = PlannerSchema.ParsePrompts(raw, expected, variables);
                 if (prompts.Count == 0)
                     return new PromptPlannerResult(false, new(), "El modelo no devolvio ningun prompt valido");
 
@@ -159,6 +213,55 @@ Necesidades / instrucciones del usuario:
 {instructions}
 
 " + PlannerSchema.BuildInstruction(count, variables);
+        }
+
+        /// <summary>
+        /// Prompt del asistente de una ejecucion suelta: el usuario esta anadiendo una
+        /// ejecucion a mano y pide ayuda para redactarla. Se le pasa el contexto del
+        /// proyecto, lo que lleve escrito (para pulirlo en vez de tirarlo) y su idea,
+        /// y se le exige el mismo contrato de salida que al planificador pero con una
+        /// unica ejecucion.
+        /// </summary>
+        public static string BuildDraftPrompt(
+            string idea,
+            string? projectContext,
+            IReadOnlyList<ProjectVariable> variables,
+            string? currentContent = null,
+            IReadOnlyDictionary<string, string>? currentVariables = null)
+        {
+            var ctxBlock = string.IsNullOrWhiteSpace(projectContext)
+                ? ""
+                : $"\n\nContexto del proyecto:\n{projectContext}\n";
+
+            var draftBlock = string.IsNullOrWhiteSpace(currentContent)
+                ? ""
+                : $"\n\nBorrador que el usuario ya ha escrito a mano (mejoralo, no lo tires):\n{currentContent}\n";
+
+            // Lo que el usuario ya haya fijado a mano manda: la IA rellena lo que falta
+            // y respeta esos valores en el prompt que redacta.
+            var fixedValues = (currentVariables ?? ExecutionVariables.None)
+                .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+                .Where(kv => variables.Any(v => string.Equals(v.Key, kv.Key, StringComparison.OrdinalIgnoreCase)))
+                .Select(kv => $"- {kv.Key}: {kv.Value}")
+                .ToList();
+
+            var fixedBlock = fixedValues.Count == 0
+                ? ""
+                : "\n\nValores que el usuario ya ha fijado y NO debes cambiar:\n"
+                    + string.Join("\n", fixedValues) + "\n";
+
+            var ideaBlock = string.IsNullOrWhiteSpace(idea)
+                ? "El usuario no ha descrito nada mas: quedate con su borrador y dejalo listo para ejecutarse."
+                : idea.Trim();
+
+            return
+$@"Eres un asistente que redacta UNA ejecucion planificada para un pipeline de IA.
+El prompt debe ser autocontenido, claro y listo para ejecutarse tal cual en una corrida.{ctxBlock}{draftBlock}{fixedBlock}
+
+Idea del usuario para esta ejecucion:
+{ideaBlock}
+
+" + PlannerSchema.BuildInstruction(1, variables);
         }
     }
 }
