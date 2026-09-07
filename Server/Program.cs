@@ -2210,7 +2210,7 @@ app.MapGet("/api/projects/{projectId:guid}/directory-folders", async (
             node.Id,
             node.StepName ?? node.AiModule.Name,
             FileDirectoryIndex.ReadFolders(FileDirectoryIndex.ReadConfig(
-                node.AiModule.Configuration, node.Configuration, FileDirectoryIndex.IndexConfigKey))))
+                null, node.Configuration, FileDirectoryIndex.IndexConfigKey))))
         .ToList();
 
     return Results.Ok(result);

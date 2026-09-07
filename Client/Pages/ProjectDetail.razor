@@ -509,10 +509,12 @@ else
                                                     var key = v.Key;
                                                     <div class="planner-prompt-variable-row">
                                                         <span class="planner-prompt-variable-key" title="@VariableHint(v)">@key</span>
-                                                        <input type="text" class="planner-prompt-variable-input"
-                                                               value="@GetComposerVariable(key)"
-                                                               placeholder="@VariablePlaceholder(v)"
-                                                               @onchange="@(e => SetComposerVariable(key, e.Value?.ToString()))" />
+                                                        <VariableValueInput Variable="v"
+                                                                            Value="@GetComposerVariable(key)"
+                                                                            ValueChanged="@(val => SetComposerVariable(key, val))"
+                                                                            DirectoryFolders="_directoryFolders"
+                                                                            Placeholder="@VariablePlaceholder(v)"
+                                                                            CssClass="planner-prompt-variable-input" />
                                                     </div>
                                                 }
                                             </div>
@@ -2728,8 +2730,7 @@ else
             try { _projectFeedback = await Api.GetProjectFeedbackAsync(ProjectId); } catch { _projectFeedback = []; }
             try { _tenantRules = await Api.GetRulesAsync(); } catch { _tenantRules = []; }
             try { _variables = await Api.GetProjectVariablesAsync(ProjectId); } catch { _variables = []; }
-            try { _directoryFolders = await Api.GetProjectDirectoryFoldersAsync(ProjectId); }
-            catch { _directoryFolders = []; }
+            await ReloadDirectoryFoldersAsync();
             SyncVariableValues();
             // Check if latest execution is running, waiting for checkpoint, or waiting for orchestrator review
             var latestExec = _executions.FirstOrDefault();
@@ -2872,6 +2873,10 @@ else
                 _project = updated;
                 _projectConnections = updated.Connections ?? new();
             }
+
+            // El indice del Directorio viaja en la configuracion del nodo, asi que al
+            // guardar el grafo pueden haber aparecido (o desaparecido) carpetas.
+            await ReloadDirectoryFoldersAsync();
         }
     }
 
@@ -3430,9 +3435,16 @@ else
     private async Task ReloadVariablesAsync()
     {
         _variables = await Api.GetProjectVariablesAsync(ProjectId);
+        await ReloadDirectoryFoldersAsync();
+        SyncVariableValues();
+    }
+
+    /// <summary>Carpetas de las bibliotecas del pipeline: son las opciones de las
+    /// variables de tipo carpeta, y cambian al editar el Directorio.</summary>
+    private async Task ReloadDirectoryFoldersAsync()
+    {
         try { _directoryFolders = await Api.GetProjectDirectoryFoldersAsync(ProjectId); }
         catch { _directoryFolders = []; }
-        SyncVariableValues();
     }
 
     private async Task CreateVariable()
@@ -4374,6 +4386,10 @@ else
                 _plannerModelName = _plannerModels[0].ModelName;
             _plannedPrompts = await Api.GetPlannedPromptsAsync(_project.Id);
             _upcoming = await Api.GetUpcomingRunsAsync(_project.Id);
+            // Las carpetas de la biblioteca se refrescan aqui: si se han creado o
+            // renombrado en el editor, el desplegable de una variable de carpeta tiene
+            // que ofrecerlas sin recargar la pagina.
+            await ReloadDirectoryFoldersAsync();
         }
         catch (Exception ex) { _plannerError = $"Error de conexión: {ex.Message}"; }
         StateHasChanged();

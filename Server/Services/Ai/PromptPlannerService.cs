@@ -301,7 +301,7 @@ Idea del usuario para esta ejecucion:
             var foldersByNode = directories.ToDictionary(
                 node => node.Id,
                 node => FileDirectoryIndex.ReadFolders(FileDirectoryIndex.ReadConfig(
-                    node.AiModule.Configuration, node.Configuration, FileDirectoryIndex.IndexConfigKey)));
+                    null, node.Configuration, FileDirectoryIndex.IndexConfigKey)));
 
             foreach (var variable in folderVariables)
             {

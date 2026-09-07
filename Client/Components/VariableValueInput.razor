@@ -7,9 +7,9 @@
 
 @if (IsFolder)
 {
-    <select class="@CssClass" value="@Value"
+    <select class="@CssClass" value="@Value" title="@FolderTitle"
             @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)">
-        <option value="">@EmptyLabel</option>
+        <option value="">@EmptyOptionLabel</option>
         @foreach (var directory in Directories)
         {
             @if (Directories.Count > 1)
@@ -36,13 +36,6 @@
             <option value="@Value">@Value (ya no existe)</option>
         }
     </select>
-
-    @if (KnownFolders.Count == 0)
-    {
-        <span class="text-sm text-muted">
-            La biblioteca de este pipeline todavia no tiene carpetas.
-        </span>
-    }
 }
 else
 {
@@ -67,6 +60,16 @@ else
     [Parameter] public string EmptyLabel { get; set; } = "Sin valor";
 
     private bool IsFolder => ProjectVariableTypes.IsFolder(Variable.Type);
+
+    /// <summary>La opcion vacia dice por que no hay nada que elegir cuando toca: el
+    /// desplegable se pinta en filas estrechas donde no cabe un aviso aparte.</summary>
+    private string EmptyOptionLabel => KnownFolders.Count == 0
+        ? "La biblioteca no tiene carpetas"
+        : EmptyLabel;
+
+    private string FolderTitle => KnownFolders.Count == 0
+        ? "Crea carpetas en el nodo Directorio de archivos para poder elegir una"
+        : "Carpeta de la biblioteca que usara esta ejecucion";
 
     /// <summary>Directorios que alimentan el desplegable: el declarado por la variable
     /// o, si no declara ninguno, todas las bibliotecas del pipeline.</summary>
