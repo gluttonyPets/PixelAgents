@@ -65,7 +65,7 @@ almacenan el estado de interacciones externas pendientes de respuesta.
 
 **UserDb** (nombre dinamico, uno por cuenta) almacena todos los datos funcionales del tenant:
 `ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `ShopifyConnections`,
-`Projects`, `ProjectConstants` (constantes del pipeline, ver mas abajo), `ProjectModules`,
+`Projects`, `ProjectVariables` (variables del pipeline, ver mas abajo), `ProjectModules`,
 `ModuleConnections`, `ProjectExecutions`, `StepExecutions`,
 `ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs`, `Rules`,
 `PromptVersions` (historial de versiones del prompt de cada modulo) y las tres tablas del
@@ -107,27 +107,27 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 
 ---
 
-## Constantes de ejecucion
+## Variables de ejecucion
 
-Un pipeline puede declarar **constantes** — por ejemplo `tematica` y `keyword` — cuyo valor
-se elige en cada ejecucion. La definicion vive en el proyecto (`ProjectConstants`: clave,
+Un pipeline puede declarar **variables** — por ejemplo `tematica` y `keyword` — cuyo valor
+se elige en cada ejecucion. La definicion vive en el proyecto (`ProjectVariables`: clave,
 descripcion y valor por defecto) y el valor efectivo se guarda en la ejecucion
-(`ProjectExecutions.ConstantsJson`) o en la programacion (`ProjectSchedules.ConstantsJson`).
+(`ProjectExecutions.VariablesJson`) o en la programacion (`ProjectSchedules.VariablesJson`).
 
 El valor efectivo es "lo que aporte la ejecucion; si no aporta nada, el valor por defecto de
-la constante". Una constante que se quede sin valor **no se sustituye**: el marcador queda
+la variable". Una variable que se quede sin valor **no se sustituye**: el marcador queda
 visible y el executor lo avisa en el log, en vez de mandar al modelo un hueco vacio sin rastro.
 
-`GraphPipelineExecutor` las resuelve una sola vez al arrancar (`LoadConstantsAsync`) y las
+`GraphPipelineExecutor` las resuelve una sola vez al arrancar (`LoadVariablesAsync`) y las
 deja en el grafo, de modo que todos los modulos ven exactamente los mismos valores. Se aplican
-de dos formas complementarias (`Server/Services/Ai/ExecutionConstants.cs`):
+de dos formas complementarias (`Server/Services/Ai/ExecutionVariables.cs`):
 
 1. **Sustitucion**: cualquier `{{clave}}` del prompt inicial o de la configuracion de un modulo
    (systemPrompt, imagePrompt, contenido estatico, caption, condicion...) se reemplaza por el
-   valor. Los marcadores que no correspondan a una constante con valor se dejan intactos, para
+   valor. Los marcadores que no correspondan a una variable con valor se dejan intactos, para
    no romper plantillas ajenas ni ejemplos de JSON.
 2. **Inyeccion**: los valores viajan ademas como bloque etiquetado
-   (`=== CONSTANTES DE LA EJECUCION ===`) dentro del system prompt de cada llamada a IA, asi que
+   (`=== VARIABLES DE LA EJECUCION ===`) dentro del system prompt de cada llamada a IA, asi que
    un modulo puede usarlas aunque su prompt no lleve el marcador. `SystemPromptComposer` lo
    coloca detras del contexto del proyecto y delante del historial: es invariante durante toda
    la ejecucion, asi que no rompe el prefijo cacheable.
@@ -135,10 +135,25 @@ de dos formas complementarias (`Server/Services/Ai/ExecutionConstants.cs`):
 Como los valores quedan guardados en la ejecucion, reintentar desde un modulo, reanudar una
 pausa o reiniciar desde Telegram usan **los mismos** valores que la corrida original. Un nodo
 `SubProject` pasa sus valores al pipeline insertado: este aplica los suyos propios para cada
-constante que declare con el mismo nombre (las que no declare, se ignoran).
+variable que declare con el mismo nombre (las que no declare, se ignoran).
 
-Endpoints: `GET|POST|PUT|DELETE /api/projects/{projectId}/constants`. En la UI se definen en
-Configuracion > Constantes y se rellenan en el panel de ejecucion y en la programacion.
+### De donde sale el valor de cada corrida
+
+| Como se lanza | Prompt | Valor de las variables |
+|---------------|--------|------------------------|
+| Manual (boton Ejecutar) | Lo que se escribe en el panel | Un campo por variable en ese mismo panel |
+| Programada sin cola | `ProjectSchedules.UserInput` | `ProjectSchedules.VariablesJson` |
+| Programada con cola del planificador | El siguiente `PlannedPrompt` | Los del prompt planificado, y por debajo los de la programacion |
+| Prompt de la cola lanzado a mano | Ese `PlannedPrompt` | Los del prompt planificado |
+| Repetir una ejecucion del historial | El de la ejecucion original | Los de la ejecucion original |
+| Reintento, reanudacion o reinicio desde Telegram | El de la ejecucion original | Los de la ejecucion original |
+
+Las capas se combinan con `ExecutionVariables.Merge` (gana la ultima) y, sobre el resultado,
+cada variable sin valor cae a su valor por defecto.
+
+Endpoints: `GET|POST|PUT|DELETE /api/projects/{projectId}/variables`. En la UI se definen en
+Configuracion > Variables y se rellenan en el panel de ejecucion, en la programacion y en cada
+prompt de la cola del planificador.
 
 ---
 
@@ -150,6 +165,16 @@ pipeline. El input de cada corrida se decide asi:
 - Si el schedule tiene `UsePromptQueue` (checkbox "usar planificador"), consume el siguiente
   `PlannedPrompt` pendiente de la cola del proyecto (por `OrderIndex`) y lo usa como input.
 - Si la cola esta vacia, cae al `UserInput` estatico del schedule.
+
+Cuando el proyecto declara variables, una ejecucion planificada no es solo un prompt: cada
+`PlannedPrompt` guarda tambien el valor de esas variables (`PlannedPrompts.VariablesJson`).
+`PromptPlannerService` se las pide al modelo en la misma llamada que los prompts —el contrato
+de ida y vuelta vive en `PlannerSchema`, que describe cada variable (clave, descripcion y valor
+actual como muestra) y lee la respuesta quedandose solo con las claves declaradas—. Asi el
+valor y el prompt salen coherentes entre si en vez de repetir el valor por defecto en todas
+las corridas. Si el modelo ignora el esquema y devuelve la lista de cadenas de siempre, los
+prompts se guardan igual y sin valores. En la cola del planificador cada prompt pendiente
+muestra sus variables y se pueden corregir a mano antes de que le toque el turno.
 
 En la interfaz el planificador vive en su propio panel, que se abre con el boton
 "Planificador" de la barra del canvas (junto a "Sub-proyecto"). Ese panel reune la
@@ -517,8 +542,8 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Modules      | `GET|POST|PUT|DELETE /api/modules`                | Definiciones de modulos reutilizables + archivos  |
 |              | `GET /api/modules/{id}/prompt-history`            | Historial de versiones del prompt del modulo (systemPrompt/imagePrompt); se registra una version en cada `PUT` que cambie el prompt, restaurable desde la UI |
 | Projects     | `GET|POST|PUT|DELETE /api/projects`               | Pipeline; incluye graph save y duplicar           |
-| Constantes   | `GET|POST|PUT|DELETE /api/projects/{id}/constants`| Constantes del pipeline; su valor se fija en cada ejecucion |
-| Executions   | `POST /api/projects/{id}/execute`                 | Lanza ejecucion (acepta el valor de las constantes) |
+| Variables   | `GET|POST|PUT|DELETE /api/projects/{id}/variables`| Variables del pipeline; su valor se fija en cada ejecucion |
+| Executions   | `POST /api/projects/{id}/execute`                 | Lanza ejecucion (acepta el valor de las variables) |
 |              | `POST /api/projects/{id}/cancel`                  | Cancela ejecucion activa                          |
 |              | `POST /api/executions/{id}/retry-from-module`     | Reintenta desde un nodo concreto del grafo        |
 |              | `GET /api/executions/{id}/logs`                   | Logs persistidos; progreso en tiempo real por SignalR |

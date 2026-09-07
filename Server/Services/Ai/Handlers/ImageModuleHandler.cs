@@ -129,7 +129,7 @@ public class ImageModuleHandler : IModuleHandler
                 ProjectContext = ctx.Project.Context,
                 PreviousExecutionsSummary = ctx.PreviousSummaryContext,
                 MandatoryRules = ctx.MandatoryRules,
-                ConstantsBlock = ctx.ConstantsBlock,
+                VariablesBlock = ctx.VariablesBlock,
                 PastExecutionsLearning = ctx.PastExecutionsLearning,
                 Configuration = callConfig,
                 InputFiles = callFiles,

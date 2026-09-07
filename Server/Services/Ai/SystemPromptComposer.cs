@@ -16,7 +16,7 @@ namespace Server.Services.Ai
     ///   1. Reglas de formato/contenido  -> constante de compilacion
     ///   2. Reglas obligatorias          -> invariante por tenant
     ///   3. Contexto del proyecto        -> invariante por proyecto
-    ///   4. Constantes de la ejecucion   -> invariante por ejecucion
+    ///   4. Variables de la ejecucion   -> invariante por ejecucion
     ///   5. Historial de ejecuciones     -> invariante por ejecucion
     ///   6. Prompt del modulo            -> cambia en cada modulo
     ///   7. Aprendizaje pasado           -> filtrado por modulo, cambia
@@ -39,8 +39,8 @@ namespace Server.Services.Ai
             if (!string.IsNullOrWhiteSpace(context.ProjectContext))
                 parts.Add($"[Contexto del proyecto]\n{context.ProjectContext}");
 
-            if (!string.IsNullOrWhiteSpace(context.ConstantsBlock))
-                parts.Add(context.ConstantsBlock!);
+            if (!string.IsNullOrWhiteSpace(context.VariablesBlock))
+                parts.Add(context.VariablesBlock!);
 
             if (!string.IsNullOrWhiteSpace(context.PreviousExecutionsSummary))
                 parts.Add(context.PreviousExecutionsSummary!);

@@ -18,13 +18,13 @@ public class ExecutionGraph
     /// into every AI provider call.</summary>
     public string? MandatoryRules { get; set; }
 
-    /// <summary>Valores efectivos de las constantes del pipeline para esta ejecucion
+    /// <summary>Valores efectivos de las variables del pipeline para esta ejecucion
     /// ("tematica", "keyword"...). Se resuelven una vez al arrancar y los comparten
     /// todos los modulos: se sustituyen en sus prompts y se inyectan como bloque.</summary>
-    public IReadOnlyDictionary<string, string> Constants { get; set; } = ExecutionConstants.None;
+    public IReadOnlyDictionary<string, string> Variables { get; set; } = ExecutionVariables.None;
 
-    /// <summary>Bloque etiquetado con esas constantes, listo para el system prompt.</summary>
-    public string? ConstantsBlock { get; set; }
+    /// <summary>Bloque etiquetado con esas variables, listo para el system prompt.</summary>
+    public string? VariablesBlock { get; set; }
 
     /// <summary>Aprendizajes activos del proyecto en JSON (ProjectLearningDoc.ActiveLearningsJson).
     /// Se carga una vez por ejecución; cada nodo filtra los que le aplican para inyectarlos.</summary>

@@ -1590,11 +1590,11 @@ app.MapPost("/api/projects/{id}/duplicate", async (
         }
     }
 
-    // Copy pipeline constants (definitions + defaults)
-    var sourceConstants = await db.ProjectConstants.Where(c => c.ProjectId == id).ToListAsync();
-    foreach (var c in sourceConstants)
+    // Copy pipeline variables (definitions + defaults)
+    var sourceVariables = await db.ProjectVariables.Where(c => c.ProjectId == id).ToListAsync();
+    foreach (var c in sourceVariables)
     {
-        db.ProjectConstants.Add(new ProjectConstant
+        db.ProjectVariables.Add(new ProjectVariable
         {
             Id = Guid.NewGuid(),
             ProjectId = newProject.Id,
@@ -1619,7 +1619,7 @@ app.MapPost("/api/projects/{id}/duplicate", async (
             CronExpression = sourceSchedule.CronExpression,
             TimeZone = sourceSchedule.TimeZone,
             UserInput = sourceSchedule.UserInput,
-            ConstantsJson = sourceSchedule.ConstantsJson,
+            VariablesJson = sourceSchedule.VariablesJson,
             UseHistory = sourceSchedule.UseHistory,
             UsePromptQueue = sourceSchedule.UsePromptQueue,
             CreatedAt = DateTime.UtcNow,
@@ -1854,29 +1854,29 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
-// ==================== Project Constants Endpoints ====================
-// Constantes del pipeline: se declaran una vez en el proyecto ("tematica", "keyword")
-// y su valor se elige en cada ejecucion. Ver Server/Services/Ai/ExecutionConstants.cs.
+// ==================== Project Variables Endpoints ====================
+// Variables del pipeline: se declaran una vez en el proyecto ("tematica", "keyword")
+// y su valor se elige en cada ejecucion. Ver Server/Services/Ai/ExecutionVariables.cs.
 
-static ProjectConstantResponse ToConstantResponse(ProjectConstant c) =>
+static ProjectVariableResponse ToVariableResponse(ProjectVariable c) =>
     new(c.Id, c.ProjectId, c.Key, c.Description, c.DefaultValue, c.SortOrder, c.CreatedAt, c.UpdatedAt);
 
-app.MapGet("/api/projects/{projectId:guid}/constants", async (
+app.MapGet("/api/projects/{projectId:guid}/variables", async (
     Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    var constants = await db.ProjectConstants
+    var variables = await db.ProjectVariables
         .Where(c => c.ProjectId == projectId)
         .OrderBy(c => c.SortOrder).ThenBy(c => c.CreatedAt)
         .ToListAsync();
 
-    return Results.Ok(constants.Select(ToConstantResponse).ToList());
+    return Results.Ok(variables.Select(ToVariableResponse).ToList());
 }).RequireAuthorization();
 
-app.MapPost("/api/projects/{projectId:guid}/constants", async (
-    Guid projectId, CreateProjectConstantRequest req,
+app.MapPost("/api/projects/{projectId:guid}/variables", async (
+    Guid projectId, CreateProjectVariableRequest req,
     HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
@@ -1885,17 +1885,17 @@ app.MapPost("/api/projects/{projectId:guid}/constants", async (
     var project = await db.Projects.FindAsync(projectId);
     if (project is null) return Results.NotFound();
 
-    if (!ExecutionConstants.IsValidKey(req.Key))
+    if (!ExecutionVariables.IsValidKey(req.Key))
         return Results.BadRequest(new { error = "La clave solo admite letras, digitos y guion bajo, no puede empezar por digito y tiene un maximo de 50 caracteres." });
 
     var key = req.Key.Trim();
-    var duplicated = await db.ProjectConstants
+    var duplicated = await db.ProjectVariables
         .AnyAsync(c => c.ProjectId == projectId && c.Key.ToLower() == key.ToLower());
     if (duplicated)
-        return Results.BadRequest(new { error = $"Ya existe una constante '{key}' en este proyecto." });
+        return Results.BadRequest(new { error = $"Ya existe una variable '{key}' en este proyecto." });
 
     var now = DateTime.UtcNow;
-    var constant = new ProjectConstant
+    var variable = new ProjectVariable
     {
         Id = Guid.NewGuid(),
         ProjectId = projectId,
@@ -1907,54 +1907,54 @@ app.MapPost("/api/projects/{projectId:guid}/constants", async (
         UpdatedAt = now,
     };
 
-    db.ProjectConstants.Add(constant);
+    db.ProjectVariables.Add(variable);
     await db.SaveChangesAsync();
 
-    return Results.Created($"/api/projects/{projectId}/constants/{constant.Id}", ToConstantResponse(constant));
+    return Results.Created($"/api/projects/{projectId}/variables/{variable.Id}", ToVariableResponse(variable));
 }).RequireAuthorization();
 
-app.MapPut("/api/projects/{projectId:guid}/constants/{constantId:guid}", async (
-    Guid projectId, Guid constantId, UpdateProjectConstantRequest req,
+app.MapPut("/api/projects/{projectId:guid}/variables/{variableId:guid}", async (
+    Guid projectId, Guid variableId, UpdateProjectVariableRequest req,
     HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    var constant = await db.ProjectConstants
-        .FirstOrDefaultAsync(c => c.Id == constantId && c.ProjectId == projectId);
-    if (constant is null) return Results.NotFound();
+    var variable = await db.ProjectVariables
+        .FirstOrDefaultAsync(c => c.Id == variableId && c.ProjectId == projectId);
+    if (variable is null) return Results.NotFound();
 
-    if (!ExecutionConstants.IsValidKey(req.Key))
+    if (!ExecutionVariables.IsValidKey(req.Key))
         return Results.BadRequest(new { error = "La clave solo admite letras, digitos y guion bajo, no puede empezar por digito y tiene un maximo de 50 caracteres." });
 
     var key = req.Key.Trim();
-    var duplicated = await db.ProjectConstants
-        .AnyAsync(c => c.ProjectId == projectId && c.Id != constantId && c.Key.ToLower() == key.ToLower());
+    var duplicated = await db.ProjectVariables
+        .AnyAsync(c => c.ProjectId == projectId && c.Id != variableId && c.Key.ToLower() == key.ToLower());
     if (duplicated)
-        return Results.BadRequest(new { error = $"Ya existe una constante '{key}' en este proyecto." });
+        return Results.BadRequest(new { error = $"Ya existe una variable '{key}' en este proyecto." });
 
-    constant.Key = key;
-    constant.Description = req.Description;
-    constant.DefaultValue = req.DefaultValue;
-    constant.SortOrder = req.SortOrder;
-    constant.UpdatedAt = DateTime.UtcNow;
+    variable.Key = key;
+    variable.Description = req.Description;
+    variable.DefaultValue = req.DefaultValue;
+    variable.SortOrder = req.SortOrder;
+    variable.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
-    return Results.Ok(ToConstantResponse(constant));
+    return Results.Ok(ToVariableResponse(variable));
 }).RequireAuthorization();
 
-app.MapDelete("/api/projects/{projectId:guid}/constants/{constantId:guid}", async (
-    Guid projectId, Guid constantId,
+app.MapDelete("/api/projects/{projectId:guid}/variables/{variableId:guid}", async (
+    Guid projectId, Guid variableId,
     HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    var constant = await db.ProjectConstants
-        .FirstOrDefaultAsync(c => c.Id == constantId && c.ProjectId == projectId);
-    if (constant is null) return Results.NotFound();
+    var variable = await db.ProjectVariables
+        .FirstOrDefaultAsync(c => c.Id == variableId && c.ProjectId == projectId);
+    if (variable is null) return Results.NotFound();
 
-    db.ProjectConstants.Remove(constant);
+    db.ProjectVariables.Remove(variable);
     await db.SaveChangesAsync();
     return Results.NoContent();
 }).RequireAuthorization();
@@ -1987,7 +1987,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
             var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
             var execution = await executor.ExecuteAsync(
-                projectId, req.UserInput, bgDb, tenantDbName, ct, req.UseHistory, req.Constants);
+                projectId, req.UserInput, bgDb, tenantDbName, ct, req.UseHistory, req.Variables);
 
             // Load full result for client
             var exec = await bgDb.ProjectExecutions
@@ -2011,7 +2011,7 @@ app.MapPost("/api/projects/{projectId}/execute", async (
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
                 exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
-                ExecutionConstants.Parse(exec.ConstantsJson));
+                ExecutionVariables.Parse(exec.VariablesJson));
 
             // Notify client via SignalR — use specific event based on status
             if (exec.Status == "WaitingForReview")
@@ -2082,21 +2082,21 @@ app.MapGet("/api/projects/{projectId}/executions", async (
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
-    // Se materializa antes de proyectar: ExecutionConstants.Parse no es traducible a SQL.
+    // Se materializa antes de proyectar: ExecutionVariables.Parse no es traducible a SQL.
     var executions = await db.ProjectExecutions
         .Where(e => e.ProjectId == projectId)
         .OrderByDescending(e => e.CreatedAt)
         .Select(e => new
         {
             e.Id, e.ProjectId, e.Status, e.WorkspacePath, e.CreatedAt,
-            e.CompletedAt, e.UserInput, e.TotalEstimatedCost, e.ConstantsJson,
+            e.CompletedAt, e.UserInput, e.TotalEstimatedCost, e.VariablesJson,
         })
         .ToListAsync();
 
     return Results.Ok(executions
         .Select(e => new ExecutionResponse(e.Id, e.ProjectId, e.Status,
             e.WorkspacePath, e.CreatedAt, e.CompletedAt, e.UserInput, e.TotalEstimatedCost,
-            ExecutionConstants.Parse(e.ConstantsJson)))
+            ExecutionVariables.Parse(e.VariablesJson)))
         .ToList());
 }).RequireAuthorization();
 
@@ -2130,7 +2130,7 @@ app.MapGet("/api/executions/{id}", async (
     return Results.Ok(new ExecutionDetailResponse(
         exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
         exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
-        ExecutionConstants.Parse(exec.ConstantsJson)));
+        ExecutionVariables.Parse(exec.VariablesJson)));
 }).RequireAuthorization();
 
 // Feedback (humano) de todas las ejecuciones de un proyecto, para pintarlo en el historial.
@@ -2431,7 +2431,7 @@ app.MapPost("/api/executions/{executionId}/retry-from-module", async (
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
                 exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
-                ExecutionConstants.Parse(exec.ConstantsJson));
+                ExecutionVariables.Parse(exec.VariablesJson));
 
             if (exec.Status == "WaitingForReview")
             {
@@ -2517,7 +2517,7 @@ app.MapPost("/api/executions/{executionId}/orchestrator-review", async (
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
                 exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
-                ExecutionConstants.Parse(exec.ConstantsJson));
+                ExecutionVariables.Parse(exec.VariablesJson));
 
             await hub.Clients.Group(projectId.ToString())
                 .SendAsync("ExecutionCompleted", detail);
@@ -2594,7 +2594,7 @@ app.MapPost("/api/executions/{executionId}/checkpoint-review", async (
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
                 exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
-                ExecutionConstants.Parse(exec.ConstantsJson));
+                ExecutionVariables.Parse(exec.VariablesJson));
 
             if (exec.Status == "WaitingForCheckpoint")
             {
@@ -2974,7 +2974,7 @@ app.MapGet("/api/projects/{projectId:guid}/schedule", async (
         schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt,
-        ExecutionConstants.Parse(schedule.ConstantsJson)));
+        ExecutionVariables.Parse(schedule.VariablesJson)));
 }).RequireAuthorization();
 
 // Proyecta las proximas ejecuciones programadas encadenando el cron sobre si mismo.
@@ -3013,7 +3013,8 @@ app.MapGet("/api/projects/{projectId:guid}/schedule/upcoming", async (
         cursor = next.Value;
 
         var prompt = i < pending.Count ? pending[i] : null;
-        runs.Add(new UpcomingRunResponse(i + 1, next.Value, prompt?.Id, prompt?.Content));
+        runs.Add(new UpcomingRunResponse(i + 1, next.Value, prompt?.Id, prompt?.Content,
+            prompt is null ? null : ExecutionVariables.Parse(prompt.VariablesJson)));
     }
 
     return Results.Ok(new UpcomingRunsResponse(
@@ -3048,7 +3049,7 @@ app.MapPost("/api/projects/{projectId:guid}/schedule", async (
         CronExpression = req.CronExpression,
         TimeZone = req.TimeZone,
         UserInput = req.UserInput,
-        ConstantsJson = ExecutionConstants.Serialize(req.Constants),
+        VariablesJson = ExecutionVariables.Serialize(req.Variables),
         UseHistory = req.UseHistory,
         UsePromptQueue = req.UsePromptQueue,
         NextRunAt = nextRun,
@@ -3064,7 +3065,7 @@ app.MapPost("/api/projects/{projectId:guid}/schedule", async (
         schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt,
-        ExecutionConstants.Parse(schedule.ConstantsJson)));
+        ExecutionVariables.Parse(schedule.VariablesJson)));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{projectId:guid}/schedule", async (
@@ -3082,7 +3083,7 @@ app.MapPut("/api/projects/{projectId:guid}/schedule", async (
     schedule.CronExpression = req.CronExpression;
     schedule.TimeZone = req.TimeZone;
     schedule.UserInput = req.UserInput;
-    schedule.ConstantsJson = ExecutionConstants.Serialize(req.Constants);
+    schedule.VariablesJson = ExecutionVariables.Serialize(req.Variables);
     schedule.IsEnabled = req.IsEnabled;
     schedule.UseHistory = req.UseHistory;
     schedule.UsePromptQueue = req.UsePromptQueue;
@@ -3098,7 +3099,7 @@ app.MapPut("/api/projects/{projectId:guid}/schedule", async (
         schedule.CronExpression, schedule.TimeZone, schedule.UserInput, schedule.UseHistory, schedule.UsePromptQueue,
         schedule.LastRunAt, schedule.NextRunAt,
         schedule.CreatedAt, schedule.UpdatedAt,
-        ExecutionConstants.Parse(schedule.ConstantsJson)));
+        ExecutionVariables.Parse(schedule.VariablesJson)));
 }).RequireAuthorization();
 
 app.MapDelete("/api/projects/{projectId:guid}/schedule", async (
@@ -3120,7 +3121,8 @@ app.MapDelete("/api/projects/{projectId:guid}/schedule", async (
 
 static PlannedPromptResponse ToPlannedPromptResponse(PlannedPrompt p) =>
     new(p.Id, p.ProjectId, p.OrderIndex, p.Content, p.Status,
-        p.CreatedAt, p.UpdatedAt, p.UsedAt, p.ExecutionId);
+        p.CreatedAt, p.UpdatedAt, p.UsedAt, p.ExecutionId,
+        ExecutionVariables.Parse(p.VariablesJson));
 
 app.MapGet("/api/planner/models", (IPromptPlannerService planner) =>
 {
@@ -3244,14 +3246,15 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/generate", async (
 
     var created = new List<PlannedPrompt>();
     var idx = maxOrder + 1;
-    foreach (var content in result.Prompts)
+    foreach (var draft in result.Prompts)
     {
         var entity = new PlannedPrompt
         {
             Id = Guid.NewGuid(),
             ProjectId = projectId,
             OrderIndex = idx++,
-            Content = content,
+            Content = draft.Content,
+            VariablesJson = ExecutionVariables.Serialize(draft.Variables),
             Status = PlannedPromptStatus.Pending,
             CreatedAt = now,
             UpdatedAt = now,
@@ -3290,6 +3293,7 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts", async (
         ProjectId = projectId,
         OrderIndex = maxOrder + 1,
         Content = req.Content.Trim(),
+        VariablesJson = ExecutionVariables.Serialize(req.Variables),
         Status = PlannedPromptStatus.Pending,
         CreatedAt = now,
         UpdatedAt = now,
@@ -3319,6 +3323,7 @@ app.MapPut("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}", asy
         return Results.BadRequest(new { error = "Content vacio" });
 
     prompt.Content = req.Content.Trim();
+    prompt.VariablesJson = ExecutionVariables.Serialize(req.Variables);
     prompt.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();
@@ -3396,6 +3401,7 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}/exec
     var tenantDbName = claims.First(c => c.Type == "db_name").Value;
 
     var content = prompt.Content;
+    var promptVariables = ExecutionVariables.Parse(prompt.VariablesJson);
     var token = cancellation.Register(projectId);
     var now = DateTime.UtcNow;
 
@@ -3415,7 +3421,8 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}/exec
             await using var bgDb = bgFactory.Create(tenantDbName);
             var executor = scope.ServiceProvider.GetRequiredService<IPipelineExecutor>();
 
-            var execution = await executor.ExecuteAsync(projectId, content, bgDb, tenantDbName, token, useHistory: true);
+            var execution = await executor.ExecuteAsync(
+                projectId, content, bgDb, tenantDbName, token, useHistory: true, variableValues: promptVariables);
 
             var trackedPrompt = await bgDb.PlannedPrompts.FirstOrDefaultAsync(p => p.Id == promptId);
             if (trackedPrompt is not null)
@@ -3446,7 +3453,7 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}/exec
             var detail = new ExecutionDetailResponse(
                 exec.Id, exec.ProjectId, exec.Status, exec.WorkspacePath,
                 exec.CreatedAt, exec.CompletedAt, exec.UserInput, exec.TotalEstimatedCost, steps,
-                ExecutionConstants.Parse(exec.ConstantsJson));
+                ExecutionVariables.Parse(exec.VariablesJson));
 
             if (exec.Status == "WaitingForReview")
                 await hub.Clients.Group(projectId.ToString()).SendAsync("OrchestratorWaitingForReview", detail);

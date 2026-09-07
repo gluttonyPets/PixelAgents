@@ -17,10 +17,10 @@ namespace Server.Models
         /// capa aparte en el system prompt. NUNCA modifica el prompt del usuario: se añade
         /// como bloque adicional. Lo produce el analista de aprendizaje a partir de abortos.</summary>
         public string? PastExecutionsLearning { get; set; }
-        /// <summary>Bloque etiquetado con las constantes fijadas al lanzar la ejecucion
+        /// <summary>Bloque etiquetado con las variables fijadas al lanzar la ejecucion
         /// ("tematica", "keyword"...). Se inyecta en el system prompt de todas las llamadas
         /// para que cualquier modulo pueda usarlas aunque su prompt no lleve el marcador.</summary>
-        public string? ConstantsBlock { get; set; }
+        public string? VariablesBlock { get; set; }
         public Dictionary<string, object> Configuration { get; set; } = new();
         public List<byte[]>? InputFiles { get; set; }
         /// <summary>

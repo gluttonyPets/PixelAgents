@@ -62,7 +62,7 @@ public class OrchestratorModuleHandler : IModuleHandler
             ProjectContext = ctx.Project.Context,
             PreviousExecutionsSummary = ctx.PreviousSummaryContext,
             MandatoryRules = ctx.MandatoryRules,
-            ConstantsBlock = ctx.ConstantsBlock,
+            VariablesBlock = ctx.VariablesBlock,
             PastExecutionsLearning = ctx.PastExecutionsLearning,
             Configuration = config,
             CancellationToken = ctx.CancellationToken,

@@ -394,35 +394,35 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp));
     }
 
-    // ── Constantes del pipeline ──
+    // ── Variables del pipeline ──
     // Se declaran en el proyecto ("tematica", "keyword") y su valor se elige en
     // cada ejecucion; el servidor lo sustituye en los prompts de todos los modulos.
 
-    public async Task<List<ProjectConstantResponse>> GetProjectConstantsAsync(Guid projectId)
+    public async Task<List<ProjectVariableResponse>> GetProjectVariablesAsync(Guid projectId)
     {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/constants");
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/variables");
         if (!resp.IsSuccessStatusCode) return [];
-        return await resp.Content.ReadFromJsonAsync<List<ProjectConstantResponse>>() ?? [];
+        return await resp.Content.ReadFromJsonAsync<List<ProjectVariableResponse>>() ?? [];
     }
 
-    public async Task<(bool Ok, string? Error)> CreateProjectConstantAsync(Guid projectId, CreateProjectConstantRequest req)
+    public async Task<(bool Ok, string? Error)> CreateProjectVariableAsync(Guid projectId, CreateProjectVariableRequest req)
     {
-        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/constants", req);
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/variables", req);
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }
 
-    public async Task<(bool Ok, string? Error)> UpdateProjectConstantAsync(
-        Guid projectId, Guid constantId, UpdateProjectConstantRequest req)
+    public async Task<(bool Ok, string? Error)> UpdateProjectVariableAsync(
+        Guid projectId, Guid variableId, UpdateProjectVariableRequest req)
     {
-        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/constants/{constantId}", req);
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/variables/{variableId}", req);
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }
 
-    public async Task<(bool Ok, string? Error)> DeleteProjectConstantAsync(Guid projectId, Guid constantId)
+    public async Task<(bool Ok, string? Error)> DeleteProjectVariableAsync(Guid projectId, Guid variableId)
     {
-        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/constants/{constantId}");
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{projectId}/variables/{variableId}");
         if (resp.IsSuccessStatusCode) return (true, null);
         return (false, await ReadErrorAsync(resp));
     }
@@ -431,10 +431,10 @@ public class ApiClient
 
     public async Task<(bool Ok, string? Error)> ExecuteProjectAsync(
         Guid projectId, string? userInput, bool useHistory = true,
-        Dictionary<string, string>? constants = null)
+        Dictionary<string, string>? variables = null)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/execute",
-            new ExecuteProjectRequest(userInput, useHistory, constants));
+            new ExecuteProjectRequest(userInput, useHistory, variables));
         if (!resp.IsSuccessStatusCode && (int)resp.StatusCode != 202)
         {
             return (false, await ReadErrorAsync(resp));
@@ -882,10 +882,10 @@ public class ApiClient
     }
 
     public async Task<(bool Ok, PlannedPromptResponse? Result, string? Error)> CreatePlannedPromptAsync(
-        Guid projectId, string content)
+        Guid projectId, string content, Dictionary<string, string>? variables = null)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/planned-prompts",
-            new CreatePlannedPromptRequest(content));
+            new CreatePlannedPromptRequest(content, variables));
         if (!resp.IsSuccessStatusCode)
             return (false, null, await ReadErrorAsync(resp));
         var result = await resp.Content.ReadFromJsonAsync<PlannedPromptResponse>();
@@ -893,10 +893,10 @@ public class ApiClient
     }
 
     public async Task<(bool Ok, PlannedPromptResponse? Result, string? Error)> UpdatePlannedPromptAsync(
-        Guid projectId, Guid promptId, string content)
+        Guid projectId, Guid promptId, string content, Dictionary<string, string>? variables = null)
     {
         var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/planned-prompts/{promptId}",
-            new UpdatePlannedPromptRequest(content));
+            new UpdatePlannedPromptRequest(content, variables));
         if (!resp.IsSuccessStatusCode)
             return (false, null, await ReadErrorAsync(resp));
         var result = await resp.Content.ReadFromJsonAsync<PlannedPromptResponse>();

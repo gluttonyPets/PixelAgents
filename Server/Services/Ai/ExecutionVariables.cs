@@ -6,7 +6,7 @@ using Server.Models;
 namespace Server.Services.Ai;
 
 /// <summary>
-/// Constantes de ejecucion: valores que el pipeline declara una vez (por ejemplo
+/// Variables de ejecucion: valores que el pipeline declara una vez (por ejemplo
 /// "tematica" y "keyword") y que se fijan al lanzar cada ejecucion.
 ///
 /// Se aplican de dos formas complementarias:
@@ -17,20 +17,20 @@ namespace Server.Services.Ai;
 ///      aunque su prompt no lleve el marcador.
 ///
 /// El valor efectivo se resuelve como "lo que diga la ejecucion; si no, el valor
-/// por defecto de la constante". Una constante sin valor no se sustituye: el
+/// por defecto de la variable". Una variable sin valor no se sustituye: el
 /// marcador se queda visible y el executor avisa en el log, que es preferible a
 /// mandar al modelo un hueco vacio sin dejar rastro.
 /// </summary>
-public static class ExecutionConstants
+public static class ExecutionVariables
 {
-    public const string BlockHeader = "=== CONSTANTES DE LA EJECUCION ===";
+    public const string BlockHeader = "=== VARIABLES DE LA EJECUCION ===";
 
     private const string BlockSubtitle =
         "(Valores fijados al lanzar esta ejecucion. Son los mismos para todos los modulos del pipeline: " +
         "usalos tal cual, no los cambies ni los sustituyas por otros.)";
 
     /// <summary>Longitud maxima de una clave. Suficiente para nombres legibles y
-    /// evita que un marcador gigante pase por constante.</summary>
+    /// evita que un marcador gigante pase por variable.</summary>
     public const int MaxKeyLength = 50;
 
     private static readonly Regex PlaceholderPattern =
@@ -44,7 +44,7 @@ public static class ExecutionConstants
 
     public static Dictionary<string, string> NewMap() => new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Marcador que hay que escribir en el prompt para usar la constante.</summary>
+    /// <summary>Marcador que hay que escribir en el prompt para usar la variable.</summary>
     public static string Marker(string key) => "{{" + (key ?? "").Trim() + "}}";
 
     /// <summary>Claves validas: letras, digitos y guion bajo, sin empezar por digito.</summary>
@@ -55,7 +55,7 @@ public static class ExecutionConstants
         return trimmed.Length <= MaxKeyLength && KeyPattern.IsMatch(trimmed);
     }
 
-    // ── Serializacion (columna ConstantsJson) ──
+    // ── Serializacion (columna VariablesJson) ──
 
     public static Dictionary<string, string> Parse(string? json)
     {
@@ -82,7 +82,7 @@ public static class ExecutionConstants
         }
         catch (JsonException)
         {
-            // Un JSON corrupto no puede tumbar una ejecucion: se corre sin constantes.
+            // Un JSON corrupto no puede tumbar una ejecucion: se corre sin variables.
         }
 
         return map;
@@ -100,13 +100,13 @@ public static class ExecutionConstants
     // ── Resolucion ──
 
     /// <summary>
-    /// Valores efectivos de la ejecucion: para cada constante declarada en el
+    /// Valores efectivos de la ejecucion: para cada variable declarada en el
     /// proyecto, lo que aporte la ejecucion y, si no aporta nada, su valor por
     /// defecto. Las claves que la ejecucion trae pero el proyecto ya no declara
-    /// se descartan (constante borrada despues de programarla).
+    /// se descartan (variable borrada despues de programarla).
     /// </summary>
     public static Dictionary<string, string> Resolve(
-        IEnumerable<ProjectConstant>? definitions,
+        IEnumerable<ProjectVariable>? definitions,
         IReadOnlyDictionary<string, string>? overrides)
     {
         var resolved = NewMap();
@@ -132,9 +132,29 @@ public static class ExecutionConstants
         return resolved;
     }
 
-    /// <summary>Constantes declaradas que se quedan sin valor en esta ejecucion.</summary>
+    /// <summary>
+    /// Superpone varias capas de valores; la ultima que traiga una clave gana.
+    /// Se usa para combinar lo que fija la programacion con lo que trae el prompt
+    /// planificado, que es mas especifico.
+    /// </summary>
+    public static Dictionary<string, string> Merge(params IReadOnlyDictionary<string, string>?[] layers)
+    {
+        var merged = NewMap();
+        foreach (var layer in layers)
+        {
+            if (layer is null) continue;
+            foreach (var (key, value) in layer)
+            {
+                if (string.IsNullOrWhiteSpace(value)) continue;
+                merged[key] = value;
+            }
+        }
+        return merged;
+    }
+
+    /// <summary>Variables declaradas que se quedan sin valor en esta ejecucion.</summary>
     public static List<string> MissingKeys(
-        IEnumerable<ProjectConstant>? definitions,
+        IEnumerable<ProjectVariable>? definitions,
         IReadOnlyDictionary<string, string> resolved)
     {
         if (definitions is null) return [];
@@ -148,7 +168,7 @@ public static class ExecutionConstants
 
     /// <summary>
     /// Reemplaza <c>{{clave}}</c> por su valor. Los marcadores que no correspondan
-    /// a una constante con valor se dejan intactos: puede ser una plantilla ajena
+    /// a una variable con valor se dejan intactos: puede ser una plantilla ajena
     /// (Handlebars, Jinja, ejemplos de JSON) y romperla seria peor.
     /// </summary>
     public static string? Apply(string? text, IReadOnlyDictionary<string, string>? values)
@@ -192,13 +212,13 @@ public static class ExecutionConstants
     // ── Inyeccion en el prompt ──
 
     /// <summary>
-    /// Bloque etiquetado con las constantes de la ejecucion, o null si no hay
+    /// Bloque etiquetado con las variables de la ejecucion, o null si no hay
     /// ninguna. <paramref name="definitions"/> es opcional y solo aporta la
-    /// descripcion de cada constante.
+    /// descripcion de cada variable.
     /// </summary>
     public static string? BuildBlock(
         IReadOnlyDictionary<string, string>? values,
-        IEnumerable<ProjectConstant>? definitions = null)
+        IEnumerable<ProjectVariable>? definitions = null)
     {
         if (values is null || values.Count == 0) return null;
 

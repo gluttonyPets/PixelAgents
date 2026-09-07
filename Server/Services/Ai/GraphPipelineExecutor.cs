@@ -66,7 +66,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         string tenantDbName,
         CancellationToken ct = default,
         bool useHistory = true,
-        IReadOnlyDictionary<string, string>? constantValues = null)
+        IReadOnlyDictionary<string, string>? variableValues = null)
     {
         _logger = _baseLogger.WithTenant(_tenantFactory, tenantDbName);
 
@@ -80,10 +80,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (startModules > 1)
             throw new InvalidOperationException("El pipeline solo puede tener un modulo de Inicio.");
 
-        // Las constantes del pipeline ("tematica", "keyword"...) se fijan aqui, una
+        // Las variables del pipeline ("tematica", "keyword"...) se fijan aqui, una
         // sola vez: se guardan en la ejecucion para que reintentos y reanudaciones
         // usen exactamente los mismos valores.
-        var constants = await LoadConstantsAsync(db, projectId, constantValues, ct);
+        var variables = await LoadVariablesAsync(db, projectId, variableValues, ct);
 
         var executionId = Guid.NewGuid();
         var relativeWorkspace = Path.Combine(tenantDbName, projectId.ToString(), executionId.ToString());
@@ -98,7 +98,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             WorkspacePath = relativeWorkspace,
             CreatedAt = DateTime.UtcNow,
             UserInput = userInput,
-            ConstantsJson = ExecutionConstants.Serialize(constants.Values),
+            VariablesJson = ExecutionVariables.Serialize(variables.Values),
         };
 
         db.ProjectExecutions.Add(execution);
@@ -107,8 +107,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var connections = await LoadConnectionsAsync(projectId, db, ct);
         var modules = project.ProjectModules.Where(pm => pm.IsActive).ToList();
         var graph = BuildGraph(projectId, execution, userInput, modules, connections);
-        constants.ApplyTo(graph);
-        await LogConstantsAsync(projectId, executionId, constants);
+        variables.ApplyTo(graph);
+        await LogVariablesAsync(projectId, executionId, variables);
         graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
         graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         graph.MarkInitialReadyNodes();
@@ -159,9 +159,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         var connections = await LoadConnectionsAsync(project.Id, db, ct);
         var graph = BuildGraph(project.Id, execution, execution.UserInput, modules, connections);
-        var retryConstants = await LoadConstantsAsync(
-            db, project.Id, ExecutionConstants.Parse(execution.ConstantsJson), ct);
-        retryConstants.ApplyTo(graph);
+        var retryVariables = await LoadVariablesAsync(
+            db, project.Id, ExecutionVariables.Parse(execution.VariablesJson), ct);
+        retryVariables.ApplyTo(graph);
         graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
         graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
@@ -778,7 +778,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 }
 
                 node.Status = NodeStatus.Running;
-                node.StepExecution = await CreateStepExecutionAsync(node, execution, db, ct, graph.Constants);
+                node.StepExecution = await CreateStepExecutionAsync(node, execution, db, ct, graph.Variables);
                 await _logger.LogStepProgressAsync(project.Id, node.ModuleId, "Running");
                 await _logger.LogAsync(project.Id, execution.Id, "step-start",
                     $"{node.ProjectModule.StepName ?? node.AiModule.Name} ({node.AiModule.ProviderType}/{GetEffectiveModelName(node.ProjectModule)})",
@@ -861,15 +861,15 @@ public class GraphPipelineExecutor : IPipelineExecutor
             PublicBaseUrl = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/'),
             PreviousSummaryContext = previousSummaryContext,
             MandatoryRules = graph.MandatoryRules,
-            Constants = graph.Constants,
-            ConstantsBlock = graph.ConstantsBlock,
+            Variables = graph.Variables,
+            VariablesBlock = graph.VariablesBlock,
             PastExecutionsLearning = LearningInjection.BuildBlock(
                 graph.ActiveLearningsJson, node.AiModule.Name, node.ProjectModule.StepName),
             CancellationToken = ct,
             InputsByPort = node.InputPorts.ToDictionary(p => p.PortId, p => p.ReceivedData.ToList()),
-            Config = ExecutionConstants.ApplyToConfig(
+            Config = ExecutionVariables.ApplyToConfig(
                 MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration),
-                graph.Constants),
+                graph.Variables),
             ModuleFiles = node.ProjectModule.Files.Select(f => new ModuleFileInfo
             {
                 Id = f.Id,
@@ -1599,11 +1599,11 @@ public class GraphPipelineExecutor : IPipelineExecutor
         ProjectExecution execution,
         UserDbContext db,
         CancellationToken ct,
-        IReadOnlyDictionary<string, string>? constants = null)
+        IReadOnlyDictionary<string, string>? variables = null)
     {
-        var config = ExecutionConstants.ApplyToConfig(
+        var config = ExecutionVariables.ApplyToConfig(
             MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration),
-            constants);
+            variables);
         var step = new StepExecution
         {
             Id = Guid.NewGuid(),
@@ -1774,9 +1774,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var modules = project.ProjectModules.Where(pm => pm.IsActive).ToList();
         var connections = await LoadConnectionsAsync(project.Id, db, ct);
         var graph = BuildGraph(project.Id, execution, state.UserInput ?? execution.UserInput, modules, connections);
-        var pausedConstants = await LoadConstantsAsync(
-            db, project.Id, ExecutionConstants.Parse(execution.ConstantsJson), ct);
-        pausedConstants.ApplyTo(graph);
+        var pausedVariables = await LoadVariablesAsync(
+            db, project.Id, ExecutionVariables.Parse(execution.VariablesJson), ct);
+        pausedVariables.ApplyTo(graph);
         graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
         graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         state.RestoreInto(graph);
@@ -1834,61 +1834,61 @@ public class GraphPipelineExecutor : IPipelineExecutor
         db.ModuleConnections.Where(c => c.ProjectId == projectId).ToListAsync(ct);
 
     /// <summary>
-    /// Constantes del pipeline resueltas para una ejecucion: las definiciones del
+    /// Variables del pipeline resueltas para una ejecucion: las definiciones del
     /// proyecto, los valores efectivos y el bloque listo para el system prompt.
     /// </summary>
-    private sealed record ResolvedConstants(
-        List<ProjectConstant> Definitions,
+    private sealed record ResolvedVariables(
+        List<ProjectVariable> Definitions,
         Dictionary<string, string> Values,
         string? Block)
     {
-        /// <summary>Deja las constantes en el grafo y sustituye sus marcadores en
+        /// <summary>Deja las variables en el grafo y sustituye sus marcadores en
         /// el prompt inicial, que es lo que emite el modulo de Inicio.</summary>
         public void ApplyTo(ExecutionGraph graph)
         {
-            graph.Constants = Values;
-            graph.ConstantsBlock = Block;
-            graph.UserInput = ExecutionConstants.Apply(graph.UserInput, Values);
+            graph.Variables = Values;
+            graph.VariablesBlock = Block;
+            graph.UserInput = ExecutionVariables.Apply(graph.UserInput, Values);
         }
     }
 
     /// <summary>
-    /// Carga las constantes declaradas por el proyecto y las cruza con los valores
+    /// Carga las variables declaradas por el proyecto y las cruza con los valores
     /// de esta ejecucion (o de la programacion). Sin valor propio se usa el valor
-    /// por defecto de la constante.
+    /// por defecto de la variable.
     /// </summary>
-    private static async Task<ResolvedConstants> LoadConstantsAsync(
+    private static async Task<ResolvedVariables> LoadVariablesAsync(
         UserDbContext db,
         Guid projectId,
         IReadOnlyDictionary<string, string>? overrides,
         CancellationToken ct)
     {
-        var definitions = await db.ProjectConstants
+        var definitions = await db.ProjectVariables
             .Where(c => c.ProjectId == projectId)
             .OrderBy(c => c.SortOrder).ThenBy(c => c.CreatedAt)
             .ToListAsync(ct);
 
-        var values = ExecutionConstants.Resolve(definitions, overrides);
-        return new ResolvedConstants(definitions, values, ExecutionConstants.BuildBlock(values, definitions));
+        var values = ExecutionVariables.Resolve(definitions, overrides);
+        return new ResolvedVariables(definitions, values, ExecutionVariables.BuildBlock(values, definitions));
     }
 
-    /// <summary>Deja en el log que constantes se usan y cuales se han quedado sin valor.</summary>
-    private async Task LogConstantsAsync(Guid projectId, Guid executionId, ResolvedConstants constants)
+    /// <summary>Deja en el log que variables se usan y cuales se han quedado sin valor.</summary>
+    private async Task LogVariablesAsync(Guid projectId, Guid executionId, ResolvedVariables variables)
     {
-        if (constants.Definitions.Count == 0) return;
+        if (variables.Definitions.Count == 0) return;
 
-        if (constants.Values.Count > 0)
+        if (variables.Values.Count > 0)
         {
-            var lines = string.Join("\n", constants.Values.Select(kv => $"- {kv.Key}: {kv.Value}"));
+            var lines = string.Join("\n", variables.Values.Select(kv => $"- {kv.Key}: {kv.Value}"));
             await _logger.LogAsync(projectId, executionId, "info",
-                $"[Constantes] Valores de esta ejecucion (se aplican a todos los modulos):\n{lines}");
+                $"[Variables] Valores de esta ejecucion (se aplican a todos los modulos):\n{lines}");
         }
 
-        var missing = ExecutionConstants.MissingKeys(constants.Definitions, constants.Values);
+        var missing = ExecutionVariables.MissingKeys(variables.Definitions, variables.Values);
         if (missing.Count > 0)
         {
             await _logger.LogAsync(projectId, executionId, "warning",
-                $"[Constantes] Sin valor en esta ejecucion ni por defecto: {string.Join(", ", missing)}. " +
+                $"[Variables] Sin valor en esta ejecucion ni por defecto: {string.Join(", ", missing)}. " +
                 "Sus marcadores se quedan sin sustituir en los prompts.");
         }
     }
@@ -2255,7 +2255,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         UserDbContext db, CancellationToken ct)
     {
         var stepName = node.ProjectModule.StepName ?? node.AiModule.Name;
-        var step = await CreateStepExecutionAsync(node, execution, db, ct, graph.Constants);
+        var step = await CreateStepExecutionAsync(node, execution, db, ct, graph.Variables);
         node.StepExecution = step;
 
         var allInputs = node.InputPorts.SelectMany(p => p.ReceivedData).ToList();
@@ -2313,7 +2313,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             // Al reintentar o reanudar, el modulo puede conservar su paso de la
             // corrida anterior: se reutiliza en vez de duplicarlo.
             var step = await GetPausedStepAsync(execution.Id, node.ModuleId, db, ct)
-                       ?? await CreateStepExecutionAsync(node, execution, db, ct, graph.Constants);
+                       ?? await CreateStepExecutionAsync(node, execution, db, ct, graph.Variables);
             node.StepExecution = step;
             node.Output = new StepOutput
             {

@@ -195,7 +195,7 @@ public class ConditionalModuleHandler : IModuleHandler
             ApiKey = apiKey!,
             Input = BuildPrompt(condition, input),
             ProjectContext = ctx.Project.Context,
-            ConstantsBlock = ctx.ConstantsBlock,
+            VariablesBlock = ctx.VariablesBlock,
             Configuration = new Dictionary<string, object>
             {
                 ["systemPrompt"] = SystemInstruction,

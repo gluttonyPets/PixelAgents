@@ -15,10 +15,10 @@ namespace Server.Models
         /// <summary>Optional input text sent to the pipeline on each scheduled run</summary>
         public string? UserInput { get; set; }
 
-        /// <summary>Valores de las constantes del pipeline para las ejecuciones
-        /// programadas, como objeto JSON { "clave": "valor" }. Las constantes sin
+        /// <summary>Valores de las variables del pipeline para las ejecuciones
+        /// programadas, como objeto JSON { "clave": "valor" }. Las variables sin
         /// valor aqui caen a su valor por defecto.</summary>
-        public string? ConstantsJson { get; set; }
+        public string? VariablesJson { get; set; }
 
         /// <summary>When true, a summary of previous executions is included to avoid repeating topics</summary>
         public bool UseHistory { get; set; } = true;

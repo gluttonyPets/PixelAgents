@@ -94,12 +94,42 @@ namespace Server.Services
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" DROP COLUMN IF EXISTS \"PausedAtStepOrder\"", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"PausedStepData\" text", log);
             RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"UserInput\" text", log);
-            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"ConstantsJson\" text", log);
+            // Nombre anterior de la feature ("constantes"): si un entorno alcanzo a
+            // crearla con el nombre viejo, se renombra en vez de duplicar tabla y
+            // columnas. Va antes de los CREATE/ADD de abajo para que estos no la
+            // recreen vacia y se pierdan los valores ya guardados.
+            RunSafe(ctx, @"
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables
+                               WHERE table_name = 'ProjectConstants')
+                       AND NOT EXISTS (SELECT 1 FROM information_schema.tables
+                                       WHERE table_name = 'ProjectVariables') THEN
+                        ALTER TABLE ""ProjectConstants"" RENAME TO ""ProjectVariables"";
+                    END IF;
 
-            // ── Constantes del pipeline: se declaran en el proyecto y su valor se
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'ProjectExecutions' AND column_name = 'ConstantsJson')
+                       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                       WHERE table_name = 'ProjectExecutions' AND column_name = 'VariablesJson') THEN
+                        ALTER TABLE ""ProjectExecutions"" RENAME COLUMN ""ConstantsJson"" TO ""VariablesJson"";
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'ProjectSchedules' AND column_name = 'ConstantsJson')
+                       AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                                       WHERE table_name = 'ProjectSchedules' AND column_name = 'VariablesJson') THEN
+                        ALTER TABLE ""ProjectSchedules"" RENAME COLUMN ""ConstantsJson"" TO ""VariablesJson"";
+                    END IF;
+                END $$", log);
+            RunSafe(ctx, @"ALTER INDEX IF EXISTS ""IX_ProjectConstants_ProjectId_Key"" RENAME TO ""IX_ProjectVariables_ProjectId_Key""", log);
+
+            RunSafe(ctx, "ALTER TABLE \"ProjectExecutions\" ADD COLUMN IF NOT EXISTS \"VariablesJson\" text", log);
+
+            // ── Variables del pipeline: se declaran en el proyecto y su valor se
             //    fija en cada ejecucion (tematica, keyword...) ──
             RunSafe(ctx, @"
-                CREATE TABLE IF NOT EXISTS ""ProjectConstants"" (
+                CREATE TABLE IF NOT EXISTS ""ProjectVariables"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
                     ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
                     ""Key"" varchar(50) NOT NULL,
@@ -109,7 +139,7 @@ namespace Server.Services
                     ""CreatedAt"" timestamp with time zone NOT NULL,
                     ""UpdatedAt"" timestamp with time zone NOT NULL
                 )", log);
-            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectConstants_ProjectId_Key"" ON ""ProjectConstants"" (""ProjectId"", ""Key"")", log);
+            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectVariables_ProjectId_Key"" ON ""ProjectVariables"" (""ProjectId"", ""Key"")", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ExecutionLogs"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,
@@ -151,7 +181,7 @@ namespace Server.Services
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_ProjectSchedules_IsEnabled_NextRunAt"" ON ""ProjectSchedules"" (""IsEnabled"", ""NextRunAt"")", log);
             RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""UseHistory"" boolean NOT NULL DEFAULT true", log);
             RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""UsePromptQueue"" boolean NOT NULL DEFAULT false", log);
-            RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""ConstantsJson"" text", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectSchedules"" ADD COLUMN IF NOT EXISTS ""VariablesJson"" text", log);
 
             // ── Planned Prompts queue (planificador de ejecuciones) ──
             RunSafe(ctx, @"
@@ -166,6 +196,7 @@ namespace Server.Services
                     ""UsedAt"" timestamp with time zone,
                     ""ExecutionId"" uuid
                 )", log);
+            RunSafe(ctx, @"ALTER TABLE ""PlannedPrompts"" ADD COLUMN IF NOT EXISTS ""VariablesJson"" text", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PlannedPrompts_ProjectId"" ON ""PlannedPrompts"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PlannedPrompts_ProjectId_Status_OrderIndex"" ON ""PlannedPrompts"" (""ProjectId"", ""Status"", ""OrderIndex"")", log);
             // ModuleFiles: paso de AiModuleId (catalogo) a ProjectModuleId (instancia).

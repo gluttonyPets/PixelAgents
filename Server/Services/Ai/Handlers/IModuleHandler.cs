@@ -61,12 +61,12 @@ public class ModuleExecutionContext
     public string? PreviousSummaryContext { get; init; }
     /// <summary>Pre-joined mandatory rules from the tenant Rules table.</summary>
     public string? MandatoryRules { get; init; }
-    /// <summary>Constantes fijadas al lanzar la ejecucion ("tematica", "keyword"...).
+    /// <summary>Variables fijadas al lanzar la ejecucion ("tematica", "keyword"...).
     /// Ya vienen aplicadas sobre <see cref="Config"/> y sobre el prompt inicial; se
     /// exponen aqui para el texto que un handler componga por su cuenta.</summary>
-    public IReadOnlyDictionary<string, string> Constants { get; init; } = ExecutionConstants.None;
-    /// <summary>Bloque etiquetado con esas constantes para el system prompt.</summary>
-    public string? ConstantsBlock { get; init; }
+    public IReadOnlyDictionary<string, string> Variables { get; init; } = ExecutionVariables.None;
+    /// <summary>Bloque etiquetado con esas variables para el system prompt.</summary>
+    public string? VariablesBlock { get; init; }
     /// <summary>Bloque etiquetado de "Aprendizaje de ejecuciones pasadas" que aplica a este
     /// módulo (aprendizajes generales + los específicos del módulo). Se inyecta como capa
     /// aparte; nunca modifica el prompt configurado por el usuario.</summary>
@@ -227,9 +227,9 @@ public class ModuleExecutionContext
             .FirstOrDefault(f => !string.IsNullOrWhiteSpace(f));
     }
 
-    /// <summary>Sustituye los marcadores <c>{{clave}}</c> de las constantes en un texto
+    /// <summary>Sustituye los marcadores <c>{{clave}}</c> de las variables en un texto
     /// que el handler haya compuesto (plantillas, mensajes...).</summary>
-    public string ApplyConstants(string? text) => ExecutionConstants.Apply(text, Constants) ?? "";
+    public string ApplyVariables(string? text) => ExecutionVariables.Apply(text, Variables) ?? "";
 
     /// <summary>Get a config value as string.</summary>
     public string GetConfig(string key, string fallback = "")

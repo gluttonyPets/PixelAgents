@@ -127,19 +127,19 @@ else
                             <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
                         }
                         <textarea @bind="_userInput" rows="2" placeholder="Escribe tu prompt..." class="execute-inline-input"></textarea>
-                        @if (_constants.Count > 0)
+                        @if (_variables.Count > 0)
                         {
-                            <div class="execute-constants">
-                                <div class="execute-constants-title" title="Se sustituyen en los prompts de todos los modulos">Constantes de esta ejecucion</div>
-                                @foreach (var c in _constants)
+                            <div class="execute-variables">
+                                <div class="execute-variables-title" title="Se sustituyen en los prompts de todos los modulos">Variables de esta ejecucion</div>
+                                @foreach (var c in _variables)
                                 {
                                     var key = c.Key;
-                                    <div class="execute-constant-row">
-                                        <span class="execute-constant-key" title="@ConstantHint(c)">@ConstantMarker(key)</span>
-                                        <input type="text" class="execute-inline-input execute-constant-input"
-                                               value="@GetConstantValue(key)"
-                                               placeholder="@ConstantPlaceholder(c)"
-                                               @onchange="e => SetConstantValue(key, e.Value?.ToString())" />
+                                    <div class="execute-variable-row">
+                                        <span class="execute-variable-key" title="@VariableHint(c)">@VariableMarker(key)</span>
+                                        <input type="text" class="execute-inline-input execute-variable-input"
+                                               value="@GetVariableValue(key)"
+                                               placeholder="@VariablePlaceholder(c)"
+                                               @onchange="e => SetVariableValue(key, e.Value?.ToString())" />
                                     </div>
                                 }
                             </div>
@@ -227,6 +227,17 @@ else
                             <span class="planner-field-label">Instrucciones / necesidades</span>
                             <textarea @bind="_plannerInstructions" rows="3" class="planner-input planner-textarea" placeholder="Describe que debe generar el planificador..."></textarea>
                         </label>
+                        @if (_variables.Count > 0)
+                        {
+                            <div class="planner-variables-hint">
+                                El planificador dara valor tambien a
+                                @foreach (var v in _variables)
+                                {
+                                    <code class="planner-variables-key" title="@VariableHint(v)">@v.Key</code>
+                                }
+                                en cada ejecucion. Puedes corregirlos despues en la cola.
+                            </div>
+                        }
                         <label class="planner-checkbox">
                             <input type="checkbox" @bind="_plannerReplace" />
                             <span>Reemplazar pendientes existentes</span>
@@ -278,6 +289,17 @@ else
                                         @if (sel.Prompt is { } runPrompt)
                                         {
                                             <div class="planner-prompt-content">@runPrompt.Content</div>
+                                            @if (_variables.Count > 0)
+                                            {
+                                                <div class="variables-chips">
+                                                    @foreach (var v in _variables)
+                                                    {
+                                                        <span class="variables-chip">
+                                                            <strong>@v.Key</strong>: @PromptVariableLabel(runPrompt, v)
+                                                        </span>
+                                                    }
+                                                </div>
+                                            }
                                             <div class="planner-timeline-actions">
                                                 <button class="btn btn-success btn-xs"
                                                         disabled="@(_executingPromptId == runPrompt.Id || _executing)"
@@ -355,10 +377,36 @@ else
                                                     <textarea rows="2" class="planner-prompt-editor"
                                                               value="@p.Content"
                                                               @onchange="@(e => OnPromptContentChanged(p.Id, e.Value?.ToString() ?? string.Empty))"></textarea>
+                                                    @if (_variables.Count > 0)
+                                                    {
+                                                        <div class="planner-prompt-variables">
+                                                            @foreach (var v in _variables)
+                                                            {
+                                                                var key = v.Key;
+                                                                var prompt = p;
+                                                                <div class="planner-prompt-variable-row">
+                                                                    <span class="planner-prompt-variable-key" title="@VariableHint(v)">@key</span>
+                                                                    <input type="text" class="planner-prompt-variable-input"
+                                                                           value="@GetPromptVariableValue(prompt, key)"
+                                                                           placeholder="@VariablePlaceholder(v)"
+                                                                           @onchange="@(e => OnPromptVariableChanged(prompt.Id, key, e.Value?.ToString()))" />
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
                                                 }
                                                 else
                                                 {
                                                     <div class="planner-prompt-content">@p.Content</div>
+                                                    @if (p.Variables is { Count: > 0 })
+                                                    {
+                                                        <div class="variables-chips">
+                                                            @foreach (var kv in p.Variables.OrderBy(k => k.Key))
+                                                            {
+                                                                <span class="variables-chip"><strong>@kv.Key</strong>: @kv.Value</span>
+                                                            }
+                                                        </div>
+                                                    }
                                                 }
                                             </div>
                                         }
@@ -402,12 +450,12 @@ else
                                                 <div class="planner-prompt-content">
                                                     @(string.IsNullOrWhiteSpace(exec.UserInput) ? "(sin input)" : exec.UserInput)
                                                 </div>
-                                                @if (exec.Constants is { Count: > 0 })
+                                                @if (exec.Variables is { Count: > 0 })
                                                 {
-                                                    <div class="constants-chips">
-                                                        @foreach (var kv in exec.Constants.OrderBy(k => k.Key))
+                                                    <div class="variables-chips">
+                                                        @foreach (var kv in exec.Variables.OrderBy(k => k.Key))
                                                         {
-                                                            <span class="constants-chip"><strong>@kv.Key</strong>: @kv.Value</span>
+                                                            <span class="variables-chip"><strong>@kv.Key</strong>: @kv.Value</span>
                                                         }
                                                     </div>
                                                 }
@@ -668,12 +716,12 @@ else
                                         {
                                             <span class="hc-prompt-empty">Sin prompt</span>
                                         }
-                                        @if (e.Constants is { Count: > 0 })
+                                        @if (e.Variables is { Count: > 0 })
                                         {
-                                            <div class="constants-chips">
-                                                @foreach (var kv in e.Constants.OrderBy(k => k.Key))
+                                            <div class="variables-chips">
+                                                @foreach (var kv in e.Variables.OrderBy(k => k.Key))
                                                 {
-                                                    <span class="constants-chip"><strong>@kv.Key</strong>: @kv.Value</span>
+                                                    <span class="variables-chip"><strong>@kv.Key</strong>: @kv.Value</span>
                                                 }
                                             </div>
                                         }
@@ -880,14 +928,14 @@ else
                                     <strong>Prompt:</strong> @_execDetailModal.UserInput
                                 </div>
                             }
-                            @if (_execDetailModal.Constants is { Count: > 0 })
+                            @if (_execDetailModal.Variables is { Count: > 0 })
                             {
                                 <div class="output-block" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
-                                    <strong>Constantes:</strong>
-                                    <span class="constants-chips">
-                                        @foreach (var kv in _execDetailModal.Constants.OrderBy(k => k.Key))
+                                    <strong>Variables:</strong>
+                                    <span class="variables-chips">
+                                        @foreach (var kv in _execDetailModal.Variables.OrderBy(k => k.Key))
                                         {
-                                            <span class="constants-chip"><strong>@kv.Key</strong>: @kv.Value</span>
+                                            <span class="variables-chip"><strong>@kv.Key</strong>: @kv.Value</span>
                                         }
                                     </span>
                                 </div>
@@ -1260,9 +1308,9 @@ else
                             @onclick='() => _settingsTab = "shopify"'>
                         Shopify
                     </button>
-                    <button class="settings-tab @(_settingsTab == "constants" ? "settings-tab-active" : "")"
-                            @onclick='() => _settingsTab = "constants"'>
-                        Constantes
+                    <button class="settings-tab @(_settingsTab == "variables" ? "settings-tab-active" : "")"
+                            @onclick='() => _settingsTab = "variables"'>
+                        Variables
                     </button>
                     <button class="settings-tab @(_settingsTab == "schedule" ? "settings-tab-active" : "")"
                             @onclick='() => _settingsTab = "schedule"'>
@@ -1578,22 +1626,22 @@ else
                                 </div>
                             </div>
 
-                            @if (_constants.Count > 0)
+                            @if (_variables.Count > 0)
                             {
                                 <div class="form-group">
                                     <label>
-                                        Constantes de las ejecuciones programadas
-                                        <span class="text-sm text-muted">(vacio = valor por defecto de la constante)</span>
+                                        Variables de las ejecuciones programadas
+                                        <span class="text-sm text-muted">(vacio = valor por defecto de la variable)</span>
                                     </label>
-                                    @foreach (var c in _constants)
+                                    @foreach (var c in _variables)
                                     {
                                         var key = c.Key;
-                                        <div class="constants-form-row">
-                                            <span class="constants-form-key" title="@ConstantHint(c)">@ConstantMarker(key)</span>
+                                        <div class="variables-form-row">
+                                            <span class="variables-form-key" title="@VariableHint(c)">@VariableMarker(key)</span>
                                             <input type="text"
-                                                   value="@GetScheduleConstantValue(key)"
-                                                   placeholder="@ConstantPlaceholder(c)"
-                                                   @onchange="e => SetScheduleConstantValue(key, e.Value?.ToString())" />
+                                                   value="@GetScheduleVariableValue(key)"
+                                                   placeholder="@VariablePlaceholder(c)"
+                                                   @onchange="e => SetScheduleVariableValue(key, e.Value?.ToString())" />
                                         </div>
                                     }
                                 </div>
@@ -1625,90 +1673,92 @@ else
                         </div>
                     }
 
-                    <!-- CONSTANTES TAB -->
-                    @if (_settingsTab == "constants")
+                    <!-- VARIABLES TAB -->
+                    @if (_settingsTab == "variables")
                     {
                         <div class="settings-block">
                             <div class="settings-block-header">
-                                <strong>Constantes del pipeline</strong>
-                                @if (_constants.Count > 0)
+                                <strong>Variables del pipeline</strong>
+                                @if (_variables.Count > 0)
                                 {
-                                    <span class="badge badge-success">@_constants.Count definida(s)</span>
+                                    <span class="badge badge-success">@_variables.Count definida(s)</span>
                                 }
                             </div>
                             <p class="text-sm text-muted">
                                 Declara aqui los valores que cambian en cada ejecucion (por ejemplo
-                                <code>tematica</code> o <code>keyword</code>). El valor se elige al lanzar la
-                                ejecucion o en la programacion, y el servidor lo aplica a <strong>todos los
-                                modulos</strong>: sustituye <code>@ConstantMarker("clave")</code> en cualquier prompt
-                                o campo de texto de la configuracion, y ademas envia la lista de constantes con su
-                                valor en el system prompt de cada llamada a la IA.
+                                <code>keyword</code>, con una descripcion como "es la palabra clave sobre la
+                                que centramos el analisis"). El valor se elige al lanzar la ejecucion, en la
+                                programacion o en cada prompt de la cola —donde lo propone el propio
+                                planificador—, y el servidor lo aplica a <strong>todos los modulos</strong>:
+                                sustituye <code>@VariableMarker("clave")</code> en cualquier prompt o campo de
+                                texto de la configuracion, y ademas envia la lista de variables con su valor en
+                                el system prompt de cada llamada a la IA.
                             </p>
 
-                            @if (_constantsError is not null)
+                            @if (_variablesError is not null)
                             {
-                                <div class="alert alert-error">@_constantsError</div>
+                                <div class="alert alert-error">@_variablesError</div>
                             }
-                            @if (_constantsMsg is not null)
+                            @if (_variablesMsg is not null)
                             {
-                                <div class="alert alert-success">@_constantsMsg</div>
+                                <div class="alert alert-success">@_variablesMsg</div>
                             }
 
-                            @if (_constants.Count == 0)
+                            @if (_variables.Count == 0)
                             {
-                                <p class="text-sm text-muted">Todavia no hay constantes en este proyecto.</p>
+                                <p class="text-sm text-muted">Todavia no hay variables en este proyecto.</p>
                             }
                             else
                             {
-                                <div class="constants-list">
-                                    @foreach (var c in _constants)
+                                <div class="variables-list">
+                                    @foreach (var c in _variables)
                                     {
-                                        var constant = c;
-                                        <div class="constants-item">
-                                            @if (_editingConstantId == constant.Id)
+                                        var variable = c;
+                                        <div class="variables-item">
+                                            @if (_editingVariableId == variable.Id)
                                             {
                                                 <div class="form-row">
                                                     <div class="form-group">
                                                         <label>Clave</label>
-                                                        <input type="text" @bind="_editConstantKey" />
+                                                        <input type="text" @bind="_editVariableKey" />
                                                     </div>
                                                     <div class="form-group">
                                                         <label>Valor por defecto</label>
-                                                        <input type="text" @bind="_editConstantDefault" />
+                                                        <input type="text" @bind="_editVariableDefault" />
                                                     </div>
                                                 </div>
                                                 <div class="form-group">
                                                     <label>Descripcion (se envia al modelo junto al valor)</label>
-                                                    <input type="text" @bind="_editConstantDescription" />
+                                                    <input type="text" @bind="_editVariableDescription" />
                                                 </div>
                                                 <div style="display: flex; gap: 0.5rem;">
-                                                    <button class="btn btn-primary btn-sm" disabled="@_constantsSaving"
-                                                            @onclick="SaveEditedConstant">Guardar</button>
-                                                    <button class="btn btn-secondary btn-sm" disabled="@_constantsSaving"
-                                                            @onclick="CancelEditConstant">Cancelar</button>
+                                                    <button class="btn btn-primary btn-sm" disabled="@_variablesSaving"
+                                                            @onclick="SaveEditedVariable">Guardar</button>
+                                                    <button class="btn btn-secondary btn-sm" disabled="@_variablesSaving"
+                                                            @onclick="CancelEditVariable">Cancelar</button>
                                                 </div>
                                             }
                                             else
                                             {
-                                                <div class="constants-item-head">
-                                                    <code class="constants-item-key">@ConstantMarker(constant.Key)</code>
-                                                    @if (!string.IsNullOrWhiteSpace(constant.DefaultValue))
+                                                <div class="variables-item-head">
+                                                    <code class="variables-item-key">@VariableMarker(variable.Key)</code>
+                                                    @if (!string.IsNullOrWhiteSpace(variable.DefaultValue))
                                                     {
-                                                        <span class="text-sm text-muted">por defecto: @constant.DefaultValue</span>
+                                                        <span class="text-sm text-muted">por defecto: @variable.DefaultValue</span>
                                                     }
                                                     else
                                                     {
                                                         <span class="text-sm text-muted">sin valor por defecto</span>
                                                     }
-                                                    <div class="constants-item-actions">
-                                                        <button class="btn btn-sm" @onclick="() => StartEditConstant(constant)">Editar</button>
-                                                        <button class="btn btn-danger btn-sm" disabled="@_constantsSaving"
-                                                                @onclick="() => DeleteConstant(constant)">Eliminar</button>
+                                                    <div class="variables-item-actions">
+                                                        <button class="btn btn-sm" @onclick="() => StartEditVariable(variable)">Editar</button>
+                                                        <button class="btn btn-danger btn-sm" disabled="@_variablesSaving"
+                                                                @onclick="() => DeleteVariable(variable)">Eliminar</button>
                                                     </div>
                                                 </div>
-                                                @if (!string.IsNullOrWhiteSpace(constant.Description))
+                                                @if (!string.IsNullOrWhiteSpace(variable.Description))
                                                 {
-                                                    <div class="text-sm text-muted">@constant.Description</div>
+                                                    <div class="text-sm text-muted">@variable.Description</div>
                                                 }
                                             }
                                         </div>
@@ -1717,25 +1767,25 @@ else
                             }
 
                             <div class="settings-block-header" style="margin-top: 0.8rem;">
-                                <strong>Nueva constante</strong>
+                                <strong>Nueva variable</strong>
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>Clave</label>
-                                    <input type="text" @bind="_newConstantKey" placeholder="tematica" />
+                                    <input type="text" @bind="_newVariableKey" placeholder="tematica" />
                                 </div>
                                 <div class="form-group">
                                     <label>Valor por defecto (opcional)</label>
-                                    <input type="text" @bind="_newConstantDefault" placeholder="cafe de especialidad" />
+                                    <input type="text" @bind="_newVariableDefault" placeholder="cafe de especialidad" />
                                 </div>
                             </div>
                             <div class="form-group">
                                 <label>Descripcion (opcional)</label>
-                                <input type="text" @bind="_newConstantDescription"
+                                <input type="text" @bind="_newVariableDescription"
                                        placeholder="Tema principal sobre el que gira toda la ejecucion" />
                             </div>
-                            <button class="btn btn-primary" disabled="@_constantsSaving" @onclick="CreateConstant">
-                                @(_constantsSaving ? "Guardando..." : "Anadir constante")
+                            <button class="btn btn-primary" disabled="@_variablesSaving" @onclick="CreateVariable">
+                                @(_variablesSaving ? "Guardando..." : "Anadir variable")
                             </button>
                         </div>
                     }
@@ -2216,21 +2266,21 @@ else
     private bool _useHistory = true;
     private string? _execError;
 
-    // Constantes del pipeline: la definicion vive en el proyecto y el valor se
+    // Variables del pipeline: la definicion vive en el proyecto y el valor se
     // elige en cada ejecucion (o en la programacion).
-    private List<ProjectConstantResponse> _constants = new();
-    private Dictionary<string, string> _constantValues = new(StringComparer.OrdinalIgnoreCase);
-    private Dictionary<string, string> _schedConstantValues = new(StringComparer.OrdinalIgnoreCase);
-    private string _newConstantKey = "";
-    private string _newConstantDescription = "";
-    private string _newConstantDefault = "";
-    private Guid? _editingConstantId;
-    private string _editConstantKey = "";
-    private string _editConstantDescription = "";
-    private string _editConstantDefault = "";
-    private bool _constantsSaving;
-    private string? _constantsError;
-    private string? _constantsMsg;
+    private List<ProjectVariableResponse> _variables = new();
+    private Dictionary<string, string> _variableValues = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _schedVariableValues = new(StringComparer.OrdinalIgnoreCase);
+    private string _newVariableKey = "";
+    private string _newVariableDescription = "";
+    private string _newVariableDefault = "";
+    private Guid? _editingVariableId;
+    private string _editVariableKey = "";
+    private string _editVariableDescription = "";
+    private string _editVariableDefault = "";
+    private bool _variablesSaving;
+    private string? _variablesError;
+    private string? _variablesMsg;
 
     // Planner: vive en su propio panel, abierto desde la barra del canvas.
     private List<PlannedPromptResponse> _plannedPrompts = new();
@@ -2563,8 +2613,8 @@ else
             _executions = await Api.GetExecutionsAsync(ProjectId);
             try { _projectFeedback = await Api.GetProjectFeedbackAsync(ProjectId); } catch { _projectFeedback = []; }
             try { _tenantRules = await Api.GetRulesAsync(); } catch { _tenantRules = []; }
-            try { _constants = await Api.GetProjectConstantsAsync(ProjectId); } catch { _constants = []; }
-            SyncConstantValues();
+            try { _variables = await Api.GetProjectVariablesAsync(ProjectId); } catch { _variables = []; }
+            SyncVariableValues();
             // Check if latest execution is running, waiting for checkpoint, or waiting for orchestrator review
             var latestExec = _executions.FirstOrDefault();
             if (latestExec is not null && (latestExec.Status == "Running" || latestExec.Status == "WaitingForCheckpoint" || latestExec.Status == "WaitingForReview"))
@@ -2622,9 +2672,9 @@ else
                 _schedCron = _schedule.CronExpression;
                 _schedTimeZone = _schedule.TimeZone;
                 _schedUserInput = _schedule.UserInput ?? "";
-                _schedConstantValues = _schedule.Constants is null
+                _schedVariableValues = _schedule.Variables is null
                     ? new(StringComparer.OrdinalIgnoreCase)
-                    : new(_schedule.Constants, StringComparer.OrdinalIgnoreCase);
+                    : new(_schedule.Variables, StringComparer.OrdinalIgnoreCase);
                 _schedUseHistory = _schedule.UseHistory;
                 _schedUsePromptQueue = _schedule.UsePromptQueue;
                 // Try to detect preset from cron
@@ -2849,7 +2899,7 @@ else
             {
                 var (ok, result, error) = await Api.CreateScheduleAsync(ProjectId,
                     new CreateScheduleRequest(cron, _schedTimeZone, input, _schedUseHistory, _schedUsePromptQueue,
-                        BuildConstantPayload(_schedConstantValues)));
+                        BuildVariablePayload(_schedVariableValues)));
                 if (ok)
                 {
                     _schedule = result;
@@ -2862,7 +2912,7 @@ else
             {
                 var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
                     new UpdateScheduleRequest(cron, _schedTimeZone, input, _schedule.IsEnabled, _schedUseHistory, _schedUsePromptQueue,
-                        BuildConstantPayload(_schedConstantValues)));
+                        BuildVariablePayload(_schedVariableValues)));
                 if (ok)
                 {
                     _schedule = result;
@@ -2891,7 +2941,7 @@ else
 
             var (ok, result, error) = await Api.UpdateScheduleAsync(ProjectId,
                 new UpdateScheduleRequest(cron, tz, input, newEnabled, _schedule.UseHistory, _schedule.UsePromptQueue,
-                    _schedule.Constants));
+                    _schedule.Variables));
             if (ok)
             {
                 _schedule = result;
@@ -3210,52 +3260,52 @@ else
         catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
     }
 
-    // ── Constantes del pipeline ──
+    // ── Variables del pipeline ──
 
-    /// <summary>Marcador que hay que escribir en el prompt para usar la constante.</summary>
-    private static string ConstantMarker(string key) => "{{" + key + "}}";
+    /// <summary>Marcador que hay que escribir en el prompt para usar la variable.</summary>
+    private static string VariableMarker(string key) => "{{" + key + "}}";
 
-    private static string ConstantHint(ProjectConstantResponse c) =>
+    private static string VariableHint(ProjectVariableResponse c) =>
         string.IsNullOrWhiteSpace(c.Description)
-            ? $"Se sustituye en los prompts de todos los modulos como {ConstantMarker(c.Key)}"
+            ? $"Se sustituye en los prompts de todos los modulos como {VariableMarker(c.Key)}"
             : c.Description!;
 
-    private static string ConstantPlaceholder(ProjectConstantResponse c) =>
+    private static string VariablePlaceholder(ProjectVariableResponse c) =>
         string.IsNullOrWhiteSpace(c.DefaultValue) ? "(sin valor)" : c.DefaultValue!;
 
-    /// <summary>Deja un valor por constante declarada (arrancando por su valor por
-    /// defecto) y descarta los de constantes que ya no existen.</summary>
-    private void SyncConstantValues()
+    /// <summary>Deja un valor por variable declarada (arrancando por su valor por
+    /// defecto) y descarta los de variables que ya no existen.</summary>
+    private void SyncVariableValues()
     {
-        var keys = _constants.Select(c => c.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var keys = _variables.Select(c => c.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var stale in _constantValues.Keys.Where(k => !keys.Contains(k)).ToList())
-            _constantValues.Remove(stale);
-        foreach (var stale in _schedConstantValues.Keys.Where(k => !keys.Contains(k)).ToList())
-            _schedConstantValues.Remove(stale);
+        foreach (var stale in _variableValues.Keys.Where(k => !keys.Contains(k)).ToList())
+            _variableValues.Remove(stale);
+        foreach (var stale in _schedVariableValues.Keys.Where(k => !keys.Contains(k)).ToList())
+            _schedVariableValues.Remove(stale);
 
-        foreach (var c in _constants)
+        foreach (var c in _variables)
         {
-            if (!_constantValues.ContainsKey(c.Key))
-                _constantValues[c.Key] = c.DefaultValue ?? "";
+            if (!_variableValues.ContainsKey(c.Key))
+                _variableValues[c.Key] = c.DefaultValue ?? "";
         }
     }
 
-    private string GetConstantValue(string key) =>
-        _constantValues.TryGetValue(key, out var v) ? v : "";
+    private string GetVariableValue(string key) =>
+        _variableValues.TryGetValue(key, out var v) ? v : "";
 
-    private void SetConstantValue(string key, string? value) =>
-        _constantValues[key] = value ?? "";
+    private void SetVariableValue(string key, string? value) =>
+        _variableValues[key] = value ?? "";
 
-    private string GetScheduleConstantValue(string key) =>
-        _schedConstantValues.TryGetValue(key, out var v) ? v : "";
+    private string GetScheduleVariableValue(string key) =>
+        _schedVariableValues.TryGetValue(key, out var v) ? v : "";
 
-    private void SetScheduleConstantValue(string key, string? value) =>
-        _schedConstantValues[key] = value ?? "";
+    private void SetScheduleVariableValue(string key, string? value) =>
+        _schedVariableValues[key] = value ?? "";
 
     /// <summary>Valores no vacios que se mandan al servidor; null cuando no hay ninguno
-    /// (el servidor cae entonces al valor por defecto de cada constante).</summary>
-    private Dictionary<string, string>? BuildConstantPayload(Dictionary<string, string> source)
+    /// (el servidor cae entonces al valor por defecto de cada variable).</summary>
+    private Dictionary<string, string>? BuildVariablePayload(Dictionary<string, string> source)
     {
         var payload = source
             .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
@@ -3264,114 +3314,114 @@ else
         return payload.Count > 0 ? payload : null;
     }
 
-    private async Task ReloadConstantsAsync()
+    private async Task ReloadVariablesAsync()
     {
-        _constants = await Api.GetProjectConstantsAsync(ProjectId);
-        SyncConstantValues();
+        _variables = await Api.GetProjectVariablesAsync(ProjectId);
+        SyncVariableValues();
     }
 
-    private async Task CreateConstant()
+    private async Task CreateVariable()
     {
-        _constantsError = null; _constantsMsg = null;
+        _variablesError = null; _variablesMsg = null;
 
-        if (string.IsNullOrWhiteSpace(_newConstantKey))
+        if (string.IsNullOrWhiteSpace(_newVariableKey))
         {
-            _constantsError = "La clave es obligatoria.";
+            _variablesError = "La clave es obligatoria.";
             return;
         }
 
-        _constantsSaving = true;
+        _variablesSaving = true;
         try
         {
-            var (ok, error) = await Api.CreateProjectConstantAsync(ProjectId,
-                new CreateProjectConstantRequest(
-                    _newConstantKey.Trim(),
-                    string.IsNullOrWhiteSpace(_newConstantDescription) ? null : _newConstantDescription.Trim(),
-                    string.IsNullOrWhiteSpace(_newConstantDefault) ? null : _newConstantDefault.Trim(),
-                    _constants.Count));
+            var (ok, error) = await Api.CreateProjectVariableAsync(ProjectId,
+                new CreateProjectVariableRequest(
+                    _newVariableKey.Trim(),
+                    string.IsNullOrWhiteSpace(_newVariableDescription) ? null : _newVariableDescription.Trim(),
+                    string.IsNullOrWhiteSpace(_newVariableDefault) ? null : _newVariableDefault.Trim(),
+                    _variables.Count));
 
             if (ok)
             {
-                _newConstantKey = "";
-                _newConstantDescription = "";
-                _newConstantDefault = "";
-                await ReloadConstantsAsync();
-                _constantsMsg = "Constante creada.";
+                _newVariableKey = "";
+                _newVariableDescription = "";
+                _newVariableDefault = "";
+                await ReloadVariablesAsync();
+                _variablesMsg = "Variable creada.";
             }
-            else _constantsError = error;
+            else _variablesError = error;
         }
-        catch (Exception ex) { _constantsError = $"Error: {ex.Message}"; }
-        _constantsSaving = false;
+        catch (Exception ex) { _variablesError = $"Error: {ex.Message}"; }
+        _variablesSaving = false;
     }
 
-    private void StartEditConstant(ProjectConstantResponse c)
+    private void StartEditVariable(ProjectVariableResponse c)
     {
-        _constantsError = null; _constantsMsg = null;
-        _editingConstantId = c.Id;
-        _editConstantKey = c.Key;
-        _editConstantDescription = c.Description ?? "";
-        _editConstantDefault = c.DefaultValue ?? "";
+        _variablesError = null; _variablesMsg = null;
+        _editingVariableId = c.Id;
+        _editVariableKey = c.Key;
+        _editVariableDescription = c.Description ?? "";
+        _editVariableDefault = c.DefaultValue ?? "";
     }
 
-    private void CancelEditConstant() => _editingConstantId = null;
+    private void CancelEditVariable() => _editingVariableId = null;
 
-    private async Task SaveEditedConstant()
+    private async Task SaveEditedVariable()
     {
-        if (_editingConstantId is null) return;
-        _constantsError = null; _constantsMsg = null;
+        if (_editingVariableId is null) return;
+        _variablesError = null; _variablesMsg = null;
 
-        if (string.IsNullOrWhiteSpace(_editConstantKey))
+        if (string.IsNullOrWhiteSpace(_editVariableKey))
         {
-            _constantsError = "La clave es obligatoria.";
+            _variablesError = "La clave es obligatoria.";
             return;
         }
 
-        var current = _constants.FirstOrDefault(c => c.Id == _editingConstantId);
-        _constantsSaving = true;
+        var current = _variables.FirstOrDefault(c => c.Id == _editingVariableId);
+        _variablesSaving = true;
         try
         {
-            var (ok, error) = await Api.UpdateProjectConstantAsync(ProjectId, _editingConstantId.Value,
-                new UpdateProjectConstantRequest(
-                    _editConstantKey.Trim(),
-                    string.IsNullOrWhiteSpace(_editConstantDescription) ? null : _editConstantDescription.Trim(),
-                    string.IsNullOrWhiteSpace(_editConstantDefault) ? null : _editConstantDefault.Trim(),
+            var (ok, error) = await Api.UpdateProjectVariableAsync(ProjectId, _editingVariableId.Value,
+                new UpdateProjectVariableRequest(
+                    _editVariableKey.Trim(),
+                    string.IsNullOrWhiteSpace(_editVariableDescription) ? null : _editVariableDescription.Trim(),
+                    string.IsNullOrWhiteSpace(_editVariableDefault) ? null : _editVariableDefault.Trim(),
                     current?.SortOrder ?? 0));
 
             if (ok)
             {
                 // Al renombrar, el valor tecleado seguia colgado de la clave vieja.
-                if (current is not null && !string.Equals(current.Key, _editConstantKey.Trim(), StringComparison.OrdinalIgnoreCase))
+                if (current is not null && !string.Equals(current.Key, _editVariableKey.Trim(), StringComparison.OrdinalIgnoreCase))
                 {
-                    _constantValues.Remove(current.Key);
-                    _schedConstantValues.Remove(current.Key);
+                    _variableValues.Remove(current.Key);
+                    _schedVariableValues.Remove(current.Key);
                 }
-                _editingConstantId = null;
-                await ReloadConstantsAsync();
-                _constantsMsg = "Constante actualizada.";
+                _editingVariableId = null;
+                await ReloadVariablesAsync();
+                _variablesMsg = "Variable actualizada.";
             }
-            else _constantsError = error;
+            else _variablesError = error;
         }
-        catch (Exception ex) { _constantsError = $"Error: {ex.Message}"; }
-        _constantsSaving = false;
+        catch (Exception ex) { _variablesError = $"Error: {ex.Message}"; }
+        _variablesSaving = false;
     }
 
-    private async Task DeleteConstant(ProjectConstantResponse c)
+    private async Task DeleteVariable(ProjectVariableResponse c)
     {
-        _constantsError = null; _constantsMsg = null;
-        _constantsSaving = true;
+        _variablesError = null; _variablesMsg = null;
+        _variablesSaving = true;
         try
         {
-            var (ok, error) = await Api.DeleteProjectConstantAsync(ProjectId, c.Id);
+            var (ok, error) = await Api.DeleteProjectVariableAsync(ProjectId, c.Id);
             if (ok)
             {
-                if (_editingConstantId == c.Id) _editingConstantId = null;
-                await ReloadConstantsAsync();
-                _constantsMsg = $"Constante '{c.Key}' eliminada.";
+                if (_editingVariableId == c.Id) _editingVariableId = null;
+                await ReloadVariablesAsync();
+                _variablesMsg = $"Variable '{c.Key}' eliminada.";
             }
-            else _constantsError = error;
+            else _variablesError = error;
         }
-        catch (Exception ex) { _constantsError = $"Error: {ex.Message}"; }
-        _constantsSaving = false;
+        catch (Exception ex) { _variablesError = $"Error: {ex.Message}"; }
+        _variablesSaving = false;
     }
 
     private async Task Execute()
@@ -3385,14 +3435,14 @@ else
         {
             var (ok, error) = await Api.ExecuteProjectAsync(
                 ProjectId, string.IsNullOrWhiteSpace(_userInput) ? null : _userInput, _useHistory,
-                BuildConstantPayload(_constantValues));
+                BuildVariablePayload(_variableValues));
             if (!ok) { _execError = error; _executing = false; }
             else StartPolling(); // Safety net in case SignalR misses completion
         }
         catch (Exception ex) { _execError = $"Error de conexion: {ex.Message}"; _executing = false; }
     }
 
-    /// <summary>Relanza una ejecucion anterior con su mismo prompt y sus mismas constantes.</summary>
+    /// <summary>Relanza una ejecucion anterior con su mismo prompt y sus mismas variables.</summary>
     private async Task RepeatExecution(ExecutionResponse exec)
     {
         _execError = null; _executing = true; _result = null;
@@ -3402,12 +3452,12 @@ else
 
         try
         {
-            var constants = exec.Constants is { Count: > 0 }
-                ? new Dictionary<string, string>(exec.Constants)
-                : BuildConstantPayload(_constantValues);
+            var variables = exec.Variables is { Count: > 0 }
+                ? new Dictionary<string, string>(exec.Variables)
+                : BuildVariablePayload(_variableValues);
 
             var (ok, error) = await Api.ExecuteProjectAsync(
-                ProjectId, string.IsNullOrWhiteSpace(exec.UserInput) ? null : exec.UserInput, _useHistory, constants);
+                ProjectId, string.IsNullOrWhiteSpace(exec.UserInput) ? null : exec.UserInput, _useHistory, variables);
             if (!ok) { _execError = error; _executing = false; }
             else StartPolling();
         }
@@ -4286,12 +4336,61 @@ else
     private async Task OnPromptContentChanged(Guid promptId, string newContent)
     {
         if (_project is null) return;
-        var (ok, item, _) = await Api.UpdatePlannedPromptAsync(_project.Id, promptId, newContent);
+        var current = _plannedPrompts.FirstOrDefault(p => p.Id == promptId);
+        var (ok, item, _) = await Api.UpdatePlannedPromptAsync(
+            _project.Id, promptId, newContent, current?.Variables);
         if (ok && item is not null)
         {
             var idx = _plannedPrompts.FindIndex(p => p.Id == promptId);
             if (idx >= 0) _plannedPrompts[idx] = item;
         }
+    }
+
+    /// <summary>Valor de una variable en un prompt de la cola (busqueda sin distinguir mayusculas).</summary>
+    private static string GetPromptVariableValue(PlannedPromptResponse prompt, string key)
+    {
+        if (prompt.Variables is null) return "";
+        foreach (var kv in prompt.Variables)
+        {
+            if (string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase)) return kv.Value;
+        }
+        return "";
+    }
+
+    /// <summary>Lo que se muestra en el timeline: el valor del prompt o, si no lo trae,
+    /// el valor por defecto que aplicara la ejecucion.</summary>
+    private string PromptVariableLabel(PlannedPromptResponse prompt, ProjectVariableResponse variable)
+    {
+        var value = GetPromptVariableValue(prompt, variable.Key);
+        if (!string.IsNullOrWhiteSpace(value)) return value;
+        return string.IsNullOrWhiteSpace(variable.DefaultValue)
+            ? "(sin valor)"
+            : $"{variable.DefaultValue} (por defecto)";
+    }
+
+    /// <summary>Guarda el valor que el usuario corrige sobre lo que propuso el planificador.</summary>
+    private async Task OnPromptVariableChanged(Guid promptId, string key, string? value)
+    {
+        if (_project is null) return;
+
+        var current = _plannedPrompts.FirstOrDefault(p => p.Id == promptId);
+        if (current is null) return;
+
+        var values = current.Variables is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(current.Variables, StringComparer.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(value)) values.Remove(key);
+        else values[key] = value.Trim();
+
+        var (ok, item, error) = await Api.UpdatePlannedPromptAsync(
+            _project.Id, promptId, current.Content, values);
+        if (ok && item is not null)
+        {
+            var idx = _plannedPrompts.FindIndex(p => p.Id == promptId);
+            if (idx >= 0) _plannedPrompts[idx] = item;
+        }
+        else _plannerError = error;
     }
 
     private async Task ExecutePlannedPrompt(Guid promptId)

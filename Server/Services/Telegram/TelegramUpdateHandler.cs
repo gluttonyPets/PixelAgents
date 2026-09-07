@@ -168,11 +168,11 @@ namespace Server.Services.Telegram
                             ? originalInput
                             : $"{originalInput}\n\nAclaracion del usuario: {clarification}";
 
-                        // Se reinicia lo mismo: las constantes de la ejecucion original
+                        // Se reinicia lo mismo: las variables de la ejecucion original
                         // (tematica, keyword...) tienen que seguir siendo las mismas.
                         await _executor.ExecuteAsync(
                             projectIdForRestart.Value, restartInput, db, correlation.TenantDbName,
-                            constantValues: ExecutionConstants.Parse(execForRestart?.ConstantsJson));
+                            variableValues: ExecutionVariables.Parse(execForRestart?.VariablesJson));
 
                         var tgConfig = await GetTgConfigAsync();
                         if (tgConfig is not null)
@@ -586,7 +586,10 @@ namespace Server.Services.Telegram
 
             // Prefer the AI planner; if it can't run (e.g. no OpenAI key) treat each non-empty
             // line the user sent as a literal prompt so the feature still works without a key.
-            List<string> prompts;
+            // El planificador devuelve, ademas del prompt, el valor de las variables
+            // del pipeline para esa ejecucion. El fallback por lineas no puede darlos:
+            // esos prompts corren con el valor por defecto de cada variable.
+            List<PlannedPromptDraft> prompts;
             var result = await _planner.GenerateAsync(db, projectId, PlanningModel, PlanningCount, instructions);
             if (result.Success && result.Prompts.Count > 0)
             {
@@ -598,6 +601,7 @@ namespace Server.Services.Telegram
                     .Split('\n')
                     .Select(l => l.Trim())
                     .Where(l => !string.IsNullOrWhiteSpace(l))
+                    .Select(l => new PlannedPromptDraft(l, ExecutionVariables.NewMap()))
                     .ToList();
             }
 
@@ -617,14 +621,15 @@ namespace Server.Services.Telegram
                 .MaxAsync() ?? -1;
 
             var idx = maxOrder + 1;
-            foreach (var content in prompts)
+            foreach (var draft in prompts)
             {
                 db.PlannedPrompts.Add(new PlannedPrompt
                 {
                     Id = Guid.NewGuid(),
                     ProjectId = projectId,
                     OrderIndex = idx++,
-                    Content = content,
+                    Content = draft.Content,
+                    VariablesJson = ExecutionVariables.Serialize(draft.Variables),
                     Status = PlannedPromptStatus.Pending,
                     CreatedAt = now,
                     UpdatedAt = now,
@@ -671,7 +676,8 @@ namespace Server.Services.Telegram
             }
 
             // Cambia la tematica del prompt, no la configuracion del pipeline: la nueva
-            // ejecucion arranca con las mismas constantes que la que se acaba de abortar.
+            // ejecucion arranca con las variables de la que se acaba de abortar, y encima
+            // las que el planificador escribio para este prompt concreto.
             var abortedExecution = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
 
             ProjectExecution newExecution;
@@ -679,7 +685,9 @@ namespace Server.Services.Telegram
             {
                 newExecution = await _executor.ExecuteAsync(
                     projectId, nextPrompt.Content, db, correlation.TenantDbName,
-                    constantValues: ExecutionConstants.Parse(abortedExecution?.ConstantsJson));
+                    variableValues: ExecutionVariables.Merge(
+                        ExecutionVariables.Parse(abortedExecution?.VariablesJson),
+                        ExecutionVariables.Parse(nextPrompt.VariablesJson)));
             }
             catch (Exception ex)
             {

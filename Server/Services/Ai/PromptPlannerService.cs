@@ -18,7 +18,13 @@ namespace Server.Services.Ai
         IReadOnlyList<PromptPlannerModelOption> GetAvailableModels();
     }
 
-    public record PromptPlannerResult(bool Success, List<string> Prompts, string? Error);
+    /// <summary>
+    /// Una ejecucion planificada: el prompt y el valor que el planificador propone
+    /// para cada variable del pipeline (vacio cuando el proyecto no declara ninguna).
+    /// </summary>
+    public record PlannedPromptDraft(string Content, Dictionary<string, string> Variables);
+
+    public record PromptPlannerResult(bool Success, List<PlannedPromptDraft> Prompts, string? Error);
 
     public record PromptPlannerModelOption(string Provider, string ModelName, string DisplayName);
 
@@ -91,7 +97,14 @@ namespace Server.Services.Ai
             if (provider is null)
                 return new PromptPlannerResult(false, new(), $"Proveedor '{modelOption.Provider}' no disponible");
 
-            var systemPrompt = BuildPlannerPrompt(count, instructions, project.Context);
+            // El planificador tiene que rellenar tambien las variables del pipeline:
+            // sin valor, cada ejecucion programada correria con el valor por defecto.
+            var variables = await db.ProjectVariables
+                .Where(v => v.ProjectId == projectId)
+                .OrderBy(v => v.SortOrder).ThenBy(v => v.CreatedAt)
+                .ToListAsync(ct);
+
+            var systemPrompt = BuildPlannerPrompt(count, instructions, project.Context, variables);
 
             // OJO: el contexto del proyecto ya va embebido en el prompt que construye
             // BuildPlannerPrompt. Si ademas se pasara por ProjectContext, el provider
@@ -113,7 +126,7 @@ namespace Server.Services.Ai
                     return new PromptPlannerResult(false, new(), result.Error ?? "Error generando prompts");
 
                 var raw = result.TextOutput ?? "";
-                var prompts = ParsePromptList(raw, count);
+                var prompts = PlannerSchema.ParsePrompts(raw, count, variables);
                 if (prompts.Count == 0)
                     return new PromptPlannerResult(false, new(), "El modelo no devolvio ningun prompt valido");
 
@@ -126,7 +139,13 @@ namespace Server.Services.Ai
             }
         }
 
-        private static string BuildPlannerPrompt(int count, string instructions, string? projectContext)
+        /// <summary>
+        /// Prompt del planificador: quien es, que contexto tiene, que pide el usuario
+        /// y —al final— el contrato de salida (<see cref="PlannerSchema"/>), que incluye
+        /// las variables del pipeline que hay que rellenar en cada ejecucion.
+        /// </summary>
+        private static string BuildPlannerPrompt(
+            int count, string instructions, string? projectContext, IReadOnlyList<ProjectVariable> variables)
         {
             var ctxBlock = string.IsNullOrWhiteSpace(projectContext)
                 ? ""
@@ -139,64 +158,7 @@ Cada prompt debe ser autocontenido, claro y listo para ejecutarse en una corrida
 Necesidades / instrucciones del usuario:
 {instructions}
 
-Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adicional, sin comentarios, sin markdown:
-{{
-  ""prompts"": [
-    ""primer prompt"",
-    ""segundo prompt""
-  ]
-}}
-La lista debe contener exactamente {count} prompts ordenados.";
-        }
-
-        private static List<string> ParsePromptList(string raw, int expected)
-        {
-            var json = ExtractJsonObject(raw);
-            if (json is null) return new();
-
-            try
-            {
-                using var doc = JsonDocument.Parse(json);
-                if (!doc.RootElement.TryGetProperty("prompts", out var arr) || arr.ValueKind != JsonValueKind.Array)
-                    return new();
-
-                var list = new List<string>();
-                foreach (var item in arr.EnumerateArray())
-                {
-                    if (item.ValueKind == JsonValueKind.String)
-                    {
-                        var v = item.GetString();
-                        if (!string.IsNullOrWhiteSpace(v)) list.Add(v.Trim());
-                    }
-                }
-
-                if (list.Count > expected) list = list.Take(expected).ToList();
-                return list;
-            }
-            catch
-            {
-                return new();
-            }
-        }
-
-        private static string? ExtractJsonObject(string raw)
-        {
-            if (string.IsNullOrWhiteSpace(raw)) return null;
-
-            var cleaned = raw.Trim();
-            if (cleaned.StartsWith("```"))
-            {
-                var firstNewline = cleaned.IndexOf('\n');
-                if (firstNewline >= 0) cleaned = cleaned[(firstNewline + 1)..];
-                var fenceEnd = cleaned.LastIndexOf("```", StringComparison.Ordinal);
-                if (fenceEnd >= 0) cleaned = cleaned[..fenceEnd];
-                cleaned = cleaned.Trim();
-            }
-
-            var start = cleaned.IndexOf('{');
-            var end = cleaned.LastIndexOf('}');
-            if (start < 0 || end <= start) return null;
-            return cleaned.Substring(start, end - start + 1);
+" + PlannerSchema.BuildInstruction(count, variables);
         }
     }
 }

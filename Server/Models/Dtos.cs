@@ -70,21 +70,21 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record SceneCountEntry(Guid ModuleId, int SceneCount);
     public record ModuleConfigEntry(Guid ModuleId, string Key, string Value);
 
-    // ── Constantes del pipeline ──
-    /// <summary>Constante declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
-    public record ProjectConstantResponse(
+    // ── Variables del pipeline ──
+    /// <summary>Variable declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
+    public record ProjectVariableResponse(
         Guid Id, Guid ProjectId, string Key, string? Description, string? DefaultValue,
         int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
-    public record CreateProjectConstantRequest(
+    public record CreateProjectVariableRequest(
         string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
-    public record UpdateProjectConstantRequest(
+    public record UpdateProjectVariableRequest(
         string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
 
     // ── Execution ──
-    /// <param name="Constants">Valor de cada constante del pipeline para esta ejecucion,
-    /// por clave. Las que falten usan el valor por defecto de la constante.</param>
+    /// <param name="Variables">Valor de cada variable del pipeline para esta ejecucion,
+    /// por clave. Las que falten usan el valor por defecto de la variable.</param>
     public record ExecuteProjectRequest(
-        string? UserInput, bool UseHistory = true, Dictionary<string, string>? Constants = null);
+        string? UserInput, bool UseHistory = true, Dictionary<string, string>? Variables = null);
     public record RetryFromModuleRequest(Guid ProjectModuleId, string? Comment);
     public record OrchestratorReviewRequest(bool Approved, string? Comment);
     public record CheckpointReviewRequest(bool Approved);
@@ -97,13 +97,13 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
         DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
         decimal TotalEstimatedCost,
-        Dictionary<string, string>? Constants = null);
+        Dictionary<string, string>? Variables = null);
     public record ExecutionDetailResponse(
         Guid Id, Guid ProjectId, string Status, string WorkspacePath,
         DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
         decimal TotalEstimatedCost,
         List<StepExecutionResponse> Steps,
-        Dictionary<string, string>? Constants = null);
+        Dictionary<string, string>? Variables = null);
     public record StepExecutionResponse(
         Guid Id, Guid ProjectModuleId, string ModuleName, string ModuleType,
         string Status, string? InputData, string? OutputData, string? ErrorMessage,
@@ -258,18 +258,20 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         List<string> Folders, List<DirectoryIndexEntryResponse> Files, List<string> Errors);
 
     // ── Schedule ──
-    public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Constants = null);
-    public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Constants = null);
+    public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Variables = null);
+    public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Variables = null);
     public record ScheduleResponse(
         Guid Id, Guid ProjectId, bool IsEnabled, string CronExpression, string TimeZone,
         string? UserInput, bool UseHistory, bool UsePromptQueue,
         DateTime? LastRunAt, DateTime? NextRunAt,
         DateTime CreatedAt, DateTime UpdatedAt,
-        Dictionary<string, string>? Constants = null);
+        Dictionary<string, string>? Variables = null);
 
-    /// <summary>Una ejecucion futura proyectada: cuando se lanzara y con que prompt de la cola.</summary>
+    /// <summary>Una ejecucion futura proyectada: cuando se lanzara, con que prompt de
+    /// la cola y con que valor de las variables del pipeline.</summary>
     public record UpcomingRunResponse(
-        int Index, DateTime RunAtUtc, Guid? PlannedPromptId, string? PlannedPromptContent);
+        int Index, DateTime RunAtUtc, Guid? PlannedPromptId, string? PlannedPromptContent,
+        Dictionary<string, string>? Variables = null);
 
     /// <summary>Proyeccion de las proximas ejecuciones programadas de un proyecto.</summary>
     public record UpcomingRunsResponse(
@@ -291,10 +293,13 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
 
     // ── Planned Prompts ──
     public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);
-    public record CreatePlannedPromptRequest(string Content);
-    public record UpdatePlannedPromptRequest(string Content);
+    public record CreatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
+    public record UpdatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
     public record ReorderPlannedPromptsRequest(List<Guid> OrderedIds);
+    /// <param name="Variables">Valor de las variables del pipeline para esta ejecucion
+    /// planificada; manda sobre lo que fije la programacion.</param>
     public record PlannedPromptResponse(
         Guid Id, Guid ProjectId, int OrderIndex, string Content, string Status,
-        DateTime CreatedAt, DateTime UpdatedAt, DateTime? UsedAt, Guid? ExecutionId);
+        DateTime CreatedAt, DateTime UpdatedAt, DateTime? UsedAt, Guid? ExecutionId,
+        Dictionary<string, string>? Variables = null);
 }

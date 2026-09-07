@@ -209,9 +209,15 @@ namespace Server.Services.Scheduler
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(userToken, ct);
                     try
                     {
+                        // Las variables del prompt planificado ganan a las fijas de la
+                        // programacion: el planificador las escribio para ESE prompt.
+                        var effectiveVariables = Server.Services.Ai.ExecutionVariables.Merge(
+                            Server.Services.Ai.ExecutionVariables.Parse(schedule.VariablesJson),
+                            Server.Services.Ai.ExecutionVariables.Parse(consumedPrompt?.VariablesJson));
+
                         await executor.ExecuteAsync(
                             schedule.ProjectId, effectiveInput, execDb, dbName, linkedCts.Token, schedule.UseHistory,
-                            Server.Services.Ai.ExecutionConstants.Parse(schedule.ConstantsJson));
+                            effectiveVariables);
                     }
                     finally
                     {

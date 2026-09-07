@@ -148,7 +148,7 @@ El servidor usa dos contextos EF Core:
   Contiene usuarios, roles, `Accounts`, `WhatsAppCorrelations` y
   `TelegramCorrelations`.
 - `UserDbContext`: base por tenant. Contiene claves, modulos, proyectos,
-  constantes de proyecto, conexiones, ejecuciones, logs, archivos, schedules,
+  variables de proyecto, conexiones, ejecuciones, logs, archivos, schedules,
   salidas de orquestador y reglas.
 
 El tenancy se resuelve desde el usuario autenticado. Durante el registro,
@@ -322,7 +322,7 @@ Conceptos:
 - `ModuleNode` representa estado, entradas, salidas y output de cada nodo.
 - `PortDataResolver` transforma `StepOutput` en datos por puerto.
 - `PausedGraphState` serializa estado para pausa/reanudacion.
-- `ExecutionConstants` resuelve las constantes del pipeline (`tematica`,
+- `ExecutionVariables` resuelve las variables del pipeline (`tematica`,
   `keyword`...): sustituye `{{clave}}` en el prompt inicial y en la config de
   cada modulo, e inyecta los valores como bloque en el system prompt de todas
   las llamadas a IA.
@@ -344,7 +344,7 @@ El flujo general de ejecucion:
 2. Valida que exista exactamente un modulo `Start`; ese modulo es el unico
    punto de entrada.
 3. Crea un `ProjectExecution` y un workspace bajo `GeneratedMedia`, y fija en el
-   las constantes con las que corre (`ConstantsJson`), para que reintentos y
+   las variables con las que corre (`VariablesJson`), para que reintentos y
    reanudaciones usen los mismos valores.
 4. Construye `ExecutionGraph`.
 5. Marca el modulo `Start` como `Ready` y lanza cualquier nodo en ese estado.
@@ -519,25 +519,31 @@ Gestion de pipelines:
 El orden de ejecucion no se guarda en `ProjectModule`: lo determina el modulo
 `Start` y las conexiones `OutgoingConnections`/`IncomingConnections`.
 
-### Constantes Del Pipeline
+### Variables Del Pipeline
 
 Valores que el proyecto declara una vez (`tematica`, `keyword`...) y cuyo valor
 se elige en cada ejecucion. Se sustituyen en los prompts (`{{clave}}`) y se
 inyectan como bloque en el system prompt de todos los modulos; ver
-`docs/architecture.md` > "Constantes de ejecucion".
+`docs/architecture.md` > "Variables de ejecucion".
 
-- `GET /api/projects/{projectId}/constants`: lista las constantes del proyecto.
-- `POST /api/projects/{projectId}/constants`: crea una constante.
-- `PUT /api/projects/{projectId}/constants/{constantId}`: actualiza clave,
+- `GET /api/projects/{projectId}/variables`: lista las variables del proyecto.
+- `POST /api/projects/{projectId}/variables`: crea una variable.
+- `PUT /api/projects/{projectId}/variables/{variableId}`: actualiza clave,
   descripcion o valor por defecto.
-- `DELETE /api/projects/{projectId}/constants/{constantId}`: elimina una constante.
+- `DELETE /api/projects/{projectId}/variables/{variableId}`: elimina una variable.
+
+En una ejecucion manual el prompt y el valor de cada variable se rellenan por
+separado en el panel de ejecucion. En una planificacion automatica es el
+planificador el que, ademas del prompt, propone el valor de cada variable para
+cada ejecucion futura (`PlannedPrompts.VariablesJson`), corregible a mano desde
+la cola.
 
 ### Ejecuciones
 
 Ejecucion y revision:
 
 - `/api/projects/{projectId}/execute`: inicia ejecucion; acepta el valor de las
-  constantes del pipeline para esa corrida.
+  variables del pipeline para esa corrida.
 - `/api/projects/{projectId}/executions`: lista ejecuciones del proyecto.
 - `/api/executions/{id}`: detalle de ejecucion.
 - `/api/executions/{executionId}/logs`: logs persistidos.
@@ -579,8 +585,9 @@ Cada proyecto puede tener una programacion:
 - `DELETE /api/projects/{projectId}/schedule`.
 
 `SchedulerBackgroundService` calcula proximas ejecuciones con Cronos y ejecuta
-proyectos habilitados. La programacion tambien guarda el valor de las constantes
-del pipeline que usara en cada corrida.
+proyectos habilitados. La programacion tambien guarda el valor de las variables
+del pipeline que usara en cada corrida; cuando consume la cola del planificador,
+los valores que trae el prompt planificado mandan sobre los de la programacion.
 
 ### Integraciones De Mensajeria Y Publicacion
 

@@ -141,7 +141,8 @@ public record CreateProjectRequest(string Name, string? Description, string? Con
 public record UpdateProjectRequest(string Name, string? Description, string? Context, bool? IsTestProject = null);
 public record SetProjectPinRequest(bool IsPinned);
 public record UpcomingRunResponse(
-    int Index, DateTime RunAtUtc, Guid? PlannedPromptId, string? PlannedPromptContent);
+    int Index, DateTime RunAtUtc, Guid? PlannedPromptId, string? PlannedPromptContent,
+    Dictionary<string, string>? Variables = null);
 public record UpcomingRunsResponse(
     bool HasSchedule, bool IsEnabled, bool UsesPromptQueue,
     string? CronExpression, string? TimeZone,
@@ -184,19 +185,19 @@ public record SceneCountEntry(Guid ModuleId, int SceneCount);
 public record StepExecutionStatus(Guid ProjectModuleId, string Status);
 public record ExecutionLogEntry(string Level, string Message, Guid? ProjectModuleId, string? ModuleName, DateTime Timestamp);
 
-// ── Constantes del pipeline ──
-/// <summary>Constante declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
-public record ProjectConstantResponse(
+// ── Variables del pipeline ──
+/// <summary>Variable declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
+public record ProjectVariableResponse(
     Guid Id, Guid ProjectId, string Key, string? Description, string? DefaultValue,
     int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
-public record CreateProjectConstantRequest(
+public record CreateProjectVariableRequest(
     string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
-public record UpdateProjectConstantRequest(
+public record UpdateProjectVariableRequest(
     string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
 
 // ── Execution ──
 public record ExecuteProjectRequest(
-    string? UserInput, bool UseHistory = true, Dictionary<string, string>? Constants = null);
+    string? UserInput, bool UseHistory = true, Dictionary<string, string>? Variables = null);
 public record RetryFromModuleRequest(Guid ProjectModuleId, string? Comment);
 public record OrchestratorReviewRequest(bool Approved, string? Comment);
 public record CheckpointReviewRequest(bool Approved);
@@ -209,13 +210,13 @@ public record ExecutionResponse(
     Guid Id, Guid ProjectId, string Status, string WorkspacePath,
     DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
     decimal TotalEstimatedCost,
-    Dictionary<string, string>? Constants = null);
+    Dictionary<string, string>? Variables = null);
 public record ExecutionDetailResponse(
     Guid Id, Guid ProjectId, string Status, string WorkspacePath,
     DateTime CreatedAt, DateTime? CompletedAt, string? UserInput,
     decimal TotalEstimatedCost,
     List<StepExecutionResponse> Steps,
-    Dictionary<string, string>? Constants = null);
+    Dictionary<string, string>? Variables = null);
 public record StepExecutionResponse(
     Guid Id, Guid ProjectModuleId, string ModuleName, string ModuleType,
     string Status, string? InputData, string? OutputData, string? ErrorMessage,
@@ -298,14 +299,14 @@ public record DirectoryIndexPreviewResponse(
     List<string> Folders, List<DirectoryIndexEntryResponse> Files, List<string> Errors);
 
 // ── Schedule ──
-public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Constants = null);
-public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Constants = null);
+public record CreateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Variables = null);
+public record UpdateScheduleRequest(string CronExpression, string TimeZone, string? UserInput, bool IsEnabled, bool UseHistory = true, bool UsePromptQueue = false, Dictionary<string, string>? Variables = null);
 public record ScheduleResponse(
     Guid Id, Guid ProjectId, bool IsEnabled, string CronExpression, string TimeZone,
     string? UserInput, bool UseHistory, bool UsePromptQueue,
     DateTime? LastRunAt, DateTime? NextRunAt,
     DateTime CreatedAt, DateTime UpdatedAt,
-    Dictionary<string, string>? Constants = null);
+    Dictionary<string, string>? Variables = null);
 
 // ── Prompt Builder ──
 public record PromptBuilderModelOption(string Provider, string ModelName, string DisplayName);
@@ -323,12 +324,13 @@ public record PromptVersionResponse(Guid Id, string Field, string Content, strin
 // ── Planned Prompts ──
 public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);
 public record PlannerModelOption(string Provider, string ModelName, string DisplayName);
-public record CreatePlannedPromptRequest(string Content);
-public record UpdatePlannedPromptRequest(string Content);
+public record CreatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
+public record UpdatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
 public record ReorderPlannedPromptsRequest(List<Guid> OrderedIds);
 public record PlannedPromptResponse(
     Guid Id, Guid ProjectId, int OrderIndex, string Content, string Status,
-    DateTime CreatedAt, DateTime UpdatedAt, DateTime? UsedAt, Guid? ExecutionId);
+    DateTime CreatedAt, DateTime UpdatedAt, DateTime? UsedAt, Guid? ExecutionId,
+    Dictionary<string, string>? Variables = null);
 
 // ── Structured Output ──
 public class StepOutputDto

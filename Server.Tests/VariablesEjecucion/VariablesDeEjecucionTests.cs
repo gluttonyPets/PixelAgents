@@ -3,16 +3,16 @@ using Server.Models;
 using Server.Services.Ai;
 using Xunit;
 
-namespace Server.Tests.ConstantesEjecucion;
+namespace Server.Tests.VariablesEjecucion;
 
 /// <summary>
-/// Constantes del pipeline: el proyecto declara las claves ("tematica", "keyword")
+/// Variables del pipeline: el proyecto declara las claves ("tematica", "keyword")
 /// y cada ejecucion fija su valor. El valor se sustituye en los prompts y viaja
 /// ademas como bloque etiquetado en el system prompt de todos los modulos.
 /// </summary>
-public class ConstantesDeEjecucionTests
+public class VariablesDeEjecucionTests
 {
-    private static ProjectConstant Definicion(string key, string? porDefecto = null, string? descripcion = null) =>
+    private static ProjectVariable Definicion(string key, string? porDefecto = null, string? descripcion = null) =>
         new()
         {
             Id = Guid.NewGuid(),
@@ -24,7 +24,7 @@ public class ConstantesDeEjecucionTests
 
     private static Dictionary<string, string> Valores(params (string Key, string Value)[] pares)
     {
-        var map = ExecutionConstants.NewMap();
+        var map = ExecutionVariables.NewMap();
         foreach (var (k, v) in pares) map[k] = v;
         return map;
     }
@@ -37,7 +37,7 @@ public class ConstantesDeEjecucionTests
     [InlineData("_privada")]
     [InlineData("tema_2")]
     public void IsValidKey_AceptaClavesUsablesComoMarcador(string key) =>
-        Assert.True(ExecutionConstants.IsValidKey(key));
+        Assert.True(ExecutionVariables.IsValidKey(key));
 
     [Theory]
     [InlineData("")]
@@ -47,19 +47,19 @@ public class ConstantesDeEjecucionTests
     [InlineData("tema-tica")]
     [InlineData("tema.tica")]
     public void IsValidKey_RechazaLoQueNoPuedeSerUnMarcador(string? key) =>
-        Assert.False(ExecutionConstants.IsValidKey(key));
+        Assert.False(ExecutionVariables.IsValidKey(key));
 
     [Fact]
     public void IsValidKey_RechazaClavesDemasiadoLargas() =>
-        Assert.False(ExecutionConstants.IsValidKey(new string('a', ExecutionConstants.MaxKeyLength + 1)));
+        Assert.False(ExecutionVariables.IsValidKey(new string('a', ExecutionVariables.MaxKeyLength + 1)));
 
     // ── Serializacion ──
 
     [Fact]
     public void SerializeYParse_ConservanLosValores()
     {
-        var json = ExecutionConstants.Serialize(Valores(("tematica", "cafe"), ("keyword", "espresso")));
-        var vuelta = ExecutionConstants.Parse(json);
+        var json = ExecutionVariables.Serialize(Valores(("tematica", "cafe"), ("keyword", "espresso")));
+        var vuelta = ExecutionVariables.Parse(json);
 
         Assert.Equal("cafe", vuelta["tematica"]);
         Assert.Equal("espresso", vuelta["keyword"]);
@@ -67,21 +67,21 @@ public class ConstantesDeEjecucionTests
 
     [Fact]
     public void Serialize_SinValores_DevuelveNullParaNoGuardarColumnaVacia() =>
-        Assert.Null(ExecutionConstants.Serialize(ExecutionConstants.NewMap()));
+        Assert.Null(ExecutionVariables.Serialize(ExecutionVariables.NewMap()));
 
     [Fact]
     public void Parse_ConJsonCorrupto_NoRompeLaEjecucion()
     {
-        // Preferimos correr sin constantes a tumbar el pipeline entero.
-        Assert.Empty(ExecutionConstants.Parse("{esto no es json"));
-        Assert.Empty(ExecutionConstants.Parse("[1,2,3]"));
-        Assert.Empty(ExecutionConstants.Parse(null));
+        // Preferimos correr sin variables a tumbar el pipeline entero.
+        Assert.Empty(ExecutionVariables.Parse("{esto no es json"));
+        Assert.Empty(ExecutionVariables.Parse("[1,2,3]"));
+        Assert.Empty(ExecutionVariables.Parse(null));
     }
 
     [Fact]
     public void Parse_IgnoraClavesQueNoPuedenSerMarcadores()
     {
-        var map = ExecutionConstants.Parse(@"{""tematica"":""cafe"",""no valida"":""x""}");
+        var map = ExecutionVariables.Parse(@"{""tematica"":""cafe"",""no valida"":""x""}");
 
         Assert.Equal("cafe", map["tematica"]);
         Assert.Single(map);
@@ -94,7 +94,7 @@ public class ConstantesDeEjecucionTests
     {
         var definiciones = new[] { Definicion("tematica", "generico") };
 
-        var resuelto = ExecutionConstants.Resolve(definiciones, Valores(("tematica", "cafe de especialidad")));
+        var resuelto = ExecutionVariables.Resolve(definiciones, Valores(("tematica", "cafe de especialidad")));
 
         Assert.Equal("cafe de especialidad", resuelto["tematica"]);
     }
@@ -104,7 +104,7 @@ public class ConstantesDeEjecucionTests
     {
         var definiciones = new[] { Definicion("tematica", "generico") };
 
-        var resuelto = ExecutionConstants.Resolve(definiciones, ExecutionConstants.NewMap());
+        var resuelto = ExecutionVariables.Resolve(definiciones, ExecutionVariables.NewMap());
 
         Assert.Equal("generico", resuelto["tematica"]);
     }
@@ -114,30 +114,30 @@ public class ConstantesDeEjecucionTests
     {
         var definiciones = new[] { Definicion("tematica", "generico") };
 
-        var resuelto = ExecutionConstants.Resolve(definiciones, Valores(("tematica", "   ")));
+        var resuelto = ExecutionVariables.Resolve(definiciones, Valores(("tematica", "   ")));
 
         Assert.Equal("generico", resuelto["tematica"]);
     }
 
     [Fact]
-    public void Resolve_SinValorNiDefecto_NoDefineLaConstante()
+    public void Resolve_SinValorNiDefecto_NoDefineLaVariable()
     {
         // Sin valor no se sustituye nada: el marcador queda visible y el executor avisa.
         var definiciones = new[] { Definicion("tematica") };
 
-        var resuelto = ExecutionConstants.Resolve(definiciones, ExecutionConstants.NewMap());
+        var resuelto = ExecutionVariables.Resolve(definiciones, ExecutionVariables.NewMap());
 
         Assert.Empty(resuelto);
-        Assert.Equal(new[] { "tematica" }, ExecutionConstants.MissingKeys(definiciones, resuelto));
+        Assert.Equal(new[] { "tematica" }, ExecutionVariables.MissingKeys(definiciones, resuelto));
     }
 
     [Fact]
-    public void Resolve_DescartaValoresDeConstantesQueElProyectoYaNoDeclara()
+    public void Resolve_DescartaValoresDeVariablesQueElProyectoYaNoDeclara()
     {
-        // Caso real: la programacion guardo "borrada" y despues se elimino la constante.
+        // Caso real: la programacion guardo "borrada" y despues se elimino la variable.
         var definiciones = new[] { Definicion("tematica", "generico") };
 
-        var resuelto = ExecutionConstants.Resolve(definiciones, Valores(("borrada", "x")));
+        var resuelto = ExecutionVariables.Resolve(definiciones, Valores(("borrada", "x")));
 
         Assert.False(resuelto.ContainsKey("borrada"));
         Assert.Single(resuelto);
@@ -148,7 +148,7 @@ public class ConstantesDeEjecucionTests
     [Fact]
     public void Apply_SustituyeElMarcadorPorSuValor()
     {
-        var texto = ExecutionConstants.Apply(
+        var texto = ExecutionVariables.Apply(
             "Escribe un post sobre {{tematica}} usando {{keyword}}.",
             Valores(("tematica", "cafe"), ("keyword", "espresso")));
 
@@ -158,29 +158,29 @@ public class ConstantesDeEjecucionTests
     [Fact]
     public void Apply_ToleraEspaciosYMayusculasEnElMarcador()
     {
-        var texto = ExecutionConstants.Apply("{{ Tematica }}", Valores(("tematica", "cafe")));
+        var texto = ExecutionVariables.Apply("{{ Tematica }}", Valores(("tematica", "cafe")));
 
         Assert.Equal("cafe", texto);
     }
 
     [Fact]
-    public void Apply_DejaIntactoUnMarcadorQueNoEsConstante()
+    public void Apply_DejaIntactoUnMarcadorQueNoEsVariable()
     {
         // Puede ser una plantilla ajena o un ejemplo de JSON: romperla seria peor.
         const string original = "Hola {{nombre}}, tema: {{tematica}}";
 
-        var texto = ExecutionConstants.Apply(original, Valores(("tematica", "cafe")));
+        var texto = ExecutionVariables.Apply(original, Valores(("tematica", "cafe")));
 
         Assert.Equal("Hola {{nombre}}, tema: cafe", texto);
     }
 
     [Fact]
-    public void Apply_SinConstantes_DevuelveElTextoTalCual()
+    public void Apply_SinVariables_DevuelveElTextoTalCual()
     {
         const string original = "Prompt con {{tematica}}";
 
-        Assert.Equal(original, ExecutionConstants.Apply(original, ExecutionConstants.NewMap()));
-        Assert.Null(ExecutionConstants.Apply(null, Valores(("tematica", "cafe"))));
+        Assert.Equal(original, ExecutionVariables.Apply(original, ExecutionVariables.NewMap()));
+        Assert.Null(ExecutionVariables.Apply(null, Valores(("tematica", "cafe"))));
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class ConstantesDeEjecucionTests
             ["maxTokens"] = 800,
         };
 
-        var aplicado = ExecutionConstants.ApplyToConfig(config, Valores(("tematica", "cafe")));
+        var aplicado = ExecutionVariables.ApplyToConfig(config, Valores(("tematica", "cafe")));
 
         Assert.Equal("Habla de cafe", aplicado["systemPrompt"]);
         Assert.Equal("Foto de cafe", aplicado["imagePrompt"]);
@@ -201,11 +201,11 @@ public class ConstantesDeEjecucionTests
     }
 
     [Fact]
-    public void ApplyToConfig_SinConstantes_NoTocaLaConfiguracion()
+    public void ApplyToConfig_SinVariables_NoTocaLaConfiguracion()
     {
         var config = new Dictionary<string, object> { ["systemPrompt"] = "Habla de {{tematica}}" };
 
-        var aplicado = ExecutionConstants.ApplyToConfig(config, ExecutionConstants.NewMap());
+        var aplicado = ExecutionVariables.ApplyToConfig(config, ExecutionVariables.NewMap());
 
         Assert.Same(config, aplicado);
     }
@@ -213,23 +213,23 @@ public class ConstantesDeEjecucionTests
     // ── Inyeccion en el system prompt ──
 
     [Fact]
-    public void BuildBlock_ListaCadaConstanteConSuDescripcion()
+    public void BuildBlock_ListaCadaVariableConSuDescripcion()
     {
         var definiciones = new[] { Definicion("tematica", descripcion: "Tema principal del post") };
 
-        var bloque = ExecutionConstants.BuildBlock(Valores(("tematica", "cafe")), definiciones);
+        var bloque = ExecutionVariables.BuildBlock(Valores(("tematica", "cafe")), definiciones);
 
         Assert.NotNull(bloque);
-        Assert.StartsWith(ExecutionConstants.BlockHeader, bloque, StringComparison.Ordinal);
+        Assert.StartsWith(ExecutionVariables.BlockHeader, bloque, StringComparison.Ordinal);
         Assert.Contains("- tematica (Tema principal del post): cafe", bloque, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void BuildBlock_SinConstantes_NoAnadeNadaAlPrompt() =>
-        Assert.Null(ExecutionConstants.BuildBlock(ExecutionConstants.NewMap()));
+    public void BuildBlock_SinVariables_NoAnadeNadaAlPrompt() =>
+        Assert.Null(ExecutionVariables.BuildBlock(ExecutionVariables.NewMap()));
 
     [Fact]
-    public void SystemPromptComposer_InyectaLasConstantesAntesDelPromptDelModulo()
+    public void SystemPromptComposer_InyectaLasVariablesAntesDelPromptDelModulo()
     {
         // Son invariantes durante toda la ejecucion: van con los bloques cacheables,
         // por delante de lo que cambia en cada modulo.
@@ -240,7 +240,7 @@ public class ConstantesDeEjecucionTests
             ApiKey = "k",
             Input = "entrada",
             ProjectContext = "CONTEXTO_PROYECTO",
-            ConstantsBlock = ExecutionConstants.BuildBlock(Valores(("tematica", "cafe"))),
+            VariablesBlock = ExecutionVariables.BuildBlock(Valores(("tematica", "cafe"))),
             PreviousExecutionsSummary = "HISTORIAL_PREVIO",
             Configuration = new Dictionary<string, object> { ["systemPrompt"] = "PROMPT_MODULO" },
         };
@@ -248,18 +248,18 @@ public class ConstantesDeEjecucionTests
         var prompt = SystemPromptComposer.Build(contexto);
 
         var contextoIdx = prompt.IndexOf("CONTEXTO_PROYECTO", StringComparison.Ordinal);
-        var constantes = prompt.IndexOf(ExecutionConstants.BlockHeader, StringComparison.Ordinal);
+        var variables = prompt.IndexOf(ExecutionVariables.BlockHeader, StringComparison.Ordinal);
         var historial = prompt.IndexOf("HISTORIAL_PREVIO", StringComparison.Ordinal);
         var modulo = prompt.IndexOf("PROMPT_MODULO", StringComparison.Ordinal);
 
-        Assert.True(constantes > contextoIdx, "Las constantes van despues del contexto del proyecto");
-        Assert.True(constantes < historial, "Las constantes van antes del historial");
-        Assert.True(constantes < modulo, "Las constantes van antes del prompt del modulo");
+        Assert.True(variables > contextoIdx, "Las variables van despues del contexto del proyecto");
+        Assert.True(variables < historial, "Las variables van antes del historial");
+        Assert.True(variables < modulo, "Las variables van antes del prompt del modulo");
         Assert.Contains("tematica", prompt, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void SinConstantes_ElSystemPromptNoCambia()
+    public void SinVariables_ElSystemPromptNoCambia()
     {
         AiExecutionContext Ctx(string? bloque) => new()
         {
@@ -268,7 +268,7 @@ public class ConstantesDeEjecucionTests
             ApiKey = "k",
             Input = "entrada",
             ProjectContext = "CONTEXTO_PROYECTO",
-            ConstantsBlock = bloque,
+            VariablesBlock = bloque,
             Configuration = new Dictionary<string, object> { ["systemPrompt"] = "PROMPT_MODULO" },
         };
 

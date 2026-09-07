@@ -13,6 +13,11 @@ namespace Server.Models
         public Guid ProjectId { get; set; }
         public int OrderIndex { get; set; }
         public string Content { get; set; } = default!;
+
+        /// <summary>Valor de las variables del pipeline para esta ejecucion planificada,
+        /// como objeto JSON { "clave": "valor" }. Lo rellena el planificador junto al
+        /// prompt (o el usuario a mano) y manda sobre los valores de la programacion.</summary>
+        public string? VariablesJson { get; set; }
         public string Status { get; set; } = PlannedPromptStatus.Pending;
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
