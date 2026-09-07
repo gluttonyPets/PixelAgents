@@ -188,12 +188,12 @@ public record ExecutionLogEntry(string Level, string Message, Guid? ProjectModul
 // ── Variables del pipeline ──
 /// <summary>Variable declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
 public record ProjectVariableResponse(
-    Guid Id, Guid ProjectId, string Key, string? Description, string? DefaultValue,
+    Guid Id, Guid ProjectId, string Key, string? Description,
     int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
 public record CreateProjectVariableRequest(
-    string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
+    string Key, string? Description = null, int SortOrder = 0);
 public record UpdateProjectVariableRequest(
-    string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
+    string Key, string? Description = null, int SortOrder = 0);
 
 // ── Execution ──
 public record ExecuteProjectRequest(

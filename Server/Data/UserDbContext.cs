@@ -140,7 +140,6 @@ namespace Server.Data
                 e.HasKey(x => x.Id);
                 e.Property(x => x.Key).IsRequired().HasMaxLength(50);
                 e.Property(x => x.Description).HasMaxLength(500);
-                e.Property(x => x.DefaultValue).HasColumnType("text");
                 e.Property(x => x.SortOrder).HasDefaultValue(0);
 
                 e.HasOne(x => x.Project)

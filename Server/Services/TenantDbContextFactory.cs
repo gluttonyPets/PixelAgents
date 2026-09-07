@@ -134,12 +134,13 @@ namespace Server.Services
                     ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
                     ""Key"" varchar(50) NOT NULL,
                     ""Description"" varchar(500),
-                    ""DefaultValue"" text,
                     ""SortOrder"" integer NOT NULL DEFAULT 0,
                     ""CreatedAt"" timestamp with time zone NOT NULL,
                     ""UpdatedAt"" timestamp with time zone NOT NULL
                 )", log);
             RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectVariables_ProjectId_Key"" ON ""ProjectVariables"" (""ProjectId"", ""Key"")", log);
+            // Una variable no tiene valor fijo: el valor lo pone siempre la ejecucion.
+            RunSafe(ctx, @"ALTER TABLE ""ProjectVariables"" DROP COLUMN IF EXISTS ""DefaultValue""", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ExecutionLogs"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,

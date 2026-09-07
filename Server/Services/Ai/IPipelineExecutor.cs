@@ -6,8 +6,8 @@ namespace Server.Services.Ai
     public interface IPipelineExecutor
     {
         /// <param name="variableValues">Valores de las variables del pipeline para esta
-        /// ejecucion ("tematica", "keyword"...). Las que no vengan aqui caen a su valor
-        /// por defecto; las que no declare el proyecto se ignoran.</param>
+        /// ejecucion ("tematica", "keyword"...). Las que no vengan aqui corren sin valor;
+        /// las que no declare el proyecto se ignoran.</param>
         Task<ProjectExecution> ExecuteAsync(Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default, bool useHistory = true, IReadOnlyDictionary<string, string>? variableValues = null);
         Task<ProjectExecution> RetryFromModuleAsync(Guid executionId, Guid moduleId, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default);
         Task<ProjectExecution> ResumeFromInteractionAsync(Guid executionId, string responseText, UserDbContext db, string tenantDbName, CancellationToken ct = default);

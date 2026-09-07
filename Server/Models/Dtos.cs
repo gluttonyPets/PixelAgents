@@ -73,16 +73,16 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     // ── Variables del pipeline ──
     /// <summary>Variable declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
     public record ProjectVariableResponse(
-        Guid Id, Guid ProjectId, string Key, string? Description, string? DefaultValue,
+        Guid Id, Guid ProjectId, string Key, string? Description,
         int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
     public record CreateProjectVariableRequest(
-        string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
+        string Key, string? Description = null, int SortOrder = 0);
     public record UpdateProjectVariableRequest(
-        string Key, string? Description = null, string? DefaultValue = null, int SortOrder = 0);
+        string Key, string? Description = null, int SortOrder = 0);
 
     // ── Execution ──
     /// <param name="Variables">Valor de cada variable del pipeline para esta ejecucion,
-    /// por clave. Las que falten usan el valor por defecto de la variable.</param>
+    /// por clave. Las que falten corren sin valor: su marcador no se sustituye.</param>
     public record ExecuteProjectRequest(
         string? UserInput, bool UseHistory = true, Dictionary<string, string>? Variables = null);
     public record RetryFromModuleRequest(Guid ProjectModuleId, string? Comment);

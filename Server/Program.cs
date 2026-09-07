@@ -1600,7 +1600,6 @@ app.MapPost("/api/projects/{id}/duplicate", async (
             ProjectId = newProject.Id,
             Key = c.Key,
             Description = c.Description,
-            DefaultValue = c.DefaultValue,
             SortOrder = c.SortOrder,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -1859,7 +1858,7 @@ app.MapDelete("/api/projects/{projectId}/modules/{id}", async (
 // y su valor se elige en cada ejecucion. Ver Server/Services/Ai/ExecutionVariables.cs.
 
 static ProjectVariableResponse ToVariableResponse(ProjectVariable c) =>
-    new(c.Id, c.ProjectId, c.Key, c.Description, c.DefaultValue, c.SortOrder, c.CreatedAt, c.UpdatedAt);
+    new(c.Id, c.ProjectId, c.Key, c.Description, c.SortOrder, c.CreatedAt, c.UpdatedAt);
 
 app.MapGet("/api/projects/{projectId:guid}/variables", async (
     Guid projectId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
@@ -1901,7 +1900,6 @@ app.MapPost("/api/projects/{projectId:guid}/variables", async (
         ProjectId = projectId,
         Key = key,
         Description = req.Description,
-        DefaultValue = req.DefaultValue,
         SortOrder = req.SortOrder,
         CreatedAt = now,
         UpdatedAt = now,
@@ -1935,7 +1933,6 @@ app.MapPut("/api/projects/{projectId:guid}/variables/{variableId:guid}", async (
 
     variable.Key = key;
     variable.Description = req.Description;
-    variable.DefaultValue = req.DefaultValue;
     variable.SortOrder = req.SortOrder;
     variable.UpdatedAt = DateTime.UtcNow;
 

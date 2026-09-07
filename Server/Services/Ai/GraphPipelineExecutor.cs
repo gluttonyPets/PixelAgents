@@ -1854,8 +1854,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
     /// <summary>
     /// Carga las variables declaradas por el proyecto y las cruza con los valores
-    /// de esta ejecucion (o de la programacion). Sin valor propio se usa el valor
-    /// por defecto de la variable.
+    /// que trae esta ejecucion (o la programacion). Una variable declarada sin valor
+    /// se queda fuera: no hay valor fijo al que caer.
     /// </summary>
     private static async Task<ResolvedVariables> LoadVariablesAsync(
         UserDbContext db,
@@ -1888,7 +1888,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (missing.Count > 0)
         {
             await _logger.LogAsync(projectId, executionId, "warning",
-                $"[Variables] Sin valor en esta ejecucion ni por defecto: {string.Join(", ", missing)}. " +
+                $"[Variables] Sin valor en esta ejecucion: {string.Join(", ", missing)}. " +
                 "Sus marcadores se quedan sin sustituir en los prompts.");
         }
     }

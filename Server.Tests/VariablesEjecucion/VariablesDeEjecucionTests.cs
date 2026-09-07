@@ -12,13 +12,12 @@ namespace Server.Tests.VariablesEjecucion;
 /// </summary>
 public class VariablesDeEjecucionTests
 {
-    private static ProjectVariable Definicion(string key, string? porDefecto = null, string? descripcion = null) =>
+    private static ProjectVariable Definicion(string key, string? descripcion = null) =>
         new()
         {
             Id = Guid.NewGuid(),
             ProjectId = Guid.NewGuid(),
             Key = key,
-            DefaultValue = porDefecto,
             Description = descripcion,
         };
 
@@ -90,9 +89,9 @@ public class VariablesDeEjecucionTests
     // ── Resolucion ──
 
     [Fact]
-    public void Resolve_ElValorDeLaEjecucionGanaAlValorPorDefecto()
+    public void Resolve_TomaElValorQueAportaLaEjecucion()
     {
-        var definiciones = new[] { Definicion("tematica", "generico") };
+        var definiciones = new[] { Definicion("tematica") };
 
         var resuelto = ExecutionVariables.Resolve(definiciones, Valores(("tematica", "cafe de especialidad")));
 
@@ -100,29 +99,10 @@ public class VariablesDeEjecucionTests
     }
 
     [Fact]
-    public void Resolve_SinValorPropio_CaeAlValorPorDefecto()
+    public void Resolve_SinValorEnLaEjecucion_LaVariableNoSeSustituyeYSeAvisa()
     {
-        var definiciones = new[] { Definicion("tematica", "generico") };
-
-        var resuelto = ExecutionVariables.Resolve(definiciones, ExecutionVariables.NewMap());
-
-        Assert.Equal("generico", resuelto["tematica"]);
-    }
-
-    [Fact]
-    public void Resolve_ValorEnBlanco_CaeAlValorPorDefecto()
-    {
-        var definiciones = new[] { Definicion("tematica", "generico") };
-
-        var resuelto = ExecutionVariables.Resolve(definiciones, Valores(("tematica", "   ")));
-
-        Assert.Equal("generico", resuelto["tematica"]);
-    }
-
-    [Fact]
-    public void Resolve_SinValorNiDefecto_NoDefineLaVariable()
-    {
-        // Sin valor no se sustituye nada: el marcador queda visible y el executor avisa.
+        // Una variable no tiene valor fijo al que caer: o lo trae la ejecucion, o el
+        // marcador se queda visible y el executor lo avisa en el log.
         var definiciones = new[] { Definicion("tematica") };
 
         var resuelto = ExecutionVariables.Resolve(definiciones, ExecutionVariables.NewMap());
@@ -132,12 +112,22 @@ public class VariablesDeEjecucionTests
     }
 
     [Fact]
+    public void Resolve_ValorEnBlanco_CuentaComoSinValor()
+    {
+        var definiciones = new[] { Definicion("tematica") };
+
+        var resuelto = ExecutionVariables.Resolve(definiciones, Valores(("tematica", "   ")));
+
+        Assert.Empty(resuelto);
+    }
+
+    [Fact]
     public void Resolve_DescartaValoresDeVariablesQueElProyectoYaNoDeclara()
     {
         // Caso real: la programacion guardo "borrada" y despues se elimino la variable.
-        var definiciones = new[] { Definicion("tematica", "generico") };
+        var definiciones = new[] { Definicion("tematica") };
 
-        var resuelto = ExecutionVariables.Resolve(definiciones, Valores(("borrada", "x")));
+        var resuelto = ExecutionVariables.Resolve(definiciones, Valores(("borrada", "x"), ("tematica", "cafe")));
 
         Assert.False(resuelto.ContainsKey("borrada"));
         Assert.Single(resuelto);
@@ -215,7 +205,7 @@ public class VariablesDeEjecucionTests
     [Fact]
     public void BuildBlock_ListaCadaVariableConSuDescripcion()
     {
-        var definiciones = new[] { Definicion("tematica", descripcion: "Tema principal del post") };
+        var definiciones = new[] { Definicion("tematica", "Tema principal del post") };
 
         var bloque = ExecutionVariables.BuildBlock(Valores(("tematica", "cafe")), definiciones);
 

@@ -203,6 +203,93 @@ else
                         }
                     </div>
                 </TopPanel>
+                <VariablesPanel>
+                    <div class="variables-panel">
+                        <p class="text-sm text-muted">
+                            Los datos que cambian en cada ejecucion. Se declaran aqui con un nombre y
+                            una descripcion; el valor no se fija nunca en el pipeline, se da al lanzar
+                            cada ejecucion (o lo propone el planificador). El servidor lo aplica a
+                            <strong>todos los modulos</strong>: sustituye <code>@VariableMarker("clave")</code>
+                            en cualquier prompt o campo de texto de la configuracion, y ademas envia la
+                            lista de variables con su valor en el system prompt de cada llamada a la IA.
+                        </p>
+
+                        @if (_variablesError is not null)
+                        {
+                            <div class="alert alert-error">@_variablesError</div>
+                        }
+                        @if (_variablesMsg is not null)
+                        {
+                            <div class="alert alert-success">@_variablesMsg</div>
+                        }
+
+                        @if (_variables.Count == 0)
+                        {
+                            <p class="text-sm text-muted">Todavia no hay variables en este pipeline.</p>
+                        }
+                        else
+                        {
+                            <div class="variables-list">
+                                @foreach (var c in _variables)
+                                {
+                                    var variable = c;
+                                    <div class="variables-item">
+                                        @if (_editingVariableId == variable.Id)
+                                        {
+                                            <div class="form-group">
+                                                <label>Nombre</label>
+                                                <input type="text" @bind="_editVariableKey" />
+                                            </div>
+                                            <div class="form-group">
+                                                <label>Descripcion (se envia al modelo junto al valor)</label>
+                                                <input type="text" @bind="_editVariableDescription" />
+                                            </div>
+                                            <div style="display: flex; gap: 0.5rem;">
+                                                <button class="btn btn-primary btn-sm" disabled="@_variablesSaving"
+                                                        @onclick="SaveEditedVariable">Guardar</button>
+                                                <button class="btn btn-secondary btn-sm" disabled="@_variablesSaving"
+                                                        @onclick="CancelEditVariable">Cancelar</button>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="variables-item-head">
+                                                <code class="variables-item-key">@VariableMarker(variable.Key)</code>
+                                                <div class="variables-item-actions">
+                                                    <button class="btn btn-sm" @onclick="() => StartEditVariable(variable)">Editar</button>
+                                                    <button class="btn btn-danger btn-sm" disabled="@_variablesSaving"
+                                                            @onclick="() => DeleteVariable(variable)">Eliminar</button>
+                                                </div>
+                                            </div>
+                                            <div class="text-sm text-muted">
+                                                @(string.IsNullOrWhiteSpace(variable.Description)
+                                                    ? "(sin descripcion)"
+                                                    : variable.Description)
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div class="variables-new">
+                            <strong class="text-sm">Nueva variable</strong>
+                            <div class="form-group">
+                                <label>Nombre</label>
+                                <input type="text" @bind="_newVariableKey" placeholder="keyword" />
+                            </div>
+                            <div class="form-group">
+                                <label>Descripcion</label>
+                                <input type="text" @bind="_newVariableDescription"
+                                       placeholder="es la palabra clave sobre la que centramos el analisis" />
+                            </div>
+                            <button class="btn btn-primary btn-sm" disabled="@_variablesSaving" @onclick="CreateVariable">
+                                @(_variablesSaving ? "Guardando..." : "Anadir variable")
+                            </button>
+                        </div>
+                    </div>
+                </VariablesPanel>
+
                 <PlannerPanel>
                     <div class="planner-panel">
                         @if (_plannerError is not null)
@@ -1308,10 +1395,6 @@ else
                             @onclick='() => _settingsTab = "shopify"'>
                         Shopify
                     </button>
-                    <button class="settings-tab @(_settingsTab == "variables" ? "settings-tab-active" : "")"
-                            @onclick='() => _settingsTab = "variables"'>
-                        Variables
-                    </button>
                     <button class="settings-tab @(_settingsTab == "schedule" ? "settings-tab-active" : "")"
                             @onclick='() => _settingsTab = "schedule"'>
                         Programacion
@@ -1631,7 +1714,7 @@ else
                                 <div class="form-group">
                                     <label>
                                         Variables de las ejecuciones programadas
-                                        <span class="text-sm text-muted">(vacio = valor por defecto de la variable)</span>
+                                        <span class="text-sm text-muted">(vacio = la variable corre sin valor)</span>
                                     </label>
                                     @foreach (var c in _variables)
                                     {
@@ -1670,123 +1753,6 @@ else
                                     </button>
                                 }
                             </div>
-                        </div>
-                    }
-
-                    <!-- VARIABLES TAB -->
-                    @if (_settingsTab == "variables")
-                    {
-                        <div class="settings-block">
-                            <div class="settings-block-header">
-                                <strong>Variables del pipeline</strong>
-                                @if (_variables.Count > 0)
-                                {
-                                    <span class="badge badge-success">@_variables.Count definida(s)</span>
-                                }
-                            </div>
-                            <p class="text-sm text-muted">
-                                Declara aqui los valores que cambian en cada ejecucion (por ejemplo
-                                <code>keyword</code>, con una descripcion como "es la palabra clave sobre la
-                                que centramos el analisis"). El valor se elige al lanzar la ejecucion, en la
-                                programacion o en cada prompt de la cola —donde lo propone el propio
-                                planificador—, y el servidor lo aplica a <strong>todos los modulos</strong>:
-                                sustituye <code>@VariableMarker("clave")</code> en cualquier prompt o campo de
-                                texto de la configuracion, y ademas envia la lista de variables con su valor en
-                                el system prompt de cada llamada a la IA.
-                            </p>
-
-                            @if (_variablesError is not null)
-                            {
-                                <div class="alert alert-error">@_variablesError</div>
-                            }
-                            @if (_variablesMsg is not null)
-                            {
-                                <div class="alert alert-success">@_variablesMsg</div>
-                            }
-
-                            @if (_variables.Count == 0)
-                            {
-                                <p class="text-sm text-muted">Todavia no hay variables en este proyecto.</p>
-                            }
-                            else
-                            {
-                                <div class="variables-list">
-                                    @foreach (var c in _variables)
-                                    {
-                                        var variable = c;
-                                        <div class="variables-item">
-                                            @if (_editingVariableId == variable.Id)
-                                            {
-                                                <div class="form-row">
-                                                    <div class="form-group">
-                                                        <label>Clave</label>
-                                                        <input type="text" @bind="_editVariableKey" />
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label>Valor por defecto</label>
-                                                        <input type="text" @bind="_editVariableDefault" />
-                                                    </div>
-                                                </div>
-                                                <div class="form-group">
-                                                    <label>Descripcion (se envia al modelo junto al valor)</label>
-                                                    <input type="text" @bind="_editVariableDescription" />
-                                                </div>
-                                                <div style="display: flex; gap: 0.5rem;">
-                                                    <button class="btn btn-primary btn-sm" disabled="@_variablesSaving"
-                                                            @onclick="SaveEditedVariable">Guardar</button>
-                                                    <button class="btn btn-secondary btn-sm" disabled="@_variablesSaving"
-                                                            @onclick="CancelEditVariable">Cancelar</button>
-                                                </div>
-                                            }
-                                            else
-                                            {
-                                                <div class="variables-item-head">
-                                                    <code class="variables-item-key">@VariableMarker(variable.Key)</code>
-                                                    @if (!string.IsNullOrWhiteSpace(variable.DefaultValue))
-                                                    {
-                                                        <span class="text-sm text-muted">por defecto: @variable.DefaultValue</span>
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="text-sm text-muted">sin valor por defecto</span>
-                                                    }
-                                                    <div class="variables-item-actions">
-                                                        <button class="btn btn-sm" @onclick="() => StartEditVariable(variable)">Editar</button>
-                                                        <button class="btn btn-danger btn-sm" disabled="@_variablesSaving"
-                                                                @onclick="() => DeleteVariable(variable)">Eliminar</button>
-                                                    </div>
-                                                </div>
-                                                @if (!string.IsNullOrWhiteSpace(variable.Description))
-                                                {
-                                                    <div class="text-sm text-muted">@variable.Description</div>
-                                                }
-                                            }
-                                        </div>
-                                    }
-                                </div>
-                            }
-
-                            <div class="settings-block-header" style="margin-top: 0.8rem;">
-                                <strong>Nueva variable</strong>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Clave</label>
-                                    <input type="text" @bind="_newVariableKey" placeholder="tematica" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Valor por defecto (opcional)</label>
-                                    <input type="text" @bind="_newVariableDefault" placeholder="cafe de especialidad" />
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label>Descripcion (opcional)</label>
-                                <input type="text" @bind="_newVariableDescription"
-                                       placeholder="Tema principal sobre el que gira toda la ejecucion" />
-                            </div>
-                            <button class="btn btn-primary" disabled="@_variablesSaving" @onclick="CreateVariable">
-                                @(_variablesSaving ? "Guardando..." : "Anadir variable")
-                            </button>
                         </div>
                     }
 
@@ -2273,11 +2239,9 @@ else
     private Dictionary<string, string> _schedVariableValues = new(StringComparer.OrdinalIgnoreCase);
     private string _newVariableKey = "";
     private string _newVariableDescription = "";
-    private string _newVariableDefault = "";
     private Guid? _editingVariableId;
     private string _editVariableKey = "";
     private string _editVariableDescription = "";
-    private string _editVariableDefault = "";
     private bool _variablesSaving;
     private string? _variablesError;
     private string? _variablesMsg;
@@ -3271,10 +3235,9 @@ else
             : c.Description!;
 
     private static string VariablePlaceholder(ProjectVariableResponse c) =>
-        string.IsNullOrWhiteSpace(c.DefaultValue) ? "(sin valor)" : c.DefaultValue!;
+        string.IsNullOrWhiteSpace(c.Description) ? "(sin valor)" : c.Description!;
 
-    /// <summary>Deja un valor por variable declarada (arrancando por su valor por
-    /// defecto) y descarta los de variables que ya no existen.</summary>
+    /// <summary>Descarta los valores tecleados de variables que ya no existen.</summary>
     private void SyncVariableValues()
     {
         var keys = _variables.Select(c => c.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -3283,12 +3246,6 @@ else
             _variableValues.Remove(stale);
         foreach (var stale in _schedVariableValues.Keys.Where(k => !keys.Contains(k)).ToList())
             _schedVariableValues.Remove(stale);
-
-        foreach (var c in _variables)
-        {
-            if (!_variableValues.ContainsKey(c.Key))
-                _variableValues[c.Key] = c.DefaultValue ?? "";
-        }
     }
 
     private string GetVariableValue(string key) =>
@@ -3303,8 +3260,7 @@ else
     private void SetScheduleVariableValue(string key, string? value) =>
         _schedVariableValues[key] = value ?? "";
 
-    /// <summary>Valores no vacios que se mandan al servidor; null cuando no hay ninguno
-    /// (el servidor cae entonces al valor por defecto de cada variable).</summary>
+    /// <summary>Valores no vacios que se mandan al servidor; null cuando no hay ninguno.</summary>
     private Dictionary<string, string>? BuildVariablePayload(Dictionary<string, string> source)
     {
         var payload = source
@@ -3337,14 +3293,12 @@ else
                 new CreateProjectVariableRequest(
                     _newVariableKey.Trim(),
                     string.IsNullOrWhiteSpace(_newVariableDescription) ? null : _newVariableDescription.Trim(),
-                    string.IsNullOrWhiteSpace(_newVariableDefault) ? null : _newVariableDefault.Trim(),
                     _variables.Count));
 
             if (ok)
             {
                 _newVariableKey = "";
                 _newVariableDescription = "";
-                _newVariableDefault = "";
                 await ReloadVariablesAsync();
                 _variablesMsg = "Variable creada.";
             }
@@ -3360,7 +3314,6 @@ else
         _editingVariableId = c.Id;
         _editVariableKey = c.Key;
         _editVariableDescription = c.Description ?? "";
-        _editVariableDefault = c.DefaultValue ?? "";
     }
 
     private void CancelEditVariable() => _editingVariableId = null;
@@ -3384,7 +3337,6 @@ else
                 new UpdateProjectVariableRequest(
                     _editVariableKey.Trim(),
                     string.IsNullOrWhiteSpace(_editVariableDescription) ? null : _editVariableDescription.Trim(),
-                    string.IsNullOrWhiteSpace(_editVariableDefault) ? null : _editVariableDefault.Trim(),
                     current?.SortOrder ?? 0));
 
             if (ok)
@@ -4357,15 +4309,12 @@ else
         return "";
     }
 
-    /// <summary>Lo que se muestra en el timeline: el valor del prompt o, si no lo trae,
-    /// el valor por defecto que aplicara la ejecucion.</summary>
+    /// <summary>Lo que se muestra en el timeline: el valor que trae el prompt planificado
+    /// o el aviso de que esa ejecucion correra sin valor para la variable.</summary>
     private string PromptVariableLabel(PlannedPromptResponse prompt, ProjectVariableResponse variable)
     {
         var value = GetPromptVariableValue(prompt, variable.Key);
-        if (!string.IsNullOrWhiteSpace(value)) return value;
-        return string.IsNullOrWhiteSpace(variable.DefaultValue)
-            ? "(sin valor)"
-            : $"{variable.DefaultValue} (por defecto)";
+        return string.IsNullOrWhiteSpace(value) ? "(sin valor)" : value;
     }
 
     /// <summary>Guarda el valor que el usuario corrige sobre lo que propuso el planificador.</summary>

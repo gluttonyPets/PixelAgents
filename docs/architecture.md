@@ -110,13 +110,14 @@ esquema incrementales se aplican con `ExecuteSqlRaw` (`CREATE TABLE IF NOT EXIST
 ## Variables de ejecucion
 
 Un pipeline puede declarar **variables** — por ejemplo `tematica` y `keyword` — cuyo valor
-se elige en cada ejecucion. La definicion vive en el proyecto (`ProjectVariables`: clave,
-descripcion y valor por defecto) y el valor efectivo se guarda en la ejecucion
-(`ProjectExecutions.VariablesJson`) o en la programacion (`ProjectSchedules.VariablesJson`).
+se elige en cada ejecucion. La definicion vive en el proyecto (`ProjectVariables`: solo nombre
+y descripcion; una variable **no tiene valor fijo**, si lo tuviera seria parte del prompt) y el
+valor de cada corrida se guarda en la ejecucion (`ProjectExecutions.VariablesJson`), en la
+programacion (`ProjectSchedules.VariablesJson`) o en el prompt planificado
+(`PlannedPrompts.VariablesJson`).
 
-El valor efectivo es "lo que aporte la ejecucion; si no aporta nada, el valor por defecto de
-la variable". Una variable que se quede sin valor **no se sustituye**: el marcador queda
-visible y el executor lo avisa en el log, en vez de mandar al modelo un hueco vacio sin rastro.
+Una variable que se quede sin valor **no se sustituye**: el marcador queda visible y el
+executor lo avisa en el log, en vez de mandar al modelo un hueco vacio sin rastro.
 
 `GraphPipelineExecutor` las resuelve una sola vez al arrancar (`LoadVariablesAsync`) y las
 deja en el grafo, de modo que todos los modulos ven exactamente los mismos valores. Se aplican
@@ -148,12 +149,14 @@ variable que declare con el mismo nombre (las que no declare, se ignoran).
 | Repetir una ejecucion del historial | El de la ejecucion original | Los de la ejecucion original |
 | Reintento, reanudacion o reinicio desde Telegram | El de la ejecucion original | Los de la ejecucion original |
 
-Las capas se combinan con `ExecutionVariables.Merge` (gana la ultima) y, sobre el resultado,
-cada variable sin valor cae a su valor por defecto.
+Las capas se combinan con `ExecutionVariables.Merge` (gana la ultima); lo que quede sin valor
+corre sin sustituir.
 
-Endpoints: `GET|POST|PUT|DELETE /api/projects/{projectId}/variables`. En la UI se definen en
-Configuracion > Variables y se rellenan en el panel de ejecucion, en la programacion y en cada
-prompt de la cola del planificador.
+Endpoints: `GET|POST|PUT|DELETE /api/projects/{projectId}/variables`. En la UI se declaran en
+el propio editor del pipeline (boton **Variables** de la barra del canvas, junto a "+ Modulo"),
+porque forman parte de la definicion del pipeline y no de la configuracion del proyecto; el
+valor se rellena en el panel de ejecucion, en la programacion y en cada prompt de la cola del
+planificador.
 
 ---
 
@@ -169,10 +172,9 @@ pipeline. El input de cada corrida se decide asi:
 Cuando el proyecto declara variables, una ejecucion planificada no es solo un prompt: cada
 `PlannedPrompt` guarda tambien el valor de esas variables (`PlannedPrompts.VariablesJson`).
 `PromptPlannerService` se las pide al modelo en la misma llamada que los prompts —el contrato
-de ida y vuelta vive en `PlannerSchema`, que describe cada variable (clave, descripcion y valor
-actual como muestra) y lee la respuesta quedandose solo con las claves declaradas—. Asi el
-valor y el prompt salen coherentes entre si en vez de repetir el valor por defecto en todas
-las corridas. Si el modelo ignora el esquema y devuelve la lista de cadenas de siempre, los
+de ida y vuelta vive en `PlannerSchema`, que describe cada variable (nombre y descripcion) y lee
+la respuesta quedandose solo con las claves declaradas—. Asi el valor y el prompt de cada
+corrida salen coherentes entre si. Si el modelo ignora el esquema y devuelve la lista de cadenas de siempre, los
 prompts se guardan igual y sin valores. En la cola del planificador cada prompt pendiente
 muestra sus variables y se pueden corregir a mano antes de que le toque el turno.
 

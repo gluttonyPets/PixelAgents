@@ -16,10 +16,10 @@ namespace Server.Services.Ai;
 ///      system prompt de todas las llamadas a IA, para que un modulo pueda usarlos
 ///      aunque su prompt no lleve el marcador.
 ///
-/// El valor efectivo se resuelve como "lo que diga la ejecucion; si no, el valor
-/// por defecto de la variable". Una variable sin valor no se sustituye: el
-/// marcador se queda visible y el executor avisa en el log, que es preferible a
-/// mandar al modelo un hueco vacio sin dejar rastro.
+/// El valor es siempre de la ejecucion: una variable no tiene valor fijo (si lo
+/// tuviera, seria parte del prompt y no una variable). Una variable que se quede
+/// sin valor no se sustituye: el marcador se queda visible y el executor avisa en
+/// el log, que es preferible a mandar al modelo un hueco vacio sin dejar rastro.
 /// </summary>
 public static class ExecutionVariables
 {
@@ -101,29 +101,23 @@ public static class ExecutionVariables
 
     /// <summary>
     /// Valores efectivos de la ejecucion: para cada variable declarada en el
-    /// proyecto, lo que aporte la ejecucion y, si no aporta nada, su valor por
-    /// defecto. Las claves que la ejecucion trae pero el proyecto ya no declara
-    /// se descartan (variable borrada despues de programarla).
+    /// proyecto, lo que aporte esta ejecucion. Las claves que la ejecucion trae
+    /// pero el proyecto ya no declara se descartan (variable borrada despues de
+    /// programarla), y las que se quedan sin valor no se sustituyen.
     /// </summary>
     public static Dictionary<string, string> Resolve(
         IEnumerable<ProjectVariable>? definitions,
         IReadOnlyDictionary<string, string>? overrides)
     {
         var resolved = NewMap();
-        if (definitions is null) return resolved;
+        if (definitions is null || overrides is null) return resolved;
 
         foreach (var def in definitions)
         {
             if (!IsValidKey(def.Key)) continue;
             var key = def.Key.Trim();
 
-            var value = overrides is not null && overrides.TryGetValue(key, out var provided)
-                ? provided
-                : def.DefaultValue;
-
-            if (string.IsNullOrWhiteSpace(value))
-                value = def.DefaultValue;
-
+            if (!overrides.TryGetValue(key, out var value)) continue;
             if (string.IsNullOrWhiteSpace(value)) continue;   // sin valor: no se sustituye
 
             resolved[key] = value.Trim();

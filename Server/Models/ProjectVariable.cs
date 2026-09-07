@@ -2,8 +2,9 @@ namespace Server.Models
 {
     /// <summary>
     /// Variable declarada a nivel de pipeline (proyecto): por ejemplo "tematica" o
-    /// "keyword". La definicion vive en el proyecto; el VALOR se elige en cada
-    /// ejecucion (o en la programacion) y se arrastra a todos los modulos.
+    /// "keyword". La definicion —nombre y para que sirve— vive en el proyecto; el
+    /// VALOR es siempre de cada ejecucion y se arrastra a todos los modulos. No hay
+    /// valor fijo: una variable con valor fijo seria parte del prompt, no una variable.
     ///
     /// En los prompts se referencia como <c>{{clave}}</c>. Ademas del reemplazo,
     /// las variables de la ejecucion se inyectan como bloque etiquetado en el
@@ -21,9 +22,6 @@ namespace Server.Models
 
         /// <summary>Para que sirve la variable. Se envia al modelo junto al valor.</summary>
         public string? Description { get; set; }
-
-        /// <summary>Valor que se usa cuando la ejecucion no aporta uno propio.</summary>
-        public string? DefaultValue { get; set; }
 
         public int SortOrder { get; set; }
 

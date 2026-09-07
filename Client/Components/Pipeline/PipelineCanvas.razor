@@ -14,6 +14,14 @@
             <button class="toolbar-btn toolbar-btn-primary" @onclick="ToggleModulePanel" title="Agregar modulo">
                 <span class="toolbar-btn-icon">&#x2795;</span> Modulo
             </button>
+            @if (VariablesPanel is not null)
+            {
+                <button class="toolbar-btn @(_showVariablesPanel ? "is-active" : "")"
+                        @onclick="ToggleVariablesPanel"
+                        title="Variables del pipeline: se les da valor en cada ejecucion">
+                    <span class="toolbar-btn-icon"><i class="bi bi-braces"></i></span> Variables
+                </button>
+            }
             <button class="toolbar-btn" @onclick="ToggleSubProjectPanel" title="Insertar un proyecto entero como modulo">
                 <span class="toolbar-btn-icon">&#x2795;</span> Sub-proyecto
             </button>
@@ -44,6 +52,21 @@
                 <span>@_undoToast</span>
                 <button class="btn btn-sm btn-primary" @onclick="UndoLast">Deshacer</button>
                 <button class="node-btn" title="Descartar el aviso" @onclick="DismissUndoToast">&#x2715;</button>
+            </div>
+        }
+
+        @* ── Panel flotante de variables del pipeline ── *@
+        @if (_showVariablesPanel && VariablesPanel is not null)
+        {
+            <div class="module-panel-backdrop" @onclick="CloseVariablesPanel"></div>
+            <div class="module-panel variables-float-panel">
+                <div class="module-panel-header">
+                    <span>Variables del pipeline</span>
+                    <button class="node-btn" @onclick="CloseVariablesPanel">&#x2715;</button>
+                </div>
+                <div class="module-panel-body variables-float-body">
+                    @VariablesPanel
+                </div>
             </div>
         }
 
@@ -1261,6 +1284,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     /// el boton de la barra del canvas. Si no se pasa, el boton no aparece.</summary>
     [Parameter] public RenderFragment? PlannerPanel { get; set; }
 
+    /// <summary>Variables del pipeline: se declaran aqui, en el propio editor, porque
+    /// forman parte de la definicion del pipeline y no de la configuracion del proyecto.
+    /// Si no se pasa, el boton no aparece.</summary>
+    [Parameter] public RenderFragment? VariablesPanel { get; set; }
+
     /// <summary>Se dispara al abrir el panel, para que la pagina cargue sus datos.</summary>
     [Parameter] public EventCallback OnPlannerPanelOpened { get; set; }
     [Parameter] public EventCallback<Guid> OnAddModule { get; set; }
@@ -1422,6 +1450,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     // Sub-project panel state
     private bool _showSubProjectPanel;
     private bool _showPlannerPanel;
+    private bool _showVariablesPanel;
     private string _subProjectFilter = "";
 
     // FileUpload inspector state
@@ -1448,8 +1477,25 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         {
             _showSubProjectPanel = false;
             _showExportPanel = false;
+            _showVariablesPanel = false;
         }
     }
+
+    // ── Variables del pipeline ──
+
+    private void ToggleVariablesPanel()
+    {
+        _showVariablesPanel = !_showVariablesPanel;
+        if (_showVariablesPanel)
+        {
+            _showModulePanel = false;
+            _showSubProjectPanel = false;
+            _showPlannerPanel = false;
+            _showExportPanel = false;
+        }
+    }
+
+    private void CloseVariablesPanel() => _showVariablesPanel = false;
     private void CloseModulePanel()
     {
         _showModulePanel = false;
@@ -1465,6 +1511,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         {
             _showModulePanel = false;
             _showExportPanel = false;
+            _showVariablesPanel = false;
         }
     }
     private void CloseSubProjectPanel()
@@ -1483,6 +1530,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             _showModulePanel = false;
             _showSubProjectPanel = false;
             _showExportPanel = false;
+            _showVariablesPanel = false;
             await OnPlannerPanelOpened.InvokeAsync();
         }
     }
@@ -1516,6 +1564,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         _showModulePanel = false;
         _showSubProjectPanel = false;
         _showPlannerPanel = false;
+        _showVariablesPanel = false;
         _exportJson = null;
         _exportError = null;
         _exportNotice = null;

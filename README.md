@@ -521,15 +521,15 @@ El orden de ejecucion no se guarda en `ProjectModule`: lo determina el modulo
 
 ### Variables Del Pipeline
 
-Valores que el proyecto declara una vez (`tematica`, `keyword`...) y cuyo valor
-se elige en cada ejecucion. Se sustituyen en los prompts (`{{clave}}`) y se
+Datos que el pipeline declara una vez con nombre y descripcion (`tematica`,
+`keyword`...) y cuyo valor se elige en cada ejecucion; nunca llevan valor fijo. Se sustituyen en los prompts (`{{clave}}`) y se
 inyectan como bloque en el system prompt de todos los modulos; ver
 `docs/architecture.md` > "Variables de ejecucion".
 
 - `GET /api/projects/{projectId}/variables`: lista las variables del proyecto.
 - `POST /api/projects/{projectId}/variables`: crea una variable.
-- `PUT /api/projects/{projectId}/variables/{variableId}`: actualiza clave,
-  descripcion o valor por defecto.
+- `PUT /api/projects/{projectId}/variables/{variableId}`: actualiza nombre o
+  descripcion.
 - `DELETE /api/projects/{projectId}/variables/{variableId}`: elimina una variable.
 
 En una ejecucion manual el prompt y el valor de cada variable se rellenan por

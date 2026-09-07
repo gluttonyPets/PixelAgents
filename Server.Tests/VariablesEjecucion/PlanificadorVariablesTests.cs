@@ -11,14 +11,13 @@ namespace Server.Tests.VariablesEjecucion;
 /// </summary>
 public class PlanificadorVariablesTests
 {
-    private static ProjectVariable Definicion(string key, string? descripcion = null, string? porDefecto = null) =>
+    private static ProjectVariable Definicion(string key, string? descripcion = null) =>
         new()
         {
             Id = Guid.NewGuid(),
             ProjectId = Guid.NewGuid(),
             Key = key,
             Description = descripcion,
-            DefaultValue = porDefecto,
         };
 
     private static readonly ProjectVariable[] SinVariables = [];
@@ -41,16 +40,16 @@ public class PlanificadorVariablesTests
         var variables = new[]
         {
             Definicion("keyword", "es la palabra clave sobre la que centramos el analisis"),
-            Definicion("tematica", porDefecto: "cafe de especialidad"),
+            Definicion("tematica"),
         };
 
         var instruccion = PlannerSchema.BuildInstruction(5, variables);
 
-        // La clave, su descripcion y el valor actual como muestra del formato.
+        // Lo unico que el pipeline declara: el nombre y para que sirve.
         Assert.Contains("\"keyword\"", instruccion, StringComparison.Ordinal);
         Assert.Contains("es la palabra clave sobre la que centramos el analisis", instruccion, StringComparison.Ordinal);
         Assert.Contains("\"tematica\"", instruccion, StringComparison.Ordinal);
-        Assert.Contains("cafe de especialidad", instruccion, StringComparison.Ordinal);
+        Assert.Contains("sin descripcion", instruccion, StringComparison.Ordinal);
 
         // Y el contrato de salida ya no es una lista de cadenas.
         Assert.Contains("\"variables\"", instruccion, StringComparison.Ordinal);

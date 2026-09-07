@@ -33,15 +33,12 @@ $@"Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adi
 La lista debe contener exactamente {count} prompts ordenados.";
         }
 
-        // Ficha de cada variable: para que sirve y, si lo tiene, su valor actual
-        // como muestra del formato que se espera.
+        // Ficha de cada variable: su nombre y para que sirve, que es lo unico que
+        // el proyecto declara. El valor lo tiene que decidir el planificador.
         var varList = string.Join("\n", variables.Select(v =>
         {
             var description = string.IsNullOrWhiteSpace(v.Description) ? "sin descripcion" : v.Description!.Trim();
-            var sample = string.IsNullOrWhiteSpace(v.DefaultValue)
-                ? ""
-                : $" (ejemplo de valor: {v.DefaultValue!.Trim()})";
-            return $@"- ""{v.Key}"": {description}{sample}";
+            return $@"- ""{v.Key}"": {description}";
         }));
 
         var varKeys = string.Join(", ", variables.Select(v => $@"""{v.Key}"""));
