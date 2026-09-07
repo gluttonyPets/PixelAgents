@@ -1,0 +1,159 @@
+@page "/papelera"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+@* Los pipelines borrados se guardan aqui enteros y no caducan: solo desaparecen
+   cuando el usuario los elimina definitivamente desde esta pantalla. *@
+
+<div class="projects-page-header">
+    <div>
+        <h2>Papelera</h2>
+        <p class="trash-page-hint">
+            Los pipelines borrados se conservan aqui hasta que los elimines definitivamente.
+        </p>
+    </div>
+    <button class="btn btn-secondary" @onclick="GoToProjects">&#x2190; Volver a proyectos</button>
+</div>
+
+@if (_error is not null)
+{
+    <div class="alert alert-error">@_error</div>
+}
+
+@if (_trashed.Count > 0)
+{
+    <div class="trash-list">
+        @foreach (var p in _trashed)
+        {
+            <div class="trash-item @(_confirmingId == p.Id ? "is-confirming" : "")">
+                <div class="trash-item-info">
+                    <div class="trash-item-title">
+                        @p.Name
+                        @if (p.IsTestProject)
+                        {
+                            <span class="project-card-test-badge" title="Pipeline de prueba">prueba</span>
+                        }
+                        @if (p.ProjectGroupName is not null)
+                        {
+                            <span class="pipeline-picker-group" title="Proyecto al que pertenecia">@p.ProjectGroupName</span>
+                        }
+                    </div>
+                    <div class="trash-item-desc">@(p.Description ?? "Sin descripcion")</div>
+                    <div class="project-card-meta">
+                        <span title="Borrado el @p.DeletedAt.ToString("dd MMM yyyy HH:mm")">
+                            &#x1F5D1; Borrado @RelativeTime(p.DeletedAt)
+                        </span>
+                        <span title="Creado el @p.CreatedAt.ToString("dd MMM yyyy")">
+                            &#x1F4C5; @p.CreatedAt.ToString("dd MMM yyyy")
+                        </span>
+                        <span>@p.ModuleCount modulos &middot; @p.ExecutionCount ejecuciones</span>
+                    </div>
+                </div>
+
+                @if (_confirmingId == p.Id)
+                {
+                    <div class="trash-item-confirm">
+                        <span class="trash-confirm-text">
+                            Se borran tambien sus modulos, ejecuciones y archivos. No se puede deshacer.
+                        </span>
+                        <div class="trash-item-actions">
+                            <button class="btn btn-xs btn-danger-solid" @onclick="() => DeleteForever(p)" disabled="@_busy">
+                                @(_busy ? "Eliminando..." : "Si, eliminar")
+                            </button>
+                            <button class="btn btn-xs" @onclick="CancelConfirm">Cancelar</button>
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="trash-item-actions">
+                        <button class="btn btn-xs btn-success" @onclick="() => Restore(p)" disabled="@_busy">Restaurar</button>
+                        <button class="btn btn-xs btn-danger" @onclick="() => AskConfirm(p)" disabled="@_busy">
+                            Eliminar definitivamente
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+else if (!_loading)
+{
+    <div class="projects-empty">
+        <div class="projects-empty-icon">&#x1F5D1;</div>
+        <p>La papelera esta vacia.</p>
+        <p class="text-sm text-muted">Los pipelines que borres desde Proyectos apareceran aqui.</p>
+    </div>
+}
+
+@code {
+    private List<TrashedProjectResponse> _trashed = [];
+    private bool _loading;
+    private bool _busy;
+    private string? _error;
+    private Guid? _confirmingId;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        try { _trashed = await Api.GetTrashedProjectsAsync(); }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        _loading = false;
+    }
+
+    private void GoToProjects() => Nav.NavigateTo("/projects");
+
+    private async Task Restore(TrashedProjectResponse p)
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.RestoreProjectAsync(p.Id);
+            if (ok) await Load();
+            else _error = error ?? "No se ha podido restaurar el pipeline.";
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        _busy = false;
+    }
+
+    /// <summary>El borrado definitivo pide confirmacion en la propia fila: es irreversible.</summary>
+    private void AskConfirm(TrashedProjectResponse p)
+    {
+        _error = null;
+        _confirmingId = p.Id;
+    }
+
+    private void CancelConfirm() => _confirmingId = null;
+
+    private async Task DeleteForever(TrashedProjectResponse p)
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var (ok, error) = await Api.DeleteProjectPermanentlyAsync(p.Id);
+            if (ok)
+            {
+                _confirmingId = null;
+                await Load();
+            }
+            else _error = error ?? "No se ha podido eliminar el pipeline.";
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        _busy = false;
+    }
+
+    private static string RelativeTime(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt.ToUniversalTime();
+        if (diff.TotalMinutes < 1) return "ahora mismo";
+        if (diff.TotalMinutes < 60) return $"hace {(int)diff.TotalMinutes} min";
+        if (diff.TotalHours < 24) return $"hace {(int)diff.TotalHours}h";
+        if (diff.TotalDays < 7) return $"hace {(int)diff.TotalDays}d";
+        if (diff.TotalDays < 30) return $"hace {(int)(diff.TotalDays / 7)} sem";
+        return dt.ToString("dd MMM yyyy");
+    }
+}

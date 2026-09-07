@@ -54,6 +54,11 @@ namespace Server.Services
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""ProjectGroupId"" uuid REFERENCES ""ProjectGroups""(""Id"") ON DELETE SET NULL", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_Projects_ProjectGroupId"" ON ""Projects"" (""ProjectGroupId"")", log);
 
+            // ── Papelera de pipelines: borrado logico. null = activo. Los listados
+            //    filtran por DeletedAt IS NULL; la papelera muestra el resto. ──
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""DeletedAt"" timestamp with time zone", log);
+            RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_Projects_DeletedAt"" ON ""Projects"" (""DeletedAt"")", log);
+
             // ── Conexiones reutilizables (redes sociales + mensajeria) ──
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""SocialConnections"" (

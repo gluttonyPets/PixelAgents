@@ -373,9 +373,35 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<ProjectDetailResponse>();
     }
 
+    /// <summary>Mueve el pipeline a la papelera; no lo borra.</summary>
     public async Task DeleteProjectAsync(Guid id)
     {
         await SendAsync(HttpMethod.Delete, $"/api/projects/{id}");
+    }
+
+    // ── Papelera de pipelines ──
+    // Lo borrado se conserva aqui hasta que el usuario lo elimina expresamente.
+
+    public async Task<List<TrashedProjectResponse>> GetTrashedProjectsAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/projects/trash");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<TrashedProjectResponse>>() ?? [];
+    }
+
+    public async Task<(bool Ok, string? Error)> RestoreProjectAsync(Guid id)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{id}/restore");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
+    /// <summary>Borrado definitivo desde la papelera: no tiene vuelta atras.</summary>
+    public async Task<(bool Ok, string? Error)> DeleteProjectPermanentlyAsync(Guid id)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/projects/{id}/permanent");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task<(bool Ok, string? Error)> UpdateProjectAsync(Guid id, UpdateProjectRequest req)

@@ -788,7 +788,7 @@ app.MapGet("/api/modules/{id}/usage", async (
 
     var query = db.ProjectModules
         .Include(pm => pm.Project)
-        .Where(pm => pm.AiModuleId == id);
+        .Where(pm => pm.AiModuleId == id && pm.Project.DeletedAt == null);
     if (excludeProjectId is not null)
         query = query.Where(pm => pm.ProjectId != excludeProjectId);
 
@@ -1020,6 +1020,7 @@ app.MapGet("/api/module-files", async (
     var files = await db.ModuleFiles
         .Include(f => f.ProjectModule).ThenInclude(p => p.AiModule)
         .Include(f => f.ProjectModule).ThenInclude(p => p.Project)
+        .Where(f => f.ProjectModule.Project.DeletedAt == null)
         .OrderByDescending(f => f.CreatedAt)
         .ToListAsync();
 
@@ -1095,7 +1096,7 @@ app.MapGet("/api/project-groups", async (
         .OrderBy(g => g.SortOrder).ThenBy(g => g.CreatedAt)
         .Select(g => new ProjectGroupResponse(
             g.Id, g.Name, g.Description, g.SortOrder, g.CreatedAt, g.UpdatedAt,
-            db.Projects.Count(p => p.ProjectGroupId == g.Id)))
+            db.Projects.Count(p => p.ProjectGroupId == g.Id && p.DeletedAt == null)))
         .ToListAsync();
 
     return Results.Ok(groups);
@@ -1151,7 +1152,7 @@ app.MapPut("/api/project-groups/{id:guid}", async (
     group.UpdatedAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
 
-    var count = await db.Projects.CountAsync(p => p.ProjectGroupId == id);
+    var count = await db.Projects.CountAsync(p => p.ProjectGroupId == id && p.DeletedAt == null);
     return Results.Ok(ToProjectGroupResponse(group, count));
 }).RequireAuthorization();
 
@@ -1190,7 +1191,9 @@ app.MapPost("/api/project-groups/{id:guid}/projects", async (
     var ids = (req.ProjectIds ?? []).Distinct().ToList();
     if (ids.Count == 0) return Results.BadRequest(new { error = "No se ha indicado ningun pipeline." });
 
-    var projects = await db.Projects.Where(p => ids.Contains(p.Id)).ToListAsync();
+    var projects = await db.Projects
+        .Where(p => ids.Contains(p.Id) && p.DeletedAt == null)
+        .ToListAsync();
     if (projects.Count == 0) return Results.NotFound();
 
     foreach (var p in projects)
@@ -1201,7 +1204,7 @@ app.MapPost("/api/project-groups/{id:guid}/projects", async (
 
     await db.SaveChangesAsync();
 
-    var count = await db.Projects.CountAsync(p => p.ProjectGroupId == id);
+    var count = await db.Projects.CountAsync(p => p.ProjectGroupId == id && p.DeletedAt == null);
     return Results.Ok(ToProjectGroupResponse(group, count));
 }).RequireAuthorization();
 
@@ -1280,7 +1283,9 @@ app.MapGet("/api/projects", async (
     if (db is null) return Results.Unauthorized();
 
     // Los proyectos de prueba van al final: el cliente los pinta en su propia seccion.
+    // Los pipelines en la papelera no se listan: solo salen en /api/projects/trash.
     var projects = await db.Projects
+        .Where(p => p.DeletedAt == null)
         .OrderBy(p => p.IsTestProject)
         .ThenByDescending(p => p.IsPinned)
         .ThenByDescending(p => p.CreatedAt)
@@ -1290,19 +1295,21 @@ app.MapGet("/api/projects", async (
     return Results.Ok(projects);
 }).RequireAuthorization();
 
-app.MapGet("/api/projects/{id}", async (
+// La ruta lleva restriccion :guid para no chocar con /api/projects/trash.
+app.MapGet("/api/projects/{id:guid}", async (
     Guid id, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
 
+    // Un pipeline en la papelera no se abre: hay que restaurarlo primero.
     var project = await db.Projects
         .Include(p => p.ProjectModules)
             .ThenInclude(pm => pm.AiModule)
         .Include(p => p.ProjectModules)
             .ThenInclude(pm => pm.OrchestratorOutputs.OrderBy(o => o.SortOrder))
-        .FirstOrDefaultAsync(p => p.Id == id);
+        .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null);
 
     if (project is null) return Results.NotFound();
 
@@ -1359,7 +1366,7 @@ app.MapGet("/api/projects/{id}", async (
     if (subProjectIds.Count > 0)
     {
         var subProjects = await db.Projects
-            .Where(p => subProjectIds.Contains(p.Id))
+            .Where(p => subProjectIds.Contains(p.Id) && p.DeletedAt == null)
             .Include(p => p.ProjectModules)
                 .ThenInclude(pm => pm.AiModule)
             .ToListAsync();
@@ -1464,7 +1471,7 @@ app.MapPut("/api/projects/{id}/group", async (
     if (db is null) return Results.Unauthorized();
 
     var project = await db.Projects.FindAsync(id);
-    if (project is null) return Results.NotFound();
+    if (project is null || project.DeletedAt is not null) return Results.NotFound();
 
     if (req.ProjectGroupId is { } groupId)
     {
@@ -1629,7 +1636,120 @@ app.MapPut("/api/projects/{projectId}/graph/save", async (
     return Results.Ok();
 }).RequireAuthorization();
 
-app.MapDelete("/api/projects/{id}", async (
+// ==================== Papelera de pipelines ====================
+// Borrar un pipeline es un borrado logico: se marca DeletedAt y se guarda entero
+// (modulos, conexiones, ejecuciones y archivos). Deja de listarse, de ejecutarse y
+// de programarse, pero permanece en la papelera indefinidamente: solo desaparece
+// cuando el usuario lo elimina desde ahi.
+
+app.MapDelete("/api/projects/{id:guid}", async (
+    Guid id, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    ExecutionCancellationService cancellation, IHubContext<ExecutionHub> hub) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(id);
+    if (project is null) return Results.NotFound();
+    // Ya estaba en la papelera: no se re-marca para no perder la fecha original.
+    if (project.DeletedAt is not null) return Results.NoContent();
+
+    project.DeletedAt = DateTime.UtcNow;
+
+    // Un pipeline en la papelera no puede seguir trabajando: se corta lo que tenga
+    // en curso, igual que hacia el borrado definitivo al llevarse sus ejecuciones.
+    cancellation.Cancel(id);
+    var active = await db.ProjectExecutions
+        .Where(e => e.ProjectId == id && (e.Status == "Running" || e.Status.StartsWith("Waiting")))
+        .ToListAsync();
+    if (active.Count > 0)
+    {
+        var now = DateTime.UtcNow;
+        var execIds = active.Select(e => e.Id).ToList();
+        foreach (var exec in active)
+        {
+            exec.Status = "Cancelled";
+            exec.CompletedAt = now;
+            exec.PausedAtModuleId = null;
+            exec.PausedStepData = null;
+        }
+
+        var steps = await db.StepExecutions
+            .Where(s => execIds.Contains(s.ExecutionId)
+                && (s.Status == "Running" || s.Status.StartsWith("Waiting")))
+            .ToListAsync();
+        foreach (var st in steps)
+        {
+            st.Status = "Cancelled";
+            st.CompletedAt = now;
+        }
+    }
+
+    await db.SaveChangesAsync();
+
+    if (active.Count > 0)
+        await hub.Clients.Group(id.ToString()).SendAsync("ExecutionCancelled");
+
+    return Results.NoContent();
+}).RequireAuthorization();
+
+// Contenido de la papelera, lo ultimo borrado primero. No caduca: mientras el
+// usuario no elimine un pipeline desde aqui, sigue apareciendo.
+app.MapGet("/api/projects/trash", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var trashed = await db.Projects
+        .Where(p => p.DeletedAt != null)
+        .OrderByDescending(p => p.DeletedAt)
+        .Select(p => new TrashedProjectResponse(
+            p.Id, p.Name, p.Description, p.IsTestProject,
+            p.ProjectGroupId,
+            p.ProjectGroup != null ? p.ProjectGroup.Name : null,
+            p.CreatedAt, p.DeletedAt!.Value,
+            db.ProjectModules.Count(pm => pm.ProjectId == p.Id),
+            db.ProjectExecutions.Count(e => e.ProjectId == p.Id)))
+        .ToListAsync();
+
+    return Results.Ok(trashed);
+}).RequireAuthorization();
+
+// Devuelve el pipeline al listado, con su proyecto si aquel sigue existiendo
+// (si se borro mientras estaba en la papelera, vuelve como "sin proyecto").
+app.MapPost("/api/projects/{id:guid}/restore", async (
+    Guid id, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FindAsync(id);
+    if (project is null || project.DeletedAt is null) return Results.NotFound();
+
+    project.DeletedAt = null;
+
+    // La programacion se reanuda desde ahora: si no, el primer tick tras restaurar
+    // dispararia la ejecucion que quedo vencida mientras estaba en la papelera.
+    var schedule = await db.ProjectSchedules.FirstOrDefaultAsync(sc => sc.ProjectId == id);
+    if (schedule is not null && schedule.IsEnabled)
+    {
+        schedule.NextRunAt = Server.Services.Scheduler.SchedulerBackgroundService.ComputeNextRun(
+            schedule.CronExpression, schedule.TimeZone, DateTime.UtcNow);
+        schedule.UpdatedAt = DateTime.UtcNow;
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
+}).RequireAuthorization();
+
+// Borrado definitivo: solo desde la papelera y solo a peticion expresa del usuario.
+// Se lleva por cascada modulos, conexiones, ejecuciones, logs y archivos.
+app.MapDelete("/api/projects/{id:guid}/permanent", async (
     Guid id, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
 {
@@ -1638,6 +1758,8 @@ app.MapDelete("/api/projects/{id}", async (
 
     var project = await db.Projects.FindAsync(id);
     if (project is null) return Results.NotFound();
+    if (project.DeletedAt is null)
+        return Results.BadRequest(new { error = "Solo se pueden eliminar definitivamente los pipelines que estan en la papelera." });
 
     db.Projects.Remove(project);
     await db.SaveChangesAsync();
@@ -1656,7 +1778,7 @@ app.MapPost("/api/projects/{id}/duplicate", async (
             .ThenInclude(pm => pm.AiModule)
         .Include(p => p.ProjectModules)
             .ThenInclude(pm => pm.OrchestratorOutputs)
-        .FirstOrDefaultAsync(p => p.Id == id);
+        .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null);
 
     if (source is null) return Results.NotFound();
 
@@ -1878,7 +2000,7 @@ app.MapPost("/api/projects/{projectId}/subprojects", async (
         return Results.BadRequest(new { error = "Un proyecto no puede insertarse a si mismo." });
 
     var target = await db.Projects.FindAsync(req.SubProjectId);
-    if (target is null)
+    if (target is null || target.DeletedAt is not null)
         return Results.BadRequest(new { error = "El proyecto a insertar no existe." });
 
     // Recursion indirecta: si el proyecto insertado ya depende (transitivamente)
@@ -2126,6 +2248,10 @@ app.MapPost("/api/projects/{projectId}/execute", async (
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
+
+    // Un pipeline en la papelera no se ejecuta: primero hay que restaurarlo.
+    var project = await db.Projects.FindAsync(projectId);
+    if (project is null || project.DeletedAt is not null) return Results.NotFound();
 
     var user = await um.GetUserAsync(ctx.User);
     var claims = await um.GetClaimsAsync(user!);
@@ -2553,6 +2679,11 @@ app.MapPost("/api/executions/{executionId}/retry-from-module", async (
     {
         return Results.NotFound(new { error = "Ejecucion no encontrada" });
     }
+
+    // Reintentar es volver a ejecutar: si el pipeline esta en la papelera, no corre.
+    var retryProject = await db.Projects.FindAsync(projectId);
+    if (retryProject is null || retryProject.DeletedAt is not null)
+        return Results.NotFound(new { error = "El pipeline de esta ejecucion ya no esta disponible." });
 
     var ct = cancellation.Register(projectId);
 
@@ -3735,6 +3866,7 @@ app.MapGet("/api/social-connections", async (
 
     var conns = await db.SocialConnections.OrderByDescending(c => c.CreatedAt).ToListAsync();
     var refs = await db.Projects
+        .Where(p => p.DeletedAt == null)
         .Select(p => new { p.InstagramConnectionId, p.TikTokConnectionId, p.PinterestConnectionId, p.ThreadsConnectionId })
         .ToListAsync();
 
@@ -3826,7 +3958,7 @@ app.MapGet("/api/messaging-connections", async (
     if (db is null) return Results.Unauthorized();
 
     var conns = await db.MessagingConnections.OrderByDescending(c => c.CreatedAt).ToListAsync();
-    var refs = await db.Projects.Select(p => p.TelegramConnectionId).ToListAsync();
+    var refs = await db.Projects.Where(p => p.DeletedAt == null).Select(p => p.TelegramConnectionId).ToListAsync();
 
     var result = conns.Select(c => new MessagingConnectionResponse(
         c.Id, c.Name, c.Provider, c.ChatId, c.CreatedAt, c.UpdatedAt,
@@ -3950,7 +4082,7 @@ app.MapGet("/api/shopify-connections", async (
     if (db is null) return Results.Unauthorized();
 
     var conns = await db.ShopifyConnections.OrderByDescending(c => c.CreatedAt).ToListAsync();
-    var refs = await db.Projects.Select(p => p.ShopifyConnectionId).ToListAsync();
+    var refs = await db.Projects.Where(p => p.DeletedAt == null).Select(p => p.ShopifyConnectionId).ToListAsync();
 
     var result = conns.Select(c => new ShopifyConnectionResponse(
         c.Id, c.Name, c.ShopDomain, c.CreatedAt, c.UpdatedAt, refs.Count(r => r == c.Id)));

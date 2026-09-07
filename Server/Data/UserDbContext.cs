@@ -126,6 +126,8 @@ namespace Server.Data
                     .HasForeignKey(x => x.ProjectGroupId)
                     .OnDelete(DeleteBehavior.SetNull);
                 e.HasIndex(x => x.ProjectGroupId);
+                // Todos los listados filtran por "activo": la papelera es la excepcion.
+                e.HasIndex(x => x.DeletedAt);
 
                 e.HasOne(x => x.InstagramConnection)
                     .WithMany()

@@ -107,6 +107,29 @@ Endpoints: `GET|POST /api/project-groups`, `PUT|DELETE /api/project-groups/{id}`
 `POST /api/project-groups/{id}/projects` (anade pipelines existentes) y
 `PUT /api/projects/{id}/group` (mueve un pipeline; `null` lo saca del proyecto).
 
+### Papelera de pipelines
+
+`DELETE /api/projects/{id}` es un **borrado logico**: marca `Project.DeletedAt` y
+deja el pipeline entero en la BD (modulos, conexiones, ejecuciones, logs y
+archivos). El pipeline pasa a la papelera (`/papelera`), de donde solo sale por
+decision del usuario: `POST /api/projects/{id}/restore` lo devuelve al listado y
+`DELETE /api/projects/{id}/permanent` lo borra de verdad (cascada). **No hay purga
+automatica ni caducidad**: lo borrado se queda hasta que alguien lo elimine.
+
+Un pipeline en la papelera esta fuera del sistema a todos los efectos:
+
+- No se lista (`GET /api/projects`) ni se abre (`GET /api/projects/{id}` devuelve 404).
+- No se ejecuta: ni a mano, ni por reintento, ni por programacion (el scheduler
+  filtra `s.Project.DeletedAt == null`), ni como sub-proyecto de otro pipeline.
+- Al borrarlo se cancela lo que tuviera en curso, para que no siga publicando.
+- No cuenta en los contadores de un proyecto, ni en los usos de un modulo o de una
+  conexion, y sus archivos no aparecen en la biblioteca.
+- Al restaurarlo, si tenia programacion activa se recalcula `NextRunAt` desde ese
+  momento, para que no dispare de golpe la ejecucion que vencio estando borrado.
+
+Borrar el proyecto que agrupaba un pipeline lo desagrupa aunque este en la papelera,
+para que al restaurarlo no apunte a una agrupacion que ya no existe.
+
 ---
 
 ## Flujo de ejecucion de un pipeline
@@ -592,6 +615,10 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 |              | `POST /api/project-groups/{id}/projects`          | Anade pipelines existentes al proyecto            |
 | Projects     | `GET|POST|PUT|DELETE /api/projects`               | Pipeline; incluye graph save y duplicar           |
 |              | `PUT /api/projects/{id}/group`                    | Mueve el pipeline de proyecto (`null` = sin proyecto) |
+| Papelera     | `DELETE /api/projects/{id}`                       | Borrado logico: el pipeline pasa a la papelera    |
+|              | `GET /api/projects/trash`                         | Pipelines en la papelera (no caducan)             |
+|              | `POST /api/projects/{id}/restore`                 | Restaura un pipeline de la papelera               |
+|              | `DELETE /api/projects/{id}/permanent`             | Borrado definitivo; solo desde la papelera        |
 | Variables   | `GET|POST|PUT|DELETE /api/projects/{id}/variables`| Variables del pipeline; su valor se fija en cada ejecucion |
 | Executions   | `POST /api/projects/{id}/execute`                 | Lanza ejecucion (acepta el valor de las variables) |
 |              | `POST /api/projects/{id}/cancel`                  | Cancela ejecucion activa                          |

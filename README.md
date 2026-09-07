@@ -42,6 +42,8 @@ Entidades funcionales principales:
 - `ProjectGroup`: proyecto de alto nivel; agrupa pipelines de forma puramente
   organizativa (titulo y descripcion, sin efecto en la ejecucion).
 - `Project`: pipeline editable; pertenece como mucho a un `ProjectGroup`.
+  Borrarlo es un borrado logico (`DeletedAt`): pasa a la papelera y se conserva
+  entero hasta que el usuario lo restaure o lo elimine definitivamente.
 - `ProjectModule`: instancia de un `AiModule` dentro de un proyecto.
 - `ModuleConnection`: arista entre puertos del grafo.
 - `ProjectExecution`: ejecucion de un proyecto.
@@ -101,6 +103,8 @@ Rutas actuales:
   pipelines fijados se muestran primero.
 - `/projects/{ProjectId:guid}`: detalle, editor visual, ejecuciones e
   integraciones del pipeline.
+- `/papelera`: pipelines borrados. Se pueden restaurar o eliminar
+  definitivamente; no caducan solos.
 - `/configuracion/{seccion?}`: ajustes del tenant en una sola pagina, con una
   pestana por seccion: `apikeys` (claves de proveedor), `redes-sociales`,
   `mensajeria`, `shopify` y `reglas` (reglas obligatorias). Cada seccion es un
@@ -524,12 +528,26 @@ pipelines):
 Gestion de pipelines:
 
 - `/api/projects`: crear y listar pipelines.
-- `/api/projects/{id}`: obtener detalle, actualizar o eliminar.
+- `/api/projects/{id}`: obtener detalle o actualizar. `DELETE` mueve el pipeline
+  a la papelera (borrado logico); no lo elimina.
 - `/api/projects/{id}/duplicate`: duplicar pipeline completo (la copia se queda en
   el mismo proyecto que el original).
 - `PUT /api/projects/{id}/pin`: fijar o desfijar el pipeline en el listado.
 - `PUT /api/projects/{id}/group`: mover el pipeline a otro proyecto; `null` lo deja
   sin agrupar.
+
+Papelera de pipelines:
+
+- `GET /api/projects/trash`: pipelines borrados, con la fecha de borrado y cuantos
+  modulos y ejecuciones se perderian.
+- `POST /api/projects/{id}/restore`: devolverlo al listado (recalcula la proxima
+  ejecucion programada si tenia programacion activa).
+- `DELETE /api/projects/{id}/permanent`: borrado definitivo; solo funciona sobre
+  pipelines que ya estan en la papelera.
+
+Un pipeline en la papelera no se lista, no se abre, no se ejecuta (ni a mano, ni
+programado, ni como sub-proyecto de otro pipeline) y no cuenta en los usos de
+modulos ni de conexiones. Sus archivos tampoco salen en la biblioteca.
 - `/api/projects/{id}/graph`: guardar layout bruto.
 - `/api/projects/{projectId}/graph/save`: guardar posiciones, conexiones,
   conteos de escenas y configs de modulos.

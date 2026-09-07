@@ -76,8 +76,11 @@ namespace Server.Services.Scheduler
             List<ProjectSchedule> dueSchedules;
             try
             {
+                // Un pipeline en la papelera no se ejecuta: su programacion queda en
+                // pausa hasta que se restaure (al restaurarlo se recalcula NextRunAt).
                 dueSchedules = await db.ProjectSchedules
-                    .Where(s => s.IsEnabled && s.NextRunAt != null && s.NextRunAt <= now)
+                    .Where(s => s.IsEnabled && s.NextRunAt != null && s.NextRunAt <= now
+                        && s.Project.DeletedAt == null)
                     .ToListAsync(ct);
             }
             catch (PostgresException ex) when (ex.SqlState == "42P01")

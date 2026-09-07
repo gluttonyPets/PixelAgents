@@ -160,6 +160,12 @@ public record UpcomingRunsResponse(
     string? CronExpression, string? TimeZone,
     List<UpcomingRunResponse> Runs);
 public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false, bool IsTestProject = false, Guid? ProjectGroupId = null);
+// ── Papelera de pipelines ──
+public record TrashedProjectResponse(
+    Guid Id, string Name, string? Description, bool IsTestProject,
+    Guid? ProjectGroupId, string? ProjectGroupName,
+    DateTime CreatedAt, DateTime DeletedAt, int ModuleCount, int ExecutionCount);
+
 public record ProjectDetailResponse(
     Guid Id, string Name, string? Description, DateTime CreatedAt, DateTime UpdatedAt,
     List<ProjectModuleResponse> Modules,

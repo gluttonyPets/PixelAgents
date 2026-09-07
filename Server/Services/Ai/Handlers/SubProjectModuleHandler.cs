@@ -61,10 +61,12 @@ public class SubProjectModuleHandler : IModuleHandler
         await using var childDb = _tenantFactory.Create(ctx.TenantDbName);
 
         // Validaciones sobre la definicion actual del proyecto insertado.
+        // Un proyecto en la papelera cuenta como inexistente: no debe ejecutarse por
+        // la puerta de atras de un pipeline que lo tenia insertado.
         var childProject = await childDb.Projects
             .Include(p => p.ProjectModules)
                 .ThenInclude(pm => pm.AiModule)
-            .FirstOrDefaultAsync(p => p.Id == subProjectId, ctx.CancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == subProjectId && p.DeletedAt == null, ctx.CancellationToken);
 
         if (childProject is null)
             return ModuleResult.Failed("El proyecto insertado ya no existe. Elimina el nodo o selecciona otro proyecto.");

@@ -20,6 +20,12 @@ namespace Server.Models
         public Guid? ProjectGroupId { get; set; }
         public ProjectGroup? ProjectGroup { get; set; }
 
+        /// <summary>Momento en que el pipeline se movio a la papelera; null = activo.
+        /// Un pipeline en la papelera no se lista, no se ejecuta y no se programa, pero
+        /// se conserva intacto (modulos, conexiones, ejecuciones y archivos) hasta que
+        /// el usuario lo restaure o lo elimine definitivamente. Nunca caduca solo.</summary>
+        public DateTime? DeletedAt { get; set; }
+
         // ── Aprendizaje: modelo "analista" que procesa el feedback de abortos ──
         /// <summary>Si está activo, cada abort con comentario dispara el analista de aprendizaje.
         /// Activado por defecto: sin configurar nada, el aprendizaje funciona con un modelo por defecto.</summary>

@@ -50,6 +50,13 @@ namespace Server.Models
     public record GraphLayoutRequest(string? GraphLayout);
     public record SetProjectPinRequest(bool IsPinned);
     public record ProjectResponse(Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt, bool IsPinned = false, bool IsTestProject = false, Guid? ProjectGroupId = null);
+    // ── Papelera de pipelines ──
+    // Los contadores dan una idea de lo que se pierde al eliminar definitivamente.
+    public record TrashedProjectResponse(
+        Guid Id, string Name, string? Description, bool IsTestProject,
+        Guid? ProjectGroupId, string? ProjectGroupName,
+        DateTime CreatedAt, DateTime DeletedAt, int ModuleCount, int ExecutionCount);
+
     public record ProjectDetailResponse(
         Guid Id, string Name, string? Description, string? Context, DateTime CreatedAt, DateTime UpdatedAt,
         List<ProjectModuleResponse> Modules, string? GraphLayout = null,

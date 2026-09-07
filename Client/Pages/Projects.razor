@@ -9,6 +9,14 @@
 <div class="projects-page-header">
     <h2>Proyectos</h2>
     <div class="projects-page-actions">
+        <button class="btn btn-secondary trash-link" @onclick="GoToTrash"
+                title="Pipelines borrados; se pueden restaurar">
+            &#x1F5D1; Papelera
+            @if (_trashCount > 0)
+            {
+                <span class="trash-link-count">@_trashCount</span>
+            }
+        </button>
         <button class="btn btn-secondary" @onclick="OpenCreateGroupModal">+ Nuevo proyecto</button>
         <button class="btn btn-primary" @onclick="() => OpenCreateModal(null)">+ Nuevo pipeline</button>
     </div>
@@ -286,6 +294,7 @@
     private List<ProjectResponse> _projects = [];
     private List<ProjectGroupResponse> _groups = [];
     private readonly HashSet<Guid> _collapsedGroups = [];
+    private int _trashCount;
     private bool _loading;
     private string? _error;
     private string? _pinError;
@@ -394,7 +403,8 @@
                             title="@(p.IsPinned ? "Desfijar pipeline" : "Fijar pipeline")">&#x1F4CC;</button>
                     <button class="project-action-btn action-edit" @onclick="() => StartEdit(p)" title="Editar">&#x270E;</button>
                     <button class="project-action-btn action-duplicate" @onclick="() => Duplicate(p.Id)" title="Duplicar">&#x2398;</button>
-                    <button class="project-action-btn action-delete" @onclick="() => Delete(p.Id)" title="Eliminar">&#x2715;</button>
+                    <button class="project-action-btn action-delete" @onclick="() => Delete(p.Id)"
+                            title="Mover a la papelera">&#x2715;</button>
                 </div>
             }
         </div>;
@@ -412,6 +422,7 @@
         {
             _groups = await Api.GetProjectGroupsAsync();
             _projects = await Api.GetProjectsAsync();
+            _trashCount = (await Api.GetTrashedProjectsAsync()).Count;
         }
         catch { }
         _loading = false;
@@ -651,6 +662,8 @@
 
     private void GoTo(Guid id) => Nav.NavigateTo($"/projects/{id}");
 
+    private void GoToTrash() => Nav.NavigateTo("/papelera");
+
     /// <summary>
     /// Fija o desfija un pipeline. Actualiza la tarjeta al momento y solo revierte
     /// si el backend rechaza el cambio, para no esperar a recargar todo el listado.
@@ -719,6 +732,7 @@
         catch { }
     }
 
+    /// <summary>Mueve el pipeline a la papelera, de donde puede restaurarse.</summary>
     private async Task Delete(Guid id)
     {
         try { await Api.DeleteProjectAsync(id); await Load(); }
