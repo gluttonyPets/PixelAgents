@@ -137,10 +137,12 @@ else
                                     var key = c.Key;
                                     <div class="execute-variable-row">
                                         <span class="execute-variable-key" title="@VariableHint(c)">@VariableMarker(key)</span>
-                                        <input type="text" class="execute-inline-input execute-variable-input"
-                                               value="@GetVariableValue(key)"
-                                               placeholder="@VariablePlaceholder(c)"
-                                               @onchange="e => SetVariableValue(key, e.Value?.ToString())" />
+                                        <VariableValueInput Variable="c"
+                                                            Value="@GetVariableValue(key)"
+                                                            ValueChanged="@(v => SetVariableValue(key, v))"
+                                                            DirectoryFolders="_directoryFolders"
+                                                            Placeholder="@VariablePlaceholder(c)"
+                                                            CssClass="execute-inline-input execute-variable-input" />
                                     </div>
                                 }
                             </div>
@@ -245,6 +247,27 @@ else
                                                 <label>Descripcion (se envia al modelo junto al valor)</label>
                                                 <input type="text" @bind="_editVariableDescription" />
                                             </div>
+                                            <div class="form-group">
+                                                <label>Tipo</label>
+                                                <select @bind="_editVariableType">
+                                                    <option value="@ProjectVariableTypes.Text">Texto</option>
+                                                    <option value="@ProjectVariableTypes.Folder">Carpeta de la biblioteca</option>
+                                                </select>
+                                            </div>
+                                            @if (ProjectVariableTypes.IsFolder(_editVariableType))
+                                            {
+                                                <div class="form-group">
+                                                    <label>Biblioteca de la que salen las carpetas</label>
+                                                    <select @bind="_editVariableSource">
+                                                        <option value="">Todas las del pipeline</option>
+                                                        @foreach (var dir in _directoryFolders)
+                                                        {
+                                                            <option value="@dir.ModuleId">@dir.ModuleName</option>
+                                                        }
+                                                    </select>
+                                                    <span class="text-sm text-muted">@FolderSourceHint()</span>
+                                                </div>
+                                            }
                                             <div style="display: flex; gap: 0.5rem;">
                                                 <button class="btn btn-primary btn-sm" disabled="@_variablesSaving"
                                                         @onclick="SaveEditedVariable">Guardar</button>
@@ -256,6 +279,9 @@ else
                                         {
                                             <div class="variables-item-head">
                                                 <code class="variables-item-key">@VariableMarker(variable.Key)</code>
+                                                <span class="variables-item-type" title="Como se pide el valor al lanzar la ejecucion">
+                                                    @ProjectVariableTypes.Label(variable.Type)
+                                                </span>
                                                 <div class="variables-item-actions">
                                                     <button class="btn btn-sm" @onclick="() => StartEditVariable(variable)">Editar</button>
                                                     <button class="btn btn-danger btn-sm" disabled="@_variablesSaving"
@@ -284,6 +310,31 @@ else
                                 <input type="text" @bind="_newVariableDescription"
                                        placeholder="es la palabra clave sobre la que centramos el analisis" />
                             </div>
+                            <div class="form-group">
+                                <label>Tipo</label>
+                                <select @bind="_newVariableType">
+                                    <option value="@ProjectVariableTypes.Text">Texto</option>
+                                    <option value="@ProjectVariableTypes.Folder">Carpeta de la biblioteca</option>
+                                </select>
+                                <span class="text-sm text-muted">
+                                    "Texto" se escribe en cada ejecucion; "Carpeta de la biblioteca" se
+                                    elige de un desplegable con las carpetas que existen.
+                                </span>
+                            </div>
+                            @if (ProjectVariableTypes.IsFolder(_newVariableType))
+                            {
+                                <div class="form-group">
+                                    <label>Biblioteca de la que salen las carpetas</label>
+                                    <select @bind="_newVariableSource">
+                                        <option value="">Todas las del pipeline</option>
+                                        @foreach (var dir in _directoryFolders)
+                                        {
+                                            <option value="@dir.ModuleId">@dir.ModuleName</option>
+                                        }
+                                    </select>
+                                    <span class="text-sm text-muted">@FolderSourceHint()</span>
+                                </div>
+                            }
                             <button class="btn btn-primary btn-sm" disabled="@_variablesSaving" @onclick="CreateVariable">
                                 @(_variablesSaving ? "Guardando..." : "Anadir variable")
                             </button>
@@ -536,10 +587,12 @@ else
                                                                 var prompt = p;
                                                                 <div class="planner-prompt-variable-row">
                                                                     <span class="planner-prompt-variable-key" title="@VariableHint(v)">@key</span>
-                                                                    <input type="text" class="planner-prompt-variable-input"
-                                                                           value="@GetPromptVariableValue(prompt, key)"
-                                                                           placeholder="@VariablePlaceholder(v)"
-                                                                           @onchange="@(e => OnPromptVariableChanged(prompt.Id, key, e.Value?.ToString()))" />
+                                                                    <VariableValueInput Variable="v"
+                                                                                        Value="@GetPromptVariableValue(prompt, key)"
+                                                                                        ValueChanged="@(val => OnPromptVariableChanged(prompt.Id, key, val))"
+                                                                                        DirectoryFolders="_directoryFolders"
+                                                                                        Placeholder="@VariablePlaceholder(v)"
+                                                                                        CssClass="planner-prompt-variable-input" />
                                                                 </div>
                                                             }
                                                         </div>
@@ -1784,10 +1837,11 @@ else
                                         var key = c.Key;
                                         <div class="variables-form-row">
                                             <span class="variables-form-key" title="@VariableHint(c)">@VariableMarker(key)</span>
-                                            <input type="text"
-                                                   value="@GetScheduleVariableValue(key)"
-                                                   placeholder="@VariablePlaceholder(c)"
-                                                   @onchange="e => SetScheduleVariableValue(key, e.Value?.ToString())" />
+                                            <VariableValueInput Variable="c"
+                                                                Value="@GetScheduleVariableValue(key)"
+                                                                ValueChanged="@(v => SetScheduleVariableValue(key, v))"
+                                                                DirectoryFolders="_directoryFolders"
+                                                                Placeholder="@VariablePlaceholder(c)" />
                                         </div>
                                     }
                                 </div>
@@ -2302,9 +2356,17 @@ else
     private Dictionary<string, string> _schedVariableValues = new(StringComparer.OrdinalIgnoreCase);
     private string _newVariableKey = "";
     private string _newVariableDescription = "";
+    private string _newVariableType = ProjectVariableTypes.Text;
+    private string _newVariableSource = "";
     private Guid? _editingVariableId;
     private string _editVariableKey = "";
     private string _editVariableDescription = "";
+    private string _editVariableType = ProjectVariableTypes.Text;
+    private string _editVariableSource = "";
+
+    /// <summary>Carpetas de las bibliotecas del pipeline: opciones de las variables
+    /// de tipo carpeta, tanto al declararlas como al dar valor a una ejecucion.</summary>
+    private List<DirectoryFoldersResponse> _directoryFolders = [];
     private bool _variablesSaving;
     private string? _variablesError;
     private string? _variablesMsg;
@@ -2650,6 +2712,8 @@ else
             try { _projectFeedback = await Api.GetProjectFeedbackAsync(ProjectId); } catch { _projectFeedback = []; }
             try { _tenantRules = await Api.GetRulesAsync(); } catch { _tenantRules = []; }
             try { _variables = await Api.GetProjectVariablesAsync(ProjectId); } catch { _variables = []; }
+            try { _directoryFolders = await Api.GetProjectDirectoryFoldersAsync(ProjectId); }
+            catch { _directoryFolders = []; }
             SyncVariableValues();
             // Check if latest execution is running, waiting for checkpoint, or waiting for orchestrator review
             var latestExec = _executions.FirstOrDefault();
@@ -3345,6 +3409,8 @@ else
     private async Task ReloadVariablesAsync()
     {
         _variables = await Api.GetProjectVariablesAsync(ProjectId);
+        try { _directoryFolders = await Api.GetProjectDirectoryFoldersAsync(ProjectId); }
+        catch { _directoryFolders = []; }
         SyncVariableValues();
     }
 
@@ -3365,12 +3431,16 @@ else
                 new CreateProjectVariableRequest(
                     _newVariableKey.Trim(),
                     string.IsNullOrWhiteSpace(_newVariableDescription) ? null : _newVariableDescription.Trim(),
-                    _variables.Count));
+                    _variables.Count,
+                    _newVariableType,
+                    ParseModuleId(_newVariableSource)));
 
             if (ok)
             {
                 _newVariableKey = "";
                 _newVariableDescription = "";
+                _newVariableType = ProjectVariableTypes.Text;
+                _newVariableSource = "";
                 await ReloadVariablesAsync();
                 _variablesMsg = "Variable creada.";
             }
@@ -3386,6 +3456,24 @@ else
         _editingVariableId = c.Id;
         _editVariableKey = c.Key;
         _editVariableDescription = c.Description ?? "";
+        _editVariableType = string.IsNullOrWhiteSpace(c.Type) ? ProjectVariableTypes.Text : c.Type;
+        _editVariableSource = c.SourceModuleId?.ToString() ?? "";
+    }
+
+    private static Guid? ParseModuleId(string value) =>
+        Guid.TryParse(value, out var id) ? id : null;
+
+    /// <summary>Aviso bajo el selector de biblioteca: sin carpetas el desplegable de la
+    /// ejecucion sale vacio, y conviene saberlo al declarar la variable, no al lanzarla.</summary>
+    private string FolderSourceHint()
+    {
+        if (_directoryFolders.Count == 0)
+            return "Este pipeline no tiene ningun nodo Directorio de archivos todavia.";
+
+        var carpetas = _directoryFolders.Sum(d => d.Folders.Count);
+        return carpetas == 0
+            ? "Las bibliotecas de este pipeline aun no tienen carpetas."
+            : $"{carpetas} carpeta(s) disponibles en {_directoryFolders.Count} biblioteca(s).";
     }
 
     private void CancelEditVariable() => _editingVariableId = null;
@@ -3409,7 +3497,9 @@ else
                 new UpdateProjectVariableRequest(
                     _editVariableKey.Trim(),
                     string.IsNullOrWhiteSpace(_editVariableDescription) ? null : _editVariableDescription.Trim(),
-                    current?.SortOrder ?? 0));
+                    current?.SortOrder ?? 0,
+                    _editVariableType,
+                    ParseModuleId(_editVariableSource)));
 
             if (ok)
             {

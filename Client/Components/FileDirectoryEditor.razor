@@ -275,9 +275,9 @@
             {
                 <option value="@f"></option>
             }
-            @foreach (var key in VariableKeys)
+            @foreach (var v in Variables)
             {
-                <option value="@VariableMarker(key)"></option>
+                <option value="@VariableMarker(v.Key)"></option>
             }
         </datalist>
         <p class="text-sm text-muted">
@@ -285,25 +285,35 @@
             solo entregue sus archivos (y los de sus subcarpetas), o el marcador de una
             variable para elegirla al lanzar cada ejecucion.
         </p>
-        @if (VariableKeys.Count > 0)
+        @if (Variables.Count > 0)
         {
             <div class="fd-var-chips">
                 <span class="text-sm text-muted">Variables del pipeline:</span>
-                @foreach (var key in VariableKeys)
+                @foreach (var v in OrderedVariables)
                 {
-                    <button type="button" class="btn btn-xs"
-                            title="Usar el valor de esta variable como carpeta"
-                            @onclick="@(() => FolderChanged.InvokeAsync(VariableMarker(key)))">
-                        @VariableMarker(key)
+                    var esCarpeta = ProjectVariableTypes.IsFolder(v.Type);
+                    <button type="button" class="btn btn-xs @(esCarpeta ? "btn-primary" : "")"
+                            title="@(esCarpeta
+                                ? "Variable de carpeta: al lanzar la ejecucion se elige de un desplegable"
+                                : "Variable de texto: al lanzar la ejecucion se escribe a mano")"
+                            @onclick="@(() => FolderChanged.InvokeAsync(VariableMarker(v.Key)))">
+                        @VariableMarker(v.Key)
                     </button>
                 }
             </div>
+            @if (!Variables.Any(v => ProjectVariableTypes.IsFolder(v.Type)))
+            {
+                <p class="text-sm text-muted">
+                    Ninguna variable es de tipo "Carpeta de la biblioteca": cambia su tipo en el
+                    panel "Variables" y su valor se elegira de un desplegable en vez de escribirse.
+                </p>
+            }
         }
         else
         {
             <p class="text-sm text-muted">
                 Para elegir la carpeta en cada ejecucion, declara antes una variable en el
-                panel "Variables" del pipeline.
+                panel "Variables" del pipeline (tipo "Carpeta de la biblioteca").
             </p>
         }
         @if (FolderUsesVariable)
@@ -427,8 +437,13 @@
     [Parameter] public string? Folder { get; set; }
     [Parameter] public EventCallback<string> FolderChanged { get; set; }
 
-    /// <summary>Claves de las variables del pipeline, para ofrecerlas como carpeta.</summary>
-    [Parameter] public IReadOnlyList<string> VariableKeys { get; set; } = [];
+    /// <summary>Variables del pipeline, para ofrecerlas como carpeta. Las de tipo
+    /// carpeta van primero: son las que dan un desplegable al lanzar la ejecucion.</summary>
+    [Parameter] public IReadOnlyList<ProjectVariableResponse> Variables { get; set; } = [];
+
+    private IEnumerable<ProjectVariableResponse> OrderedVariables => Variables
+        .OrderByDescending(v => ProjectVariableTypes.IsFolder(v.Type))
+        .ThenBy(v => v.Key, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>True si la carpeta se decide en cada ejecucion (lleva un marcador).</summary>
     private bool FolderUsesVariable => (Folder ?? "").Contains("{{", StringComparison.Ordinal);

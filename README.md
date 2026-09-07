@@ -570,7 +570,11 @@ Datos que el pipeline declara una vez con nombre y descripcion (`tematica`,
 inyectan como bloque en el system prompt de todos los modulos; ver
 `docs/architecture.md` > "Variables de ejecucion".
 
-- `GET /api/projects/{projectId}/variables`: lista las variables del proyecto.
+- `GET /api/projects/{projectId}/variables`: lista las variables del proyecto. Cada
+  una lleva su tipo: `text` (valor escrito a mano) o `folder` (valor elegido de las
+  carpetas de la biblioteca del pipeline).
+- `GET /api/projects/{projectId}/directory-folders`: carpetas de cada nodo Directorio,
+  que son las opciones de las variables de tipo `folder`.
 - `POST /api/projects/{projectId}/variables`: crea una variable.
 - `PUT /api/projects/{projectId}/variables/{variableId}`: actualiza nombre o
   descripcion.

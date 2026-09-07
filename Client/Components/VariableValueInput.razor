@@ -1,0 +1,81 @@
+@using Client.Models
+
+@* Como se pide el valor de una variable al lanzar una ejecucion, programarla o
+   planificarla. Lo decide el TIPO de la variable: texto libre se escribe, y una
+   carpeta de la biblioteca se elige de la lista de carpetas que de verdad existen,
+   que es donde una errata cuesta una ejecucion fallida. *@
+
+@if (IsFolder)
+{
+    <select class="@CssClass" value="@Value"
+            @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)">
+        <option value="">@EmptyLabel</option>
+        @foreach (var directory in Directories)
+        {
+            @if (Directories.Count > 1)
+            {
+                <optgroup label="@directory.ModuleName">
+                    @foreach (var folder in directory.Folders)
+                    {
+                        <option value="@folder">@folder</option>
+                    }
+                </optgroup>
+            }
+            else
+            {
+                @foreach (var folder in directory.Folders)
+                {
+                    <option value="@folder">@folder</option>
+                }
+            }
+        }
+        @* Un valor guardado cuya carpeta ya no existe seguiria seleccionado en
+           silencio: se ofrece aparte para que se vea que no cuadra. *@
+        @if (!string.IsNullOrWhiteSpace(Value) && !KnownFolders.Contains(Value))
+        {
+            <option value="@Value">@Value (ya no existe)</option>
+        }
+    </select>
+
+    @if (KnownFolders.Count == 0)
+    {
+        <span class="text-sm text-muted">
+            La biblioteca de este pipeline todavia no tiene carpetas.
+        </span>
+    }
+}
+else
+{
+    <input type="text" class="@CssClass" value="@Value" placeholder="@Placeholder"
+           @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+}
+
+@code {
+    /// <summary>Variable cuyo valor se esta pidiendo.</summary>
+    [Parameter, EditorRequired] public ProjectVariableResponse Variable { get; set; } = default!;
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    /// <summary>Carpetas disponibles por nodo Directorio del pipeline.</summary>
+    [Parameter] public IReadOnlyList<DirectoryFoldersResponse> DirectoryFolders { get; set; } = [];
+
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string CssClass { get; set; } = "";
+
+    /// <summary>Texto de la opcion vacia; sin valor la variable corre sin sustituir.</summary>
+    [Parameter] public string EmptyLabel { get; set; } = "Sin valor";
+
+    private bool IsFolder => ProjectVariableTypes.IsFolder(Variable.Type);
+
+    /// <summary>Directorios que alimentan el desplegable: el declarado por la variable
+    /// o, si no declara ninguno, todas las bibliotecas del pipeline.</summary>
+    private List<DirectoryFoldersResponse> Directories => DirectoryFolders
+        .Where(d => Variable.SourceModuleId is null || d.ModuleId == Variable.SourceModuleId)
+        .Where(d => d.Folders.Count > 0)
+        .ToList();
+
+    private HashSet<string> KnownFolders => Directories
+        .SelectMany(d => d.Folders)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+}

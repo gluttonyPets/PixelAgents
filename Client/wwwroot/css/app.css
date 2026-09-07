@@ -6581,6 +6581,15 @@ a.link:hover { text-decoration: underline; }
     color: var(--accent);
 }
 
+/* Tipo de la variable: como se pide su valor al lanzar la ejecucion */
+.variables-item-type {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.4rem;
+}
+
 .variables-item-actions {
     display: flex;
     gap: 0.35rem;

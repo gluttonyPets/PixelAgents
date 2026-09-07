@@ -23,11 +23,52 @@ namespace Server.Models
         /// <summary>Para que sirve la variable. Se envia al modelo junto al valor.</summary>
         public string? Description { get; set; }
 
+        /// <summary>
+        /// Que clase de dato es (ver <see cref="ProjectVariableTypes"/>). El valor
+        /// siempre viaja como texto: el tipo solo decide como se pide al lanzar la
+        /// ejecucion, texto libre o elegido de una lista.
+        /// </summary>
+        public string Type { get; set; } = ProjectVariableTypes.Text;
+
+        /// <summary>
+        /// Para las variables de tipo carpeta, el nodo Directorio de archivos del que
+        /// salen las opciones. null = todos los directorios del pipeline.
+        /// </summary>
+        public Guid? SourceModuleId { get; set; }
+
         public int SortOrder { get; set; }
 
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         public Project Project { get; set; } = null!;
+    }
+
+    /// <summary>
+    /// Tipos de variable. El tipo no cambia lo que llega a los modulos (siempre el
+    /// valor como texto): cambia como se pide ese valor. "text" se escribe a mano;
+    /// "folder" se elige de las carpetas que tiene la biblioteca del pipeline, que es
+    /// donde equivocarse escribiendo cuesta una ejecucion fallida.
+    /// </summary>
+    public static class ProjectVariableTypes
+    {
+        /// <summary>Texto libre: el comportamiento de siempre.</summary>
+        public const string Text = "text";
+
+        /// <summary>Carpeta de un nodo Directorio de archivos del pipeline.</summary>
+        public const string Folder = "folder";
+
+        public static readonly string[] All = [Text, Folder];
+
+        /// <summary>Tipo valido a partir de lo que llegue; null si no se reconoce.</summary>
+        public static string? Normalize(string? raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return Text;
+            var value = raw.Trim().ToLowerInvariant();
+            return All.Contains(value) ? value : null;
+        }
+
+        public static bool IsFolder(string? type) =>
+            string.Equals(type, Folder, StringComparison.OrdinalIgnoreCase);
     }
 }

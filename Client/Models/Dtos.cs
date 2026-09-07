@@ -204,14 +204,39 @@ public record StepExecutionStatus(Guid ProjectModuleId, string Status);
 public record ExecutionLogEntry(string Level, string Message, Guid? ProjectModuleId, string? ModuleName, DateTime Timestamp);
 
 // ── Variables del pipeline ──
-/// <summary>Variable declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
+/// <summary>Variable declarada por el proyecto; su valor se fija en cada ejecucion.
+/// <c>Type</c> decide como se pide ese valor: texto libre o elegido de una lista.</summary>
 public record ProjectVariableResponse(
     Guid Id, Guid ProjectId, string Key, string? Description,
-    int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
+    int SortOrder, DateTime CreatedAt, DateTime UpdatedAt,
+    string Type = ProjectVariableTypes.Text, Guid? SourceModuleId = null);
 public record CreateProjectVariableRequest(
-    string Key, string? Description = null, int SortOrder = 0);
+    string Key, string? Description = null, int SortOrder = 0,
+    string? Type = null, Guid? SourceModuleId = null);
 public record UpdateProjectVariableRequest(
-    string Key, string? Description = null, int SortOrder = 0);
+    string Key, string? Description = null, int SortOrder = 0,
+    string? Type = null, Guid? SourceModuleId = null);
+
+/// <summary>Carpetas de un nodo Directorio de archivos del pipeline.</summary>
+public record DirectoryFoldersResponse(
+    Guid ModuleId, string ModuleName, List<string> Folders);
+
+/// <summary>
+/// Tipos de variable, en los mismos valores que guarda el servidor. El tipo no cambia
+/// lo que reciben los modulos (siempre el valor como texto): cambia como se pide.
+/// </summary>
+public static class ProjectVariableTypes
+{
+    public const string Text = "text";
+    public const string Folder = "folder";
+
+    public static bool IsFolder(string? type) =>
+        string.Equals(type, Folder, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Etiqueta para la interfaz.</summary>
+    public static string Label(string? type) =>
+        IsFolder(type) ? "Carpeta de la biblioteca" : "Texto";
+}
 
 // ── Execution ──
 public record ExecuteProjectRequest(

@@ -488,6 +488,15 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ProjectVariableResponse>>() ?? [];
     }
 
+    /// <summary>Carpetas de las bibliotecas del pipeline, por nodo Directorio. Alimentan
+    /// el desplegable de las variables de tipo carpeta.</summary>
+    public async Task<List<DirectoryFoldersResponse>> GetProjectDirectoryFoldersAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/directory-folders");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<DirectoryFoldersResponse>>() ?? [];
+    }
+
     public async Task<(bool Ok, string? Error)> CreateProjectVariableAsync(Guid projectId, CreateProjectVariableRequest req)
     {
         var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/variables", req);

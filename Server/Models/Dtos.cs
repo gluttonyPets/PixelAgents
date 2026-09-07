@@ -91,14 +91,24 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record ModuleConfigEntry(Guid ModuleId, string Key, string Value);
 
     // ── Variables del pipeline ──
-    /// <summary>Variable declarada por el proyecto; su valor se fija en cada ejecucion.</summary>
+    /// <summary>Variable declarada por el proyecto; su valor se fija en cada ejecucion.
+    /// <c>Type</c> decide como se pide ese valor: texto libre o elegido de una lista
+    /// (ver <see cref="ProjectVariableTypes"/>).</summary>
     public record ProjectVariableResponse(
         Guid Id, Guid ProjectId, string Key, string? Description,
-        int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
+        int SortOrder, DateTime CreatedAt, DateTime UpdatedAt,
+        string Type = ProjectVariableTypes.Text, Guid? SourceModuleId = null);
     public record CreateProjectVariableRequest(
-        string Key, string? Description = null, int SortOrder = 0);
+        string Key, string? Description = null, int SortOrder = 0,
+        string? Type = null, Guid? SourceModuleId = null);
     public record UpdateProjectVariableRequest(
-        string Key, string? Description = null, int SortOrder = 0);
+        string Key, string? Description = null, int SortOrder = 0,
+        string? Type = null, Guid? SourceModuleId = null);
+
+    /// <summary>Carpetas de un nodo Directorio de archivos, para ofrecerlas como
+    /// opciones de una variable de tipo carpeta.</summary>
+    public record DirectoryFoldersResponse(
+        Guid ModuleId, string ModuleName, List<string> Folders);
 
     // ── Execution ──
     /// <param name="Variables">Valor de cada variable del pipeline para esta ejecucion,

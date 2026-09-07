@@ -162,6 +162,9 @@ namespace Server.Services
             RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_ProjectVariables_ProjectId_Key"" ON ""ProjectVariables"" (""ProjectId"", ""Key"")", log);
             // Una variable no tiene valor fijo: el valor lo pone siempre la ejecucion.
             RunSafe(ctx, @"ALTER TABLE ""ProjectVariables"" DROP COLUMN IF EXISTS ""DefaultValue""", log);
+            // Tipo de la variable: texto libre (por defecto) o carpeta de la biblioteca.
+            RunSafe(ctx, @"ALTER TABLE ""ProjectVariables"" ADD COLUMN IF NOT EXISTS ""Type"" varchar(30) NOT NULL DEFAULT 'text'", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectVariables"" ADD COLUMN IF NOT EXISTS ""SourceModuleId"" uuid", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""ExecutionLogs"" (
                     ""Id"" uuid NOT NULL PRIMARY KEY,

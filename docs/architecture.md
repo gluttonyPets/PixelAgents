@@ -204,6 +204,32 @@ variable que declare con el mismo nombre (las que no declare, se ignoran).
 Las capas se combinan con `ExecutionVariables.Merge` (gana la ultima); lo que quede sin valor
 corre sin sustituir.
 
+### Tipo de variable
+
+Cada variable declara **como se pide su valor** (`ProjectVariable.Type`); lo que
+recibe el modulo es siempre el mismo texto, el tipo solo cambia la interfaz:
+
+| Tipo | Al lanzar la ejecucion |
+|------|------------------------|
+| `text` (por defecto) | campo de texto libre, como siempre |
+| `folder` | desplegable con las carpetas que tiene la biblioteca del pipeline |
+
+Una variable `folder` puede fijar de que nodo Directorio salen las opciones
+(`SourceModuleId`); sin el, se ofrecen las de todos los directorios del pipeline,
+agrupadas por nodo. Las carpetas las sirve
+`GET /api/projects/{projectId}/directory-folders`, que resuelve el indice de cada
+nodo Directorio y devuelve sus carpetas (las declaradas vacias incluidas).
+
+El desplegable lo pinta `Client/Components/VariableValueInput.razor`, que se usa en
+los tres sitios donde se da valor a una variable: la ejecucion manual, la cola del
+planificador y la programacion. Si el valor guardado ya no existe entre las carpetas
+(se renombro o se borro), se ofrece marcado como "(ya no existe)" en vez de
+desaparecer sin avisar.
+
+Es la pieza que cierra el filtro de carpeta del Directorio: se declara `carpeta` como
+variable de tipo `folder`, se escribe `{{carpeta}}` en el ajuste `folder` del nodo, y
+cada ejecucion elige de una lista en vez de teclear una ruta que puede no existir.
+
 Endpoints: `GET|POST|PUT|DELETE /api/projects/{projectId}/variables`. En la UI se declaran en
 el propio editor del pipeline (boton **Variables** de la barra del canvas, junto a "+ Modulo"),
 porque forman parte de la definicion del pipeline y no de la configuracion del proyecto; el
@@ -458,7 +484,8 @@ casi nunca hace falta toda: `folder` decide que parte entrega el modulo.
 - El marcador de una variable del pipeline (`{{carpeta}}`): la carpeta la decide
   el valor que se da **al lanzar cada ejecucion**. Es el caso que motiva la
   opcion: el mismo pipeline trabaja hoy con `manuales` y manana con `legal` sin
-  tocar el grafo.
+  tocar el grafo. Si esa variable se declara de tipo `folder` (ver "Tipo de
+  variable"), al lanzar se elige de un desplegable con las carpetas reales.
 
 Funciona porque `folder` se lee de `ctx.Config`, que es la configuracion del nodo
 ya pasada por `ExecutionVariables.ApplyToConfig`: cuando llega al handler el
@@ -650,7 +677,8 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 |              | `GET /api/projects/trash`                         | Pipelines en la papelera (no caducan)             |
 |              | `POST /api/projects/{id}/restore`                 | Restaura un pipeline de la papelera               |
 |              | `DELETE /api/projects/{id}/permanent`             | Borrado definitivo; solo desde la papelera        |
-| Variables   | `GET|POST|PUT|DELETE /api/projects/{id}/variables`| Variables del pipeline; su valor se fija en cada ejecucion |
+| Variables   | `GET|POST|PUT|DELETE /api/projects/{id}/variables`| Variables del pipeline; su valor se fija en cada ejecucion. `Type`: `text` o `folder` |
+|              | `GET /api/projects/{id}/directory-folders`        | Carpetas de las bibliotecas del pipeline (opciones de las variables `folder`) |
 | Executions   | `POST /api/projects/{id}/execute`                 | Lanza ejecucion (acepta el valor de las variables) |
 |              | `POST /api/projects/{id}/cancel`                  | Cancela ejecucion activa                          |
 |              | `POST /api/executions/{id}/retry-from-module`     | Reintenta desde un nodo concreto del grafo        |

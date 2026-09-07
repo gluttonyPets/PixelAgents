@@ -716,7 +716,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                                  FormatChanged='@(v => SetModuleConfig(sel.Id, "format", v))'
                                                  Folder='@GetModuleConfig(sel.Id, "folder", "")'
                                                  FolderChanged='@(v => SetModuleConfig(sel.Id, "folder", v))'
-                                                 VariableKeys="@VariableKeys" />
+                                                 Variables="@VariableList" />
                         </div>
                     }
 
@@ -1250,7 +1250,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                              FormatChanged='@(v => SetModuleConfig(dirNode.Id, "format", v))'
                                              Folder='@GetModuleConfig(dirNode.Id, "folder", "")'
                                              FolderChanged='@(v => SetModuleConfig(dirNode.Id, "folder", v))'
-                                             VariableKeys="@VariableKeys" />
+                                             Variables="@VariableList" />
                     </fieldset>
                 }
             </div>
@@ -1300,8 +1300,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     /// resolverse por variable, como la carpeta del Directorio de archivos.</summary>
     [Parameter] public List<ProjectVariableResponse>? ProjectVariables { get; set; }
 
-    private IReadOnlyList<string> VariableKeys =>
-        ProjectVariables?.Select(v => v.Key).ToList() ?? [];
+    private IReadOnlyList<ProjectVariableResponse> VariableList =>
+        ProjectVariables ?? [];
 
     /// <summary>Se dispara al abrir el panel, para que la pagina cargue sus datos.</summary>
     [Parameter] public EventCallback OnPlannerPanelOpened { get; set; }
