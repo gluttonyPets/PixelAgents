@@ -312,6 +312,7 @@ public class ExecutionGraph
             "Text" or "Coordinator" => ("output_text", "text"),
             "Image" => ("output_image", "image"),
             "Audio" => ("output_audio", "audio"),
+            "Video" or "VideoAssembly" => ("output_video", "video"),
             "Transcription" => ("output_text", "text"),
             "Orchestrator" => ("output_plan", "text"),
             "Scene" => ("output_scene", "scene"),

@@ -208,6 +208,32 @@
                     </div>
                 }
             }
+            else if (_moduleType == "Video")
+            {
+                <div class="form-group">
+                    <label>Movimiento por defecto <span class="text-sm text-muted">(se antepone a lo que llegue por el puerto)</span></label>
+                    <textarea @bind="_videoPrompt" rows="3" placeholder="Ej: Camara con un lento zoom de acercamiento, movimiento suave, sin cortes..."></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Resolucion</label>
+                        <select @bind="_videoResolution">
+                            <option value="RESOLUTION_480">480p</option>
+                            <option value="RESOLUTION_720">720p</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Interpolacion de fotogramas</label>
+                        <select @bind="_videoFrameInterpolation">
+                            <option value="true">Si (movimiento mas fluido)</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                </div>
+                <span class="text-sm text-muted">
+                    Se genera un clip por imagen conectada. Motion 2.0 entrega clips de 5 s sin audio.
+                </span>
+            }
             else if (_moduleType == "Image" && _provider == "LeonardoAI")
             {
                 <div class="form-group">
@@ -592,6 +618,29 @@
                                         </div>
                                     </div>
                                 }
+                                else if (m.ModuleType == "Video")
+                                {
+                                    <div class="form-group">
+                                        <label>Movimiento por defecto <span class="text-sm text-muted">(se antepone a lo que llegue por el puerto)</span></label>
+                                        <textarea @bind="_editVideoPrompt" rows="3" placeholder="Ej: Camara con un lento zoom de acercamiento, movimiento suave, sin cortes..."></textarea>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Resolucion</label>
+                                            <select @bind="_editVideoResolution">
+                                                <option value="RESOLUTION_480">480p</option>
+                                                <option value="RESOLUTION_720">720p</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Interpolacion de fotogramas</label>
+                                            <select @bind="_editVideoFrameInterpolation">
+                                                <option value="true">Si (movimiento mas fluido)</option>
+                                                <option value="false">No</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                }
                                 else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
                                 {
                                     <div class="form-group">
@@ -701,7 +750,7 @@
                                 @* Los archivos viven en cada instancia ProjectModule del proyecto,
                                    no en el catalogo. Se gestionan desde el editor de cada proyecto. *@
 
-                                @if (m.ModuleType is "Text" or "Image" or "Audio" or "Design")
+                                @if (m.ModuleType is "Text" or "Image" or "Video" or "Audio" or "Design")
                                 {
                                     <button class="btn btn-primary btn-sm" @onclick="() => SaveConfig(m)" disabled="@_editConfigSaving">
                                         @(_editConfigSaving ? "Guardando..." : "Guardar")
@@ -741,6 +790,7 @@ else
         ("Text",        "Generacion de texto",   "T"),
         ("Image",       "Generacion de imagen",  "I"),
         ("Audio",       "Generacion de audio",   "A"),
+        ("Video",       "Generacion de video",   "V"),
         ("Interaction", "Interaccion",           "C"),
         ("Publish",     "Publicacion",           "P"),
         ("Design",      "Diseno",                "D"),
@@ -855,6 +905,9 @@ else
     private int _editLeoWidth = 1024;
     private int _editLeoHeight = 1024;
     private string _editLeoPresetStyle = "DYNAMIC";
+    private string _editVideoPrompt = "";
+    private string _editVideoResolution = "RESOLUTION_480";
+    private string _editVideoFrameInterpolation = "true";
 
     // ── Form: text config ──
     private string _systemPrompt = "";
@@ -876,6 +929,11 @@ else
     private int _leoWidth = 1024;
     private int _leoHeight = 1024;
     private string _leoPresetStyle = "DYNAMIC";
+
+    // ── Video (imagen -> video) ──
+    private string _videoPrompt = "";
+    private string _videoResolution = "RESOLUTION_480";
+    private string _videoFrameInterpolation = "true";
 
     // ── Form: Google Imagen ──
     private string _geminiAspectRatio = "1:1";
@@ -1035,6 +1093,9 @@ else
         new("leonardo-flux-dev",             "Leonardo Flux Dev",   "LeonardoAI", ["Image"], ["image-generation"], "Modelo Flux Dev. Buena calidad con tiempo razonable."),
         new("leonardo-flux-schnell",         "Leonardo Flux Schnell","LeonardoAI", ["Image"], ["image-generation"], "Modelo Flux Schnell. Generacion ultra rapida."),
 
+        // ─── Leonardo AI: Video (imagen -> video) ───
+        new("leonardo-motion-2",             "Leonardo Motion 2.0", "LeonardoAI", ["Video"], ["image-to-video"], "Anima una imagen en un clip de 5 s. Sin audio."),
+
         // ─── Canva: Design ───
         new("canva-design",    "Canva Design",    "Canva", ["Design"], ["design-creation","export"],           "Crea disenos en blanco y exporta en PNG, JPG, PDF o PPTX."),
         new("canva-autofill",  "Canva Autofill",  "Canva", ["Design"], ["design-creation","autofill","export"], "Autofill de brand templates con datos del pipeline."),
@@ -1057,6 +1118,7 @@ else
                 "Image"         => "Generacion de imagen",
                 "Embeddings"    => "Embeddings",
                 "Audio"         => "Audio (TTS)",
+                "Video"         => "Video (imagen -> video)",
                 "Transcription" => "Transcripcion (STT)",
                 "Design"        => "Diseno (Canva)",
                 "Orchestrator"  => "Orquestador de pipeline",
@@ -1144,6 +1206,9 @@ else
         _leoWidth = 1024;
         _leoHeight = 1024;
         _leoPresetStyle = "DYNAMIC";
+        _videoPrompt = "";
+        _videoResolution = "RESOLUTION_480";
+        _videoFrameInterpolation = "true";
         _geminiAspectRatio = "1:1";
         _geminiImageCount = 1;
         _grokImageCount = 1;
@@ -1190,6 +1255,15 @@ else
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
             if (_grokImageCount != 1)
                 parts.Add($"\"n\":{_grokImageCount}");
+        }
+        else if (_moduleType == "Video")
+        {
+            if (!string.IsNullOrWhiteSpace(_videoPrompt))
+                parts.Add($"\"videoPrompt\":{System.Text.Json.JsonSerializer.Serialize(_videoPrompt)}");
+            if (_videoResolution != "RESOLUTION_480")
+                parts.Add($"\"resolution\":\"{_videoResolution}\"");
+            if (_videoFrameInterpolation != "true")
+                parts.Add($"\"frameInterpolation\":{_videoFrameInterpolation}");
         }
         else if (_moduleType == "Image" && _provider == "LeonardoAI")
         {
@@ -1379,6 +1453,9 @@ else
         _editLeoWidth = 1024;
         _editLeoHeight = 1024;
         _editLeoPresetStyle = "DYNAMIC";
+        _editVideoPrompt = "";
+        _editVideoResolution = "RESOLUTION_480";
+        _editVideoFrameInterpolation = "true";
         _editCanvaAccessToken = "";
         _editCanvaExportFormat = "png";
         _editCanvaBrandTemplate = "";
@@ -1404,6 +1481,10 @@ else
                 if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
                 if (root.TryGetProperty("height", out var lh)) _editLeoHeight = lh.GetInt32();
                 if (root.TryGetProperty("presetStyle", out var lps)) _editLeoPresetStyle = lps.GetString() ?? "DYNAMIC";
+                if (root.TryGetProperty("videoPrompt", out var vp)) _editVideoPrompt = vp.GetString() ?? "";
+                if (root.TryGetProperty("resolution", out var vr)) _editVideoResolution = vr.GetString() ?? "RESOLUTION_480";
+                if (root.TryGetProperty("frameInterpolation", out var vfi))
+                    _editVideoFrameInterpolation = vfi.ValueKind == System.Text.Json.JsonValueKind.False ? "false" : "true";
                 if (root.TryGetProperty("aspectRatio", out var ar)) _editGeminiAspectRatio = ar.GetString() ?? "1:1";
                 if (root.TryGetProperty("numberOfImages", out var ni)) _editGeminiImageCount = ni.GetInt32();
                 if (root.TryGetProperty("n", out var grokN)) _editGrokImageCount = grokN.GetInt32();
@@ -1533,6 +1614,15 @@ else
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
             if (_editGrokImageCount != 1)
                 parts.Add($"\"n\":{_editGrokImageCount}");
+        }
+        else if (moduleType == "Video")
+        {
+            if (!string.IsNullOrWhiteSpace(_editVideoPrompt))
+                parts.Add($"\"videoPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editVideoPrompt)}");
+            if (_editVideoResolution != "RESOLUTION_480")
+                parts.Add($"\"resolution\":\"{_editVideoResolution}\"");
+            if (_editVideoFrameInterpolation != "true")
+                parts.Add($"\"frameInterpolation\":{_editVideoFrameInterpolation}");
         }
         else if (moduleType == "Image" && providerType == "LeonardoAI")
         {

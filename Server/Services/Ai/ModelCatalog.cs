@@ -208,6 +208,10 @@ public static class ModelCatalog
             ["image-generation"], null, PromptChars: 1_500),
         new("leonardo-flux-schnell",  "Leonardo Flux Schnell", "LeonardoAI", ["Image"],
             ["image-generation"], null, PromptChars: 1_500),
+
+        // ─── Leonardo AI: Video (imagen -> video) ───
+        new("leonardo-motion-2",      "Leonardo Motion 2.0",   "LeonardoAI", ["Video"],
+            ["image-to-video"], null, PromptChars: 1_500),
     ];
 
     /// <summary>Datos de catalogo de un modelo por su id, o null si no esta.</summary>

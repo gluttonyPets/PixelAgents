@@ -26,7 +26,9 @@ RUN dotnet publish Client/Client.csproj -c Release -o /app/client
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 
 # Install nginx for serving Blazor WASM + reverse proxy to API
-RUN apt-get update && apt-get install -y nginx && rm -rf /var/lib/apt/lists/*
+# ffmpeg lo usa el modulo de montaje de video (VideoAssembler) para unir los
+# clips generados en un unico MP4. Sin el, ese modulo falla con un error explicito.
+RUN apt-get update && apt-get install -y nginx ffmpeg && rm -rf /var/lib/apt/lists/*
 
 # Copy server build
 WORKDIR /app

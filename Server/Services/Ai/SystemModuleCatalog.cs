@@ -46,6 +46,11 @@ public static class SystemModuleCatalog
             "Publish",
             "publish"),
         new(
+            "Montaje de video",
+            "Une varios clips en un unico video con ffmpeg, en el orden en que llegan",
+            "VideoAssembly",
+            "video-assembly"),
+        new(
             "Sub-proyecto",
             "Ejecuta un proyecto completo como un unico modulo dentro de este pipeline",
             "SubProject",

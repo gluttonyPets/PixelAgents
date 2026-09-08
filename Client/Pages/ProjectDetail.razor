@@ -745,6 +745,13 @@ else
                                     <textarea @bind="_imagePrompt" rows="3" placeholder="Prompt de imagen (opcional)"></textarea>
                                 </div>
                             }
+                            @if (editPm.ModuleType == "Video")
+                            {
+                                <div class="form-group">
+                                    <label>Movimiento</label>
+                                    <textarea @bind="_videoPrompt" rows="3" placeholder="Movimiento de la camara (opcional)"></textarea>
+                                </div>
+                            }
                             @if (editPm.ModuleType == "Publish")
                             {
                                 <div class="form-group">
@@ -2277,6 +2284,7 @@ else
 
     // Image step
     private string _imagePrompt = "";
+    private string _videoPrompt = "";
 
     // History expansion
     private Guid? _expandedExecId;
@@ -3212,6 +3220,13 @@ else
                     imagePrompt = _imagePrompt.Trim()
                 });
             }
+            if (mod?.ModuleType == "Video" && !string.IsNullOrWhiteSpace(_videoPrompt))
+            {
+                stepConfig = JsonSerializer.Serialize(new
+                {
+                    videoPrompt = _videoPrompt.Trim()
+                });
+            }
             var req = new AddProjectModuleRequest(moduleId, string.IsNullOrWhiteSpace(_stepName) ? null : _stepName, stepConfig);
             var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
             if (ok)
@@ -3228,7 +3243,7 @@ else
                     }
                     _pendingOrchestratorOutputs.Clear();
                 }
-                _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc";
+                _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _videoPrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc";
                 await LoadAll();
             }
             else _stepError = error;
@@ -3245,6 +3260,7 @@ else
 
         // Reset all type-specific fields
         _imagePrompt = "";
+        _videoPrompt = "";
         _publishCaption = "";
         _publishType = "post";
         _interactionTemplate = "";
@@ -3264,6 +3280,8 @@ else
                 {
                     if (cfg.TryGetValue("imagePrompt", out var ipEl))
                         _imagePrompt = ipEl.GetString() ?? "";
+                    if (cfg.TryGetValue("videoPrompt", out var vpEl))
+                        _videoPrompt = vpEl.GetString() ?? "";
                     if (cfg.TryGetValue("caption", out var capEl))
                         _publishCaption = capEl.GetString() ?? "";
                     if (cfg.TryGetValue("publishType", out var ptEl))
@@ -3310,6 +3328,11 @@ else
             {
                 if (!string.IsNullOrWhiteSpace(_imagePrompt))
                     stepConfig = JsonSerializer.Serialize(new { imagePrompt = _imagePrompt.Trim() });
+            }
+            else if (pm.ModuleType == "Video")
+            {
+                if (!string.IsNullOrWhiteSpace(_videoPrompt))
+                    stepConfig = JsonSerializer.Serialize(new { videoPrompt = _videoPrompt.Trim() });
             }
             else if (pm.ModuleType == "Publish")
             {

@@ -104,6 +104,19 @@ namespace Server.Services.Ai
                 ["whisper-1"]              = new(0.006m, "minuto"),
                 ["gpt-4o-transcribe"]      = new(0.006m, "minuto"),
                 ["gpt-4o-mini-transcribe"] = new(0.003m, "minuto"),
+
+                // Video (imagen -> video). La unidad es el SEGUNDO de video generado:
+                // es como factura todo el sector y la unica forma de comparar un clip
+                // de 5 s con uno de 8 s. Leonardo cobra en creditos, no en dolares, asi
+                // que esta cifra es la conversion a ~$0,003/credito, la misma referencia
+                // que ya se usa para sus imagenes. El coste que se apunta en la
+                // ejecucion NO sale de aqui: la API devuelve el gasto real en
+                // `apiCreditCost` y el provider lo convierte con
+                // <see cref="LeonardoCreditUsd"/>. Esta tarifa es la estimacion a priori
+                // que necesita la pantalla de modelos, donde todavia no hay llamada.
+                ["leonardo-motion-2"] = new(0.015m, "segundo",
+                    "Leonardo factura en creditos (~25 por clip de 5 s a 480p). El coste "
+                    + "real de cada ejecucion sale del apiCreditCost que devuelve la API."),
             };
 
         /// <summary>
@@ -379,6 +392,39 @@ namespace Server.Services.Ai
             var matchKey = ImageFixedPrices.Keys.FirstOrDefault(k =>
                 modelName.StartsWith(k, StringComparison.OrdinalIgnoreCase));
             return matchKey is not null ? ImageFixedPrices[matchKey] : 0m;
+        }
+
+        /// <summary>
+        /// Valor en USD de un credito de la API de Leonardo. Leonardo no factura en
+        /// dolares: cada generacion consume creditos y la respuesta dice cuantos.
+        /// Convertirlos aqui es lo que permite apuntar en la ejecucion el gasto REAL
+        /// en vez de una estimacion. La referencia es la misma que ya se usaba para
+        /// estimar sus imagenes (~$0,003/credito); si cambia el plan contratado,
+        /// este es el unico numero que hay que tocar.
+        /// </summary>
+        public const decimal LeonardoCreditUsd = 0.003m;
+
+        /// <summary>Coste real de una generacion de Leonardo a partir de los creditos que gasto.</summary>
+        public static decimal EstimateCostFromLeonardoCredits(int credits) =>
+            credits <= 0 ? 0m : credits * LeonardoCreditUsd;
+
+        /// <summary>
+        /// Coste estimado de un video por su duracion. La tarifa sale de
+        /// <see cref="AuxiliaryPrices"/> y solo se aplica si esta expresada por
+        /// segundo: si un modelo de video futuro se facturase por clip, devolver
+        /// tarifa x segundos multiplicaria el coste por la duracion sin que nada
+        /// avisara. Es una ESTIMACION; cuando el proveedor informa del gasto real
+        /// (Leonardo lo hace en creditos), manda ese.
+        /// </summary>
+        public static decimal EstimateVideoCost(string modelName, double seconds)
+        {
+            if (string.IsNullOrWhiteSpace(modelName) || seconds <= 0) return 0m;
+
+            var rate = GetAuxiliaryRate(modelName);
+            if (rate is null || !rate.Unit.Equals("segundo", StringComparison.OrdinalIgnoreCase))
+                return 0m;
+
+            return rate.Amount * (decimal)seconds;
         }
     }
 }

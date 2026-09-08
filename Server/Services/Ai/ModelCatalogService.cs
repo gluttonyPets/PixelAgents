@@ -119,7 +119,7 @@ public class ModelCatalogService : IModelCatalogService
     /// </summary>
     private static string PrimaryModuleType(ModelCatalog.CatalogModel model)
     {
-        string[] order = ["Text", "Image", "Embeddings", "Audio", "Transcription", "Design"];
+        string[] order = ["Text", "Image", "Video", "Embeddings", "Audio", "Transcription", "Design"];
 
         return order.FirstOrDefault(t => model.Types.Contains(t, StringComparer.OrdinalIgnoreCase))
                ?? model.Types.FirstOrDefault()

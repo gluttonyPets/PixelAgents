@@ -388,6 +388,9 @@ Handlers actuales:
   (ver `docs/architecture.md`).
 - `Text`: generacion de texto mediante proveedor IA.
 - `Image`: generacion o edicion de imagenes.
+- `Video`: anima imagenes (imagen -> video). Genera un clip por imagen de
+  entrada, con las llamadas en paralelo (ver `docs/architecture.md`).
+- `VideoAssembly`: une varios clips en un unico MP4 con ffmpeg.
 - `Audio`: texto a voz.
 - `Transcription`: audio a texto.
 - `Embeddings`: generacion de embeddings.

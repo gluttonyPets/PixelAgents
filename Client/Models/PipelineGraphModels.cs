@@ -8,6 +8,7 @@ public static class PortDataType
     public const string Text = "text";
     public const string Image = "image";
     public const string Audio = "audio";
+    public const string Video = "video";
     public const string File = "file";
     public const string Config = "config";
     public const string Scene = "scene";
@@ -18,6 +19,7 @@ public static class PortDataType
         Text => "#6c63ff",
         Image => "#4caf50",
         Audio => "#e91e63",
+        Video => "#d81b60",
         File => "#888",
         Config => "#ffc107",
         Scene => "#ff7043",
@@ -30,6 +32,7 @@ public static class PortDataType
         Text => "Texto",
         Image => "Imagen",
         Audio => "Audio",
+        Video => "Video",
         File => "Archivo",
         Config => "Config",
         Scene => "Escena",
@@ -164,6 +167,20 @@ public static class ModulePortRegistry
                 ports.Add(new("output_audio", "Audio", PortDataType.Audio, isInput: false));
                 break;
 
+            case "Video":
+                // La imagen entra por su propio puerto y el movimiento por el de
+                // prompt: son dos cosas distintas y mezclarlas en un puerto unico
+                // obligaria al handler a adivinar cual es cual.
+                ports.Add(new("input_image", "Imagen", PortDataType.Image, isInput: true, isRequired: true));
+                ports.Add(new("input_prompt", "Movimiento", PortDataType.Text, isInput: true));
+                ports.Add(new("output_video", "Video", PortDataType.Video, isInput: false));
+                break;
+
+            case "VideoAssembly":
+                ports.Add(new("input_videos", "Clips", PortDataType.Video, isInput: true, isRequired: true));
+                ports.Add(new("output_video", "Video", PortDataType.Video, isInput: false));
+                break;
+
             case "Transcription":
                 ports.Add(new("input_audio", "Audio", PortDataType.Audio, isInput: true, isRequired: true));
                 ports.Add(new("output_text", "Texto", PortDataType.Text, isInput: false));
@@ -286,6 +303,8 @@ public static class ModulePortRegistry
         "Text" => "bi-chat-left-text",
         "Image" => "bi-image",
         "Audio" => "bi-volume-up",
+        "Video" => "bi-camera-reels",
+        "VideoAssembly" => "bi-film",
         "Transcription" => "bi-mic",
         "Orchestrator" => "bi-diagram-3",
         "Design" => "bi-palette",
@@ -309,6 +328,8 @@ public static class ModulePortRegistry
         "Text" => "#6c63ff",
         "Image" => "#4caf50",
         "Audio" => "#e91e63",
+        "Video" => "#d81b60",
+        "VideoAssembly" => "#880e4f",
         "Transcription" => "#ad1457",
         "Orchestrator" => "#7c4dff",
         "Design" => "#00bcd4",

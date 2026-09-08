@@ -136,6 +136,21 @@ El coste por imagen es esos tokens por la tarifa de salida del modelo, que es lo
 `gpt-image-1.5`, $30/1M en `gpt-image-2`). Cada versión tiene su tabla ya resuelta
 en `PricingCatalog`.
 
+### Vídeo
+
+Se factura por **segundo de vídeo generado**, que es la unidad en la que publican
+todos los proveedores y la única que permite comparar un clip de 5 s con uno de
+8 s. Va en `AuxiliaryPrices` con unidad `"segundo"`, y `EstimateVideoCost` solo
+multiplica por la duración cuando la unidad es esa: si un modelo futuro se
+facturase por clip, multiplicar por los segundos daría un número sin significado
+que nadie detectaría mirando la cifra.
+
+Leonardo es un caso aparte: **no cobra en dólares sino en créditos**, y su API
+devuelve en `apiCreditCost` los que gastó cada generación. Ese es el coste real
+que se apunta en la ejecución, convertido con `PricingCatalog.LeonardoCreditUsd`;
+la tarifa por segundo del catálogo es solo la estimación a priori que necesita la
+pantalla de modelos, donde todavía no hay ninguna llamada hecha.
+
 ### Embeddings, audio y transcripción
 
 No comparten unidad de facturación, así que van en `AuxiliaryPrices` con la suya:

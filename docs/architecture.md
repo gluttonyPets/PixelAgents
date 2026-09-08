@@ -382,6 +382,8 @@ forma del JSON; `PipelineCanvas` reune los datos que ya tiene resueltos y
 | Text          | TextModuleHandler          | Genera texto con un proveedor LLM                          |
 | Image         | ImageModuleHandler         | Genera imagenes con un proveedor de imagen; con varias salidas hace una llamada por imagen (ver seccion propia) |
 | Audio         | AudioModuleHandler         | Genera audio (TTS) con un proveedor                        |
+| Video         | VideoModuleHandler         | Anima imagenes: un clip por imagen de entrada, con las llamadas en paralelo (ver seccion propia) |
+| VideoAssembly | VideoAssemblyModuleHandler | Une varios clips en un unico MP4 con ffmpeg (modulo de sistema, sin coste) |
 | Transcription | TranscriptionModuleHandler | Transcribe audio a texto via proveedor                     |
 | Embeddings    | EmbeddingsModuleHandler    | Genera embeddings de texto via proveedor                   |
 | Scene         | SceneModuleHandler         | Agrupa campos estaticos y puertos en un objeto de escena   |
@@ -452,6 +454,49 @@ Cada puerto entrega **su** imagen: `output_image_2` propaga la segunda o no
 propaga nada. No cae en "todas las imagenes", que era lo que hacia que un modulo
 con una sola imagen la mandara por los dos puertos y pareciera haber generado
 dos.
+
+### Modulo Video: imagen -> video
+
+El pipeline tipico es **N imagenes -> N clips -> un video**: un modulo de imagen
+con varias salidas, un modulo Video que anima cada una y un modulo Montaje que
+las pega. Estan separados a proposito: generar y montar fallan por motivos
+distintos, y volver a montar no tiene que costar otra generacion.
+
+**Una llamada por imagen, en paralelo.** Como en el modulo de imagen, cada clip
+es una llamada con su propio prompt. La diferencia es que aqui van EN PARALELO
+(hasta tres a la vez): un clip tarda minutos y el executor corta cada modulo a
+los 10 minutos, asi que cinco clips en serie no caben en su presupuesto. El
+limite de tres existe porque las colas de video son mucho mas estrechas que las
+de imagen y lanzarlas todas a la vez es la forma segura de recibir un 429 en
+todas.
+
+**El prompt se reparte igual que en imagen.** Se reutiliza `MultiImagePrompt`:
+el texto anterior a la primera marca es el contexto comun (estilo, camara,
+ritmo) y se antepone a todos los clips; cada segmento `===IMAGEN n===` describe
+el movimiento de SU imagen. Sin marcas, todos los clips comparten el mismo
+prompt de movimiento.
+
+**Un clip fallido no tira los demas.** Si fallan algunos, se entregan los que
+salieron y el hueco queda anotado en el log y en `metadata.failed`: el gasto de
+los que si salieron ya esta hecho, y el montaje posterior saldria mas corto sin
+que nada lo dijese. Solo si fallan todos falla el modulo.
+
+**Coste.** El video cambia el orden de magnitud del gasto de un pipeline: se
+factura por SEGUNDO generado, no por pieza. Motion 2.0 entrega clips de 5 s sin
+audio; cinco clips son 25 s. Leonardo cobra en creditos y devuelve el gasto real
+de cada generacion en `apiCreditCost`, asi que el coste que se apunta en la
+ejecucion es ese, convertido a dolares con `PricingCatalog.LeonardoCreditUsd`;
+la tarifa por segundo del catalogo es solo la estimacion a priori que necesita
+la pantalla de modelos. Un modulo Checkpoint antes del nodo de video permite
+aprobar el gasto antes de incurrirlo.
+
+**Montaje.** `VideoAssembler` llama a ffmpeg con el FILTRO `concat`, no con el
+demuxer: el demuxer es mas barato pero exige que todos los clips compartan
+codec, resolucion, fps y SAR, y con entradas heterogeneas produce un fichero que
+unos reproductores abren y otros no, sin dar error al generarlo. El audio solo
+se conserva si TODOS los clips lo traen (el filtro exige el mismo numero de
+streams en cada entrada). **ffmpeg se instala en la imagen Docker**; sin el, el
+modulo de montaje falla con un error que lo dice.
 
 ### Modulo Directorio de archivos: indice y URLs publicas
 
@@ -679,7 +724,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Anthropic   | `Anthropic`  | Text (Claude)                                  |
 | Google      | `Google`     | Text (Gemini), Image                           |
 | xAI         | `xAI`        | Text (Grok), Image                             |
-| LeonardoAI  | `LeonardoAI` | Image                                          |
+| LeonardoAI  | `LeonardoAI` | Image, Video (Motion 2.0)                      |
 
 ---
 
