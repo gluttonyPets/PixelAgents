@@ -457,7 +457,9 @@
                                 Reglas activas <span class="tab-count">@activeRules.Count</span>
                             </div>
                             <p class="text-sm text-muted" style="margin-top: -0.2rem; margin-bottom: 0.4rem;">
-                                Estas reglas se inyectan automaticamente al prompt de este modulo.
+                                Estas reglas se inyectan automaticamente al prompt de este modulo. Las de
+                                "Reglas del proyecto" son las tuyas (Configuracion &#x2192; Reglas); el resto
+                                vienen integradas en el producto y no se pueden editar.
                             </p>
                             @foreach (var group in activeRules.GroupBy(r => r.Category))
                             {

@@ -23,6 +23,7 @@ histórica, no documentación viva del sistema.
 | [`COSTE_TOKENS_OPENAI.md`](COSTE_TOKENS_OPENAI.md) | Las imágenes gpt-image salían siempre en `high` (90 % de la factura) porque la UI ofrecía valores de DALL-E y nunca escribía `quality`; + contexto duplicado en el planner, orden del system prompt anti-caché y `reasoning_effort` inexistente. |
 | [`SHOPIFY_HANDLE_DUPLICADO.md`](SHOPIFY_HANDLE_DUPLICADO.md) | Shopify rechazaba el artículo con "Handle has already been taken" al repetirse el slug; ahora se reintenta con sufijo (`-2`, `-3`, fecha) y solo se avisa en el log. |
 | [`IMAGEN_MULTIPLE_N.md`](IMAGEN_MULTIPLE_N.md) | Un modulo de imagen con varias salidas devolvia la misma composicion repetida: `n` son muestras del mismo prompt, no partes. Ahora se reparte el texto por escenas y se hace una llamada por imagen. |
+| [`REGLAS_CONFIG_VACIA.md`](REGLAS_CONFIG_VACIA.md) | Los modulos ensenaban "Reglas activas" y Configuracion -> Reglas salia vacia: son las reglas integradas del producto, no filas de la BD del tenant. Ahora se listan alli y un fallo de carga ya no se confunde con "sin reglas". |
 
 ## Convención
 

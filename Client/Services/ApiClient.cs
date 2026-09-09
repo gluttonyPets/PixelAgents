@@ -118,11 +118,26 @@ public class ApiClient
 
     // ── Rules ──
 
-    public async Task<List<RuleResponse>> GetRulesAsync()
+    /// <summary>
+    /// Reglas propias del tenant. Devuelve tambien el error para que la pantalla
+    /// de Configuracion pueda distinguir "no hay reglas" de "no se pudieron
+    /// cargar": antes ambos casos acababan en una lista vacia y el usuario veia
+    /// el mismo mensaje de "sin reglas configuradas".
+    /// </summary>
+    public async Task<(List<RuleResponse> Rules, string? Error)> GetRulesAsync()
     {
         var resp = await SendAsync(HttpMethod.Get, "/api/rules");
-        if (!resp.IsSuccessStatusCode) return [];
-        return await resp.Content.ReadFromJsonAsync<List<RuleResponse>>() ?? [];
+        if (!resp.IsSuccessStatusCode)
+            return ([], await ReadErrorAsync(resp) ?? $"HTTP {(int)resp.StatusCode}");
+        try
+        {
+            var rules = await resp.Content.ReadFromJsonAsync<List<RuleResponse>>();
+            return (rules ?? [], null);
+        }
+        catch (Exception ex)
+        {
+            return ([], $"Respuesta no valida del servidor: {ex.Message}");
+        }
     }
 
     public async Task<(bool Ok, string? Error)> CreateRuleAsync(CreateRuleRequest req)

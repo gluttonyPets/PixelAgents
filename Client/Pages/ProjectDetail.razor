@@ -2736,7 +2736,7 @@ else
             try { _allProjects = await Api.GetProjectsAsync(); } catch { _allProjects = []; }
             _executions = await Api.GetExecutionsAsync(ProjectId);
             try { _projectFeedback = await Api.GetProjectFeedbackAsync(ProjectId); } catch { _projectFeedback = []; }
-            try { _tenantRules = await Api.GetRulesAsync(); } catch { _tenantRules = []; }
+            try { _tenantRules = (await Api.GetRulesAsync()).Rules; } catch { _tenantRules = []; }
             try { _variables = await Api.GetProjectVariablesAsync(ProjectId); } catch { _variables = []; }
             await ReloadDirectoryFoldersAsync();
             SyncVariableValues();

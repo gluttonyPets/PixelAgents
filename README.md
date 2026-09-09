@@ -494,6 +494,13 @@ Gestion de reglas obligatorias:
 - listar, crear, actualizar y eliminar en `/api/rules`.
 - las reglas activas se cargan como contexto obligatorio durante la ejecucion del
   grafo.
+- son reglas **propias del tenant** y viven en su BD. Aparte estan las reglas
+  **integradas** (comportamiento, formato ASCII y veto de marcas), que no estan
+  en `/api/rules`: son constantes de `Server/Services/Ai/OutputSchema.cs`
+  (`GetTextContentRules`) que el servidor antepone en los modulos de texto,
+  coordinador y orquestador. La pestana `reglas` de `/configuracion` las lista
+  en solo lectura, con el mismo texto que ensena el inspector del pipeline
+  (`ActiveRulesRegistry.BuiltInTextRules`, en `Client/Models/PipelineGraphModels.cs`).
 
 ### Modulos IA Y Archivos De Modulo
 

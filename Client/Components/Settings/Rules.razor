@@ -51,14 +51,60 @@
         </table>
     </div>
 }
+else if (_loadError is not null)
+{
+    <div class="alert alert-error" style="margin-top:1rem;">
+        No se pudieron cargar las reglas: @_loadError
+        <button class="btn btn-sm" style="margin-left:0.6rem;" @onclick="Load">Reintentar</button>
+    </div>
+}
 else if (!_loading)
 {
     <div class="apikeys-empty">
         <div class="apikeys-empty-icon">📋</div>
-        <div class="apikeys-empty-title">Sin reglas configuradas</div>
-        <div class="apikeys-empty-desc">Pulsa <strong>+ Nueva Regla</strong> para añadir tu primera regla de system prompt.</div>
+        <div class="apikeys-empty-title">Sin reglas propias</div>
+        <div class="apikeys-empty-desc">
+            Pulsa <strong>+ Nueva Regla</strong> para añadir tu primera regla de system prompt.
+            Las reglas que el inspector de un módulo marca como activas sin aparecer aquí son las
+            <strong>integradas</strong>, listadas más abajo.
+        </div>
     </div>
 }
+
+<div class="apikeys-page-header" style="margin-top:2.2rem;">
+    <div>
+        <h3>Reglas integradas</h3>
+        <p class="text-muted" style="font-size:0.85rem; margin:0;">
+            Vienen con el producto y se inyectan siempre en los modulos de @ActiveRulesRegistry.BuiltInTextRulesScope,
+            antes que tus reglas. No se pueden editar ni desactivar; se listan aqui porque el inspector de cada
+            modulo las cuenta como "Reglas activas" y no estaban en ninguna pantalla de configuracion.
+        </p>
+    </div>
+</div>
+
+<div class="table-wrap">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width:9rem;">Categoria</th>
+                <th>Titulo</th>
+                <th>Contenido</th>
+                <th style="width:5rem;">Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var r in ActiveRulesRegistry.BuiltInTextRules)
+            {
+                <tr>
+                    <td>@r.Category</td>
+                    <td>@r.Title</td>
+                    <td class="cell-mono" style="max-width:30rem; white-space:pre-wrap;">@r.Body</td>
+                    <td><span class="badge">Integrada</span></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
 
 @if (_showModal)
 {
@@ -108,6 +154,8 @@ else if (!_loading)
     private List<RuleResponse> _rules = [];
     private bool _loading;
     private string? _error;
+    /// <summary>Error de la ultima carga. Separado de <c>_error</c>, que es el del formulario.</summary>
+    private string? _loadError;
 
     private bool _showModal;
     private Guid? _editingId;
@@ -121,7 +169,18 @@ else if (!_loading)
     private async Task Load()
     {
         _loading = true;
-        try { _rules = await Api.GetRulesAsync(); } catch { }
+        _loadError = null;
+        try
+        {
+            var (rules, error) = await Api.GetRulesAsync();
+            _rules = rules;
+            _loadError = error;
+        }
+        catch (Exception ex)
+        {
+            _rules = [];
+            _loadError = ex.Message;
+        }
         _loading = false;
     }
 

@@ -387,6 +387,48 @@ public static class ActiveRulesRegistry
         "Text", "Coordinator", "Orchestrator",
     };
 
+    /// <summary>
+    /// Reglas integradas en el producto: no viven en la BD del tenant, son
+    /// constantes de compilacion que el servidor inyecta en el system prompt de
+    /// todo modulo con salida de texto (espejo de
+    /// Server/Services/Ai/OutputSchema.cs -> GetTextContentRules).
+    ///
+    /// Se exponen aqui para que las pinten tanto el inspector del pipeline como
+    /// Configuracion -> Reglas: son las que el usuario ve "activas" en un modulo
+    /// y no puede encontrar en el listado de reglas propias.
+    /// </summary>
+    public static IReadOnlyList<ActiveRule> BuiltInTextRules { get; } =
+    [
+        new ActiveRule
+        {
+            Id = "text-behavior",
+            Category = "Comportamiento",
+            Title = "Respuesta directa",
+            Description = "No hace preguntas; decide y responde sin pedir aclaraciones.",
+            Body = "- NUNCA hagas preguntas al usuario. Si hay varias opciones posibles, elige la mejor opcion tu mismo y da directamente la respuesta final.\n- Se concreto y directo. No pidas aclaraciones, no ofrezcas alternativas, no preguntes preferencias. Decide y responde.",
+        },
+        new ActiveRule
+        {
+            Id = "text-format",
+            Category = "Formato",
+            Title = "ASCII plano, sin markdown ni emojis",
+            Description = "Sin emojis, ni formato markdown (**, #, listas), ni caracteres decorativos.",
+            Body = "- NO uses emojis ni emoticonos de ningun tipo (ni unicode ni shortcodes).\n- NO uses formato markdown: nada de **, *, #, ##, ```, >, -, ni listas con vinetas.\n- NO uses caracteres especiales decorativos: flechas, bullets, guiones largos, comillas tipograficas, simbolos como estrella, circulo, rombo, triangulo, flecha, etc.\n- Usa solo texto plano ASCII basico: letras, numeros, puntuacion normal (. , ; : ! ? ' \").",
+        },
+        new ActiveRule
+        {
+            Id = "text-brands",
+            Category = "Marcas",
+            Title = "Sin menciones de marcas",
+            Description = "Nunca nombra marcas, empresas ni productos. Usa descripciones genericas.",
+            Body = "- NUNCA menciones marcas, empresas, productos, servicios o nombres comerciales de ningun tipo. Esto incluye marcas de tecnologia, redes sociales, ropa, alimentacion, automocion, software, hardware, o cualquier otro sector.\n- Si necesitas referirte a un concepto asociado a una marca, usa una descripcion generica. Por ejemplo: en vez de \"Instagram\" di \"redes sociales\", en vez de \"iPhone\" di \"telefono movil\", en vez de \"Photoshop\" di \"editor de imagenes\".\n- No uses nombres de marcas ni siquiera como referencia, comparacion, ejemplo o metafora.",
+        },
+    ];
+
+    /// <summary>Modulos a los que se aplican <see cref="BuiltInTextRules"/>, en
+    /// el nombre que ve el usuario.</summary>
+    public static string BuiltInTextRulesScope => "texto, coordinador y orquestador";
+
     /// <summary>Build the full list of rules that act on a module.</summary>
     public static List<ActiveRule> GetActiveRules(
         string moduleType,
@@ -409,7 +451,7 @@ public static class ActiveRulesRegistry
                     Id = $"tenant:{r.Id}",
                     Category = "Reglas del proyecto",
                     Title = r.Title,
-                    Description = "Regla configurada en /rules aplicada a todos los modulos con llamada a IA.",
+                    Description = "Regla propia del tenant (Configuracion -> Reglas) aplicada a todos los modulos con llamada a IA.",
                     Body = r.Content,
                 });
             }
@@ -430,32 +472,7 @@ public static class ActiveRulesRegistry
 
         // Text formatting / brand / behavior rules (OpenAI, Gemini, Grok, Anthropic).
         if (usesTextPath)
-        {
-            rules.Add(new ActiveRule
-            {
-                Id = "text-behavior",
-                Category = "Comportamiento",
-                Title = "Respuesta directa",
-                Description = "No hace preguntas; decide y responde sin pedir aclaraciones.",
-                Body = "- NUNCA hagas preguntas al usuario. Si hay varias opciones posibles, elige la mejor opcion tu mismo y da directamente la respuesta final.\n- Se concreto y directo. No pidas aclaraciones, no ofrezcas alternativas, no preguntes preferencias. Decide y responde.",
-            });
-            rules.Add(new ActiveRule
-            {
-                Id = "text-format",
-                Category = "Formato",
-                Title = "ASCII plano, sin markdown ni emojis",
-                Description = "Sin emojis, ni formato markdown (**, #, listas), ni caracteres decorativos.",
-                Body = "- NO uses emojis ni emoticonos de ningun tipo (ni unicode ni shortcodes).\n- NO uses formato markdown: nada de **, *, #, ##, ```, >, -, ni listas con vinetas.\n- NO uses caracteres especiales decorativos: flechas, bullets, guiones largos, comillas tipograficas, simbolos como estrella, circulo, rombo, triangulo, flecha, etc.\n- Usa solo texto plano ASCII basico: letras, numeros, puntuacion normal (. , ; : ! ? ' \").",
-            });
-            rules.Add(new ActiveRule
-            {
-                Id = "text-brands",
-                Category = "Marcas",
-                Title = "Sin menciones de marcas",
-                Description = "Nunca nombra marcas, empresas ni productos. Usa descripciones genericas.",
-                Body = "- NUNCA menciones marcas, empresas, productos, servicios o nombres comerciales de ningun tipo. Esto incluye marcas de tecnologia, redes sociales, ropa, alimentacion, automocion, software, hardware, o cualquier otro sector.\n- Si necesitas referirte a un concepto asociado a una marca, usa una descripcion generica. Por ejemplo: en vez de \"Instagram\" di \"redes sociales\", en vez de \"iPhone\" di \"telefono movil\", en vez de \"Photoshop\" di \"editor de imagenes\".\n- No uses nombres de marcas ni siquiera como referencia, comparacion, ejemplo o metafora.",
-            });
-        }
+            rules.AddRange(BuiltInTextRules);
 
         // Multi-image disaggregation (Image module with n>1). No es una regla que
         // se mande al modelo de imagen: describe lo que hace el modulo, que reparte
