@@ -25,6 +25,7 @@ namespace Server.Data
         public DbSet<ModuleConnection> ModuleConnections => Set<ModuleConnection>();
         public DbSet<OrchestratorOutput> OrchestratorOutputs => Set<OrchestratorOutput>();
         public DbSet<Rule> Rules => Set<Rule>();
+        public DbSet<RuleException> RuleExceptions => Set<RuleException>();
         public DbSet<PlannedPrompt> PlannedPrompts => Set<PlannedPrompt>();
         public DbSet<PromptVersion> PromptVersions => Set<PromptVersion>();
         public DbSet<ExecutionFeedback> ExecutionFeedbacks => Set<ExecutionFeedback>();
@@ -367,6 +368,21 @@ namespace Server.Data
                 e.Property(x => x.Content).IsRequired().HasColumnType("text");
                 e.Property(x => x.IsActive).HasDefaultValue(true);
                 e.HasIndex(x => new { x.IsActive, x.SortOrder });
+            });
+
+            // ── RuleException ──
+            modelBuilder.Entity<RuleException>(e =>
+            {
+                e.HasKey(x => x.Id);
+                e.Property(x => x.RuleKey).IsRequired().HasMaxLength(100);
+
+                // Una excepcion por regla y modulo: pulsar dos veces la x no duplica.
+                e.HasIndex(x => new { x.RuleKey, x.AiModuleId }).IsUnique();
+
+                e.HasOne(x => x.AiModule)
+                    .WithMany()
+                    .HasForeignKey(x => x.AiModuleId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
             // ── PromptVersion ──

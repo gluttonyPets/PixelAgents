@@ -159,6 +159,45 @@ public class ApiClient
         await SendAsync(HttpMethod.Delete, $"/api/rules/{id}");
     }
 
+    // ── Excepciones de regla por modulo ──
+
+    public async Task<(List<RuleExceptionResponse> Exceptions, string? Error)> GetRuleExceptionsAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/rule-exceptions");
+        if (!resp.IsSuccessStatusCode)
+            return ([], await ReadErrorAsync(resp) ?? $"HTTP {(int)resp.StatusCode}");
+        try
+        {
+            var items = await resp.Content.ReadFromJsonAsync<List<RuleExceptionResponse>>();
+            return (items ?? [], null);
+        }
+        catch (Exception ex)
+        {
+            return ([], $"Respuesta no valida del servidor: {ex.Message}");
+        }
+    }
+
+    public async Task<(RuleExceptionResponse? Exception, string? Error)> CreateRuleExceptionAsync(CreateRuleExceptionRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/rule-exceptions", req);
+        if (!resp.IsSuccessStatusCode) return (null, await ReadErrorAsync(resp));
+        try
+        {
+            return (await resp.Content.ReadFromJsonAsync<RuleExceptionResponse>(), null);
+        }
+        catch (Exception ex)
+        {
+            return (null, $"Respuesta no valida del servidor: {ex.Message}");
+        }
+    }
+
+    public async Task<(bool Ok, string? Error)> DeleteRuleExceptionAsync(Guid id)
+    {
+        var resp = await SendAsync(HttpMethod.Delete, $"/api/rule-exceptions/{id}");
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
+    }
+
     // ── Modules ──
 
     public async Task<List<AiModuleResponse>> GetModulesAsync(string? providerType = null, string? moduleType = null)

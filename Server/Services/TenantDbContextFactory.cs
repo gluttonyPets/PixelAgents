@@ -316,6 +316,18 @@ namespace Server.Services
                 )", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_Rules_IsActive_SortOrder"" ON ""Rules"" (""IsActive"", ""SortOrder"")", log);
 
+            // ── Excepciones de regla por modulo del catalogo: ese AiModule deja de
+            //    recibir la regla (constante o propia). ON DELETE CASCADE porque una
+            //    excepcion de un modulo borrado no significa nada. ──
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""RuleExceptions"" (
+                    ""Id"" uuid NOT NULL PRIMARY KEY,
+                    ""RuleKey"" varchar(100) NOT NULL,
+                    ""AiModuleId"" uuid NOT NULL REFERENCES ""AiModules""(""Id"") ON DELETE CASCADE,
+                    ""CreatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_RuleExceptions_RuleKey_AiModuleId"" ON ""RuleExceptions"" (""RuleKey"", ""AiModuleId"")", log);
+
             // ── Historial de versiones de prompts por modulo ──
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""PromptVersions"" (

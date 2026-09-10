@@ -15,6 +15,10 @@ namespace Server.Models
     public record UpdateRuleRequest(string Title, string Content, bool IsActive, int SortOrder);
     public record RuleResponse(Guid Id, string Title, string Content, bool IsActive, int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
 
+    // ── RuleException ──
+    public record CreateRuleExceptionRequest(string RuleKey, Guid AiModuleId);
+    public record RuleExceptionResponse(Guid Id, string RuleKey, Guid AiModuleId, string AiModuleName, DateTime CreatedAt);
+
     // ── AiModule ──
     public record CreateAiModuleRequest(
         string Name, string? Description, string ProviderType,

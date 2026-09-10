@@ -356,6 +356,10 @@ public static class ModulePortRegistry
 public class ActiveRule
 {
     public string Id { get; set; } = "";
+    /// <summary>Clave con la que se excepciona la regla para un modulo del catalogo
+    /// ("text-format" o "tenant:GUID"). Null cuando no se puede quitar: el prompt de
+    /// sistema es del propio modulo y el reparto multi-imagen describe lo que hace.</summary>
+    public string? Key { get; set; }
     public string Category { get; set; } = "";
     public string Title { get; set; } = "";
     public string Description { get; set; } = "";
@@ -402,6 +406,7 @@ public static class ActiveRulesRegistry
         new ActiveRule
         {
             Id = "text-behavior",
+            Key = "text-behavior",
             Category = "Comportamiento",
             Title = "Respuesta directa",
             Description = "No hace preguntas; decide y responde sin pedir aclaraciones.",
@@ -410,6 +415,7 @@ public static class ActiveRulesRegistry
         new ActiveRule
         {
             Id = "text-format",
+            Key = "text-format",
             Category = "Formato",
             Title = "ASCII plano, sin markdown ni emojis",
             Description = "Sin emojis, ni formato markdown (**, #, listas), ni caracteres decorativos.",
@@ -418,6 +424,7 @@ public static class ActiveRulesRegistry
         new ActiveRule
         {
             Id = "text-brands",
+            Key = "text-brands",
             Category = "Marcas",
             Title = "Sin menciones de marcas",
             Description = "Nunca nombra marcas, empresas ni productos. Usa descripciones genericas.",
@@ -429,12 +436,33 @@ public static class ActiveRulesRegistry
     /// el nombre que ve el usuario.</summary>
     public static string BuiltInTextRulesScope => "texto, coordinador y orquestador";
 
+    /// <summary>Clave con la que se excepciona una regla propia del tenant. Tiene que
+    /// dar lo mismo que BuiltInRules.TenantKey en el servidor.</summary>
+    public static string TenantKey(Guid ruleId) => $"tenant:{ruleId}";
+
+    public static bool IsBuiltInKey(string ruleKey) =>
+        BuiltInTextRules.Any(r => string.Equals(r.Key, ruleKey, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Si una regla puede llegar a un modulo de ese tipo. Sirve para no ofrecer como
+    /// excepcion un modulo al que la regla no se le manda igualmente: las constantes
+    /// solo viajan por el camino de texto, y las propias a todo modulo que llama a IA.
+    /// </summary>
+    public static bool RuleAppliesToModuleType(string ruleKey, string moduleType) =>
+        IsBuiltInKey(ruleKey)
+            ? TextPathModules.Contains(moduleType)
+            : AiCallingModules.Contains(moduleType);
+
     /// <summary>Build the full list of rules that act on a module.</summary>
+    /// <param name="suppressedKeys">Claves que este modulo del catalogo no recibe
+    /// (sus excepciones). Las reglas con esa clave no se listan: el panel tiene que
+    /// ensenar lo que de verdad se le manda al modelo.</param>
     public static List<ActiveRule> GetActiveRules(
         string moduleType,
         int sceneCount,
         string? systemPrompt,
-        IReadOnlyList<RuleResponse>? tenantRules)
+        IReadOnlyList<RuleResponse>? tenantRules,
+        IReadOnlyCollection<string>? suppressedKeys = null)
     {
         var rules = new List<ActiveRule>();
 
@@ -449,6 +477,7 @@ public static class ActiveRulesRegistry
                 rules.Add(new ActiveRule
                 {
                     Id = $"tenant:{r.Id}",
+                    Key = TenantKey(r.Id),
                     Category = "Reglas del proyecto",
                     Title = r.Title,
                     Description = "Regla propia del tenant (Configuracion -> Reglas) aplicada a todos los modulos con llamada a IA.",
@@ -489,6 +518,9 @@ public static class ActiveRulesRegistry
                 Body = $"Este modulo genera {sceneCount} imagenes con {sceneCount} llamadas independientes, no con una llamada de n={sceneCount} (para el proveedor, n son copias del mismo prompt y saldrian todas iguales).\n\nPara repartir busca en el texto de entrada las marcas ===IMAGEN 1===, ===IMAGEN 2===, ... : lo que hay antes de la primera marca se manda como contexto comun a todas las imagenes y cada bloque posterior se manda como prompt de su imagen.\n\nEsas marcas las escribe el modulo de texto conectado a la entrada, al que se le inyecta automaticamente la instruccion de planificar {sceneCount} prompts. Si el texto llega sin marcas no hay reparto posible: se avisa en el log de la ejecucion y las {sceneCount} imagenes salen del mismo prompt.",
             });
         }
+
+        if (suppressedKeys is { Count: > 0 })
+            rules.RemoveAll(r => r.Key is not null && suppressedKeys.Contains(r.Key));
 
         return rules;
     }

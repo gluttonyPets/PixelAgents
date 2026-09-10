@@ -15,8 +15,18 @@ public class ExecutionGraph
     public string WorkspacePath { get; set; } = "";
     public string? UserInput { get; set; }
     /// <summary>Tenant-level mandatory rules joined into a single block, injected
-    /// into every AI provider call.</summary>
+    /// into every AI provider call. Es el bloque sin excepciones; lo que recibe
+    /// cada modulo lo resuelve <see cref="ModuleRules.MandatoryRulesFor"/>.</summary>
     public string? MandatoryRules { get; set; }
+
+    /// <summary>Reglas propias activas del tenant, sueltas, para poder rehacer el
+    /// bloque de un modulo que tenga alguna excepcion.</summary>
+    public IReadOnlyList<Rule> TenantRules { get; set; } = [];
+
+    /// <summary>Claves de regla que no recibe cada modulo del catalogo
+    /// (tabla RuleExceptions). Vacio = todas las reglas aplican a todos.</summary>
+    public IReadOnlyDictionary<Guid, IReadOnlySet<string>> RuleExceptionsByModule { get; set; } =
+        new Dictionary<Guid, IReadOnlySet<string>>();
 
     /// <summary>Valores efectivos de las variables del pipeline para esta ejecucion
     /// ("tematica", "keyword"...). Se resuelven una vez al arrancar y los comparten

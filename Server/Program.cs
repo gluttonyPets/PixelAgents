@@ -632,7 +632,89 @@ app.MapDelete("/api/rules/{id}", async (
     var rule = await db.Rules.FindAsync(id);
     if (rule is null) return Results.NotFound();
 
+    // Las excepciones de esta regla se quedarian huerfanas: nadie las podria
+    // ver ni borrar, y volverian a la vida si otra regla reutilizara el id.
+    var key = BuiltInRules.TenantKey(rule.Id);
+    db.RuleExceptions.RemoveRange(db.RuleExceptions.Where(x => x.RuleKey == key));
+
     db.Rules.Remove(rule);
+    await db.SaveChangesAsync();
+    return Results.NoContent();
+}).RequireAuthorization();
+
+// ==================== Rule Exception Endpoints ====================
+// Una excepcion saca a un modulo del catalogo de una regla: ese AiModule deja de
+// recibirla en su system prompt, en todos los pipelines que lo usen.
+
+app.MapGet("/api/rule-exceptions", async (
+    HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var exceptions = await db.RuleExceptions
+        .Include(x => x.AiModule)
+        .OrderBy(x => x.RuleKey).ThenBy(x => x.CreatedAt)
+        .Select(x => new RuleExceptionResponse(
+            x.Id, x.RuleKey, x.AiModuleId, x.AiModule!.Name, x.CreatedAt))
+        .ToListAsync();
+
+    return Results.Ok(exceptions);
+}).RequireAuthorization();
+
+app.MapPost("/api/rule-exceptions", async (
+    CreateRuleExceptionRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var key = (req.RuleKey ?? "").Trim();
+    if (key.Length == 0) return Results.BadRequest("Falta la regla");
+
+    // La clave tiene que apuntar a algo real: una constante conocida o una regla
+    // propia que siga existiendo. Si no, la excepcion no la veria nadie.
+    if (!BuiltInRules.IsBuiltInKey(key))
+    {
+        var ruleId = BuiltInRules.TenantRuleId(key);
+        if (ruleId is null) return Results.BadRequest($"Regla desconocida: {key}");
+        if (!await db.Rules.AnyAsync(r => r.Id == ruleId)) return Results.NotFound();
+    }
+
+    var module = await db.AiModules.FindAsync(req.AiModuleId);
+    if (module is null) return Results.NotFound();
+
+    var existing = await db.RuleExceptions
+        .FirstOrDefaultAsync(x => x.RuleKey == key && x.AiModuleId == req.AiModuleId);
+    if (existing is not null)
+        return Results.Ok(new RuleExceptionResponse(
+            existing.Id, existing.RuleKey, existing.AiModuleId, module.Name, existing.CreatedAt));
+
+    var exception = new RuleException
+    {
+        Id = Guid.NewGuid(),
+        RuleKey = key,
+        AiModuleId = req.AiModuleId,
+        CreatedAt = DateTime.UtcNow,
+    };
+    db.RuleExceptions.Add(exception);
+    await db.SaveChangesAsync();
+
+    return Results.Created($"/api/rule-exceptions/{exception.Id}", new RuleExceptionResponse(
+        exception.Id, exception.RuleKey, exception.AiModuleId, module.Name, exception.CreatedAt));
+}).RequireAuthorization();
+
+app.MapDelete("/api/rule-exceptions/{id}", async (
+    Guid id, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var exception = await db.RuleExceptions.FindAsync(id);
+    if (exception is null) return Results.NotFound();
+
+    db.RuleExceptions.Remove(exception);
     await db.SaveChangesAsync();
     return Results.NoContent();
 }).RequireAuthorization();

@@ -121,6 +121,9 @@ public record ModelScanHistoryResponse(
 public record CreateRuleRequest(string Title, string Content, bool IsActive = true, int SortOrder = 0);
 public record UpdateRuleRequest(string Title, string Content, bool IsActive, int SortOrder);
 public record RuleResponse(Guid Id, string Title, string Content, bool IsActive, int SortOrder, DateTime CreatedAt, DateTime UpdatedAt);
+// ── RuleException: saca a un modulo del catalogo de una regla (constante o propia) ──
+public record CreateRuleExceptionRequest(string RuleKey, Guid AiModuleId);
+public record RuleExceptionResponse(Guid Id, string RuleKey, Guid AiModuleId, string AiModuleName, DateTime CreatedAt);
 
 // ── AiModule ──
 public record CreateAiModuleRequest(

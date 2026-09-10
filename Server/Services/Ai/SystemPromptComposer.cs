@@ -31,7 +31,11 @@ namespace Server.Services.Ai
         {
             var parts = new List<string>(7);
 
-            parts.Add(OutputSchemaHelper.GetTextContentRules());
+            // Las constantes que el modulo tenga excepcionadas no se envian. Sin
+            // excepciones esto es exactamente el bloque de siempre.
+            var constantes = BuiltInRules.Compose(context.SuppressedRuleKeys);
+            if (!string.IsNullOrWhiteSpace(constantes))
+                parts.Add(constantes);
 
             if (!string.IsNullOrWhiteSpace(context.MandatoryRules))
                 parts.Add(context.MandatoryRules!);

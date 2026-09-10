@@ -504,6 +504,15 @@ Gestion de reglas obligatorias:
   integradas, solo lectura), con el mismo texto que ensena el inspector del
   pipeline (`ActiveRulesRegistry.BuiltInTextRules`, en
   `Client/Models/PipelineGraphModels.cs`).
+- **Excepciones por modulo** (`/api/rule-exceptions`): sacan a un modulo del
+  catalogo de una regla, propia o constante. Se enganchan al `AiModule`, no al
+  nodo, asi que valen para todos los pipelines que lo usen. Se dan de alta en
+  Configuracion -> Reglas (columna "Modulos exceptuados") o con la **x** de cada
+  regla en el panel del modulo del editor de pipelines; se quitan solo desde
+  Configuracion. En la ejecucion las resuelve `ModuleRules`: descuenta las reglas
+  propias del bloque `MandatoryRules` y pasa las claves suprimidas a
+  `SystemPromptComposer`, que deja fuera las constantes correspondientes
+  (`BuiltInRules.Compose`).
 
 ### Modulos IA Y Archivos De Modulo
 

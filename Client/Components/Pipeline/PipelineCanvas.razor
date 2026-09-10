@@ -459,7 +459,9 @@
                             <p class="text-sm text-muted" style="margin-top: -0.2rem; margin-bottom: 0.4rem;">
                                 Estas reglas se inyectan automaticamente al prompt de este modulo. Las de
                                 "Reglas del proyecto" son las tuyas (Configuracion &#x2192; Reglas); el resto
-                                vienen integradas en el producto y no se pueden editar.
+                                vienen integradas en el producto. La <strong>&#x2715;</strong> quita la regla
+                                de este modulo del catalogo (@sel.AiModuleName), en todos los pipelines que
+                                lo usen; se deshace en Configuracion &#x2192; Reglas.
                             </p>
                             @foreach (var group in activeRules.GroupBy(r => r.Category))
                             {
@@ -471,6 +473,16 @@
                                             <summary>
                                                 <span class="inspector-rule-title">@r.Title</span>
                                                 <span class="inspector-rule-desc">@r.Description</span>
+                                                @if (r.Key is not null)
+                                                {
+                                                    var capturedKey = r.Key;
+                                                    var capturedModule = sel;
+                                                    <button class="inspector-rule-remove-btn"
+                                                            title="Quitar esta regla del modulo @sel.AiModuleName"
+                                                            disabled="@_savingRuleException"
+                                                            @onclick="() => ExcluirRegla(capturedModule, capturedKey)"
+                                                            @onclick:stopPropagation="true">&#x2715;</button>
+                                                }
                                             </summary>
                                             @if (!string.IsNullOrWhiteSpace(r.Body))
                                             {
@@ -479,6 +491,10 @@
                                         </details>
                                     }
                                 </div>
+                            }
+                            @if (_ruleExceptionError is not null)
+                            {
+                                <div class="alert alert-error" style="margin-top:0.4rem; font-size:0.78rem;">@_ruleExceptionError</div>
                             }
                         </div>
                     }
@@ -1286,6 +1302,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     [Parameter] public List<ProjectResponse> AvailableProjects { get; set; } = [];
     [Parameter] public List<ModuleConnectionResponse> Connections { get; set; } = [];
     [Parameter] public List<RuleResponse> TenantRules { get; set; } = [];
+    /// <summary>Excepciones de regla del tenant. Se pintan quitando la regla del panel
+    /// del modulo, que es lo que de verdad recibe el modelo.</summary>
+    [Parameter] public List<RuleExceptionResponse> RuleExceptions { get; set; } = [];
+    /// <summary>Avisa a la pagina de que hay una excepcion nueva, para que recargue su lista.</summary>
+    [Parameter] public EventCallback<RuleExceptionResponse> OnRuleExceptionAdded { get; set; }
     [Parameter] public RenderFragment? TopPanel { get; set; }
 
     /// <summary>Contenido del planificador, que vive en la pagina pero se abre desde
@@ -2085,11 +2106,46 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         return string.IsNullOrEmpty(val) ? "" : val;
     }
 
+    private bool _savingRuleException;
+    private string? _ruleExceptionError;
+
     private List<ActiveRule> GetActiveRules(ProjectModuleResponse module)
     {
         var sysPrompt = GetModuleConfig(module.Id, "systemPrompt", "");
         var sceneCount = GetSceneCount(module.Id);
-        return ActiveRulesRegistry.GetActiveRules(module.ModuleType, sceneCount, sysPrompt, TenantRules);
+        return ActiveRulesRegistry.GetActiveRules(
+            module.ModuleType, sceneCount, sysPrompt, TenantRules, SuppressedKeysFor(module));
+    }
+
+    /// <summary>Claves que no recibe el modulo del CATALOGO de este nodo: la excepcion
+    /// se guarda contra el AiModule, asi que vale para todos los nodos que lo usen.</summary>
+    private HashSet<string> SuppressedKeysFor(ProjectModuleResponse module) =>
+        RuleExceptions
+            .Where(x => x.AiModuleId == module.AiModuleId)
+            .Select(x => x.RuleKey)
+            .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>La x del panel: da de alta la excepcion para el modulo del catalogo.</summary>
+    private async Task ExcluirRegla(ProjectModuleResponse module, string ruleKey)
+    {
+        if (_savingRuleException) return;
+        _savingRuleException = true;
+        _ruleExceptionError = null;
+
+        var (created, error) = await Api.CreateRuleExceptionAsync(
+            new CreateRuleExceptionRequest(ruleKey, module.AiModuleId));
+
+        if (created is not null)
+        {
+            if (!RuleExceptions.Any(x => x.Id == created.Id)) RuleExceptions.Add(created);
+            await OnRuleExceptionAdded.InvokeAsync(created);
+        }
+        else
+        {
+            _ruleExceptionError = error ?? "No se pudo quitar la regla";
+        }
+
+        _savingRuleException = false;
     }
 
     private bool GetModuleConfigBool(Guid moduleId, string key, bool fallback = false)

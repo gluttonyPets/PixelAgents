@@ -735,6 +735,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Auth         | `POST /api/auth/register|login|logout`            | Cookie-based; `GET /api/auth/me`                 |
 | ApiKeys      | `GET|POST|PUT|DELETE /api/apikeys`                | Credenciales por proveedor, almacenadas por tenant |
 | Rules        | `GET|POST|PUT|DELETE /api/rules`                  | Reglas obligatorias inyectadas en cada ejecucion  |
+|              | `GET|POST|DELETE /api/rule-exceptions`            | Excepciones por modulo del catalogo: ese `AiModule` deja de recibir la regla (`RuleKey` = clave de constante o `tenant:GUID`) |
 | Modules      | `GET|POST|PUT|DELETE /api/modules`                | Definiciones de modulos reutilizables + archivos  |
 |              | `GET /api/modules/{id}/prompt-history`            | Historial de versiones del prompt del modulo (systemPrompt/imagePrompt); se registra una version en cada `PUT` que cambie el prompt, restaurable desde la UI |
 | ProjectGroups| `GET|POST /api/project-groups`, `PUT|DELETE /api/project-groups/{id}` | Proyectos de alto nivel que agrupan pipelines (organizativo) |

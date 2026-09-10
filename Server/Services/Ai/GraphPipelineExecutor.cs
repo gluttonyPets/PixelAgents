@@ -109,7 +109,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var graph = BuildGraph(projectId, execution, userInput, modules, connections);
         variables.ApplyTo(graph);
         await LogVariablesAsync(projectId, executionId, variables);
-        graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
+        await LoadRulesIntoGraphAsync(db, graph, ct);
         graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         graph.MarkInitialReadyNodes();
         var previousSummaryContext = useHistory
@@ -162,7 +162,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var retryVariables = await LoadVariablesAsync(
             db, project.Id, ExecutionVariables.Parse(execution.VariablesJson), ct);
         retryVariables.ApplyTo(graph);
-        graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
+        await LoadRulesIntoGraphAsync(db, graph, ct);
         graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         var workspacePath = ResolveWorkspacePath(execution.WorkspacePath);
         Directory.CreateDirectory(workspacePath);
@@ -860,7 +860,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
             WorkspacePath = workspacePath,
             PublicBaseUrl = (_configuration["BaseUrl"] ?? _configuration["AllowedOrigin"] ?? "").TrimEnd('/'),
             PreviousSummaryContext = previousSummaryContext,
-            MandatoryRules = graph.MandatoryRules,
+            MandatoryRules = ModuleRules.MandatoryRulesFor(graph, node.AiModule.Id),
+            SuppressedRuleKeys = ModuleRules.SuppressedFor(graph, node.AiModule.Id),
             Variables = graph.Variables,
             VariablesBlock = graph.VariablesBlock,
             VariableDefinitions = graph.VariableDefinitions,
@@ -1778,7 +1779,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var pausedVariables = await LoadVariablesAsync(
             db, project.Id, ExecutionVariables.Parse(execution.VariablesJson), ct);
         pausedVariables.ApplyTo(graph);
-        graph.MandatoryRules = await LoadMandatoryRulesAsync(db, ct);
+        await LoadRulesIntoGraphAsync(db, graph, ct);
         graph.ActiveLearningsJson = await LoadActiveLearningsAsync(db, graph.ProjectId, ct);
         state.RestoreInto(graph);
 
@@ -2339,24 +2340,29 @@ public class GraphPipelineExecutor : IPipelineExecutor
     }
 
     /// <summary>
-    /// Loads the active tenant rules and joins them into a single block ready
-    /// to be inserted into the system prompt of every AI provider call.
+    /// Carga en el grafo las reglas activas del tenant (sueltas y ya juntas en un
+    /// bloque) y las excepciones por modulo del catalogo. Se hace una vez por
+    /// ejecucion; cada nodo resuelve lo suyo con <see cref="ModuleRules"/>.
     /// </summary>
-    private static async Task<string?> LoadMandatoryRulesAsync(UserDbContext db, CancellationToken ct)
+    private static async Task LoadRulesIntoGraphAsync(UserDbContext db, ExecutionGraph graph, CancellationToken ct)
     {
         var rules = await db.Rules
             .Where(r => r.IsActive)
             .OrderBy(r => r.SortOrder).ThenBy(r => r.CreatedAt)
-            .Select(r => new { r.Title, r.Content })
             .ToListAsync(ct);
 
-        if (rules.Count == 0) return null;
+        graph.TenantRules = rules;
+        graph.MandatoryRules = ModuleRules.BuildBlock(rules);
 
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("[REGLAS OBLIGATORIAS - aplican a toda salida del modulo, sin excepcion]");
-        foreach (var r in rules)
-            sb.AppendLine($"- {r.Title}: {r.Content}");
-        return sb.ToString().TrimEnd();
+        var exceptions = await db.RuleExceptions
+            .Select(x => new { x.RuleKey, x.AiModuleId })
+            .ToListAsync(ct);
+
+        graph.RuleExceptionsByModule = exceptions
+            .GroupBy(x => x.AiModuleId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlySet<string>)g.Select(x => x.RuleKey).ToHashSet(StringComparer.Ordinal));
     }
 
     /// <summary>Carga los aprendizajes activos del proyecto (JSON) para inyectarlos por módulo.</summary>

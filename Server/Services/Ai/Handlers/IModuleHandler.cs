@@ -59,8 +59,13 @@ public class ModuleExecutionContext
     public required string TenantDbName { get; init; }
     public required string WorkspacePath { get; init; }
     public string? PreviousSummaryContext { get; init; }
-    /// <summary>Pre-joined mandatory rules from the tenant Rules table.</summary>
+    /// <summary>Pre-joined mandatory rules from the tenant Rules table, ya sin las
+    /// que este modulo tiene excepcionadas.</summary>
     public string? MandatoryRules { get; init; }
+    /// <summary>Claves de regla que este modulo no recibe (tabla RuleExceptions).
+    /// Las de las constantes las aplica <see cref="Server.Services.Ai.SystemPromptComposer"/>;
+    /// las propias del tenant ya vienen descontadas de <see cref="MandatoryRules"/>.</summary>
+    public IReadOnlySet<string> SuppressedRuleKeys { get; init; } = new HashSet<string>();
     /// <summary>Variables fijadas al lanzar la ejecucion ("tematica", "keyword"...).
     /// Ya vienen aplicadas sobre <see cref="Config"/> y sobre el prompt inicial; se
     /// exponen aqui para el texto que un handler componga por su cuenta.</summary>

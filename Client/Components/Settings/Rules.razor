@@ -7,6 +7,10 @@
                      OutputSchema.GetTextContentRules), solo lectura.
     Se separan porque el inspector de un modulo las cuenta juntas como "Reglas
     activas" y, sin esta pestana, las constantes no aparecian en ninguna pantalla.
+
+    Las dos admiten excepciones por modulo del catalogo (tabla RuleExceptions): ese
+    AiModule deja de recibir la regla en todos los pipelines que lo usen. Se dan de
+    alta aqui o con la x del panel del modulo en el editor del pipeline.
 *@
 
 <div class="apikeys-page-header">
@@ -32,6 +36,11 @@
     </button>
 </div>
 
+@if (_exceptionError is not null)
+{
+    <div class="alert alert-error" style="margin-bottom:0.8rem;">@_exceptionError</div>
+}
+
 @if (_tab == Tab.Propias)
 {
     @if (_rules.Count > 0)
@@ -43,6 +52,7 @@
                         <th style="width:4rem;">Orden</th>
                         <th>Titulo</th>
                         <th>Contenido</th>
+                        <th style="width:16rem;">Modulos exceptuados</th>
                         <th style="width:5rem;">Estado</th>
                         <th style="width:10rem;"></th>
                     </tr>
@@ -54,6 +64,15 @@
                             <td>@r.SortOrder</td>
                             <td>@r.Title</td>
                             <td class="cell-mono" style="max-width:30rem; white-space:pre-wrap;">@r.Content</td>
+                            <td>
+                                @{ var claveRegla = ActiveRulesRegistry.TenantKey(r.Id); }
+                                <RuleExceptionsCell RuleKey="@claveRegla"
+                                                    Exceptions="ExcepcionesDe(claveRegla)"
+                                                    Candidates="CandidatosDe(claveRegla)"
+                                                    Busy="_savingException"
+                                                    OnAdd="AddException"
+                                                    OnRemove="RemoveException" />
+                            </td>
                             <td>
                                 @if (r.IsActive)
                                 {
@@ -100,7 +119,8 @@ else
         Vienen con el producto y se aplican siempre a los modulos de @ActiveRulesRegistry.BuiltInTextRulesScope,
         <strong>antes</strong> que tus reglas. No se editan desde aqui: son constantes del servidor
         (<span class="cell-mono">OutputSchema.GetTextContentRules</span>) y cambiarlas exige tocar el codigo y
-        redesplegar. Se listan para que sepas que recibe el modelo aunque no tengas ninguna regla propia.
+        redesplegar. Lo que si puedes es <strong>exceptuar modulos</strong>: el modulo que anadas deja de
+        recibir esa regla en todos los pipelines que lo usen.
     </div>
 
     <div class="table-wrap">
@@ -110,6 +130,7 @@ else
                     <th style="width:9rem;">Categoria</th>
                     <th>Titulo</th>
                     <th>Contenido</th>
+                    <th style="width:16rem;">Modulos exceptuados</th>
                     <th style="width:6rem;">Estado</th>
                 </tr>
             </thead>
@@ -120,6 +141,15 @@ else
                         <td>@r.Category</td>
                         <td>@r.Title</td>
                         <td class="cell-mono" style="max-width:30rem; white-space:pre-wrap;">@r.Body</td>
+                        <td>
+                            @{ var claveConstante = r.Key!; }
+                            <RuleExceptionsCell RuleKey="@claveConstante"
+                                                    Exceptions="ExcepcionesDe(claveConstante)"
+                                                    Candidates="CandidatosDe(claveConstante)"
+                                                    Busy="_savingException"
+                                                    OnAdd="AddException"
+                                                    OnRemove="RemoveException" />
+                        </td>
                         <td><span class="badge">Constante</span></td>
                     </tr>
                 }
@@ -178,6 +208,12 @@ else
     private Tab _tab = Tab.Propias;
 
     private List<RuleResponse> _rules = [];
+    private List<RuleExceptionResponse> _exceptions = [];
+    private List<AiModuleResponse> _modules = [];
+    private bool _savingException;
+    /// <summary>Error de alta/baja de excepcion. Aparte de <c>_loadError</c>, que solo
+    /// se pinta cuando la lista de reglas ni siquiera se pudo cargar.</summary>
+    private string? _exceptionError;
     private bool _loading;
     private string? _error;
     /// <summary>Error de la ultima carga. Separado de <c>_error</c>, que es el del formulario.</summary>
@@ -207,7 +243,61 @@ else
             _rules = [];
             _loadError = ex.Message;
         }
+
+        // Las excepciones y el catalogo no bloquean la pantalla: si fallan, las
+        // reglas se siguen viendo y solo se queda sin gestion de excepciones.
+        try { _exceptions = (await Api.GetRuleExceptionsAsync()).Exceptions; } catch { _exceptions = []; }
+        try { _modules = await Api.GetModulesAsync(); } catch { _modules = []; }
+
         _loading = false;
+    }
+
+    // ── Excepciones por modulo ──
+
+    private List<RuleExceptionResponse> ExcepcionesDe(string ruleKey) =>
+        _exceptions.Where(x => x.RuleKey == ruleKey).OrderBy(x => x.AiModuleName).ToList();
+
+    /// <summary>Modulos que hoy reciben la regla: los que le aplican por tipo y aun
+    /// no estan exceptuados.</summary>
+    private List<AiModuleResponse> CandidatosDe(string ruleKey)
+    {
+        var yaExceptuados = _exceptions.Where(x => x.RuleKey == ruleKey).Select(x => x.AiModuleId).ToHashSet();
+        return _modules
+            .Where(m => !yaExceptuados.Contains(m.Id))
+            .Where(m => ActiveRulesRegistry.RuleAppliesToModuleType(ruleKey, m.ModuleType))
+            .OrderBy(m => m.Name)
+            .ToList();
+    }
+
+    private async Task AddException((string RuleKey, Guid AiModuleId) item)
+    {
+        if (_savingException) return;
+        _savingException = true;
+        _exceptionError = null;
+
+        var (created, error) = await Api.CreateRuleExceptionAsync(
+            new CreateRuleExceptionRequest(item.RuleKey, item.AiModuleId));
+
+        if (created is not null)
+        {
+            if (!_exceptions.Any(x => x.Id == created.Id)) _exceptions.Add(created);
+        }
+        else _exceptionError = error ?? "No se pudo anadir la excepcion";
+
+        _savingException = false;
+    }
+
+    private async Task RemoveException(RuleExceptionResponse item)
+    {
+        if (_savingException) return;
+        _savingException = true;
+        _exceptionError = null;
+
+        var (ok, error) = await Api.DeleteRuleExceptionAsync(item.Id);
+        if (ok) _exceptions.RemoveAll(x => x.Id == item.Id);
+        else _exceptionError = error ?? "No se pudo quitar la excepcion";
+
+        _savingException = false;
     }
 
     private void OpenCreate()

@@ -13,6 +13,9 @@ namespace Server.Models
         /// into the system prompt of every AI call so the model always honours
         /// the global rules configured in /rules.</summary>
         public string? MandatoryRules { get; set; }
+        /// <summary>Claves de las reglas constantes que este modulo no recibe, por
+        /// tener excepcion en su modulo del catalogo. Vacio = se envian todas.</summary>
+        public IReadOnlySet<string> SuppressedRuleKeys { get; set; } = new HashSet<string>();
         /// <summary>Bloque etiquetado "Aprendizaje de ejecuciones pasadas", inyectado como
         /// capa aparte en el system prompt. NUNCA modifica el prompt del usuario: se añade
         /// como bloque adicional. Lo produce el analista de aprendizaje a partir de abortos.</summary>

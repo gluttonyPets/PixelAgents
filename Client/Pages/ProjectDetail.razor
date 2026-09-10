@@ -112,6 +112,8 @@ else
                             Connections="_projectConnections"
                             ProjectVariables="_variables"
                             TenantRules="_tenantRules"
+                            RuleExceptions="_ruleExceptions"
+                            OnRuleExceptionAdded="OnRuleExceptionAdded"
                             OnAddModule="AddModuleFromCanvas"
                             OnAddSubProject="AddSubProjectFromCanvas"
                             OnRemoveModule="RemoveModuleFromCanvas"
@@ -2235,6 +2237,16 @@ else
     private bool _confirmResetLearning;
     private bool _learningResetting;
     private List<RuleResponse> _tenantRules = [];
+    private List<RuleExceptionResponse> _ruleExceptions = [];
+
+    /// <summary>El canvas ha quitado una regla de un modulo: la lista de la pagina
+    /// tiene que reflejarlo para que el resto de nodos del mismo modulo del catalogo
+    /// dejen de pintarla tambien.</summary>
+    private void OnRuleExceptionAdded(RuleExceptionResponse added)
+    {
+        if (!_ruleExceptions.Any(x => x.Id == added.Id)) _ruleExceptions.Add(added);
+        StateHasChanged();
+    }
     private ExecutionDetailResponse? _result;
 
     private bool _loading;
@@ -2737,6 +2749,7 @@ else
             _executions = await Api.GetExecutionsAsync(ProjectId);
             try { _projectFeedback = await Api.GetProjectFeedbackAsync(ProjectId); } catch { _projectFeedback = []; }
             try { _tenantRules = (await Api.GetRulesAsync()).Rules; } catch { _tenantRules = []; }
+            try { _ruleExceptions = (await Api.GetRuleExceptionsAsync()).Exceptions; } catch { _ruleExceptions = []; }
             try { _variables = await Api.GetProjectVariablesAsync(ProjectId); } catch { _variables = []; }
             await ReloadDirectoryFoldersAsync();
             SyncVariableValues();

@@ -1,0 +1,54 @@
+@*
+    Celda "Modulos exceptuados" de una regla: los modulos del catalogo que NO la
+    reciben. Se usa igual para una regla propia y para una constante; lo unico que
+    cambia es la clave (RuleKey).
+*@
+
+<div class="rule-exceptions">
+    @foreach (var x in Exceptions)
+    {
+        var captured = x;
+        <span class="rule-exception-chip">
+            @x.AiModuleName
+            <button class="rule-exception-remove"
+                    title="Volver a aplicar la regla a @x.AiModuleName"
+                    disabled="@Busy"
+                    @onclick="() => OnRemove.InvokeAsync(captured)">&#x2715;</button>
+        </span>
+    }
+
+    @if (Candidates.Count > 0)
+    {
+        <select class="rule-exception-add" disabled="@Busy" @bind="_selected" @bind:after="Add">
+            <option value="">+ Excepcion</option>
+            @foreach (var m in Candidates)
+            {
+                <option value="@m.Id">@m.Name</option>
+            }
+        </select>
+    }
+    else if (Exceptions.Count == 0)
+    {
+        <span class="text-muted" style="font-size:0.75rem;">Se aplica a todos</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string RuleKey { get; set; } = "";
+    /// <summary>Excepciones ya dadas de alta para esta regla.</summary>
+    [Parameter] public IReadOnlyList<RuleExceptionResponse> Exceptions { get; set; } = [];
+    /// <summary>Modulos a los que la regla les llega hoy y se pueden exceptuar.</summary>
+    [Parameter] public IReadOnlyList<AiModuleResponse> Candidates { get; set; } = [];
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback<(string RuleKey, Guid AiModuleId)> OnAdd { get; set; }
+    [Parameter] public EventCallback<RuleExceptionResponse> OnRemove { get; set; }
+
+    private string _selected = "";
+
+    private async Task Add()
+    {
+        if (!Guid.TryParse(_selected, out var moduleId)) return;
+        _selected = "";   // el desplegable vuelve a "+ Excepcion" para poder anadir otro
+        await OnAdd.InvokeAsync((RuleKey, moduleId));
+    }
+}

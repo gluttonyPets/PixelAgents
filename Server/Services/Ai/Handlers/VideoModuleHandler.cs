@@ -161,6 +161,7 @@ public class VideoModuleHandler : IModuleHandler
             Input = prompt,
             ProjectContext = ctx.Project.Context,
             MandatoryRules = ctx.MandatoryRules,
+                SuppressedRuleKeys = ctx.SuppressedRuleKeys,
             VariablesBlock = ctx.VariablesBlock,
             PastExecutionsLearning = ctx.PastExecutionsLearning,
             Configuration = new Dictionary<string, object>(ctx.Config, StringComparer.OrdinalIgnoreCase),
