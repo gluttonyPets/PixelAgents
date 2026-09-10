@@ -34,8 +34,11 @@ Ademas, un fallo de carga se veia **exactamente igual que no tener reglas**:
 
 - `ActiveRulesRegistry.BuiltInTextRules`: las reglas integradas se extraen a un
   catalogo publico reutilizable (mismo texto que antes, sin duplicarlo).
-- Configuracion -> Reglas lista ahora esas reglas integradas en una tabla de solo
-  lectura, debajo de las propias, con la etiqueta "Integrada".
+- Configuracion -> Reglas se parte en dos sub-pestanas: **Mis reglas** (las del
+  tenant, editables) y **Constantes** (las integradas, solo lectura, con la
+  etiqueta "Constante" y aviso de que solo cambian tocando el codigo). Cada una
+  lleva su contador, que es el que hay que cuadrar con el "Reglas activas" del
+  inspector.
 - `ApiClient.GetRulesAsync` devuelve `(Rules, Error)` y `Rules.razor` distingue
   "no hay reglas propias" de "no se pudieron cargar", con aviso y boton de
   reintentar.
@@ -47,8 +50,8 @@ tenant resucitaria una regla que el usuario haya borrado a proposito.
 
 ## Verificacion
 
-1. `/configuracion/reglas` con la tabla `Rules` vacia: sale "Sin reglas propias" y,
-   debajo, las tres reglas integradas.
+1. `/configuracion/reglas` con la tabla `Rules` vacia: "Mis reglas" sale vacia y la
+   sub-pestana "Constantes" lista las tres reglas integradas.
 2. Crear una regla: aparece arriba y tambien en el inspector del modulo, bajo
    "Reglas del proyecto".
 3. Forzar un fallo del endpoint (sesion caducada, servidor caido): sale

@@ -107,8 +107,9 @@ Rutas actuales:
   definitivamente; no caducan solos.
 - `/configuracion/{seccion?}`: ajustes del tenant en una sola pagina, con una
   pestana por seccion: `apikeys` (claves de proveedor), `redes-sociales`,
-  `mensajeria`, `shopify` y `reglas` (reglas obligatorias). Cada seccion es un
-  componente de `Client/Components/Settings/` y solo se monta la activa.
+  `mensajeria`, `shopify` y `reglas` (reglas obligatorias, con sub-pestanas
+  "Mis reglas" y "Constantes"). Cada seccion es un componente de
+  `Client/Components/Settings/` y solo se monta la activa.
 
 Componentes clave:
 
@@ -498,9 +499,11 @@ Gestion de reglas obligatorias:
   **integradas** (comportamiento, formato ASCII y veto de marcas), que no estan
   en `/api/rules`: son constantes de `Server/Services/Ai/OutputSchema.cs`
   (`GetTextContentRules`) que el servidor antepone en los modulos de texto,
-  coordinador y orquestador. La pestana `reglas` de `/configuracion` las lista
-  en solo lectura, con el mismo texto que ensena el inspector del pipeline
-  (`ActiveRulesRegistry.BuiltInTextRules`, en `Client/Models/PipelineGraphModels.cs`).
+  coordinador y orquestador. La pestana `reglas` de `/configuracion` se divide en
+  dos sub-pestanas, **Mis reglas** (las propias, editables) y **Constantes** (las
+  integradas, solo lectura), con el mismo texto que ensena el inspector del
+  pipeline (`ActiveRulesRegistry.BuiltInTextRules`, en
+  `Client/Models/PipelineGraphModels.cs`).
 
 ### Modulos IA Y Archivos De Modulo
 

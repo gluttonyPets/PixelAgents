@@ -6466,6 +6466,41 @@ a.link:hover { text-decoration: underline; }
 
 .settings-body { padding-top: 0.6rem; }
 
+/* Sub-pestanas de la seccion Reglas: separan las reglas propias del tenant
+   (editables) de las constantes del producto (solo lectura). Van en pildora, y
+   no subrayadas como .settings-tab, para que no parezcan otro nivel de la misma
+   barra de pestanas de la pagina. */
+
+.rules-subtabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.9rem 0 1rem;
+}
+
+.rules-subtab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.85rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.rules-subtab:hover { color: var(--text); }
+
+.rules-subtab.is-active {
+    color: var(--text);
+    border-color: var(--accent);
+    background: rgba(108, 99, 255, 0.12);
+    font-weight: 600;
+}
+
 /* La cabecera de cada seccion ya no es el titulo de la pagina. */
 .settings-body .apikeys-page-header h3 {
     margin: 0;

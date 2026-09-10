@@ -1,110 +1,132 @@
 @inject ApiClient Api
 
+@*
+    Reglas del tenant en dos sub-pestanas:
+      - Mis reglas:  filas de la tabla Rules, editables (las que gestiona /api/rules).
+      - Constantes:  reglas integradas en el producto (constantes del servidor en
+                     OutputSchema.GetTextContentRules), solo lectura.
+    Se separan porque el inspector de un modulo las cuenta juntas como "Reglas
+    activas" y, sin esta pestana, las constantes no aparecian en ninguna pantalla.
+*@
+
 <div class="apikeys-page-header">
     <div>
-        <h3>Reglas obligatorias</h3>
+        <h3>Reglas</h3>
         <p class="text-muted" style="font-size:0.85rem; margin:0;">
             Cada regla activa se inyecta automaticamente en el system prompt de TODAS las llamadas a IA del pipeline
             (texto, imagen, coordinador, orquestador, diseno). Usalas para imponer formato, idioma, restricciones de marca, etc.
         </p>
     </div>
-    <button class="btn btn-primary" @onclick="OpenCreate" style="flex-shrink:0;">+ Nueva Regla</button>
+    @if (_tab == Tab.Propias)
+    {
+        <button class="btn btn-primary" @onclick="OpenCreate" style="flex-shrink:0;">+ Nueva Regla</button>
+    }
 </div>
 
-@if (_rules.Count > 0)
+<div class="rules-subtabs">
+    <button class="rules-subtab @(_tab == Tab.Propias ? "is-active" : "")" @onclick="() => _tab = Tab.Propias">
+        Mis reglas <span class="tab-count">@_rules.Count</span>
+    </button>
+    <button class="rules-subtab @(_tab == Tab.Constantes ? "is-active" : "")" @onclick="() => _tab = Tab.Constantes">
+        Constantes <span class="tab-count">@ActiveRulesRegistry.BuiltInTextRules.Count</span>
+    </button>
+</div>
+
+@if (_tab == Tab.Propias)
 {
+    @if (_rules.Count > 0)
+    {
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width:4rem;">Orden</th>
+                        <th>Titulo</th>
+                        <th>Contenido</th>
+                        <th style="width:5rem;">Estado</th>
+                        <th style="width:10rem;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _rules)
+                    {
+                        <tr class="@(!r.IsActive ? "row-inactive" : string.Empty)">
+                            <td>@r.SortOrder</td>
+                            <td>@r.Title</td>
+                            <td class="cell-mono" style="max-width:30rem; white-space:pre-wrap;">@r.Content</td>
+                            <td>
+                                @if (r.IsActive)
+                                {
+                                    <span class="badge badge-success">Activa</span>
+                                }
+                                else
+                                {
+                                    <span class="badge">Inactiva</span>
+                                }
+                            </td>
+                            <td>
+                                <button class="btn btn-sm" @onclick="() => StartEdit(r)">Editar</button>
+                                <button class="btn btn-sm btn-danger" @onclick="() => Delete(r.Id)">Eliminar</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="alert alert-error">
+            No se pudieron cargar las reglas: @_loadError
+            <button class="btn btn-sm" style="margin-left:0.6rem;" @onclick="Load">Reintentar</button>
+        </div>
+    }
+    else if (!_loading)
+    {
+        <div class="apikeys-empty">
+            <div class="apikeys-empty-icon">📋</div>
+            <div class="apikeys-empty-title">Sin reglas propias</div>
+            <div class="apikeys-empty-desc">
+                Pulsa <strong>+ Nueva Regla</strong> para añadir tu primera regla de system prompt.
+                Las que el inspector de un módulo marca como activas sin estar aquí son las de la
+                pestaña <strong>Constantes</strong>.
+            </div>
+        </div>
+    }
+}
+else
+{
+    <div class="alert alert-info" style="font-size:0.85rem; margin-bottom:0.9rem;">
+        Vienen con el producto y se aplican siempre a los modulos de @ActiveRulesRegistry.BuiltInTextRulesScope,
+        <strong>antes</strong> que tus reglas. No se editan desde aqui: son constantes del servidor
+        (<span class="cell-mono">OutputSchema.GetTextContentRules</span>) y cambiarlas exige tocar el codigo y
+        redesplegar. Se listan para que sepas que recibe el modelo aunque no tengas ninguna regla propia.
+    </div>
+
     <div class="table-wrap">
         <table class="data-table">
             <thead>
                 <tr>
-                    <th style="width:4rem;">Orden</th>
+                    <th style="width:9rem;">Categoria</th>
                     <th>Titulo</th>
                     <th>Contenido</th>
-                    <th style="width:5rem;">Estado</th>
-                    <th style="width:10rem;"></th>
+                    <th style="width:6rem;">Estado</th>
                 </tr>
             </thead>
             <tbody>
-                @foreach (var r in _rules)
+                @foreach (var r in ActiveRulesRegistry.BuiltInTextRules)
                 {
-                    <tr class="@(!r.IsActive ? "row-inactive" : string.Empty)">
-                        <td>@r.SortOrder</td>
+                    <tr>
+                        <td>@r.Category</td>
                         <td>@r.Title</td>
-                        <td class="cell-mono" style="max-width:30rem; white-space:pre-wrap;">@r.Content</td>
-                        <td>
-                            @if (r.IsActive)
-                            {
-                                <span class="badge badge-success">Activa</span>
-                            }
-                            else
-                            {
-                                <span class="badge">Inactiva</span>
-                            }
-                        </td>
-                        <td>
-                            <button class="btn btn-sm" @onclick="() => StartEdit(r)">Editar</button>
-                            <button class="btn btn-sm btn-danger" @onclick="() => Delete(r.Id)">Eliminar</button>
-                        </td>
+                        <td class="cell-mono" style="max-width:30rem; white-space:pre-wrap;">@r.Body</td>
+                        <td><span class="badge">Constante</span></td>
                     </tr>
                 }
             </tbody>
         </table>
     </div>
 }
-else if (_loadError is not null)
-{
-    <div class="alert alert-error" style="margin-top:1rem;">
-        No se pudieron cargar las reglas: @_loadError
-        <button class="btn btn-sm" style="margin-left:0.6rem;" @onclick="Load">Reintentar</button>
-    </div>
-}
-else if (!_loading)
-{
-    <div class="apikeys-empty">
-        <div class="apikeys-empty-icon">📋</div>
-        <div class="apikeys-empty-title">Sin reglas propias</div>
-        <div class="apikeys-empty-desc">
-            Pulsa <strong>+ Nueva Regla</strong> para añadir tu primera regla de system prompt.
-            Las reglas que el inspector de un módulo marca como activas sin aparecer aquí son las
-            <strong>integradas</strong>, listadas más abajo.
-        </div>
-    </div>
-}
-
-<div class="apikeys-page-header" style="margin-top:2.2rem;">
-    <div>
-        <h3>Reglas integradas</h3>
-        <p class="text-muted" style="font-size:0.85rem; margin:0;">
-            Vienen con el producto y se inyectan siempre en los modulos de @ActiveRulesRegistry.BuiltInTextRulesScope,
-            antes que tus reglas. No se pueden editar ni desactivar; se listan aqui porque el inspector de cada
-            modulo las cuenta como "Reglas activas" y no estaban en ninguna pantalla de configuracion.
-        </p>
-    </div>
-</div>
-
-<div class="table-wrap">
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th style="width:9rem;">Categoria</th>
-                <th>Titulo</th>
-                <th>Contenido</th>
-                <th style="width:5rem;">Estado</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var r in ActiveRulesRegistry.BuiltInTextRules)
-            {
-                <tr>
-                    <td>@r.Category</td>
-                    <td>@r.Title</td>
-                    <td class="cell-mono" style="max-width:30rem; white-space:pre-wrap;">@r.Body</td>
-                    <td><span class="badge">Integrada</span></td>
-                </tr>
-            }
-        </tbody>
-    </table>
-</div>
 
 @if (_showModal)
 {
@@ -151,6 +173,10 @@ else if (!_loading)
 }
 
 @code {
+    private enum Tab { Propias, Constantes }
+
+    private Tab _tab = Tab.Propias;
+
     private List<RuleResponse> _rules = [];
     private bool _loading;
     private string? _error;
