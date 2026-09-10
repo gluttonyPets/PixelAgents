@@ -914,6 +914,39 @@ app.MapPut("/api/modules/{id}", async (
         m.CreatedAt, m.UpdatedAt));
 }).RequireAuthorization();
 
+// Duplica un modulo del catalogo. La copia se lleva el historial de versiones del
+// prompt y las excepciones de regla del original: duplicar tiene que dar un modulo
+// equivalente, no uno en blanco con el mismo texto.
+app.MapPost("/api/modules/{id}/duplicate", async (
+    Guid id, DuplicateAiModuleRequest? req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var source = await db.AiModules.FindAsync(new object?[] { id }, ct);
+    if (source is null) return Results.NotFound();
+
+    // Un modulo de sistema es unico y lo comparten todos los pipelines: "duplicarlo"
+    // devolvia el mismo modulo y el usuario se quedaba creyendo que tenia una copia.
+    if (SystemModuleCatalog.TryGetDefinition(source.ProviderType, source.ModuleType, out _))
+        return Results.BadRequest(new { error = "Los modulos de sistema son integrados y no se pueden duplicar." });
+
+    var copy = await ModuleDuplication.DuplicateAsync(
+        db, source, req?.Name, req?.Description, req?.Configuration, DateTime.UtcNow, ct);
+
+    // Si la copia nace con el prompt ya cambiado, ese cambio es una version mas del
+    // historial que acaba de heredar.
+    await RecordPromptVersionsAsync(db, copy.Id, source.Configuration, copy.Configuration, ct);
+    await db.SaveChangesAsync(ct);
+
+    return Results.Created($"/api/modules/{copy.Id}",
+        new AiModuleResponse(copy.Id, copy.Name, copy.Description,
+            copy.ProviderType, copy.ModuleType, copy.ModelName,
+            copy.ApiKeyId, null, copy.Configuration, copy.IsEnabled,
+            copy.CreatedAt, copy.UpdatedAt));
+}).RequireAuthorization();
+
 app.MapGet("/api/modules/{id}/prompt-history", async (
     Guid id, string? field, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory, CancellationToken ct) =>

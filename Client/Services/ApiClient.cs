@@ -230,6 +230,22 @@ public class ApiClient
         return (false, await ReadErrorAsync(resp), null);
     }
 
+    /// <summary>
+    /// Duplica un modulo del catalogo. A diferencia de crear uno nuevo con los mismos
+    /// datos, la copia hereda el historial de versiones del prompt y las excepciones
+    /// de regla del original.
+    /// </summary>
+    public async Task<(bool Ok, string? Error, Guid? ModuleId)> DuplicateModuleAsync(Guid id, DuplicateAiModuleRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/modules/{id}/duplicate", req);
+        if (resp.IsSuccessStatusCode)
+        {
+            var created = await resp.Content.ReadFromJsonAsync<AiModuleResponse>();
+            return (true, null, created?.Id);
+        }
+        return (false, await ReadErrorAsync(resp), null);
+    }
+
     public async Task<(bool Ok, string? Error)> UpdateModuleApiKeyAsync(Guid moduleId, AiModuleResponse current, Guid? newApiKeyId)
     {
         var body = new

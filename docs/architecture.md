@@ -738,6 +738,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 |              | `GET|POST|DELETE /api/rule-exceptions`            | Excepciones por modulo del catalogo: ese `AiModule` deja de recibir la regla (`RuleKey` = clave de constante o `tenant:GUID`) |
 | Modules      | `GET|POST|PUT|DELETE /api/modules`                | Definiciones de modulos reutilizables + archivos  |
 |              | `GET /api/modules/{id}/prompt-history`            | Historial de versiones del prompt del modulo (systemPrompt/imagePrompt); se registra una version en cada `PUT` que cambie el prompt, restaurable desde la UI |
+|              | `POST /api/modules/{id}/duplicate`                | Copia del modulo con su historial de prompts y sus excepciones de regla; el cuerpo (opcional) sobreescribe nombre, descripcion y configuracion. Los modulos de sistema no se duplican |
 | ProjectGroups| `GET|POST /api/project-groups`, `PUT|DELETE /api/project-groups/{id}` | Proyectos de alto nivel que agrupan pipelines (organizativo) |
 |              | `POST /api/project-groups/{id}/projects`          | Anade pipelines existentes al proyecto            |
 | Projects     | `GET|POST|PUT|DELETE /api/projects`               | Pipeline; incluye graph save y duplicar           |

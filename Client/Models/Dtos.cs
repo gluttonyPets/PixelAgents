@@ -129,6 +129,9 @@ public record RuleExceptionResponse(Guid Id, string RuleKey, Guid AiModuleId, st
 public record CreateAiModuleRequest(
     string Name, string? Description, string ProviderType,
     string ModuleType, string ModelName, Guid? ApiKeyId, string? Configuration);
+// Duplicado de un modulo: lo que no venga se hereda del original (y la copia se lleva
+// su historial de prompts y sus excepciones de regla).
+public record DuplicateAiModuleRequest(string? Name, string? Description, string? Configuration);
 public record UpdateAiModuleApiKeyRequest(Guid? ApiKeyId);
 public record AiModuleResponse(
     Guid Id, string Name, string? Description, string ProviderType,

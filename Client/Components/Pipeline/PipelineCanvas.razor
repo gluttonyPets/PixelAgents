@@ -1276,7 +1276,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                 <button class="btn btn-sm" @onclick="CloseEditNode" disabled="@_editNodeSaving">Cancelar</button>
                 <div style="flex: 1;"></div>
                 <button class="btn btn-sm" @onclick="DuplicateNodeModule" disabled="@_editNodeSaving"
-                        title="Crea una copia del modulo con estos cambios y la asigna solo a este nodo">
+                        title="Crea una copia del modulo con estos cambios (con su historial de prompts y sus excepciones de regla) y la asigna solo a este nodo">
                     <i class="bi bi-files" style="margin-right: 0.2rem;"></i>Duplicar con cambios
                 </button>
                 <button class="btn btn-primary btn-sm" @onclick="SaveNodeModule" disabled="@_editNodeSaving">
@@ -2491,11 +2491,13 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         {
             var config = _nodeConfigEditor?.BuildConfig();
             var dupName = string.IsNullOrWhiteSpace(_editNodeName) ? _editNodeModule.Name : _editNodeName;
-            var req = new CreateAiModuleRequest(
-                dupName + " (copia)", _editNodeDesc, _editNodeModule.ProviderType,
-                _editNodeModule.ModuleType, _editNodeModule.ModelName, _editNodeModule.ApiKeyId, config);
 
-            var (ok, error, newId) = await Api.CreateModuleAsync(req);
+            // Duplicado en el servidor: la copia hereda el historial de versiones del
+            // prompt y las excepciones de regla. Crear un modulo nuevo con los mismos
+            // datos, que es lo que se hacia antes, dejaba la copia sin historial.
+            var req = new DuplicateAiModuleRequest(dupName + " (copia)", _editNodeDesc, config);
+
+            var (ok, error, newId) = await Api.DuplicateModuleAsync(_editNodeModule.Id, req);
             if (!ok || newId is null)
             {
                 _editNodeError = error ?? "No se pudo duplicar el modulo.";

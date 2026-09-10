@@ -23,6 +23,9 @@ namespace Server.Models
     public record CreateAiModuleRequest(
         string Name, string? Description, string ProviderType,
         string ModuleType, string ModelName, Guid? ApiKeyId, string? Configuration);
+
+    /// <summary>Duplicado de un modulo: lo que no venga se hereda del original.</summary>
+    public record DuplicateAiModuleRequest(string? Name, string? Description, string? Configuration);
     public record UpdateAiModuleRequest(
         string Name, string? Description, string ProviderType,
         string ModuleType, string ModelName, Guid? ApiKeyId, string? Configuration, bool IsEnabled);
