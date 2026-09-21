@@ -789,7 +789,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Schedules    | `GET|POST|PUT|DELETE /api/projects/{id}/schedule` | Cron con Cronos; timezone configurable            |
 | SignalR      | `/hubs/execution`                                 | Canal de logs y progreso de ejecucion en tiempo real |
 | Archivos     | `GET /api/executions/{id}/files/{fileId}`         | Descarga de archivos generados                    |
-| Build info   | `GET /api/build-info`                             | Commit corto y fecha del build en hora de Madrid  |
+| Build info   | `GET /api/build-info`                             | Commit corto, hash entero, origen del sello y fecha en hora de Madrid |
 
 ---
 

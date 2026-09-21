@@ -25,8 +25,18 @@ namespace Server.Services
         private const string MadridIana = "Europe/Madrid";
         private const string MadridWindows = "Romance Standard Time";
 
-        /// <summary>Commit ya acortado y fecha ya formateada, listos para pintar.</summary>
-        public sealed record Snapshot(string CommitHash, string BuildDate);
+        /// <summary>
+        /// Commit ya acortado y fecha ya formateada, listos para pintar.
+        /// <paramref name="CommitFull"/> y <paramref name="Source"/> son para el
+        /// tooltip: cuando el SHA del pie no cuadra con el que se espera, lo
+        /// primero que hay que saber es el hash entero y de donde ha salido.
+        /// </summary>
+        public sealed record Snapshot(string CommitHash, string BuildDate, string CommitFull, string Source);
+
+        /// <summary>De donde ha salido el sello, para el tooltip del pie.</summary>
+        public const string SourceEnvironment = "entorno";
+        public const string SourceImage = "imagen";
+        public const string SourceNone = "sin datos";
 
         /// <summary>
         /// Lee el sello del build. <paramref name="env"/> existe para los tests;
@@ -38,9 +48,19 @@ namespace Server.Services
 
             var (fileCommit, fileDate) = ReadFile(Path.Combine(baseDirectory, "build-info.json"));
 
+            var envCommit = Usable(env("GIT_COMMIT"));
+            var commit = envCommit ?? Usable(fileCommit);
+            var date = Usable(env("BUILD_DATE")) ?? Usable(fileDate);
+
+            var source = envCommit is not null ? SourceEnvironment
+                : commit is not null ? SourceImage
+                : SourceNone;
+
             return new Snapshot(
-                ShortCommit(Pick(env("GIT_COMMIT"), fileCommit)),
-                FormatMadrid(Pick(env("BUILD_DATE"), fileDate)));
+                ShortCommit(commit),
+                FormatMadrid(date),
+                commit?.Trim() ?? Unknown,
+                source);
         }
 
         /// <summary>
@@ -130,10 +150,11 @@ namespace Server.Services
                 ? prop.GetString()
                 : null;
 
-        /// <summary>Primer valor con contenido y distinto del placeholder "unknown".</summary>
-        private static string? Pick(params string?[] candidates) =>
-            candidates.FirstOrDefault(c =>
-                !string.IsNullOrWhiteSpace(c)
-                && !string.Equals(c.Trim(), Unknown, StringComparison.OrdinalIgnoreCase));
+        /// <summary>El valor si aporta algo; null si viene vacio o es el placeholder "unknown".</summary>
+        private static string? Usable(string? value) =>
+            !string.IsNullOrWhiteSpace(value)
+            && !string.Equals(value.Trim(), Unknown, StringComparison.OrdinalIgnoreCase)
+                ? value
+                : null;
     }
 }

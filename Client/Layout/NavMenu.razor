@@ -26,7 +26,7 @@
         {
             @* Dos lineas: en 220px de barra, commit y fecha juntos se salian y el
                SHA acababa cortado. *@
-            <div class="build-info" title="Commit @_buildInfo.CommitHash - build del @_buildInfo.BuildDate (hora de Madrid)">
+            <div class="build-info" title="@BuildTooltip()">
                 <span class="build-info-commit">@_buildInfo.CommitHash</span>
                 <span class="build-info-date">@_buildInfo.BuildDate</span>
             </div>
@@ -50,6 +50,25 @@
             catch { }
         }
         try { _buildInfo = await Api.GetBuildInfoAsync(); } catch { }
+    }
+
+    /// <summary>
+    /// Detalle del sello para el tooltip: hash entero y origen del dato. Si el SHA
+    /// del pie no cuadra con el que se espera, esto dice si viene del entorno del
+    /// contenedor o de la imagen, que es por donde hay que empezar a mirar.
+    /// </summary>
+    private string BuildTooltip()
+    {
+        if (_buildInfo is null) return string.Empty;
+
+        var commit = string.IsNullOrWhiteSpace(_buildInfo.CommitFull)
+            ? _buildInfo.CommitHash
+            : _buildInfo.CommitFull;
+
+        var detail = $"Commit {commit}\nBuild del {_buildInfo.BuildDate} (hora de Madrid)";
+        return string.IsNullOrWhiteSpace(_buildInfo.Source)
+            ? detail
+            : $"{detail}\nOrigen del sello: {_buildInfo.Source}";
     }
 
     private async Task Logout()

@@ -1,7 +1,14 @@
 namespace Client.Models;
 
 // ── Build Info ──
-public record BuildInfoResponse(string CommitHash, string BuildDate);
+// CommitFull y Source alimentan el tooltip del pie: el hash entero y de donde
+// sale el sello (entorno del contenedor o imagen), que es lo que hace falta
+// cuando el SHA que se ve no cuadra con el que se espera.
+public record BuildInfoResponse(
+    string CommitHash,
+    string BuildDate,
+    string? CommitFull = null,
+    string? Source = null);
 
 // ── Auth ──
 public record RegisterRequest(string Email, string Password);

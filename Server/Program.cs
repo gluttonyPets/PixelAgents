@@ -4487,7 +4487,13 @@ app.MapHub<ExecutionHub>("/hubs/execution");
 app.MapGet("/api/build-info", () =>
 {
     var info = BuildInfo.Read(AppContext.BaseDirectory);
-    return Results.Ok(new { commitHash = info.CommitHash, buildDate = info.BuildDate });
+    return Results.Ok(new
+    {
+        commitHash = info.CommitHash,
+        buildDate = info.BuildDate,
+        commitFull = info.CommitFull,
+        source = info.Source
+    });
 });
 
 app.Run();

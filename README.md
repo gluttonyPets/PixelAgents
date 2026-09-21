@@ -315,12 +315,22 @@ En runtime:
 `deploy.sh` hace:
 
 ```bash
-git pull origin main
-export GIT_COMMIT=$(git rev-parse --short HEAD)
+git pull origin "${DEPLOY_BRANCH:-main}"
+export GIT_COMMIT=$(git rev-parse --short=7 HEAD)
 export BUILD_DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 docker compose build --no-cache
 docker compose up -d
 ```
+
+El SHA sellado es el `HEAD` del checkout del servidor, que no tiene por que
+coincidir con lo que hay en GitHub. Si el checkout arrastra commits locales o un
+merge del propio `git pull`, `deploy.sh` marca el sello como `-local`; si hay
+cambios sin commitear, como `-sucio`. Un sello marcado significa que lo
+desplegado no es exactamente el commit que se ve en GitHub.
+
+Tampoco conviene poner `GIT_COMMIT` ni `BUILD_DATE` en `.env`: `docker compose`
+lo lee por su cuenta y esos valores se colarian en el contenedor tapando al
+sello real. `deploy.sh` avisa si los encuentra.
 
 El endpoint `/api/build-info` devuelve el commit acortado a 7 caracteres y la
 fecha del build ya convertida a horario de Madrid. Los datos salen de las
@@ -758,11 +768,12 @@ polling mediante `TelegramPollingService`.
 
 ### Build Info
 
-- `GET /api/build-info`: devuelve `commitHash` (SHA corto, 7 caracteres) y
-  `buildDate` (fecha del build en horario de Madrid, `dd/MM/yyyy HH:mm`). Lee
-  primero las variables de entorno `GIT_COMMIT` y `BUILD_DATE` y despues
-  `build-info.json`; si no hay nada, devuelve `unknown`. La logica esta en
-  `Server/Services/BuildInfo.cs`.
+- `GET /api/build-info`: devuelve `commitHash` (SHA corto, 7 caracteres),
+  `buildDate` (fecha del build en horario de Madrid, `dd/MM/yyyy HH:mm`),
+  `commitFull` (el hash tal cual llego, para comparar con GitHub) y `source`
+  (`entorno` o `imagen`, de donde ha salido el sello). Lee primero las variables
+  de entorno `GIT_COMMIT` y `BUILD_DATE` y despues `build-info.json`; si no hay
+  nada, devuelve `unknown`. La logica esta en `Server/Services/BuildInfo.cs`.
 
 ### SignalR
 

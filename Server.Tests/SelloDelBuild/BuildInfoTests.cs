@@ -43,6 +43,56 @@ public class BuildInfoTests
     }
 
     [Fact]
+    public void ShortCommit_conserva_las_marcas_del_deploy()
+    {
+        // deploy.sh marca asi lo que no esta publicado en el remoto: el pie tiene
+        // que ensenar la marca, no tragarsela al recortar.
+        Assert.Equal("068f119-local", BuildInfo.ShortCommit("068f119-local"));
+        Assert.Equal("068f119-local-sucio", BuildInfo.ShortCommit("068f119-local-sucio"));
+    }
+
+    [Fact]
+    public void Read_dice_que_el_sello_viene_del_entorno()
+    {
+        using var dir = new TempDir();
+        dir.WriteBuildInfo("0000000aaaabbbbccccddddeeeeffff111122223", "2026-01-01T00:00:00Z");
+
+        var info = BuildInfo.Read(dir.Path, name => name switch
+        {
+            "GIT_COMMIT" => "5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a",
+            "BUILD_DATE" => "2026-09-21T14:32:05Z",
+            _ => null
+        });
+
+        Assert.Equal(BuildInfo.SourceEnvironment, info.Source);
+        // El hash entero va al tooltip: es lo que se compara contra GitHub.
+        Assert.Equal("5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a", info.CommitFull);
+    }
+
+    [Fact]
+    public void Read_dice_que_el_sello_viene_de_la_imagen()
+    {
+        using var dir = new TempDir();
+        dir.WriteBuildInfo("5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a", "2026-09-21T14:32:05Z");
+
+        var info = BuildInfo.Read(dir.Path, _ => null);
+
+        Assert.Equal(BuildInfo.SourceImage, info.Source);
+        Assert.Equal("5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a", info.CommitFull);
+    }
+
+    [Fact]
+    public void Read_dice_que_no_hay_sello()
+    {
+        using var dir = new TempDir();
+
+        var info = BuildInfo.Read(dir.Path, _ => null);
+
+        Assert.Equal(BuildInfo.SourceNone, info.Source);
+        Assert.Equal("unknown", info.CommitFull);
+    }
+
+    [Fact]
     public void FormatMadrid_pasa_el_instante_utc_a_hora_de_verano_de_madrid()
     {
         if (!HasMadridTz) return; // entorno sin base de zonas horarias
