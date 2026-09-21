@@ -32,7 +32,8 @@ fi
 git pull origin main
 
 export GIT_COMMIT=$(git rev-parse --short HEAD)
-export BUILD_DATE=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+# En UTC e ISO-8601: el servidor lo convierte a hora de Madrid al mostrarlo.
+export BUILD_DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
 echo ""
 echo "🚀 Iniciando despliegue..."

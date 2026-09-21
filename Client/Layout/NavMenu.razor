@@ -24,7 +24,12 @@
         }
         @if (_buildInfo is not null)
         {
-            <div class="build-info">@_buildInfo.BuildDate | @_buildInfo.CommitHash</div>
+            @* Dos lineas: en 220px de barra, commit y fecha juntos se salian y el
+               SHA acababa cortado. *@
+            <div class="build-info" title="Commit @_buildInfo.CommitHash - build del @_buildInfo.BuildDate (hora de Madrid)">
+                <span class="build-info-commit">@_buildInfo.CommitHash</span>
+                <span class="build-info-date">@_buildInfo.BuildDate</span>
+            </div>
         }
     </div>
 </nav>

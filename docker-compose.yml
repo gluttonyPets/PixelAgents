@@ -16,6 +16,7 @@ services:
       context: .
       args:
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_DATE: ${BUILD_DATE:-}
     restart: unless-stopped
     depends_on:
       - postgres
@@ -24,6 +25,11 @@ services:
     volumes:
       - media:/app/GeneratedMedia
     environment:
+      # Sello del build para el pie del panel. Al venir tambien por entorno, un
+      # `docker compose up -d` lo refresca sin tener que reconstruir la imagen;
+      # si no se exporta nada, manda el build-info.json de la imagen.
+      GIT_COMMIT: ${GIT_COMMIT:-}
+      BUILD_DATE: ${BUILD_DATE:-}
       ASPNETCORE_ENVIRONMENT: Production
       # Force HTTP only (no HTTPS certificate needed behind nginx)
       ASPNETCORE_URLS: "http://0.0.0.0:5000"

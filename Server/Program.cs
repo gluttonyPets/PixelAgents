@@ -4482,15 +4482,12 @@ app.MapPost("/api/webhooks/telegram", async (
 app.MapHub<ExecutionHub>("/hubs/execution");
 
 // ── Build info ──
+// El commit llega acortado y la fecha ya convertida a hora de Madrid: el pie del
+// panel izquierdo solo tiene que pintarlos.
 app.MapGet("/api/build-info", () =>
 {
-    var path = Path.Combine(AppContext.BaseDirectory, "build-info.json");
-    if (File.Exists(path))
-    {
-        var json = File.ReadAllText(path);
-        return Results.Content(json, "application/json");
-    }
-    return Results.Ok(new { commitHash = "unknown", buildDate = "unknown" });
+    var info = BuildInfo.Read(AppContext.BaseDirectory);
+    return Results.Ok(new { commitHash = info.CommitHash, buildDate = info.BuildDate });
 });
 
 app.Run();

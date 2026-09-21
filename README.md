@@ -287,14 +287,22 @@ Variables de entorno soportadas por `docker-compose.yml`:
 - `PUBLIC_IP`: usado para construir `AllowedOrigin`.
 - `DOZZLE_PORT`: puerto local de Dozzle, por defecto `9999`.
 - `DOZZLE_USERNAME`, `DOZZLE_PASSWORD`, `DOZZLE_KEY`: credenciales de Dozzle.
-- `GIT_COMMIT`: commit inyectado en el build.
+- `GIT_COMMIT`: commit inyectado en el build y tambien en el entorno del
+  contenedor.
+- `BUILD_DATE`: instante del build en UTC e ISO-8601
+  (`2026-09-21T14:32:05Z`). Si no se indica, el `Dockerfile` lo genera.
 
 `Dockerfile` tiene tres etapas:
 
 1. `build-server`: restaura y publica `Server/Server.csproj`.
 2. `build-client`: restaura y publica `Client/Client.csproj`.
-3. `runtime`: usa `mcr.microsoft.com/dotnet/aspnet:8.0`, instala nginx, copia
-   servidor y cliente, y arranca con `entrypoint.sh`.
+3. `runtime`: usa `mcr.microsoft.com/dotnet/aspnet:8.0`, instala nginx, ffmpeg y
+   tzdata, copia servidor y cliente, escribe `build-info.json` y arranca con
+   `entrypoint.sh`.
+
+`build-info.json` se escribe en la ultima capa de la imagen, no junto al
+`dotnet publish`: esa capa se cachea y el pie de la aplicacion acababa mostrando
+el commit y la hora de un build anterior.
 
 En runtime:
 
@@ -309,12 +317,16 @@ En runtime:
 ```bash
 git pull origin main
 export GIT_COMMIT=$(git rev-parse --short HEAD)
+export BUILD_DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 docker compose build --no-cache
 docker compose up -d
 ```
 
-El endpoint `/api/build-info` lee `build-info.json` generado durante el publish
-del servidor y devuelve commit y fecha de build cuando existen.
+El endpoint `/api/build-info` devuelve el commit acortado a 7 caracteres y la
+fecha del build ya convertida a horario de Madrid. Los datos salen de las
+variables de entorno `GIT_COMMIT` y `BUILD_DATE` y, si no vienen, de
+`build-info.json`. Al llegar tambien por entorno, un `docker compose up -d`
+refresca el sello sin reconstruir la imagen.
 
 ## Pipeline De IA
 
@@ -746,8 +758,11 @@ polling mediante `TelegramPollingService`.
 
 ### Build Info
 
-- `GET /api/build-info`: devuelve commit y fecha de build si existe
-  `build-info.json`; si no, devuelve valores `unknown`.
+- `GET /api/build-info`: devuelve `commitHash` (SHA corto, 7 caracteres) y
+  `buildDate` (fecha del build en horario de Madrid, `dd/MM/yyyy HH:mm`). Lee
+  primero las variables de entorno `GIT_COMMIT` y `BUILD_DATE` y despues
+  `build-info.json`; si no hay nada, devuelve `unknown`. La logica esta en
+  `Server/Services/BuildInfo.cs`.
 
 ### SignalR
 
