@@ -337,18 +337,22 @@ namespace Server.Services.Scheduler
                 CreatedAt = DateTime.UtcNow,
                 IsResolved = false,
                 State = "awaiting_planning",
+                Token = TelegramCallback.NewToken(),
+                Label = $"Planificacion · {project.Name}",
             };
             coreDb.TelegramCorrelations.Add(correlation);
             await coreDb.SaveChangesAsync(ct);
 
             var msg =
-                $"📭 No quedan temáticas planificadas para \"{project.Name}\".\n\n" +
-                "Responde a este mensaje describiendo qué temas quieres generar y crearé una nueva " +
+                $"📭 [#{correlation.Token}] No quedan temáticas planificadas para \"{project.Name}\".\n\n" +
+                "Responde a este mensaje (citándolo) describiendo qué temas quieres generar y crearé una nueva " +
                 "planificación. También puedes enviar varios prompts, uno por línea.";
 
             try
             {
-                await telegram.SendTextMessageAsync(config, msg);
+                // El message_id permite correlacionar la respuesta citada con esta peticion.
+                correlation.BotMessageId = await telegram.SendTextMessageAsync(config, msg);
+                await coreDb.SaveChangesAsync(ct);
             }
             catch (Exception ex)
             {

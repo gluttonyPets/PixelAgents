@@ -370,6 +370,13 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await db.SaveChangesAsync();
         await _logger.LogAsync(execution.ProjectId, execution.Id, "warning",
             "Pipeline abortado por el usuario");
+
+        var abortedProject = await db.Projects
+            .Include(p => p.TelegramConnection)
+            .FirstOrDefaultAsync(p => p.Id == execution.ProjectId);
+        if (abortedProject is not null)
+            await CloseExecutionThreadAsync(abortedProject, execution.Id);
+
         return execution;
     }
 
@@ -397,8 +404,12 @@ public class GraphPipelineExecutor : IPipelineExecutor
 
         try
         {
-            await _telegram.SendTextMessageWithOptionsAsync(sendContext.Config, message, ControlOptions());
+            var sentMessageId = await _telegram.SendTextMessageWithOptionsAsync(
+                sendContext.Config,
+                DecorateInteractionMessage(nextQueued, message),
+                ControlOptions(nextQueued.Token));
             await SendMediaToTelegramAsync(sendContext.Config, mediaFiles, sendContext.WorkspacePath, sendContext.FilePaths);
+            nextQueued.BotMessageId = sentMessageId;
             nextQueued.QueuedMessageData = null;
             await _coreDb.SaveChangesAsync();
         }
@@ -1456,6 +1467,11 @@ public class GraphPipelineExecutor : IPipelineExecutor
                     {
                         BotToken = project.TelegramConnection.BotToken,
                         ChatId = project.TelegramConnection.ChatId,
+                        // Si la ejecucion ya tiene hilo, la notificacion va dentro de el.
+                        MessageThreadId = await _coreDb.TelegramCorrelations
+                            .Where(c => c.ExecutionId == execution.Id && c.MessageThreadId != null)
+                            .Select(c => c.MessageThreadId)
+                            .FirstOrDefaultAsync(ct),
                     };
                     var msg = node.Output?.Content ?? "";
                     if (tgConfig is not null && !string.IsNullOrWhiteSpace(msg))
@@ -1539,6 +1555,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             execution.CompletedAt = DateTime.UtcNow;
             execution.TotalEstimatedCost = graph.Nodes.Values.Sum(n => n.Cost);
             await db.SaveChangesAsync(ct);
+            await CloseExecutionThreadAsync(project, execution.Id);
             return;
         }
 
@@ -1550,6 +1567,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
             await _logger.LogAsync(execution.ProjectId, execution.Id, "error",
                 $"Grafo bloqueado: {pending.Count} modulo(s) quedaron pendientes sin entradas completas");
             await db.SaveChangesAsync(ct);
+            await CloseExecutionThreadAsync(project, execution.Id);
             return;
         }
 
@@ -1560,6 +1578,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         await db.SaveChangesAsync(ct);
         await _logger.LogAsync(execution.ProjectId, execution.Id, "success",
             "Pipeline completado correctamente");
+        await CloseExecutionThreadAsync(project, execution.Id);
     }
 
     private async Task FailPausedInteractionAsync(
@@ -1721,6 +1740,14 @@ public class GraphPipelineExecutor : IPipelineExecutor
             var hasActive = await _coreDb.TelegramCorrelations
                 .AnyAsync(c => !c.IsResolved && c.ExecutionId == execution.Id && c.State != "queued", ct);
 
+            var stepName = node.ProjectModule.StepName ?? node.AiModule.Name ?? "Interaccion";
+            var label = $"{project.Name} · {stepName}";
+
+            // Hilo propio de la ejecucion cuando el chat lo permite: asi dos ejecuciones
+            // solapadas del mismo proyecto no comparten conversacion.
+            var threadId = await EnsureExecutionThreadAsync(config, execution.Id, BuildTopicName(project, execution));
+            config.MessageThreadId = threadId;
+
             var correlation = new TelegramCorrelation
             {
                 Id = Guid.NewGuid(),
@@ -1732,6 +1759,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
                 IsResolved = false,
                 State = hasActive ? "queued" : "waiting",
                 QueuedMessageData = hasActive ? JsonSerializer.Serialize(new { message, mediaFiles }, JsonOptions) : null,
+                Token = TelegramCallback.NewToken(),
+                MessageThreadId = threadId,
+                Label = label,
             };
 
             _coreDb.TelegramCorrelations.Add(correlation);
@@ -1741,8 +1771,12 @@ public class GraphPipelineExecutor : IPipelineExecutor
             {
                 try
                 {
-                    await _telegram.SendTextMessageWithOptionsAsync(config, message, ControlOptions());
+                    correlation.BotMessageId = await _telegram.SendTextMessageWithOptionsAsync(
+                        config,
+                        DecorateInteractionMessage(correlation, message),
+                        ControlOptions(correlation.Token));
                     await SendMediaToTelegramAsync(config, mediaFiles, workspacePath, filePaths);
+                    await _coreDb.SaveChangesAsync(ct);
                 }
                 catch
                 {
@@ -1963,6 +1997,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         {
             BotToken = proj.TelegramConnection.BotToken,
             ChatId = proj.TelegramConnection.ChatId,
+            MessageThreadId = correlation.MessageThreadId,
         };
         var filePaths = await LoadExecutionFilePathsAsync(correlation.ExecutionId, db, CancellationToken.None);
         return (config, ResolveWorkspacePath(exec.WorkspacePath), filePaths);
@@ -2185,14 +2220,88 @@ public class GraphPipelineExecutor : IPipelineExecutor
         return Path.Combine(workspacePath, file.FileName);
     }
 
-    private static List<(string Label, string CallbackData)> ControlOptions() =>
+    /// <summary>
+    /// Botones de control de una interaccion. El token de la correlacion viaja en el
+    /// callback_data para que la pulsacion se aplique a ESTA pregunta y no a la que
+    /// lleve mas tiempo abierta en el chat.
+    /// </summary>
+    private static List<(string Label, string CallbackData)> ControlOptions(string? token) =>
         [
-            ("Continuar", "continue"),
-            ("Abortar", "abort"),
-            ("Reiniciar", "restart"),
-            ("Editar", "edit"),
-            ("Siguiente ejecución", "next_execution"),
+            ("Continuar", TelegramCallback.Build(TelegramCallback.Continue, token)),
+            ("Abortar", TelegramCallback.Build(TelegramCallback.Abort, token)),
+            ("Reiniciar", TelegramCallback.Build(TelegramCallback.Restart, token)),
+            ("Editar", TelegramCallback.Build(TelegramCallback.Edit, token)),
+            ("Siguiente ejecución", TelegramCallback.Build(TelegramCallback.NextExecution, token)),
         ];
+
+    /// <summary>
+    /// Nombre del hilo de una ejecucion: proyecto, tema (si lo hay) y hora de inicio, para
+    /// distinguir a simple vista dos ejecuciones del mismo proyecto.
+    /// </summary>
+    private static string BuildTopicName(Project project, ProjectExecution execution)
+    {
+        var topic = (execution.UserInput ?? "").Trim().Split('\n')[0].Trim();
+        if (topic.Length > 60)
+            topic = topic[..60].TrimEnd() + "…";
+
+        var stamp = (execution.CreatedAt == default ? DateTime.UtcNow : execution.CreatedAt).ToString("dd/MM HH:mm");
+        return string.IsNullOrWhiteSpace(topic)
+            ? $"{project.Name} · {stamp}"
+            : $"{project.Name} · {topic} · {stamp}";
+    }
+
+    /// <summary>
+    /// Devuelve el hilo (forum topic) de la ejecucion, creandolo la primera vez si el chat
+    /// admite Temas. Si no los admite (o el bot no puede crearlos) devuelve null y la
+    /// correlacion se apoya solo en el token y en la respuesta citada.
+    /// </summary>
+    private async Task<long?> EnsureExecutionThreadAsync(TelegramConfig config, Guid executionId, string topicName)
+    {
+        var existing = await _coreDb.TelegramCorrelations
+            .Where(c => c.ExecutionId == executionId && c.MessageThreadId != null)
+            .Select(c => c.MessageThreadId)
+            .FirstOrDefaultAsync();
+        if (existing is not null)
+            return existing;
+
+        if (!await _telegram.IsForumChatAsync(config.BotToken, config.ChatId))
+            return null;
+
+        return await _telegram.CreateForumTopicAsync(config.BotToken, config.ChatId, topicName);
+    }
+
+    /// <summary>
+    /// Antepone la etiqueta "#TOKEN · Proyecto · Paso" al mensaje cuando no hay hilo propio,
+    /// para que el usuario sepa a que ejecucion esta respondiendo. Dentro de un hilo sobra.
+    /// </summary>
+    private static string DecorateInteractionMessage(TelegramCorrelation correlation, string message)
+    {
+        if (correlation.MessageThreadId is not null || string.IsNullOrWhiteSpace(correlation.Token))
+            return message;
+
+        var label = string.IsNullOrWhiteSpace(correlation.Label) ? "" : $" · {correlation.Label}";
+        return $"#{correlation.Token}{label}\n\n{message}";
+    }
+
+    /// <summary>
+    /// Cierra el hilo de una ejecucion terminada (best-effort) para que el canal no acumule
+    /// topics abiertos. Solo hace algo si la ejecucion llego a crear uno.
+    /// </summary>
+    private async Task CloseExecutionThreadAsync(Project project, Guid executionId)
+    {
+        if (project.TelegramConnection is null)
+            return;
+
+        var threadId = await _coreDb.TelegramCorrelations
+            .Where(c => c.ExecutionId == executionId && c.MessageThreadId != null)
+            .Select(c => c.MessageThreadId)
+            .FirstOrDefaultAsync();
+        if (threadId is not { } thread)
+            return;
+
+        await _telegram.CloseForumTopicAsync(
+            project.TelegramConnection.BotToken, project.TelegramConnection.ChatId, thread);
+    }
 
     private static string BuildExecutionSummary(ExecutionGraph graph, string? userInput)
     {

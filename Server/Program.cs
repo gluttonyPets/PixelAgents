@@ -190,6 +190,26 @@ using (var scope = app.Services.CreateScope())
         // Migration: add ProjectId column for correlations not tied to an execution (planning flow)
         db.Database.ExecuteSqlRaw(@"
             ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""ProjectId"" uuid");
+        // Migracion: correlacion explicita de interacciones (token en los botones, mensaje
+        // citado e hilo del chat) para que dos pipelines solapados no se roben las respuestas.
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""Token"" varchar(16)");
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""BotMessageId"" bigint");
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""MessageThreadId"" bigint");
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TelegramCorrelations"" ADD COLUMN IF NOT EXISTS ""Label"" varchar(200)");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TelegramCorrelations_Token""
+            ON ""TelegramCorrelations"" (""Token"")");
+        // Respuesta suelta a la espera de que el usuario diga a que interaccion pertenece.
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""TelegramPendingReplies"" (
+                ""ChatId"" varchar(50) NOT NULL PRIMARY KEY,
+                ""Text"" text NOT NULL,
+                ""CreatedAt"" timestamp with time zone NOT NULL
+            )");
         // Idempotencia de updates de Telegram: guard compartido para no procesar dos veces
         // el mismo update (reintento de webhook, reproceso de polling o instancias solapadas).
         db.Database.ExecuteSqlRaw(@"

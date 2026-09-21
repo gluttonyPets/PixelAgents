@@ -61,7 +61,10 @@ PostgreSQL :5432 (Docker interno) / :5433 (host)
 **CoreDb** (`pixelagents_core`) es la base global compartida. Contiene las tablas de ASP.NET
 Identity (`ApplicationUser`, `IdentityRole`, etc.), la entidad `Account` (una por usuario
 registrado) y las tablas de correlacion `TelegramCorrelations` / `WhatsAppCorrelations`, que
-almacenan el estado de interacciones externas pendientes de respuesta.
+almacenan el estado de interacciones externas pendientes de respuesta (con su `Token`,
+`BotMessageId` y `MessageThreadId` para saber a que pregunta responde cada mensaje), mas
+`TelegramPendingReplies`, donde espera un texto suelto hasta que el usuario aclara a que
+interaccion pertenece.
 
 **UserDb** (nombre dinamico, uno por cuenta) almacena todos los datos funcionales del tenant:
 `ApiKeys`, `AiModules`, `SocialConnections`, `MessagingConnections`, `ShopifyConnections`,
@@ -307,11 +310,39 @@ al chat del proyecto pidiendo una nueva planificacion. La respuesta del usuario 
 toma cada linea como un prompt) y los encola como `PlannedPrompt` para las proximas corridas.
 Solo se abre una peticion por proyecto a la vez.
 
+### Correlacion de respuestas: dos pipelines en el mismo chat
+
+Varios pipelines pueden estar esperando respuesta en el mismo chat a la vez. Para que una
+respuesta no se aplique a la interaccion equivocada, cada correlacion lleva un `Token` corto
+(8 hex) y, cuando se envia, se guarda el `BotMessageId` del mensaje. `TelegramUpdateHandler`
+atribuye cada update por orden de fiabilidad (`ResolveCorrelationAsync`):
+
+1. **Token del boton** — el `callback_data` es `accion|token|payload` (`TelegramCallback`),
+   asi que una pulsacion siempre resuelve SU interaccion. Si esa interaccion ya esta cerrada,
+   el update se ignora (antes caia en la mas antigua del chat).
+2. **Mensaje citado** — `reply_to_message.message_id` contra el `BotMessageId` guardado.
+3. **Hilo** — `message_thread_id` contra el `MessageThreadId` de la ejecucion.
+4. **Unica interaccion abierta** — comportamiento clasico cuando no hay ambiguedad posible.
+
+Si quedan varias abiertas y el mensaje no trae ninguna pista, **no se adivina**: el texto se
+guarda en `TelegramPendingReplies` (uno por chat) y el bot pregunta con botones `pick|token` a
+cual corresponde; al elegir, el texto pendiente se procesa como si hubiera citado ese mensaje.
+Al atender una interaccion se retira su teclado (`editMessageReplyMarkup`) para que nadie pulse
+botones de una pregunta ya cerrada.
+
+**Hilos (forum topics).** Si el chat es un supergrupo con "Temas" activados y el bot puede
+crearlos (`getChat.is_forum` + `createForumTopic`), cada ejecucion abre su propio hilo y todos
+sus mensajes —preguntas, medios, ediciones, avisos— viajan con `message_thread_id`. El hilo se
+cierra al terminar la ejecucion (`Completed`, `Failed` o abortada). Si el chat no admite temas,
+todo sigue funcionando por token/cita y los mensajes se etiquetan con `#TOKEN · Proyecto · Paso`
+para que el usuario sepa a que esta respondiendo.
+
 ### Botones de control de la interaccion (Telegram)
 
 Cuando un nodo `Interaction` pausa el pipeline ("Revisa el contenido y confirma."), el mensaje
 enviado al chat incluye los botones **Continuar**, **Abortar**, **Reiniciar**, **Editar** y
-**Siguiente ejecución** (`ControlOptions`). Al pulsar **Siguiente ejecución** (`next_execution`),
+**Siguiente ejecución** (`ControlOptionsFor`, con el token de la interaccion en cada boton).
+Al pulsar **Siguiente ejecución** (`next_execution`),
 `TelegramUpdateHandler` cancela la ejecucion actual como "cancelado por usuario"
 (`AbortFromInteractionAsync`, estado `Cancelled`) y lanza de inmediato la siguiente tematica:
 consume el siguiente `PlannedPrompt` pendiente del proyecto y arranca una nueva ejecucion con el.

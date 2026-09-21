@@ -9,6 +9,7 @@ namespace Server.Data
         public CoreDbContext(DbContextOptions<CoreDbContext> options) : base(options) { }
         public DbSet<Account> Accounts => Set<Account>();
         public DbSet<TelegramCorrelation> TelegramCorrelations => Set<TelegramCorrelation>();
+        public DbSet<TelegramPendingReply> TelegramPendingReplies => Set<TelegramPendingReply>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -21,7 +22,17 @@ namespace Server.Data
                 e.Property(x => x.TenantDbName).IsRequired().HasMaxLength(200);
                 e.Property(x => x.ChatId).IsRequired().HasMaxLength(50);
                 e.Property(x => x.State).IsRequired().HasMaxLength(50).HasDefaultValue("waiting");
+                e.Property(x => x.Token).HasMaxLength(16);
+                e.Property(x => x.Label).HasMaxLength(200);
                 e.HasIndex(x => new { x.ChatId, x.IsResolved });
+                e.HasIndex(x => x.Token);
+            });
+
+            modelBuilder.Entity<TelegramPendingReply>(e =>
+            {
+                e.HasKey(x => x.ChatId);
+                e.Property(x => x.ChatId).HasMaxLength(50);
+                e.Property(x => x.Text).IsRequired();
             });
         }
     }

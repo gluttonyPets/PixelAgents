@@ -40,5 +40,33 @@ namespace Server.Models
         /// Cleared when the edit cycle finishes and the correlation goes back to "waiting".
         /// </summary>
         public string? EditStateData { get; set; }
+
+        /// <summary>
+        /// Token corto (8 hex) que identifica esta interaccion en el chat. Viaja dentro del
+        /// callback_data de los botones y se muestra al usuario como etiqueta (#A3F2), de modo
+        /// que una respuesta siempre se pueda atribuir a la pregunta correcta aunque haya
+        /// varios pipelines esperando en el mismo chat. Null en correlaciones antiguas.
+        /// </summary>
+        public string? Token { get; set; }
+
+        /// <summary>
+        /// message_id del mensaje que el bot envio con esta pregunta. Si el usuario responde
+        /// citandolo, el update trae reply_to_message.message_id y la correlacion es exacta.
+        /// Tambien sirve para retirar el teclado cuando la interaccion se cierra.
+        /// </summary>
+        public long? BotMessageId { get; set; }
+
+        /// <summary>
+        /// Hilo (forum topic) de la ejecucion, cuando el chat es un supergrupo con Temas.
+        /// Todos los mensajes de la ejecucion van a este hilo y todo lo que llegue por el
+        /// pertenece a ella, sin ambiguedad posible.
+        /// </summary>
+        public long? MessageThreadId { get; set; }
+
+        /// <summary>
+        /// Etiqueta legible ("Proyecto · Paso") para que el usuario sepa a que esta respondiendo
+        /// y para los botones de desambiguacion.
+        /// </summary>
+        public string? Label { get; set; }
     }
 }

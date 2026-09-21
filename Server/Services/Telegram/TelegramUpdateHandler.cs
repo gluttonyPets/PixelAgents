@@ -22,14 +22,16 @@ namespace Server.Services.Telegram
         private const string PlanningModel = "gpt-4o-mini";
         private const int PlanningCount = 5;
 
-        // Buttons offered to the user every time we are waiting for input on an Interaction module.
-        private static readonly List<(string Label, string CallbackData)> ControlOptions =
+        // Botones ofrecidos cada vez que esperamos respuesta en un modulo de Interaccion.
+        // El token de la correlacion viaja en el callback_data: sin el, pulsar un boton de un
+        // mensaje antiguo resolvia la interaccion mas vieja del chat, fuera cual fuera.
+        private static List<(string Label, string CallbackData)> ControlOptionsFor(string? token) =>
         [
-            ("Continuar", "continue"),
-            ("Abortar", "abort"),
-            ("Reiniciar", "restart"),
-            ("Editar", "edit"),
-            ("Siguiente ejecución", "next_execution"),
+            ("Continuar", TelegramCallback.Build(TelegramCallback.Continue, token)),
+            ("Abortar", TelegramCallback.Build(TelegramCallback.Abort, token)),
+            ("Reiniciar", TelegramCallback.Build(TelegramCallback.Restart, token)),
+            ("Editar", TelegramCallback.Build(TelegramCallback.Edit, token)),
+            ("Siguiente ejecución", TelegramCallback.Build(TelegramCallback.NextExecution, token)),
         ];
 
         public TelegramUpdateHandler(
@@ -57,9 +59,14 @@ namespace Server.Services.Telegram
 
         public async Task ProcessUpdateAsync(JsonElement json)
         {
-            var (text, chatId, callbackQueryId, messageDate) = TelegramService.ParseIncomingUpdate(json);
+            var update = TelegramService.ParseIncomingUpdate(json);
+            var text = update.Text;
+            var chatId = update.ChatId;
+            var callbackQueryId = update.CallbackQueryId;
 
-            Console.WriteLine($"[TG-Update] Parsed — text={text}, chatId={chatId}, callbackQueryId={callbackQueryId}, messageDate={messageDate:O}");
+            Console.WriteLine($"[TG-Update] Parsed — text={text}, chatId={chatId}, callbackQueryId={callbackQueryId}, "
+                + $"messageId={update.MessageId}, replyTo={update.ReplyToMessageId}, thread={update.MessageThreadId}, "
+                + $"messageDate={update.MessageDate:O}");
 
             if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(chatId))
             {
@@ -82,35 +89,103 @@ namespace Server.Services.Telegram
                 return;
             }
 
-            // Find a valid correlation, skipping stale ones whose executions are no longer waiting
-            var correlation = await FindValidCorrelationAsync(normalizedChatId, messageDate, callbackQueryId);
+            // Pulsacion de boton: el callback_data lleva el token de la interaccion a la que
+            // pertenece, asi que sabemos exactamente que pregunta se esta contestando.
+            var isCallback = !string.IsNullOrWhiteSpace(callbackQueryId);
+            string? token = null;
+            if (isCallback)
+            {
+                var callback = TelegramCallback.Parse(text);
+                token = callback.Token;
+
+                // "¿A cual respondes?": el usuario acaba de elegir a que interaccion va el
+                // texto que dejo pendiente.
+                if (callback.Action == TelegramCallback.Pick)
+                {
+                    await HandleAmbiguityChoiceAsync(normalizedChatId, token, callbackQueryId!);
+                    return;
+                }
+
+                text = LegacyTextForAction(callback);
+            }
+
+            var resolution = await ResolveCorrelationAsync(normalizedChatId, update, token, isCallback);
+
+            // Varias interacciones abiertas y un texto que no cita ninguna: preguntar en vez
+            // de adivinar (adivinar es justamente lo que mezclaba las respuestas).
+            if (resolution.Ambiguous.Count > 1)
+            {
+                await AskWhichInteractionAsync(normalizedChatId, text, resolution.Ambiguous);
+                return;
+            }
+
+            var correlation = resolution.Match;
 
             if (correlation is null)
             {
                 var pending = await _coreDb.TelegramCorrelations
                     .Where(c => !c.IsResolved)
-                    .Select(c => new { c.ChatId, c.ExecutionId, c.CreatedAt })
+                    .Select(c => new { c.ChatId, c.ExecutionId, c.Token, c.CreatedAt })
                     .ToListAsync();
-                Console.WriteLine($"[TG-Update] No correlation found for chatId={normalizedChatId}. Pending: {JsonSerializer.Serialize(pending)}");
+                Console.WriteLine($"[TG-Update] No correlation found for chatId={normalizedChatId} "
+                    + $"(token={token}, reason={resolution.Reason}). Pending: {JsonSerializer.Serialize(pending)}");
+
+                if (isCallback)
+                    await NotifyClosedInteractionAsync(normalizedChatId, token, callbackQueryId!);
                 return;
             }
 
-            Console.WriteLine($"[TG-Update] Matched correlation {correlation.Id} for execution {correlation.ExecutionId}");
+            Console.WriteLine($"[TG-Update] Matched correlation {correlation.Id} (token={correlation.Token}, "
+                + $"via={resolution.Reason}) for execution {correlation.ExecutionId}");
 
+            await HandleCorrelationAsync(correlation, text, callbackQueryId, normalizedChatId);
+        }
+
+        /// <summary>
+        /// Traduce la accion de un boton al texto que espera el flujo existente. Los callbacks
+        /// antiguos (sin token) llegan ya en ese formato y pasan tal cual.
+        /// </summary>
+        private static string LegacyTextForAction(TelegramCallback callback) => callback.Action switch
+        {
+            TelegramCallback.Continue => "continue",
+            TelegramCallback.Abort => "abort",
+            TelegramCallback.Restart => "restart",
+            TelegramCallback.Edit => "edit",
+            TelegramCallback.NextExecution => "next_execution",
+            TelegramCallback.EditProvider => $"edit_provider:{callback.Payload}",
+            TelegramCallback.EditModel => $"edit_model:{callback.Payload}",
+            _ => callback.Action,
+        };
+
+        private async Task HandleCorrelationAsync(
+            TelegramCorrelation correlation,
+            string text,
+            string? callbackQueryId,
+            string normalizedChatId)
+        {
             await using var db = _factory.Create(correlation.TenantDbName);
 
+            // Todo lo que respondamos vuelve al hilo de esta interaccion (si lo tiene), nunca
+            // a la raiz del chat, para que la conversacion de cada ejecucion quede separada.
             async Task<TelegramConfig?> GetTgConfigAsync()
             {
-                var exec = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
-                if (exec is null) return null;
+                var projectId = correlation.ProjectId;
+                if (projectId is null)
+                {
+                    var exec = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
+                    projectId = exec?.ProjectId;
+                }
+                if (projectId is null) return null;
+
                 var proj = await db.Projects
                     .Include(p => p.TelegramConnection)
-                    .FirstOrDefaultAsync(p => p.Id == exec.ProjectId);
+                    .FirstOrDefaultAsync(p => p.Id == projectId);
                 if (proj?.TelegramConnection is null) return null;
                 return new TelegramConfig
                 {
                     BotToken = proj.TelegramConnection.BotToken,
                     ChatId = proj.TelegramConnection.ChatId,
+                    MessageThreadId = correlation.MessageThreadId,
                 };
             }
 
@@ -126,6 +201,11 @@ namespace Server.Services.Telegram
                         catch { /* non-critical */ }
                     }
                 }
+
+                // La pregunta ya se esta atendiendo: se le quita el teclado para que nadie
+                // vuelva a pulsar los botones de una interaccion que va a quedar cerrada.
+                if (correlation.State == "waiting")
+                    await ClearCorrelationKeyboardAsync(correlation, await GetTgConfigAsync());
 
                 // State: awaiting_planning — a scheduled run had no prompt and asked the user
                 // to describe a new planning from the chat. The reply text becomes the planner
@@ -300,8 +380,9 @@ namespace Server.Services.Telegram
                         {
                             try
                             {
-                                await _telegram.SendTextMessageAsync(tgConfig,
+                                correlation.BotMessageId = await _telegram.SendTextMessageAsync(tgConfig,
                                     $"✏️ Modelo seleccionado: {catalogModel.DisplayName}\n¿Que quieres editar? Envia tu instruccion.");
+                                await _coreDb.SaveChangesAsync();
                             }
                             catch { /* non-critical */ }
                         }
@@ -423,8 +504,9 @@ namespace Server.Services.Telegram
                     {
                         try
                         {
-                            await _telegram.SendTextMessageAsync(tgConfig,
-                                "❌ Pipeline abortado. ¿Qué ha ido mal? Escribe un comentario y lo usaré para afinar las próximas ejecuciones (o envía \"-\" para omitir).");
+                            correlation.BotMessageId = await _telegram.SendTextMessageAsync(tgConfig,
+                                "❌ Pipeline abortado. ¿Qué ha ido mal? Escribe un comentario (citando este mensaje si hay mas pipelines abiertos) y lo usaré para afinar las próximas ejecuciones (o envía \"-\" para omitir).");
+                            await _coreDb.SaveChangesAsync();
                         }
                         catch { /* non-critical */ }
                     }
@@ -441,8 +523,9 @@ namespace Server.Services.Telegram
                     {
                         try
                         {
-                            await _telegram.SendTextMessageAsync(tgConfig,
-                                "🔄 Escribe una aclaracion para reiniciar el pipeline, o envia \"ok\" para reiniciar sin cambios.");
+                            correlation.BotMessageId = await _telegram.SendTextMessageAsync(tgConfig,
+                                "🔄 Escribe una aclaracion para reiniciar el pipeline (citando este mensaje si hay mas pipelines abiertos), o envia \"ok\" para reiniciar sin cambios.");
+                            await _coreDb.SaveChangesAsync();
                         }
                         catch { /* non-critical */ }
                     }
@@ -738,81 +821,349 @@ namespace Server.Services.Telegram
                 CreatedAt = DateTime.UtcNow,
                 IsResolved = false,
                 State = "awaiting_planning",
+                Token = TelegramCallback.NewToken(),
+                Label = "Planificacion de temas",
             };
             _coreDb.TelegramCorrelations.Add(correlation);
             await _coreDb.SaveChangesAsync();
 
             try
             {
-                await _telegram.SendTextMessageAsync(tgConfig,
-                    "📭 No quedan temáticas planificadas.\n\n" +
-                    "Responde a este mensaje describiendo qué temas quieres generar y crearé una nueva " +
+                correlation.BotMessageId = await _telegram.SendTextMessageAsync(tgConfig,
+                    $"📭 [#{correlation.Token}] No quedan temáticas planificadas.\n\n" +
+                    "Responde a este mensaje (citándolo) describiendo qué temas quieres generar y crearé una nueva " +
                     "planificación. También puedes enviar varios prompts, uno por línea.");
+                await _coreDb.SaveChangesAsync();
             }
             catch { /* non-critical */ }
         }
 
         /// <summary>
-        /// Find a valid correlation for this chatId, skipping and resolving stale ones
-        /// whose executions are no longer in WaitingForInput status.
+        /// Resultado de intentar atribuir un mensaje entrante a una interaccion abierta.
+        /// <see cref="Ambiguous"/> solo se rellena cuando hay varias candidatas y el mensaje
+        /// no trae ninguna pista (ni token, ni cita, ni hilo): entonces se pregunta al usuario.
         /// </summary>
-        private async Task<TelegramCorrelation?> FindValidCorrelationAsync(
-            string chatId, DateTimeOffset? messageDate, string? callbackQueryId)
+        private record CorrelationResolution(
+            TelegramCorrelation? Match,
+            List<TelegramCorrelation> Ambiguous,
+            string Reason);
+
+        /// <summary>
+        /// Decide a que interaccion pertenece el mensaje, por orden de fiabilidad:
+        /// 1) token del boton pulsado, 2) mensaje citado (reply_to_message),
+        /// 3) hilo del chat, 4) unica interaccion abierta. Si quedan varias y no hay pista,
+        /// no se adivina: se devuelve la lista para preguntar al usuario.
+        /// </summary>
+        private async Task<CorrelationResolution> ResolveCorrelationAsync(
+            string chatId, IncomingTelegramUpdate update, string? token, bool isCallback)
         {
             var candidates = await _coreDb.TelegramCorrelations
                 .Where(c => !c.IsResolved && c.ChatId == chatId && c.State != "queued")
-                .OrderBy(c => c.CreatedAt) // FIFO: oldest unresolved first so user responds in send order
-                .Take(10) // safety limit
+                .OrderBy(c => c.CreatedAt) // FIFO: la mas antigua primero
+                .Take(20)
                 .ToListAsync();
 
-            Console.WriteLine($"[TG-Update] FindValidCorrelation: {candidates.Count} candidate(s) for chatId={chatId}");
+            Console.WriteLine($"[TG-Update] ResolveCorrelation: {candidates.Count} candidate(s) for chatId={chatId}");
             foreach (var c in candidates)
-                Console.WriteLine($"  Candidate {c.Id}: execId={c.ExecutionId}, module={c.ProjectModuleId}, state={c.State}, created={c.CreatedAt:O}");
+                Console.WriteLine($"  Candidate {c.Id}: token={c.Token}, execId={c.ExecutionId}, module={c.ProjectModuleId}, "
+                    + $"state={c.State}, thread={c.MessageThreadId}, botMsg={c.BotMessageId}, created={c.CreatedAt:O}");
 
-            foreach (var candidate in candidates)
+            var empty = new List<TelegramCorrelation>();
+
+            // 1) Token explicito del boton: no hay nada que adivinar.
+            if (!string.IsNullOrWhiteSpace(token))
             {
-                // Reject text messages sent before the correlation was created (stale messages)
-                // Callback queries (button presses) are exempt — always intentional
-                if (messageDate.HasValue && string.IsNullOrWhiteSpace(callbackQueryId))
-                {
-                    var tolerance = TimeSpan.FromSeconds(5);
-                    if (messageDate.Value < candidate.CreatedAt - tolerance)
-                    {
-                        Console.WriteLine($"[TG-Update] Skipping correlation {candidate.Id}: message is older than correlation");
-                        continue;
-                    }
-                }
+                var byToken = candidates.FirstOrDefault(c =>
+                    string.Equals(c.Token, token, StringComparison.OrdinalIgnoreCase));
+                if (byToken is not null && await IsUsableAsync(byToken))
+                    return new CorrelationResolution(byToken, empty, "token");
 
-                // For these out-of-band states, the execution may not be in WaitingForInput — that's OK
-                if (candidate.State is "awaiting_restart" or "awaiting_abort_feedback" or "edit_select_provider" or "edit_select_model" or "edit_awaiting_prompt" or "awaiting_planning")
-                    return candidate;
-
-                // Verify the execution is actually still waiting for input
-                await using var db = _factory.Create(candidate.TenantDbName);
-                var execution = await db.ProjectExecutions
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(e => e.Id == candidate.ExecutionId);
-
-                if (execution is null)
-                {
-                    Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution not found");
-                    candidate.IsResolved = true;
-                    await _coreDb.SaveChangesAsync();
-                    continue;
-                }
-
-                if (execution.Status != "WaitingForInput")
-                {
-                    Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution status is '{execution.Status}', not WaitingForInput");
-                    candidate.IsResolved = true;
-                    await _coreDb.SaveChangesAsync();
-                    continue;
-                }
-
-                return candidate;
+                // El boton pertenece a una interaccion que ya no esta abierta: se ignora
+                // en vez de aplicarlo a otra (era la causa de las respuestas cruzadas).
+                return new CorrelationResolution(null, empty, "token_cerrado");
             }
 
-            return null;
+            // 2) Respuesta citada al mensaje del bot.
+            if (update.ReplyToMessageId is { } replyId)
+            {
+                var byReply = candidates.FirstOrDefault(c => c.BotMessageId == replyId);
+                if (byReply is not null && await IsUsableAsync(byReply))
+                    return new CorrelationResolution(byReply, empty, "cita");
+            }
+
+            // 3) Hilo (forum topic) de la ejecucion.
+            if (update.MessageThreadId is { } threadId)
+            {
+                foreach (var c in candidates.Where(c => c.MessageThreadId == threadId))
+                {
+                    if (await IsUsableAsync(c))
+                        return new CorrelationResolution(c, empty, "hilo");
+                }
+
+                // Mensaje dentro de un hilo sin interaccion viva: no se traslada a otra ejecucion.
+                return new CorrelationResolution(null, empty, "hilo_sin_interaccion");
+            }
+
+            // 4) Sin pistas: solo vale si queda una unica interaccion abierta.
+            var usable = new List<TelegramCorrelation>();
+            foreach (var candidate in candidates)
+            {
+                // Descarta textos enviados antes de que existiera la pregunta (mensajes viejos).
+                // Las pulsaciones de boton estan exentas: siempre son intencionadas.
+                if (update.MessageDate is { } sentAt && !isCallback
+                    && sentAt < candidate.CreatedAt - TimeSpan.FromSeconds(5))
+                {
+                    Console.WriteLine($"[TG-Update] Skipping correlation {candidate.Id}: message is older than correlation");
+                    continue;
+                }
+
+                if (await IsUsableAsync(candidate))
+                    usable.Add(candidate);
+            }
+
+            if (usable.Count == 0)
+                return new CorrelationResolution(null, empty, "sin_candidatas");
+            if (usable.Count == 1)
+                return new CorrelationResolution(usable[0], empty, "unica");
+
+            // Las correlaciones creadas antes de este cambio no tienen token: se les asigna
+            // ahora para poder referenciarlas en los botones de desambiguacion.
+            var sinToken = usable.Where(c => string.IsNullOrWhiteSpace(c.Token)).ToList();
+            if (sinToken.Count > 0)
+            {
+                foreach (var c in sinToken)
+                    c.Token = TelegramCallback.NewToken();
+                await _coreDb.SaveChangesAsync();
+            }
+
+            return new CorrelationResolution(null, usable, "ambigua");
+        }
+
+        /// <summary>
+        /// Comprueba que la correlacion sigue viva y cierra las que quedaron colgadas
+        /// (ejecucion borrada o que ya no esta esperando input).
+        /// </summary>
+        private async Task<bool> IsUsableAsync(TelegramCorrelation candidate)
+        {
+            // En estos estados fuera de banda la ejecucion puede no estar en WaitingForInput.
+            if (candidate.State is "awaiting_restart" or "awaiting_abort_feedback" or "edit_select_provider"
+                or "edit_select_model" or "edit_awaiting_prompt" or "awaiting_planning")
+                return true;
+
+            await using var db = _factory.Create(candidate.TenantDbName);
+            var execution = await db.ProjectExecutions
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Id == candidate.ExecutionId);
+
+            if (execution is null)
+            {
+                Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution not found");
+                candidate.IsResolved = true;
+                await _coreDb.SaveChangesAsync();
+                return false;
+            }
+
+            if (execution.Status != "WaitingForInput")
+            {
+                Console.WriteLine($"[TG-Update] Resolving stale correlation {candidate.Id}: execution status is '{execution.Status}', not WaitingForInput");
+                candidate.IsResolved = true;
+                await _coreDb.SaveChangesAsync();
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Guarda el texto suelto del usuario y le pregunta a cual de las interacciones abiertas
+        /// pertenece. Es la red de seguridad para quien responde sin citar y sin hilos.
+        /// </summary>
+        private async Task AskWhichInteractionAsync(
+            string chatId, string text, List<TelegramCorrelation> candidates)
+        {
+            var config = await GetChatConfigAsync(candidates[0]);
+            if (config is null)
+            {
+                Console.WriteLine($"[TG-Update] Ambiguous reply in chat {chatId} but no Telegram config available");
+                return;
+            }
+
+            // Un unico pendiente por chat: un texto nuevo sustituye al anterior.
+            var existing = await _coreDb.TelegramPendingReplies
+                .FirstOrDefaultAsync(r => r.ChatId == chatId);
+            if (existing is null)
+            {
+                _coreDb.TelegramPendingReplies.Add(new TelegramPendingReply
+                {
+                    ChatId = chatId,
+                    Text = text,
+                    CreatedAt = DateTime.UtcNow,
+                });
+            }
+            else
+            {
+                existing.Text = text;
+                existing.CreatedAt = DateTime.UtcNow;
+            }
+            await _coreDb.SaveChangesAsync();
+
+            var buttons = candidates
+                .Select(c => (
+                    Label: $"#{c.Token} · {c.Label ?? "Interaccion"}",
+                    CallbackData: TelegramCallback.Build(TelegramCallback.Pick, c.Token)))
+                .ToList();
+
+            try
+            {
+                await _telegram.SendTextMessageWithOptionsAsync(config,
+                    $"🤔 Hay {candidates.Count} interacciones esperando respuesta y tu mensaje no cita ninguna.\n"
+                    + "¿A cual corresponde? (para la proxima, responde citando el mensaje del bot)",
+                    buttons);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TG-Update] Could not ask for disambiguation: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// El usuario ha elegido a que interaccion pertenece el texto que dejo pendiente:
+        /// se recupera y se procesa como si hubiera llegado citando ese mensaje.
+        /// </summary>
+        private async Task HandleAmbiguityChoiceAsync(string chatId, string? token, string callbackQueryId)
+        {
+            var correlation = string.IsNullOrWhiteSpace(token)
+                ? null
+                : await _coreDb.TelegramCorrelations.FirstOrDefaultAsync(c =>
+                    !c.IsResolved && c.ChatId == chatId && c.Token == token);
+
+            var config = correlation is null ? null : await GetChatConfigAsync(correlation);
+            if (config is not null)
+            {
+                try { await _telegram.AnswerCallbackQueryAsync(config.BotToken, callbackQueryId); }
+                catch { /* non-critical */ }
+            }
+
+            var pending = await _coreDb.TelegramPendingReplies.FirstOrDefaultAsync(r => r.ChatId == chatId);
+
+            if (correlation is null || pending is null)
+            {
+                if (config is not null)
+                {
+                    try
+                    {
+                        await _telegram.SendTextMessageAsync(config,
+                            "⚠️ Ya no tengo guardado ese mensaje (o la interaccion se cerro). Vuelve a enviarlo.");
+                    }
+                    catch { /* non-critical */ }
+                }
+                return;
+            }
+
+            // Un pendiente muy viejo casi seguro ya no corresponde a nada: se descarta.
+            var text = pending.Text;
+            var stale = DateTime.UtcNow - pending.CreatedAt > TimeSpan.FromHours(6);
+            _coreDb.TelegramPendingReplies.Remove(pending);
+            await _coreDb.SaveChangesAsync();
+
+            if (stale)
+            {
+                if (config is not null)
+                {
+                    try { await _telegram.SendTextMessageAsync(config, "⚠️ El mensaje pendiente era demasiado antiguo. Vuelve a enviarlo."); }
+                    catch { /* non-critical */ }
+                }
+                return;
+            }
+
+            if (!await IsUsableAsync(correlation))
+            {
+                if (config is not null)
+                {
+                    try { await _telegram.SendTextMessageAsync(config, "⚠️ Esa interaccion ya no esta abierta."); }
+                    catch { /* non-critical */ }
+                }
+                return;
+            }
+
+            await HandleCorrelationAsync(correlation, text, callbackQueryId: null, chatId);
+        }
+
+        /// <summary>
+        /// Avisa de que el boton pulsado pertenece a una interaccion ya cerrada, en lugar de
+        /// dejar al usuario con el spinner y sin respuesta.
+        /// </summary>
+        private async Task NotifyClosedInteractionAsync(string chatId, string? token, string callbackQueryId)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return;
+
+            // Se busca tambien entre las resueltas: solo se necesita el bot token del chat.
+            var any = await _coreDb.TelegramCorrelations
+                .Where(c => c.ChatId == chatId && c.Token == token)
+                .OrderByDescending(c => c.CreatedAt)
+                .FirstOrDefaultAsync();
+            if (any is null) return;
+
+            var config = await GetChatConfigAsync(any);
+            if (config is null) return;
+
+            try { await _telegram.AnswerCallbackQueryAsync(config.BotToken, callbackQueryId); }
+            catch { /* non-critical */ }
+
+            try
+            {
+                await _telegram.SendTextMessageAsync(config, $"ℹ️ La interaccion #{token} ya esta cerrada.");
+            }
+            catch { /* non-critical */ }
+
+            if (any.BotMessageId is { } messageId)
+            {
+                try { await _telegram.ClearMessageKeyboardAsync(config.BotToken, chatId, messageId); }
+                catch { /* non-critical */ }
+            }
+        }
+
+        /// <summary>
+        /// Configuracion de Telegram de la correlacion, respetando su hilo cuando lo tiene.
+        /// </summary>
+        private async Task<TelegramConfig?> GetChatConfigAsync(TelegramCorrelation correlation)
+        {
+            await using var db = _factory.Create(correlation.TenantDbName);
+
+            var projectId = correlation.ProjectId;
+            if (projectId is null)
+            {
+                var exec = await db.ProjectExecutions.AsNoTracking()
+                    .FirstOrDefaultAsync(e => e.Id == correlation.ExecutionId);
+                projectId = exec?.ProjectId;
+            }
+            if (projectId is null) return null;
+
+            var proj = await db.Projects
+                .AsNoTracking()
+                .Include(p => p.TelegramConnection)
+                .FirstOrDefaultAsync(p => p.Id == projectId);
+            if (proj?.TelegramConnection is null) return null;
+
+            return new TelegramConfig
+            {
+                BotToken = proj.TelegramConnection.BotToken,
+                ChatId = proj.TelegramConnection.ChatId,
+                MessageThreadId = correlation.MessageThreadId,
+            };
+        }
+
+        /// <summary>
+        /// Retira el teclado del mensaje de una interaccion que deja de estar abierta.
+        /// </summary>
+        private async Task ClearCorrelationKeyboardAsync(TelegramCorrelation correlation, TelegramConfig? config)
+        {
+            if (correlation.BotMessageId is not { } messageId || config is null)
+                return;
+
+            try { await _telegram.ClearMessageKeyboardAsync(config.BotToken, correlation.ChatId, messageId); }
+            catch { /* non-critical */ }
         }
 
         private static EditFlowState? ParseEditState(string? json)
@@ -860,7 +1211,7 @@ namespace Server.Services.Telegram
             }
 
             var buttons = providers
-                .Select(p => (p, $"edit_provider:{p}"))
+                .Select(p => (p, TelegramCallback.Build(TelegramCallback.EditProvider, correlation.Token, p)))
                 .ToList();
 
             try
@@ -924,7 +1275,7 @@ namespace Server.Services.Telegram
             }
 
             var buttons = models
-                .Select(m => (m.DisplayName, $"edit_model:{m.Id}"))
+                .Select(m => (m.DisplayName, TelegramCallback.Build(TelegramCallback.EditModel, correlation.Token, m.Id)))
                 .ToList();
 
             try
@@ -949,8 +1300,11 @@ namespace Server.Services.Telegram
             {
                 try
                 {
-                    await _telegram.SendTextMessageWithOptionsAsync(tgConfig,
-                        "¿Que quieres hacer ahora?", ControlOptions);
+                    // El nuevo mensaje pasa a ser el "ancla" de esta interaccion: es el que
+                    // el usuario citara si responde por texto.
+                    correlation.BotMessageId = await _telegram.SendTextMessageWithOptionsAsync(tgConfig,
+                        "¿Que quieres hacer ahora?", ControlOptionsFor(correlation.Token));
+                    await _coreDb.SaveChangesAsync();
                 }
                 catch { /* non-critical */ }
             }
