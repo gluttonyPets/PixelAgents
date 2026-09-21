@@ -322,15 +322,20 @@ docker compose build --no-cache
 docker compose up -d
 ```
 
-El SHA sellado es el `HEAD` del checkout del servidor, que no tiene por que
-coincidir con lo que hay en GitHub. Si el checkout arrastra commits locales o un
-merge del propio `git pull`, `deploy.sh` marca el sello como `-local`; si hay
-cambios sin commitear, como `-sucio`. Un sello marcado significa que lo
-desplegado no es exactamente el commit que se ve en GitHub.
+El commit del sello lo resuelve el propio `Dockerfile` leyendo `.git/HEAD` y
+`refs/` del contexto de build, asi que describe el arbol de fuentes que se acaba
+de compilar aunque nadie exporte `GIT_COMMIT`. `GIT_COMMIT` queda de reserva.
 
+Ojo: **el sello solo cambia al reconstruir la imagen**. El auto-deploy
+(`tools/deploy_develop.sh`) actualiza el checkout y reinicia el worker y el
+servidor de logs, pero no reconstruye el contenedor de la aplicacion: hasta que
+no se ejecuta `deploy.sh`, sigue corriendo la imagen anterior. Si el pie muestra
+un commit que no corresponde, empieza por ahi: `./tools/diagnostico_sello.sh`.
+
+El `deploy.sh` marca el sello como `-local` si el checkout del servidor arrastra
+commits que no estan en el remoto, y como `-sucio` si hay cambios sin commitear.
 Tampoco conviene poner `GIT_COMMIT` ni `BUILD_DATE` en `.env`: `docker compose`
-lo lee por su cuenta y esos valores se colarian en el contenedor tapando al
-sello real. `deploy.sh` avisa si los encuentra.
+lo lee por su cuenta y esos valores acabarian en el contenedor.
 
 El endpoint `/api/build-info` devuelve el commit acortado a 7 caracteres y la
 fecha del build ya convertida a horario de Madrid. Los datos salen de las
@@ -770,10 +775,12 @@ polling mediante `TelegramPollingService`.
 
 - `GET /api/build-info`: devuelve `commitHash` (SHA corto, 7 caracteres),
   `buildDate` (fecha del build en horario de Madrid, `dd/MM/yyyy HH:mm`),
-  `commitFull` (el hash tal cual llego, para comparar con GitHub) y `source`
-  (`entorno` o `imagen`, de donde ha salido el sello). Lee primero las variables
-  de entorno `GIT_COMMIT` y `BUILD_DATE` y despues `build-info.json`; si no hay
-  nada, devuelve `unknown`. La logica esta en `Server/Services/BuildInfo.cs`.
+  `commitFull` (el hash entero, para comparar con GitHub), `source` (`imagen` o
+  `entorno`, de donde ha salido el sello) y `runtimeBuilt` (fecha del
+  `Server.dll` en ejecucion: no la sella nadie, asi que delata un contenedor sin
+  reconstruir). Lee primero `build-info.json` de la imagen y despues las
+  variables `GIT_COMMIT` y `BUILD_DATE`; si no hay nada, devuelve `unknown`. La
+  logica esta en `Server/Services/BuildInfo.cs`.
 
 ### SignalR
 

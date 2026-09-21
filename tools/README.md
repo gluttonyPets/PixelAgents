@@ -109,6 +109,27 @@ para que los cambios en `AiModule` surtan efecto. Ejecutar por tenant.
 
 ---
 
+### `diagnostico_sello.sh`
+
+Diagnostica el sello del build (el commit y la hora del pie del panel) cuando
+muestra algo que no corresponde. Enseña de una vez los cuatro sitios de los que
+puede venir el valor: la API, el `build-info.json` de dentro del contenedor, las
+variables del contenedor y la fecha real de la imagen y del binario, mas el
+estado del checkout del servidor.
+
+```bash
+./tools/diagnostico_sello.sh
+```
+
+**Cuando usarlo:**
+
+- Cuando el pie del panel muestra un commit que no es el desplegado.
+- Para saber si el contenedor se ha reconstruido o sigue ejecutando codigo viejo.
+
+Detalle del caso y de la solucion: [`docs/fixes/SELLO_BUILD_PANEL.md`](../docs/fixes/SELLO_BUILD_PANEL.md).
+
+---
+
 ### Otros Scripts
 
 *(Aquí se documentan los demás scripts conforme se agreguen)*

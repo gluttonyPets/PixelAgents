@@ -52,33 +52,16 @@ public class BuildInfoTests
     }
 
     [Fact]
-    public void Read_dice_que_el_sello_viene_del_entorno()
-    {
-        using var dir = new TempDir();
-        dir.WriteBuildInfo("0000000aaaabbbbccccddddeeeeffff111122223", "2026-01-01T00:00:00Z");
-
-        var info = BuildInfo.Read(dir.Path, name => name switch
-        {
-            "GIT_COMMIT" => "5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a",
-            "BUILD_DATE" => "2026-09-21T14:32:05Z",
-            _ => null
-        });
-
-        Assert.Equal(BuildInfo.SourceEnvironment, info.Source);
-        // El hash entero va al tooltip: es lo que se compara contra GitHub.
-        Assert.Equal("5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a", info.CommitFull);
-    }
-
-    [Fact]
-    public void Read_dice_que_el_sello_viene_de_la_imagen()
+    public void Read_lleva_el_hash_entero_al_tooltip()
     {
         using var dir = new TempDir();
         dir.WriteBuildInfo("5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a", "2026-09-21T14:32:05Z");
 
         var info = BuildInfo.Read(dir.Path, _ => null);
 
-        Assert.Equal(BuildInfo.SourceImage, info.Source);
+        // El hash entero es lo que se compara contra GitHub.
         Assert.Equal("5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a", info.CommitFull);
+        Assert.Equal(BuildInfo.SourceImage, info.Source);
     }
 
     [Fact]
@@ -123,17 +106,38 @@ public class BuildInfoTests
     public void FormatMadrid_devuelve_el_texto_original_si_no_es_una_fecha()
     {
         Assert.Equal("unknown", BuildInfo.FormatMadrid("unknown"));
-        Assert.Equal("unknown", BuildInfo.FormatMadrid(null));
+        Assert.Equal("unknown", BuildInfo.FormatMadrid((string?)null));
         Assert.Equal("no-es-una-fecha", BuildInfo.FormatMadrid("no-es-una-fecha"));
     }
 
     [Fact]
-    public void Read_prefiere_el_entorno_al_fichero_cacheado()
+    public void Read_manda_la_imagen_sobre_el_entorno()
     {
         if (!HasMadridTz) return; // entorno sin base de zonas horarias
 
         using var dir = new TempDir();
-        dir.WriteBuildInfo("0000000aaaabbbbccccddddeeeeffff111122223", "2026-01-01T00:00:00Z");
+        dir.WriteBuildInfo("5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a", "2026-09-21T14:32:05Z");
+
+        // Este es el fallo que se reportaba: un GIT_COMMIT pegado en el entorno
+        // (un .env viejo, otro checkout) tapaba al commit real de la imagen.
+        var info = BuildInfo.Read(dir.Path, name => name switch
+        {
+            "GIT_COMMIT" => "b66fe06",
+            "BUILD_DATE" => "2020-01-01T00:00:00Z",
+            _ => null
+        });
+
+        Assert.Equal("5340776", info.CommitHash);
+        Assert.Equal("21/09/2026 16:32", info.BuildDate);
+        Assert.Equal(BuildInfo.SourceImage, info.Source);
+    }
+
+    [Fact]
+    public void Read_cae_al_entorno_cuando_la_imagen_no_trae_sello()
+    {
+        if (!HasMadridTz) return; // entorno sin base de zonas horarias
+
+        using var dir = new TempDir();
 
         var info = BuildInfo.Read(dir.Path, name => name switch
         {
@@ -144,21 +148,54 @@ public class BuildInfoTests
 
         Assert.Equal("5340776", info.CommitHash);
         Assert.Equal("21/09/2026 16:32", info.BuildDate);
+        Assert.Equal(BuildInfo.SourceEnvironment, info.Source);
     }
 
     [Fact]
-    public void Read_cae_al_fichero_cuando_el_entorno_no_trae_nada_util()
+    public void Read_ignora_el_placeholder_unknown_de_la_imagen()
+    {
+        if (!HasMadridTz) return; // entorno sin base de zonas horarias
+
+        using var dir = new TempDir();
+        dir.WriteBuildInfo("unknown", "unknown");
+
+        var info = BuildInfo.Read(dir.Path, name => name switch
+        {
+            "GIT_COMMIT" => "5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a",
+            "BUILD_DATE" => "2026-09-21T14:32:05Z",
+            _ => null
+        });
+
+        Assert.Equal("5340776", info.CommitHash);
+        Assert.Equal(BuildInfo.SourceEnvironment, info.Source);
+    }
+
+    [Fact]
+    public void Read_informa_de_la_fecha_del_binario_en_ejecucion()
     {
         if (!HasMadridTz) return; // entorno sin base de zonas horarias
 
         using var dir = new TempDir();
         dir.WriteBuildInfo("5340776b1c0e4d5a9f3e2b8c7d6a5f4e3b2c1d0a", "2026-09-21T14:32:05Z");
 
-        // "unknown" es el valor por defecto del build: no debe tapar al fichero.
-        var info = BuildInfo.Read(dir.Path, name => name == "GIT_COMMIT" ? "unknown" : null);
+        var info = BuildInfo.Read(
+            dir.Path,
+            _ => null,
+            () => new DateTime(2026, 9, 10, 12, 0, 0, DateTimeKind.Utc));
 
-        Assert.Equal("5340776", info.CommitHash);
+        // Sello de hoy, binario del dia 10: el contenedor no se ha reconstruido.
         Assert.Equal("21/09/2026 16:32", info.BuildDate);
+        Assert.Equal("10/09/2026 14:00", info.RuntimeBuilt);
+    }
+
+    [Fact]
+    public void Read_sin_binario_localizable_no_inventa_fecha()
+    {
+        using var dir = new TempDir();
+
+        var info = BuildInfo.Read(dir.Path, _ => null, () => null);
+
+        Assert.Equal("unknown", info.RuntimeBuilt);
     }
 
     [Fact]

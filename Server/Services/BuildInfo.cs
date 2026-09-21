@@ -10,12 +10,18 @@ namespace Server.Services
     /// horario de Madrid, que es la zona en la que trabaja el equipo.
     ///
     /// Los datos llegan por dos vias, en este orden de preferencia:
-    /// 1. variables de entorno <c>GIT_COMMIT</c> / <c>BUILD_DATE</c>, que se
-    ///    refrescan con un simple <c>docker compose up -d</c>;
-    /// 2. <c>build-info.json</c>, generado durante el build de la imagen.
-    /// La variable manda sobre el fichero porque el fichero puede venir de una capa
-    /// de Docker cacheada y quedarse con el commit y la fecha del build anterior,
-    /// que es justo lo que hacia que el pie mostrase datos que no tocaban.
+    /// 1. <c>build-info.json</c>, que el Dockerfile escribe en la ultima capa
+    ///    resolviendo el commit del propio arbol de fuentes;
+    /// 2. variables de entorno <c>GIT_COMMIT</c> / <c>BUILD_DATE</c>, de reserva.
+    ///
+    /// Manda el fichero de la imagen porque describe el codigo que realmente se
+    /// esta ejecutando. Una variable de entorno puede traer el commit de otro
+    /// checkout, colarse desde un <c>.env</c> viejo o quedarse pegada de un deploy
+    /// anterior, y entonces el pie ensena un hash que no corresponde.
+    ///
+    /// <see cref="Snapshot.RuntimeBuilt"/> no se sella: es la fecha del binario en
+    /// ejecucion. Nadie la pasa por parametro, asi que es la unica que no puede
+    /// mentir: si el contenedor lleva meses sin reconstruirse, ahi se ve.
     /// </summary>
     public static class BuildInfo
     {
@@ -31,36 +37,68 @@ namespace Server.Services
         /// tooltip: cuando el SHA del pie no cuadra con el que se espera, lo
         /// primero que hay que saber es el hash entero y de donde ha salido.
         /// </summary>
-        public sealed record Snapshot(string CommitHash, string BuildDate, string CommitFull, string Source);
+        public sealed record Snapshot(
+            string CommitHash,
+            string BuildDate,
+            string CommitFull,
+            string Source,
+            string RuntimeBuilt);
 
         /// <summary>De donde ha salido el sello, para el tooltip del pie.</summary>
-        public const string SourceEnvironment = "entorno";
         public const string SourceImage = "imagen";
+        public const string SourceEnvironment = "entorno";
         public const string SourceNone = "sin datos";
 
+        /// <summary>Binario cuya fecha delata cuando se construyo la imagen de verdad.</summary>
+        private const string ServerAssembly = "Server.dll";
+
         /// <summary>
-        /// Lee el sello del build. <paramref name="env"/> existe para los tests;
-        /// en produccion se resuelve contra las variables de entorno del proceso.
+        /// Lee el sello del build. <paramref name="env"/> y
+        /// <paramref name="binaryTime"/> existen para los tests; en produccion se
+        /// resuelven contra el entorno del proceso y el binario en ejecucion.
         /// </summary>
-        public static Snapshot Read(string baseDirectory, Func<string, string?>? env = null)
+        public static Snapshot Read(
+            string baseDirectory,
+            Func<string, string?>? env = null,
+            Func<DateTime?>? binaryTime = null)
         {
             env ??= Environment.GetEnvironmentVariable;
+            binaryTime ??= () => ServerAssemblyTimeUtc(baseDirectory);
 
             var (fileCommit, fileDate) = ReadFile(Path.Combine(baseDirectory, "build-info.json"));
 
-            var envCommit = Usable(env("GIT_COMMIT"));
-            var commit = envCommit ?? Usable(fileCommit);
-            var date = Usable(env("BUILD_DATE")) ?? Usable(fileDate);
+            var imageCommit = Usable(fileCommit);
+            var commit = imageCommit ?? Usable(env("GIT_COMMIT"));
+            var date = Usable(fileDate) ?? Usable(env("BUILD_DATE"));
 
-            var source = envCommit is not null ? SourceEnvironment
-                : commit is not null ? SourceImage
+            var source = imageCommit is not null ? SourceImage
+                : commit is not null ? SourceEnvironment
                 : SourceNone;
 
             return new Snapshot(
                 ShortCommit(commit),
                 FormatMadrid(date),
                 commit?.Trim() ?? Unknown,
-                source);
+                source,
+                FormatMadrid(binaryTime()));
+        }
+
+        /// <summary>
+        /// Fecha del <c>Server.dll</c> que se esta ejecutando, que es la del build
+        /// de la imagen. Es el contraste honesto del sello: si no coincide, lo que
+        /// corre no es lo que dice el sello.
+        /// </summary>
+        private static DateTime? ServerAssemblyTimeUtc(string baseDirectory)
+        {
+            try
+            {
+                var path = Path.Combine(baseDirectory, ServerAssembly);
+                return File.Exists(path) ? File.GetLastWriteTimeUtc(path) : null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
         }
 
         /// <summary>
@@ -88,13 +126,22 @@ namespace Server.Services
             var raw = value?.Trim();
             if (string.IsNullOrEmpty(raw)) return Unknown;
 
-            if (!TryParseUtc(raw, out var utc)) return raw;
+            return TryParseUtc(raw, out var utc) ? FormatMadrid(utc) : raw;
+        }
 
+        /// <summary>Mismo formato, para instantes que ya vienen como fecha.</summary>
+        public static string FormatMadrid(DateTime? utc) =>
+            utc is null
+                ? Unknown
+                : FormatMadrid(new DateTimeOffset(DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc)));
+
+        private static string FormatMadrid(DateTimeOffset utc)
+        {
             var tz = MadridTimeZone();
             if (tz is null) return utc.ToString("dd/MM/yyyy HH:mm 'UTC'", CultureInfo.InvariantCulture);
 
-            var madrid = TimeZoneInfo.ConvertTime(utc, tz);
-            return madrid.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+            return TimeZoneInfo.ConvertTime(utc, tz)
+                .ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
         }
 
         private static bool TryParseUtc(string raw, out DateTimeOffset utc)

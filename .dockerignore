@@ -3,5 +3,11 @@
 **/.vs/
 **/.vscode/
 **/node_modules/
+# .git/ no entra en la imagen, pero si los cuatro ficheros que hacen falta para
+# resolver el commit de HEAD durante el build. Asi el sello sale del propio arbol
+# de fuentes y no de que alguien se acuerde de exportar GIT_COMMIT al desplegar.
 .git/
+!.git/HEAD
+!.git/packed-refs
+!.git/refs/**
 *.md

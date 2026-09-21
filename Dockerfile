@@ -43,13 +43,44 @@ COPY nginx.conf /etc/nginx/nginx.conf
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Sello del build. Va aqui, en la ultima capa y no junto al publish, porque esa
-# capa se cachea y el pie de la aplicacion acababa ensenando el commit y la hora
-# de un build anterior. La fecha se guarda en UTC (ISO-8601); el servidor la pasa
-# a hora de Madrid al servirla.
+# ── Sello del build ────────────────────────────────────────────────────────
+# El commit se resuelve leyendo .git del propio contexto de build: asi el sello
+# describe el arbol de fuentes que se acaba de compilar, y no depende de que
+# alguien exporte GIT_COMMIT al desplegar (que es como el pie acabo mostrando un
+# hash que no existia en el repositorio). GIT_COMMIT queda de reserva por si el
+# contexto no trae .git. Va en la ultima capa: la de `dotnet publish` se cachea y
+# el sello se quedaba congelado en un build anterior.
+#
+# El `.dockerignore` deja pasar solo HEAD, packed-refs y refs/, no los objetos,
+# asi que esto no engorda la imagen. `.dockerignore` va en la lista de origenes
+# aposta: existe siempre, y evita que el COPY falle si .git no esta en el
+# contexto (build desde un tarball, por ejemplo).
+COPY .dockerignore .git/HEAD* .git/packed-refs* /gitmeta/
+COPY .dockerignore .git/refs* /gitmeta/refs/
+
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE
-RUN echo "{\"commitHash\":\"${GIT_COMMIT}\",\"buildDate\":\"${BUILD_DATE:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}\"}" > /app/build-info.json
+RUN set -u; \
+    sha=""; \
+    if [ -f /gitmeta/HEAD ]; then \
+        head_content=$(cat /gitmeta/HEAD 2>/dev/null || echo ""); \
+        case "$head_content" in \
+            "ref: "*) \
+                ref=${head_content#ref: }; \
+                for candidate in "/gitmeta/$ref" "/gitmeta/${ref#refs/}" "/gitmeta/refs/$ref"; do \
+                    if [ -f "$candidate" ]; then sha=$(cat "$candidate" 2>/dev/null || echo ""); break; fi; \
+                done; \
+                if [ -z "$sha" ] && [ -f /gitmeta/packed-refs ]; then \
+                    sha=$(awk -v r="$ref" '$2 == r { print $1; exit }' /gitmeta/packed-refs 2>/dev/null || echo ""); \
+                fi; \
+                ;; \
+            *) sha=$head_content ;; \
+        esac; \
+    fi; \
+    [ -n "$sha" ] || sha="${GIT_COMMIT}"; \
+    echo "{\"commitHash\":\"${sha}\",\"buildDate\":\"${BUILD_DATE:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}\"}" > /app/build-info.json; \
+    rm -rf /gitmeta; \
+    cat /app/build-info.json
 
 # Expose port 80 (nginx handles everything)
 EXPOSE 80

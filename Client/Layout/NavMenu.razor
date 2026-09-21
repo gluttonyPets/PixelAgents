@@ -66,9 +66,16 @@
             : _buildInfo.CommitFull;
 
         var detail = $"Commit {commit}\nBuild del {_buildInfo.BuildDate} (hora de Madrid)";
-        return string.IsNullOrWhiteSpace(_buildInfo.Source)
-            ? detail
-            : $"{detail}\nOrigen del sello: {_buildInfo.Source}";
+
+        if (!string.IsNullOrWhiteSpace(_buildInfo.Source))
+            detail += $"\nOrigen del sello: {_buildInfo.Source}";
+
+        // La fecha del binario no la sella nadie: si es mucho mas antigua que el
+        // sello, el contenedor no se ha reconstruido.
+        if (!string.IsNullOrWhiteSpace(_buildInfo.RuntimeBuilt))
+            detail += $"\nBinario en ejecucion: {_buildInfo.RuntimeBuilt}";
+
+        return detail;
     }
 
     private async Task Logout()

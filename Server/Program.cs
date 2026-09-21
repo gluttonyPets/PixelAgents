@@ -4492,7 +4492,8 @@ app.MapGet("/api/build-info", () =>
         commitHash = info.CommitHash,
         buildDate = info.BuildDate,
         commitFull = info.CommitFull,
-        source = info.Source
+        source = info.Source,
+        runtimeBuilt = info.RuntimeBuilt
     });
 });
 

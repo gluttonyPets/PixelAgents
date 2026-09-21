@@ -1,14 +1,16 @@
 namespace Client.Models;
 
 // ── Build Info ──
-// CommitFull y Source alimentan el tooltip del pie: el hash entero y de donde
-// sale el sello (entorno del contenedor o imagen), que es lo que hace falta
-// cuando el SHA que se ve no cuadra con el que se espera.
+// Los tres ultimos campos alimentan el tooltip del pie, que es lo que hace falta
+// cuando el SHA que se ve no cuadra con el que se espera: el hash entero, de
+// donde sale el sello (imagen o entorno) y la fecha del binario en ejecucion,
+// que delata un contenedor que no se ha reconstruido.
 public record BuildInfoResponse(
     string CommitHash,
     string BuildDate,
     string? CommitFull = null,
-    string? Source = null);
+    string? Source = null,
+    string? RuntimeBuilt = null);
 
 // ── Auth ──
 public record RegisterRequest(string Email, string Password);
