@@ -318,9 +318,15 @@ En runtime:
 git pull origin "${DEPLOY_BRANCH:-main}"
 export GIT_COMMIT=$(git rev-parse --short=7 HEAD)
 export BUILD_DATE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+docker image prune -f && docker builder prune -af   # antes y despues del build
 docker compose build --no-cache
 docker compose up -d
 ```
+
+La limpieza evita que el disco se llene: cada `build --no-cache` deja la imagen
+anterior huerfana y engorda la cache de build (que con `--no-cache` no se
+reutiliza). Solo borra imagenes huerfanas y cache de build, nunca volumenes
+(`pgdata` y `media` guardan la base de datos y los archivos generados).
 
 El commit del sello lo resuelve el propio `Dockerfile` leyendo `.git/HEAD` y
 `refs/` del contexto de build, asi que describe el arbol de fuentes que se acaba

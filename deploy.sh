@@ -76,8 +76,27 @@ echo "   Fecha: $BUILD_DATE"
 echo "   URL: http://${PUBLIC_IP:-localhost}:${APP_PORT:-8080}"
 echo ""
 
+# ── Limpieza de Docker ─────────────────────────────────────────────────────
+# Cada `build --no-cache` deja la imagen anterior huerfana (<none>) y suma capas
+# a la cache de build, que con --no-cache nunca se reutiliza. Sin limpiar, el
+# disco se llena y el siguiente build falla. Solo se borran imagenes huerfanas y
+# cache de build: NUNCA volumenes (pgdata = base de datos, media = archivos).
+limpiar_docker() {
+    docker image prune -f >/dev/null || true
+    docker builder prune -af >/dev/null || true
+}
+
+echo "🧹 Liberando espacio antes del build..."
+limpiar_docker
+df -h / | tail -1 | awk '{print "   Disco libre: " $4 " de " $2}'
+
 docker compose build --no-cache
 docker compose up -d
+
+# La imagen que se estaba ejecutando pasa a huerfana al arrancar la nueva.
+echo "🧹 Borrando la imagen anterior..."
+limpiar_docker
+df -h / | tail -1 | awk '{print "   Disco libre: " $4 " de " $2}'
 
 echo ""
 echo "✅ Despliegue completado"
