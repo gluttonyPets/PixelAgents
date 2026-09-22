@@ -911,6 +911,16 @@ public class ApiClient
         return (null, await ReadErrorAsync(resp));
     }
 
+    // ── Google Search Console ──
+
+    public async Task<(List<SearchConsoleSiteDto>? Sites, string? Error)> GetSearchConsoleSitesAsync(Guid apiKeyId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/search-console/sites?apiKeyId={apiKeyId}");
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<List<SearchConsoleSiteDto>>(), null);
+        return (null, await ReadErrorAsync(resp));
+    }
+
     // ── Schedule ──
 
     public async Task<ScheduleResponse?> GetScheduleAsync(Guid projectId)

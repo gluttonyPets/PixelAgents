@@ -278,6 +278,11 @@ public static class ModulePortRegistry
                 ports.Add(new("output_text", "Texto", PortDataType.Text, isInput: false));
                 break;
 
+            case "SearchConsole":
+                // Fuente de datos: no necesita entrada, emite el informe de Search Analytics.
+                ports.Add(new("output_text", "Datos", PortDataType.Text, isInput: false));
+                break;
+
             case "Start":
                 ports.Add(new("output_prompt", "Prompt", PortDataType.Text, isInput: false));
                 break;
@@ -318,6 +323,7 @@ public static class ModulePortRegistry
         "FileDirectory" => "bi-folder2-open",
         "Scene" => "bi-layers",
         "StaticText" => "bi-fonts",
+        "SearchConsole" => "bi-graph-up",
         "Start" => "bi-play-circle",
         "SubProject" => "bi-diagram-2",
         _ => "bi-gear"
@@ -343,6 +349,7 @@ public static class ModulePortRegistry
         "FileDirectory" => "#8d6e63",
         "Scene" => "#ff7043",
         "StaticText" => "#5c6bc0",
+        "SearchConsole" => "#4285f4",
         "Start" => "#43a047",
         "SubProject" => "#3f51b5",
         _ => "#888"

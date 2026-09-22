@@ -432,6 +432,8 @@ Handlers actuales:
 - `Design`: creacion de disenos con Canva.
 - `Publish`: publicacion social via Buffer. La red de destino se elige por nodo
   en el inspector (config `provider`) y el nodo del grafo muestra su logotipo.
+- `SearchConsole`: descarga datos de Search Analytics de Google Search Console
+  (clics, impresiones, CTR y posicion) con los parametros del modulo.
 
 Modulos de sistema creados por defecto en `SystemModuleCatalog`:
 
@@ -838,6 +840,14 @@ en el workspace de la ejecucion.
 y consultar datasets/listas de disenos. Lo usan modulos `Design` y flujos de
 publicacion cuando aplica.
 
+### Google Search Console
+
+`SearchConsoleService` lee Search Analytics con una cuenta de servicio (JSON
+guardado como API key del proveedor `SearchConsole`). Lo usa el modulo
+`SearchConsole`; `GET /api/search-console/sites?apiKeyId=...` lista las
+propiedades a las que tiene acceso la cuenta. Detalle de parametros y
+configuracion en `docs/architecture.md`.
+
 ### Buffer, Instagram Y TikTok
 
 El archivo `Server/Services/Instagram/MetricoolService.cs` contiene clases
@@ -883,6 +893,7 @@ webhook. `TelegramUpdateHandler` procesa updates y
 |   |   |-- Canva/
 |   |   |-- Instagram/
 |   |   |-- Scheduler/
+|   |   |-- SearchConsole/
 |   |   |-- Telegram/
 |   |   `-- WhatsApp/
 |   |-- GeneratedMedia/     runtime

@@ -89,8 +89,10 @@ builder.Services.AddTransient<IModuleHandler, InteractionModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, DesignModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, PublishModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, ShopifyBlogModuleHandler>();
+builder.Services.AddTransient<IModuleHandler, SearchConsoleModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, SubProjectModuleHandler>();
 builder.Services.AddHttpClient<Server.Services.Shopify.ShopifyService>();
+builder.Services.AddHttpClient<Server.Services.SearchConsole.SearchConsoleService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddSingleton<Server.Services.Instagram.BufferImagePoolService>();
@@ -4356,6 +4358,33 @@ app.MapGet("/api/projects/{projectId:guid}/shopify/blogs", async (
         return Results.Ok(blogs);
     }
     catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
+// ==================== Google Search Console ====================
+
+// Lista las propiedades a las que tiene acceso la cuenta de servicio de una API key
+// "SearchConsole". Sirve para elegir la propiedad del modulo y para comprobar que la
+// credencial funciona antes de ejecutar un pipeline.
+app.MapGet("/api/search-console/sites", async (
+    Guid apiKeyId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.SearchConsole.SearchConsoleService searchConsole) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var key = await db.ApiKeys.FindAsync(apiKeyId);
+    if (key is null || key.ProviderType != "SearchConsole")
+        return Results.BadRequest(new { error = "La API key no existe o no es de Search Console." });
+
+    try
+    {
+        var sites = await searchConsole.ListSitesAsync(key.EncryptedKey, ctx.RequestAborted);
+        return Results.Ok(sites);
+    }
+    catch (Server.Services.SearchConsole.SearchConsoleException ex)
     {
         return Results.BadRequest(new { error = ex.Message });
     }

@@ -225,15 +225,17 @@ public class ModelPricingEndpointTests
     [Fact]
     public void TodoModeloDelCatalogoTieneTarifaOSeSabePorQueNo()
     {
-        // Canva se paga por suscripcion, no por llamada: es el unico caso legitimo
-        // de modelo sin tarifa. Cualquier otro sin precio es un olvido.
+        // Canva se paga por suscripcion, no por llamada, y la API de Search Console
+        // es gratuita: son los unicos casos legitimos de modelo sin tarifa.
+        // Cualquier otro sin precio es un olvido.
         foreach (var model in ModelCatalog.AllModels)
         {
             if (model.Types.Contains("Text", StringComparer.OrdinalIgnoreCase)
                 || model.Types.Contains("Image", StringComparer.OrdinalIgnoreCase))
                 continue;
 
-            if (string.Equals(model.Provider, "Canva", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(model.Provider, "Canva", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(model.Provider, "SearchConsole", StringComparison.OrdinalIgnoreCase))
             {
                 Assert.Null(PricingCatalog.GetAuxiliaryRate(model.Id));
                 continue;

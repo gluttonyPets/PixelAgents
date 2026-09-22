@@ -334,6 +334,9 @@ public record CreateShopifyConnectionRequest(string Name, string ShopDomain, str
 public record UpdateShopifyConnectionRequest(string Name, string ShopDomain, string? ClientId, string? ClientSecret);
 public record ShopifyBlogDto(string Id, string Title, string? Handle);
 
+// ── Google Search Console: propiedades visibles para la cuenta de servicio ──
+public record SearchConsoleSiteDto(string SiteUrl, string PermissionLevel);
+
 // ── Asignacion de conexiones a un proyecto ──
 public record ProjectConnectionsDto(Guid? InstagramConnectionId, Guid? TikTokConnectionId,
     Guid? PinterestConnectionId, Guid? ThreadsConnectionId, Guid? TelegramConnectionId,

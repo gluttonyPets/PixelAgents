@@ -159,7 +159,9 @@ las transcripciones por **minuto** de audio. Forzarlos todos a "$/1M tokens" ser
 equivocarse por tres órdenes de magnitud en dos de los tres casos.
 
 Canva no tiene entrada: se paga por suscripción, no por llamada. La UI lo muestra
-como "sin coste por uso", que es distinto de un precio que falta.
+como "sin coste por uso", que es distinto de un precio que falta. Lo mismo con
+`search-analytics` (proveedor `SearchConsole`): no es un modelo de IA sino la API
+de Google Search Console, que es gratuita.
 
 ---
 

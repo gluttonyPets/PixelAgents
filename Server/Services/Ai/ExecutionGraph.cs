@@ -327,6 +327,7 @@ public class ExecutionGraph
             "Orchestrator" => ("output_plan", "text"),
             "Scene" => ("output_scene", "scene"),
             "StaticText" => ("output_text", "text"),
+            Handlers.SearchConsoleModuleHandler.Type => ("output_text", "text"),
             "FileUpload" => ("output_file", "any"),
             FileDirectoryIndex.ModuleType => (FileDirectoryIndex.OutputPort, "text"),
             "Start" => ("output_prompt", "text"),

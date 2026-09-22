@@ -167,13 +167,26 @@ else
                             <option value="Google">Google (Gemini)</option>
                             <option value="LeonardoAI">Leonardo AI</option>
                             <option value="xAI">xAI (Grok)</option>
+                            <option value="SearchConsole">Google Search Console</option>
                         </select>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>API Key</label>
-                    <input type="password" @bind="_key" placeholder="sk-..." autocomplete="new-password" />
-                </div>
+                @if (_provider == "SearchConsole")
+                {
+                    <div class="form-group">
+                        <label>JSON de la cuenta de servicio</label>
+                        <textarea @bind="_key" rows="6" spellcheck="false" autocomplete="off"
+                                  placeholder='{ "type": "service_account", "client_email": "...", "private_key": "..." }'></textarea>
+                        <span class="text-sm text-muted">@ServiceAccountHelp</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" @bind="_key" placeholder="sk-..." autocomplete="new-password" />
+                    </div>
+                }
             </div>
             <div class="modal-footer">
                 <button class="btn btn-sm" @onclick="CancelCreate" disabled="@_loading">Cancelar</button>
@@ -218,13 +231,25 @@ else
                             <option value="Google">Google (Gemini)</option>
                             <option value="LeonardoAI">Leonardo AI</option>
                             <option value="xAI">xAI (Grok)</option>
+                            <option value="SearchConsole">Google Search Console</option>
                         </select>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>Nueva API Key <span class="text-muted" style="font-weight:400;">(opcional — deja vacío para conservar la actual)</span></label>
-                    <input type="password" @bind="_editKey" placeholder="sk-... (vacío = no cambiar)" autocomplete="new-password" />
-                </div>
+                @if (_editProvider == "SearchConsole")
+                {
+                    <div class="form-group">
+                        <label>Nuevo JSON de la cuenta de servicio <span class="text-muted" style="font-weight:400;">(opcional — deja vacío para conservar el actual)</span></label>
+                        <textarea @bind="_editKey" rows="6" spellcheck="false" autocomplete="off"
+                                  placeholder="(vacío = no cambiar)"></textarea>
+                    </div>
+                }
+                else
+                {
+                    <div class="form-group">
+                        <label>Nueva API Key <span class="text-muted" style="font-weight:400;">(opcional — deja vacío para conservar la actual)</span></label>
+                        <input type="password" @bind="_editKey" placeholder="sk-... (vacío = no cambiar)" autocomplete="new-password" />
+                    </div>
+                }
             </div>
             <div class="modal-footer">
                 <button class="btn btn-sm" @onclick="CancelEdit" disabled="@_editSaving">Cancelar</button>
@@ -275,8 +300,39 @@ else
         _error = null;
     }
 
+    private const string ServiceAccountHelp =
+        "En Google Cloud: habilita la \"Google Search Console API\", crea una cuenta de servicio y descarga " +
+        "una clave JSON. Despues anade el email de la cuenta (client_email) como usuario de la propiedad en " +
+        "Search Console (Configuracion > Usuarios y permisos).";
+
+    // El JSON se guarda tal cual; aqui solo se evita guardar algo que seguro no sirve.
+    private static string? ValidateServiceAccountJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return "Pega el JSON de la cuenta de servicio.";
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (root.ValueKind != System.Text.Json.JsonValueKind.Object
+                || !root.TryGetProperty("client_email", out _)
+                || !root.TryGetProperty("private_key", out _))
+                return "El JSON no parece de una cuenta de servicio: faltan 'client_email' o 'private_key'.";
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return "El texto no es un JSON valido. Pega el fichero de la clave completo.";
+        }
+        return null;
+    }
+
     private async Task Create()
     {
+        if (_provider == "SearchConsole" && ValidateServiceAccountJson(_key) is { } jsonError)
+        {
+            _error = jsonError;
+            return;
+        }
+
         _error = null; _loading = true;
         try
         {
@@ -333,6 +389,13 @@ else
             return;
         }
 
+        if (_editProvider == "SearchConsole" && !string.IsNullOrWhiteSpace(_editKey)
+            && ValidateServiceAccountJson(_editKey) is { } jsonError)
+        {
+            _editError = jsonError;
+            return;
+        }
+
         _editError = null;
         _editSaving = true;
         try
@@ -367,6 +430,7 @@ else
         "Google"     => ("", "badge-google"),
         "LeonardoAI" => ("", "badge-leonardo"),
         "xAI"        => ("", "badge-xai"),
+        "SearchConsole" => ("", "badge-google"),
         _            => ("", "badge-info")
     };
 

@@ -87,6 +87,7 @@ public static class PipelineExporter
         ["Design"] = "Genera disenos con un proveedor grafico",
         ["Publish"] = "Publica el contenido en una red social",
         ["ShopifyBlog"] = "Publica un articulo de blog en Shopify",
+        ["SearchConsole"] = "Descarga datos de Google Search Console (clics, impresiones, CTR, posicion)",
         ["SubProject"] = "Ejecuta otro proyecto entero como si fuera un modulo",
     };
 

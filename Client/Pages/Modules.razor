@@ -56,6 +56,7 @@
             <option value="xAI">xAI (Grok)</option>
             <option value="LeonardoAI">Leonardo AI</option>
             <option value="Canva">Canva</option>
+            <option value="SearchConsole">Google Search Console</option>
         </select>
     </div>
 
@@ -131,6 +132,10 @@
                 @if (!_keys.Any(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)))
                 {
                     <span class="text-sm text-muted">No tienes API keys de @_provider. <a href="/configuracion/apikeys">Crear una</a></span>
+                }
+                @if (_provider == SearchConsoleConfig.Provider)
+                {
+                    <span class="text-sm text-muted">Es el JSON de una cuenta de servicio de Google Cloud anadida como usuario de la propiedad en Search Console.</span>
                 }
             </div>
         }
@@ -352,6 +357,10 @@
                         </select>
                     </div>
                 }
+            }
+            else if (_moduleType == SearchConsoleConfig.ModuleType)
+            {
+                <SearchConsoleConfigEditor Config="_searchConsole" ApiKeyId="@(Guid.TryParse(_apiKeyId, out var scKey) ? scKey : null)" />
             }
             else if (_moduleType == "StaticText")
             {
@@ -754,6 +763,10 @@
                                         </div>
                                     }
                                 }
+                                else if (m.ModuleType == SearchConsoleConfig.ModuleType)
+                                {
+                                    <SearchConsoleConfigEditor Config="_editSearchConsole" ApiKeyId="m.ApiKeyId" />
+                                }
                                 else if (m.ModuleType == "StaticText")
                                 {
                                     <div class="form-group">
@@ -819,6 +832,7 @@ else
         ("Checkpoint",  "Checkpoint",            "C"),
         ("Orchestrator","Orquestador",           "O"),
         ("Coordinator", "Coordinador",           "K"),
+        ("SearchConsole", "Search Console",      "S"),
     ];
 
     private List<ModuleGroup> GetModuleGroups()
@@ -864,6 +878,7 @@ else
         "Google"     => "badge-google",
         "LeonardoAI" => "badge-leonardo",
         "xAI"        => "badge-xai",
+        "SearchConsole" => "badge-google",
         _            => "badge-info"
     };
 
@@ -980,6 +995,10 @@ else
     private string _canvaExportFormat = "png";
     private string _canvaBrandTemplate = "";
     private string _canvaDesignType = "doc";
+
+    // ── Search Console (Search Analytics) ──
+    private SearchConsoleConfig _searchConsole = new();
+    private SearchConsoleConfig _editSearchConsole = new();
 
     // ── Edit: Canva config ──
     private string _editCanvaAccessToken = "";
@@ -1121,6 +1140,9 @@ else
         new("canva-design",    "Canva Design",    "Canva", ["Design"], ["design-creation","export"],           "Crea disenos en blanco y exporta en PNG, JPG, PDF o PPTX."),
         new("canva-autofill",  "Canva Autofill",  "Canva", ["Design"], ["design-creation","autofill","export"], "Autofill de brand templates con datos del pipeline."),
 
+        // ─── Google Search Console: datos de la web (no es un modelo de IA ni tiene coste) ───
+        new("search-analytics", "Search Analytics", "SearchConsole", ["SearchConsole"], ["seo","analytics"], "Clics, impresiones, CTR y posicion media de la web en Google."),
+
     ];
 
     // ── Available types per provider ──
@@ -1142,6 +1164,7 @@ else
                 "Video"         => "Video (imagen -> video)",
                 "Transcription" => "Transcripcion (STT)",
                 "Design"        => "Diseno (Canva)",
+                "SearchConsole" => "Datos de busqueda (Search Analytics)",
                 "Orchestrator"  => "Orquestador de pipeline",
                 "Coordinator"   => "Coordinador (multi-entrada)",
                 "FileUpload"    => "Archivos",
@@ -1243,11 +1266,15 @@ else
         _canvaBrandTemplate = "";
         _canvaDesignType = "doc";
         _staticTextContent = "";
+        _searchConsole = new();
     }
 
     // ── Build config JSON ──
     private string? BuildConfigJson()
     {
+        if (_moduleType == SearchConsoleConfig.ModuleType)
+            return _searchConsole.ToJson();
+
         var parts = new List<string>();
 
         if (_moduleType is "Text" or "Orchestrator" or "Coordinator")
@@ -1395,6 +1422,11 @@ else
         if (string.IsNullOrWhiteSpace(_moduleType)) { _error = "Selecciona un tipo de modulo"; return; }
         if (string.IsNullOrWhiteSpace(_model)) { _error = "Selecciona un modelo"; return; }
         if (string.IsNullOrWhiteSpace(_name)) { _error = "Indica un nombre para el modulo"; return; }
+        if (_moduleType == SearchConsoleConfig.ModuleType)
+        {
+            if (string.IsNullOrWhiteSpace(_apiKeyId)) { _error = "Selecciona la API key de Search Console (cuenta de servicio)"; return; }
+            if (string.IsNullOrWhiteSpace(_searchConsole.SiteUrl)) { _error = "Indica la propiedad de Search Console"; return; }
+        }
 
         _loading = true;
         try
@@ -1488,6 +1520,7 @@ else
         _editCanvaBrandTemplate = "";
         _editCanvaDesignType = "doc";
         _editGrokImageCount = 1;
+        _editSearchConsole = SearchConsoleConfig.FromJson(module.Configuration);
 
         if (!string.IsNullOrWhiteSpace(module.Configuration))
         {
@@ -1611,6 +1644,9 @@ else
 
     private string? BuildEditConfigJson(string moduleType, string providerType, string modelName)
     {
+        if (moduleType == SearchConsoleConfig.ModuleType)
+            return _editSearchConsole.ToJson();
+
         var parts = new List<string>();
 
         if (moduleType is "Text" or "Orchestrator" or "Coordinator")

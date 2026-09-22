@@ -122,7 +122,8 @@ namespace Server.Services.Ai
         /// <summary>
         /// Tarifa de un modelo de embeddings, audio o transcripcion. null cuando el
         /// modelo no se factura por uso —Canva se paga por suscripcion, no por
-        /// llamada— o cuando no hay tarifa conocida.
+        /// llamada, y la API de Search Console es gratuita— o cuando no hay tarifa
+        /// conocida.
         /// </summary>
         public static AuxiliaryRate? GetAuxiliaryRate(string modelName)
         {

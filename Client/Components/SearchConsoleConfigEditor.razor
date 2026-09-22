@@ -1,0 +1,219 @@
+@inject ApiClient Api
+
+@* Formulario de parametros del modulo Search Console (Search Analytics). Se usa
+   igual al crear el modulo y al editar su configuracion en la pagina Modulos. *@
+
+<div class="form-group">
+    <label>Propiedad de Search Console</label>
+    <div style="display:flex; gap:0.5rem;">
+        <input type="text" @bind="Config.SiteUrl" style="flex:1;"
+               placeholder="sc-domain:ejemplo.com  o  https://www.ejemplo.com/" />
+        <button type="button" class="btn btn-sm" @onclick="LoadSites"
+                disabled="@(_loadingSites || ApiKeyId is null)"
+                title="@(ApiKeyId is null ? "Selecciona antes la API key" : "Ver las propiedades de la cuenta de servicio")">
+            @(_loadingSites ? "Cargando..." : "Cargar propiedades")
+        </button>
+    </div>
+    @if (_sites is { Count: > 0 })
+    {
+        <select style="margin-top:0.35rem;" value="@Config.SiteUrl" @onchange="OnSiteSelected">
+            <option value="">-- Elegir propiedad --</option>
+            @foreach (var s in _sites)
+            {
+                <option value="@s.SiteUrl">@s.SiteUrl (@s.PermissionLevel)</option>
+            }
+        </select>
+    }
+    else if (_sites is { Count: 0 })
+    {
+        <span class="text-sm text-muted">
+            La cuenta de servicio no tiene acceso a ninguna propiedad. Anade su email como usuario en Search Console.
+        </span>
+    }
+    @if (_sitesError is not null)
+    {
+        <span class="text-sm" style="color:var(--danger, #e53935);">@_sitesError</span>
+    }
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label>Periodo</label>
+        <select @bind="Config.DateRange">
+            @foreach (var (value, label) in SearchConsoleConfig.DateRangeOptions)
+            {
+                <option value="@value">@label</option>
+            }
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Tipo de busqueda</label>
+        <select @bind="Config.SearchType">
+            @foreach (var (value, label) in SearchConsoleConfig.SearchTypeOptions)
+            {
+                <option value="@value">@label</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (Config.DateRange == "custom")
+{
+    <div class="form-row">
+        <div class="form-group">
+            <label>Desde <span class="text-sm text-muted">(AAAA-MM-DD o {{variable}})</span></label>
+            <input type="text" @bind="Config.StartDate" placeholder="2026-01-01" />
+        </div>
+        <div class="form-group">
+            <label>Hasta <span class="text-sm text-muted">(AAAA-MM-DD o {{variable}})</span></label>
+            <input type="text" @bind="Config.EndDate" placeholder="2026-01-31" />
+        </div>
+    </div>
+}
+
+<div class="form-group">
+    <label>Agrupar por <span class="text-sm text-muted">(sin ninguna = totales de la propiedad)</span></label>
+    <div style="display:flex; flex-wrap:wrap; gap:0.35rem 1rem;">
+        @foreach (var (value, label) in SearchConsoleConfig.DimensionOptions)
+        {
+            <label class="form-check">
+                <input type="checkbox" checked="@Config.Dimensions.Contains(value)"
+                       @onchange="e => Config.ToggleDimension(value, e.Value is true)" />
+                @label
+            </label>
+        }
+    </div>
+</div>
+
+<div class="form-group">
+    <label>Filtros <span class="text-sm text-muted">(uno por linea: dimension operador valor)</span></label>
+    <textarea @bind="Config.Filters" rows="3"
+              placeholder="query contains zapatillas&#10;page notContains /blog/&#10;country equals esp&#10;device equals MOBILE"></textarea>
+    <span class="text-sm text-muted">
+        Dimensiones: query, page, country, device, searchAppearance. Operadores: equals, notEquals,
+        contains, notContains, includingRegex, excludingRegex. Admite {{variables}}.
+    </span>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label>Filtrar: impresiones minimas</label>
+        <input type="number" min="0" @bind="Config.MinImpressions" placeholder="Sin minimo" />
+    </div>
+    <div class="form-group">
+        <label>Filtrar: clics minimos</label>
+        <input type="number" min="0" @bind="Config.MinClicks" placeholder="Sin minimo" />
+    </div>
+</div>
+<div class="form-row">
+    <div class="form-group">
+        <label>Filtrar: posicion desde</label>
+        <input type="text" inputmode="decimal" @bind="Config.MinPosition" placeholder="Ej: 8" />
+    </div>
+    <div class="form-group">
+        <label>Filtrar: posicion hasta</label>
+        <input type="text" inputmode="decimal" @bind="Config.MaxPosition" placeholder="Ej: 20" />
+    </div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label>Ordenar por</label>
+        <select @bind="Config.OrderBy">
+            @foreach (var (value, label) in SearchConsoleConfig.OrderByOptions)
+            {
+                <option value="@value">@label</option>
+            }
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Formato de salida</label>
+        <select @bind="Config.OutputFormat">
+            @foreach (var (value, label) in SearchConsoleConfig.OutputFormatOptions)
+            {
+                <option value="@value">@label</option>
+            }
+        </select>
+    </div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label>Limite de filas <span class="text-sm text-muted">(1 - 25000)</span></label>
+        <input type="number" min="1" max="25000" @bind="Config.RowLimit" />
+    </div>
+    <div class="form-group">
+        <label>Fila inicial <span class="text-sm text-muted">(para paginar)</span></label>
+        <input type="number" min="0" @bind="Config.StartRow" placeholder="0" />
+    </div>
+</div>
+
+<div class="form-row">
+    <div class="form-group">
+        <label>Agregacion</label>
+        <select @bind="Config.AggregationType">
+            <option value="auto">Automatica</option>
+            <option value="byPage">Por pagina</option>
+            <option value="byProperty">Por propiedad</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Datos</label>
+        <select @bind="Config.DataState">
+            <option value="final">Solo datos cerrados (~3 dias de retraso)</option>
+            <option value="all">Incluir datos recientes (provisionales)</option>
+        </select>
+    </div>
+</div>
+<span class="text-sm text-muted">
+    Los filtros de impresiones, clics y posicion se aplican sobre las filas que devuelve Google
+    (hasta el limite de filas). Google devuelve las filas ordenadas por clics.
+</span>
+
+@code {
+    [Parameter, EditorRequired] public SearchConsoleConfig Config { get; set; } = new();
+
+    /// <summary>API key "SearchConsole" elegida para el modulo (para listar propiedades).</summary>
+    [Parameter] public Guid? ApiKeyId { get; set; }
+
+    private List<SearchConsoleSiteDto>? _sites;
+    private string? _sitesError;
+    private bool _loadingSites;
+    private Guid? _sitesKey;
+
+    protected override void OnParametersSet()
+    {
+        // Las propiedades son de una credencial concreta: al cambiarla se descartan.
+        if (_sitesKey != ApiKeyId)
+        {
+            _sites = null;
+            _sitesError = null;
+        }
+    }
+
+    private async Task LoadSites()
+    {
+        if (ApiKeyId is null) return;
+        _loadingSites = true;
+        _sitesError = null;
+        try
+        {
+            var (sites, error) = await Api.GetSearchConsoleSitesAsync(ApiKeyId.Value);
+            _sites = sites;
+            _sitesError = error;
+            _sitesKey = ApiKeyId;
+        }
+        catch (Exception ex)
+        {
+            _sitesError = $"Error de conexion: {ex.Message}";
+        }
+        _loadingSites = false;
+    }
+
+    private void OnSiteSelected(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(value))
+            Config.SiteUrl = value;
+    }
+}

@@ -292,6 +292,10 @@ else if (m.ModuleType == "StaticText")
         <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo.</p>
     </div>
 }
+else if (m.ModuleType == SearchConsoleConfig.ModuleType)
+{
+    <SearchConsoleConfigEditor Config="_editSearchConsole" ApiKeyId="m.ApiKeyId" />
+}
 else if (m.ModuleType == "FileDirectory")
 {
     @* El contenido del directorio es del nodo, no de este modulo de catalogo,
@@ -428,6 +432,7 @@ else
     private string _editGeminiAspectRatio = "1:1";
     private int _editGeminiImageCount = 1;
     private int _editGrokImageCount = 1;
+    private SearchConsoleConfig _editSearchConsole = new();
     private string _editCanvaAccessToken = "";
     private string _editCanvaExportFormat = "png";
     private string _editCanvaBrandTemplate = "";
@@ -455,6 +460,7 @@ else
 
     private void LoadFromConfiguration(AiModuleResponse module)
     {
+        _editSearchConsole = SearchConsoleConfig.FromJson(module.Configuration);
         _editSystemPrompt = "";
         _editTemperature = 0.7;
         _editMaxTokens = 4096;
@@ -519,6 +525,9 @@ else
         if (Module is null) return null;
         var moduleType = Module.ModuleType;
         var providerType = Module.ProviderType;
+        if (moduleType == SearchConsoleConfig.ModuleType)
+            return _editSearchConsole.ToJson();
+
         var parts = new List<string>();
 
         if (moduleType is "Text" or "Orchestrator" or "Coordinator")

@@ -133,6 +133,10 @@ public static class ModelCatalog
         new("canva-autofill", "Canva Autofill", "Canva", ["Design"],
             ["design-creation","autofill","export"], null),
 
+        // ─── Google Search Console: datos de la web (API gratuita, sin tarifa) ───
+        new("search-analytics", "Search Analytics", "SearchConsole", ["SearchConsole"],
+            ["seo","analytics"], null),
+
         // ─── Anthropic: Text ───
         new("claude-opus-4-6",             "Claude Opus 4.6",   "Anthropic", ["Text"],
             ["text","vision","streaming"], 200_000),

@@ -1,6 +1,6 @@
 @* Componente que muestra el logotipo oficial de cada proveedor de IA como SVG inline.
    Uso: <ProviderIcon Provider="OpenAI" Size="16" />
-   Proveedores soportados: OpenAI, Anthropic, Google, xAI, LeonardoAI, System *@
+   Proveedores soportados: OpenAI, Anthropic, Google (y SearchConsole), xAI, LeonardoAI, System *@
 
 @switch (Provider)
 {
@@ -23,6 +23,7 @@
         break;
 
     case "Google":
+    case "SearchConsole":
         @* Logo G de Google con colores oficiales *@
         <svg class="provider-logo" width="@Size" height="@Size" viewBox="0 0 48 48" fill="none"
              xmlns="http://www.w3.org/2000/svg" aria-label="Google">

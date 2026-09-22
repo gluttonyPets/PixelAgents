@@ -27,7 +27,7 @@ ASP.NET Core Minimal API (:5000)
   |-- Identity + CoreDbContext  (DB: pixelagents_core)
   |-- TenantDbContextFactory    (DB: una por usuario/cuenta)
   |-- GraphPipelineExecutor     (motor de ejecucion de grafos)
-  |-- IModuleHandler x18        (handlers por tipo de modulo)
+  |-- IModuleHandler x21        (handlers por tipo de modulo)
   |-- IAiProvider x5            (OpenAI, Anthropic, Google, xAI,
   |                               LeonardoAI)
   |-- ExecutionHub (SignalR)
@@ -447,6 +447,44 @@ export del pipeline, `pipelineEditor.downloadText` guarda el fichero.
 | Design        | DesignModuleHandler        | Genera disenos via proveedor grafico (Canva, etc.)         |
 | Publish       | PublishModuleHandler       | Publica contenido en Instagram, TikTok, Pinterest o Threads via Buffer API |
 | ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug, SEO e imagen destacada via `input_image`, que se sube a Shopify con `stagedUploadsCreate` y requiere el scope `write_files`). El cuerpo acepta HTML con CSS (inline o `<style>`): si el contenido contiene cualquier etiqueta HTML se envia intacto sin escapar; el texto plano se convierte en parrafos. Publica **visible** por defecto (desmarcar "Publicar" en el nodo lo deja como borrador). Devuelve en la salida y en `metadata` la URL del articulo en el admin (`adminUrl`, sirve para borradores) y la URL publica de la tienda (`publicUrl`) |
+| SearchConsole | SearchConsoleModuleHandler | Descarga datos de Search Analytics de Google Search Console (clics, impresiones, CTR, posicion) con los parametros del modulo (ver seccion propia) |
+
+### Modulo Search Console (Search Analytics)
+
+Fuente de datos de la web: no tiene entradas y emite por `output_text` el
+resultado de `searchAnalytics.query` de la API de Google Search Console. Pensado
+para alimentar un modulo de Texto (p. ej. proponer articulos a partir de las
+consultas con muchas impresiones y posicion 8-20).
+
+- **Credencial**: API key del proveedor `SearchConsole`, cuyo valor es el JSON
+  completo de una cuenta de servicio de Google Cloud (con la "Google Search
+  Console API" habilitada). La cuenta (`client_email`) tiene que estar anadida
+  como usuario de la propiedad en Search Console. `SearchConsoleService` firma un
+  JWT RS256 con su `private_key`, lo cambia por un access token (scope
+  `webmasters.readonly`, cacheado ~55 min) y llama a la API; no usa la libreria
+  de Google.
+- **Creacion**: pagina Modulos -> proveedor "Google Search Console", tipo
+  "Datos de busqueda", modelo `search-analytics`. Los parametros se editan con
+  `SearchConsoleConfigEditor` (al crear, en "Configurar" y en "Editar nodo"). El
+  boton "Cargar propiedades" usa `GET /api/search-console/sites?apiKeyId=...`, que
+  ademas sirve para comprobar que la credencial funciona.
+- **Parametros** (config del modulo, todos admiten `{{variables}}`): `siteUrl`
+  (`sc-domain:dominio.com` o URL con barra final), `dateRange` (`last7`,
+  `last28`, `last90`, `last180`, `last365`, `last16months` o `custom` con
+  `startDate`/`endDate` AAAA-MM-DD), `dimensions` (query, page, country, device,
+  date, searchAppearance), `searchType`, `filters` (uno por linea:
+  `dimension operador valor`, se combinan con AND), `rowLimit` (1-25000),
+  `startRow`, `aggregationType`, `dataState` (`final` o `all`). Los presets
+  terminan 3 dias antes de hoy con `final` (datos cerrados) y 1 dia antes con
+  `all`.
+- **Post-proceso** (sobre las filas ya descargadas, la API no lo ofrece):
+  `minImpressions`, `minClicks`, `minPosition`, `maxPosition` y `orderBy`.
+- **Salida**: `outputFormat` `table` (tabla markdown con resumen, la mas util para
+  un LLM), `json` o `csv`. Si se llega al limite de filas se avisa en el log.
+
+La logica de parametros, fechas, filtros y formato vive en
+`SearchAnalyticsQuery` (sin red) y esta cubierta por
+`Server.Tests/SearchConsole`.
 
 ### Modulo Imagen: varias imagenes son varias llamadas
 
