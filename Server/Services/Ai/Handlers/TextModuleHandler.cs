@@ -77,31 +77,42 @@ public class TextModuleHandler : IModuleHandler
             return ModuleResult.Failed("Sin prompt de entrada");
 
         var outgoingFormats = ctx.GetOutgoingFormats();
-        if (outgoingFormats.Count > 0 && !string.IsNullOrWhiteSpace(prompt))
-            prompt = OutputSchemaHelper.GetOutputFormatInstruction(outgoingFormats) + "\n\n" + prompt;
 
         // Si detras hay un modulo de imagen con varias salidas, aqui es donde se
         // decide que salgan imagenes distintas: sin esta instruccion el modelo
         // escribe un unico prompt compuesto y el modulo de imagen no tiene nada
         // que repartir (ver MultiImagePrompt).
         var plannedImages = ResolvePlannedImageCount(ctx);
+
+        // El orden importa: primero el contrato de la conexion y despues como
+        // repartir las imagenes dentro de ese contrato.
+        var preamble = new List<string>(2);
+        if (outgoingFormats.Count > 0 && !string.IsNullOrWhiteSpace(prompt))
+            preamble.Add(OutputSchemaHelper.GetOutputFormatInstruction(outgoingFormats));
+
         if (plannedImages > 1)
         {
+            // Con contrato JSON las marcas romperian el JSON, asi que el reparto
+            // se pide sobre la lista del propio contrato: un elemento por imagen.
+            // El modulo de imagen sabe deshacer las dos formas.
             if (outgoingFormats.Count > 0)
             {
-                await ctx.LogWarningAsync(
-                    $"[Text] El modulo de imagen siguiente pide {plannedImages} imagenes, pero esta conexion declara " +
-                    "un contrato JSON propio y las marcas de reparto lo romperian. Quita el formato de la conexion " +
-                    "para que se planifique un prompt por imagen.");
+                preamble.Add(MultiImagePrompt.BuildJsonPlannerInstruction(plannedImages));
+                await ctx.LogInfoAsync(
+                    $"[Text] Planificacion multi-imagen sobre el contrato JSON de la conexion: " +
+                    $"se piden {plannedImages} elementos, uno por imagen, para el modulo de imagen siguiente.");
             }
             else
             {
-                prompt = MultiImagePrompt.BuildPlannerInstruction(plannedImages) + "\n\n" + prompt;
+                preamble.Add(MultiImagePrompt.BuildPlannerInstruction(plannedImages));
                 await ctx.LogInfoAsync(
                     $"[Text] Planificacion multi-imagen: se piden {plannedImages} prompts separados " +
                     $"por {MultiImagePrompt.BuildMarker(1)} para el modulo de imagen siguiente.");
             }
         }
+
+        if (preamble.Count > 0)
+            prompt = string.Join("\n\n", preamble) + "\n\n" + prompt;
 
         if (inputFiles.Count > 0)
         {

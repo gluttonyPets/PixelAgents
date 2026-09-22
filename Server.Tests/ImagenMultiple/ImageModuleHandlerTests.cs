@@ -291,4 +291,26 @@ public class ImageModuleHandlerTests
         public Task<(bool Valid, string? Error)> ValidateKeyAsync(string apiKey) =>
             Task.FromResult((true, (string?)null));
     }
+
+    [Fact]
+    public async Task ContratoJsonDelModuloDeTexto_SeRepartEnUnaLlamadaPorElemento()
+    {
+        // Caso del pipeline de video: la conexion declara el contrato
+        // {"tomas":[...]}, asi que el texto no puede traer marcas. Antes esto
+        // acababa en una sola llamada con n=3 y tres imagenes iguales.
+        var provider = new FakeImageProvider();
+        var ctx = CreateContext(provider, imageCount: 3, upstreamTexts:
+        [
+            """{"tomas":[{"prompt":"perro en el pasillo"},{"prompt":"primer plano de los ojos"},{"prompt":"vuelve el cuidador"}]}"""
+        ]);
+
+        var result = await CreateHandler(provider).ExecuteAsync(ctx);
+
+        Assert.Equal(ModuleResultStatus.Completed, result.Status);
+        Assert.Equal(3, provider.Calls.Count);
+        Assert.All(provider.Calls, c => Assert.Equal(1, MultiImagePrompt.ReadImageCount(c.Configuration)));
+        Assert.Contains("perro en el pasillo", provider.Calls[0].Input);
+        Assert.DoesNotContain("vuelve el cuidador", provider.Calls[0].Input);
+        Assert.Contains("vuelve el cuidador", provider.Calls[2].Input);
+    }
 }

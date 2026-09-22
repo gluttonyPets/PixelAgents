@@ -250,18 +250,23 @@ public class ImageModuleHandler : IModuleHandler
     {
         if (requested <= 1)
         {
-            if (segments.Count > 1)
-                await ctx.LogWarningAsync(
-                    $"[Image] El texto de entrada trae {segments.Count} partes pero el modulo esta configurado " +
-                    "para 1 imagen: se generan todas juntas en una sola. Sube el numero de imagenes del modulo.");
-            return segments;
+            if (segments.Count <= 1) return segments;
+
+            await ctx.LogWarningAsync(
+                $"[Image] El texto de entrada trae {segments.Count} partes pero el modulo esta configurado " +
+                "para 1 imagen: se generan todas juntas en una sola. Sube el numero de imagenes del modulo.");
+
+            // Lo que dice el aviso: una sola escena con todas las partes dentro.
+            // Repartirlas daria mas imagenes que salidas tiene el modulo.
+            return [string.Join("\n\n", segments)];
         }
 
         if (segments.Count < 2)
         {
             await ctx.LogWarningAsync(
                 $"[Image] El modulo pide {requested} imagenes pero el texto de entrada no viene separado en partes " +
-                $"({MultiImagePrompt.BuildMarker(1)}, {MultiImagePrompt.BuildMarker(2)}, ...), asi que no hay nada que repartir: " +
+                $"(ni marcas {MultiImagePrompt.BuildMarker(1)}, {MultiImagePrompt.BuildMarker(2)}, ... ni una lista JSON " +
+                "con un elemento por imagen), asi que no hay nada que repartir: " +
                 $"se piden las {requested} al proveedor con el MISMO prompt y saldran repetidas. " +
                 "Conecta un modulo de texto delante para que planifique un prompt por imagen.");
             return segments;

@@ -160,4 +160,68 @@ public class MultiImagePromptTests
                                .Replace($"(prompt completo y autocontenido de la imagen 2)", "dos");
         Assert.Equal(2, MultiImagePrompt.Split([texto]).Segments.Count);
     }
+
+    [Fact]
+    public void ContratoJson_SeRepartePorLosElementosDeLaLista()
+    {
+        // Lo que devuelve el modulo de texto cuando la conexion declara un
+        // contrato: el pipeline de video usa {"tomas":[...]} porque el mismo
+        // texto alimenta ademas a un orquestador.
+        var texto = """
+            {"tomas":[{"prompt":"Perro en el pasillo."},{"prompt":"Primer plano de los ojos."},{"prompt":"El cuidador vuelve."}]}
+            """;
+
+        var result = MultiImagePrompt.Split([texto]);
+
+        Assert.Equal(3, result.Segments.Count);
+        Assert.Equal("Perro en el pasillo.", result.Segments[0]);
+        Assert.Equal("Primer plano de los ojos.", result.Segments[1]);
+        Assert.Equal("El cuidador vuelve.", result.Segments[2]);
+        Assert.Equal("", result.Common);
+    }
+
+    [Fact]
+    public void ContratoJson_LasClavesSueltasSonContextoComun()
+    {
+        var texto = """
+            {"estilo":"animacion 2D de alto contraste","tomas":[{"prompt":"uno"},{"prompt":"dos"}]}
+            """;
+
+        var result = MultiImagePrompt.Split([texto]);
+
+        Assert.Equal(["uno", "dos"], result.Segments);
+        Assert.Contains("animacion 2D de alto contraste", result.Common);
+    }
+
+    [Fact]
+    public void ContratoJson_ListaDeTextosYBloqueMarkdown()
+    {
+        var texto = "```json\n[\"uno\", \"dos\"]\n```";
+
+        var result = MultiImagePrompt.Split([texto]);
+
+        Assert.Equal(["uno", "dos"], result.Segments);
+    }
+
+    [Fact]
+    public void ContratoJson_ConUnSoloElemento_NoSeParte()
+    {
+        var texto = """{"tomas":[{"prompt":"unica"}]}""";
+
+        var result = MultiImagePrompt.Split([texto]);
+
+        Assert.Empty(result.Segments);
+        Assert.Equal(texto.Trim(), result.Common);
+    }
+
+    [Fact]
+    public void TextoQueNoEsJson_SiguePasandoEntero()
+    {
+        var texto = "{ esto no es json } y sigue el prompt";
+
+        var result = MultiImagePrompt.Split([texto]);
+
+        Assert.Empty(result.Segments);
+        Assert.Equal(texto, result.Common);
+    }
 }

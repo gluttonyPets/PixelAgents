@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Server.Services.Ai;
@@ -18,6 +19,12 @@ namespace Server.Services.Ai;
 ///     y escribe un bloque por imagen separado por marcas;
 ///   - el modulo de imagen usa <see cref="Split"/> para deshacer ese texto en
 ///     partes y lanzar una llamada por parte.
+///
+/// El texto planificado puede llegar de dos formas, porque el editor permite las
+/// dos: con las marcas <c>===IMAGEN n===</c>, o como el JSON del contrato que
+/// declare la conexion (por ejemplo <c>{"tomas":[{"prompt":"..."}, ...]}</c>)
+/// cuando el mismo modulo de texto alimenta ademas a un orquestador. En el
+/// segundo caso cada elemento de la lista es el prompt de una imagen.
 /// </summary>
 public static class MultiImagePrompt
 {
@@ -121,6 +128,24 @@ public static class MultiImagePrompt
     }
 
     /// <summary>
+    /// Variante de <see cref="BuildPlannerInstruction"/> para cuando la conexion
+    /// ya declara un contrato JSON propio: ahi las marcas romperian el JSON, asi
+    /// que el reparto se pide sobre la lista del contrato (un elemento por imagen)
+    /// y <see cref="Split"/> la deshace igual que las marcas.
+    /// </summary>
+    public static string BuildJsonPlannerInstruction(int count)
+    {
+        return $"""
+            IMPORTANTE - PLANIFICACION MULTI-IMAGEN DENTRO DEL CONTRATO JSON: el JSON que devuelvas alimenta un modulo que va a generar {count} imagenes INDEPENDIENTES, con una llamada distinta por imagen.
+            - La lista principal del contrato debe traer EXACTAMENTE {count} elementos, en orden, uno por imagen.
+            - Cada elemento tiene que ser autocontenido: el modelo que genere la imagen i solo vera ese elemento, no los demas ni sabra que existen.
+            - No repartas una misma composicion entre varios elementos ni metas el contenido de todas las imagenes en cada elemento.
+            - El estilo, la paleta y el formato compartidos van repetidos de forma BREVE en cada elemento, o en una clave suelta fuera de la lista: dentro de cada elemento describe solo SU imagen.
+            - No uses las marcas ===IMAGEN n=== aqui: romperian el JSON del contrato.
+            """;
+    }
+
+    /// <summary>
     /// Reparte los textos de entrada de un modulo de imagen. Cada texto viene de
     /// una conexion distinta (fan-in): normalmente uno trae los prompts segmentados
     /// y el resto son contexto (por ejemplo el indice del modulo Directorio), asi
@@ -158,8 +183,9 @@ public static class MultiImagePrompt
             expected++;
         }
 
-        // Con una sola marca no hay reparto que hacer: el texto sigue siendo uno.
-        if (markers.Count < 2) return (text, []);
+        // Con una sola marca no hay reparto por marcas. Antes de rendirse se
+        // prueba el contrato JSON, que es la otra forma en que llega planificado.
+        if (markers.Count < 2) return SplitJson(text) ?? (text, []);
 
         var segments = new List<string>(markers.Count);
         for (var i = 0; i < markers.Count; i++)
@@ -175,6 +201,127 @@ public static class MultiImagePrompt
         if (segments.Count != markers.Count) return (text, []);
 
         return (text[..markers[0].Index], segments);
+    }
+
+    /// <summary>Claves que suele usar el contrato JSON para el texto de cada parte.</summary>
+    private static readonly string[] PromptKeys =
+    [
+        "prompt", "texto", "text", "content", "contenido",
+        "descripcion", "description", "imagen", "image", "escena", "scene", "toma",
+    ];
+
+    /// <summary>
+    /// Reparto alternativo para el texto que llega como JSON: el que escribe un
+    /// modulo de texto cuya conexion declara un contrato (ver
+    /// <c>OutputSchemaHelper.GetOutputFormatInstruction</c>). Se busca la primera
+    /// lista con dos o mas elementos y cada elemento pasa a ser el prompt de una
+    /// imagen; el resto de claves sueltas del objeto raiz son contexto comun.
+    /// Devuelve null si el texto no es JSON o no hay lista que repartir, para que
+    /// el llamante lo trate como un texto normal.
+    /// </summary>
+    private static (string Preamble, List<string> Segments)? SplitJson(string text)
+    {
+        var trimmed = StripCodeFence(text);
+        if (trimmed.Length == 0 || (trimmed[0] != '{' && trimmed[0] != '[')) return null;
+
+        JsonElement root;
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed);
+            root = doc.RootElement.Clone();
+        }
+        catch (JsonException) { return null; }
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            var items = ReadJsonItems(root);
+            return items.Count >= 2 ? ("", items) : null;
+        }
+
+        if (root.ValueKind != JsonValueKind.Object) return null;
+
+        foreach (var prop in root.EnumerateObject())
+        {
+            if (prop.Value.ValueKind != JsonValueKind.Array) continue;
+
+            var items = ReadJsonItems(prop.Value);
+            if (items.Count < 2) continue;
+
+            // Lo que acompana a la lista (estilo, paleta, formato) vale para todas.
+            var common = new List<string>();
+            foreach (var other in root.EnumerateObject())
+            {
+                if (other.NameEquals(prop.Name)) continue;
+                var scalar = ReadJsonScalar(other.Value);
+                if (!string.IsNullOrWhiteSpace(scalar)) common.Add($"{other.Name}: {scalar}");
+            }
+
+            return (string.Join("\n", common), items);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Texto de cada elemento de la lista. Si algun elemento se queda vacio se
+    /// devuelve la lista vacia: se pierde la correspondencia elemento-imagen y es
+    /// preferible no repartir a repartir mal (igual que con las marcas).
+    /// </summary>
+    private static List<string> ReadJsonItems(JsonElement array)
+    {
+        var items = new List<string>();
+
+        foreach (var element in array.EnumerateArray())
+        {
+            string? value;
+            if (element.ValueKind == JsonValueKind.Object)
+            {
+                // Primero la clave que nombra el prompt; si el objeto usa otro
+                // nombre se vuelcan sus campos simples, que es lo que describe
+                // la imagen de todas formas.
+                value = PromptKeys
+                    .Select(key => element.TryGetProperty(key, out var p) ? ReadJsonScalar(p) : null)
+                    .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+                if (string.IsNullOrWhiteSpace(value))
+                    value = string.Join("\n", element.EnumerateObject()
+                        .Select(p => (p.Name, Value: ReadJsonScalar(p.Value)))
+                        .Where(p => !string.IsNullOrWhiteSpace(p.Value))
+                        .Select(p => $"{p.Name}: {p.Value}"));
+            }
+            else
+            {
+                value = ReadJsonScalar(element);
+            }
+
+            if (string.IsNullOrWhiteSpace(value)) return [];
+            items.Add(value.Trim());
+        }
+
+        return items;
+    }
+
+    /// <summary>Valor simple de un elemento JSON como texto; null si no lo es.</summary>
+    private static string? ReadJsonScalar(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString(),
+        JsonValueKind.Number => element.GetRawText(),
+        JsonValueKind.True or JsonValueKind.False => element.GetRawText(),
+        _ => null,
+    };
+
+    /// <summary>Quita el ```json ... ``` con el que algunos modelos envuelven el JSON.</summary>
+    private static string StripCodeFence(string text)
+    {
+        var trimmed = text.Trim();
+        if (!trimmed.StartsWith("```", StringComparison.Ordinal)) return trimmed;
+
+        var firstBreak = trimmed.IndexOf('\n');
+        if (firstBreak < 0) return trimmed;
+
+        var body = trimmed[(firstBreak + 1)..];
+        var fence = body.LastIndexOf("```", StringComparison.Ordinal);
+        return (fence >= 0 ? body[..fence] : body).Trim();
     }
 
     private static int? ParseInt(object? raw) => raw switch

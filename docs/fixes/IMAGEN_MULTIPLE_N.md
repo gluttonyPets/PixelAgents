@@ -94,14 +94,49 @@ para ids que no estén en el catálogo) y la lista de modelos que sugiere el avi
 recorte se calcula del catálogo en vez de una tabla paralela que se quedaba vieja
 —y descarta los modelos ya retirados, que antes se sugerían igual—.
 
+## Cuarta vuelta: el contrato JSON de la conexión anulaba el reparto
+
+Un pipeline de vídeo (texto -> imagen x3 -> tres nodos de vídeo) seguía dando
+tres imágenes iguales. El log lo dejaba por escrito dos veces:
+
+```
+[GPT - Guión para video] El modulo de imagen siguiente pide 3 imagenes, pero esta
+  conexion declara un contrato JSON propio y las marcas de reparto lo romperian.
+[GPT Imagen estandar] El modulo pide 3 imagenes pero el texto de entrada no viene
+  separado en partes (===IMAGEN 1===, ...): se piden las 3 con el MISMO prompt.
+```
+
+Eran dos mecanismos que no se hablaban. La conexión llevaba un `Format`
+(`{"tomas":[{"prompt":"toma 1"}, ...]}`), porque el mismo módulo de texto
+alimentaba también a un orquestador, así que `TextModuleHandler` renunciaba a
+planificar y solo avisaba; el módulo de imagen, que únicamente sabía partir por
+marcas, recibía el JSON entero y lo mandaba tal cual tres veces. Y como el aviso
+pedía "quita el formato de la conexión", tampoco había salida: los formatos se
+leen de **todas** las aristas salientes, así que el contrato del orquestador
+seguiría desactivando el reparto.
+
+Ahora los dos formatos son válidos:
+
+- `MultiImagePrompt.Split` prueba el JSON cuando no hay marcas: coge la primera
+  lista con dos o más elementos, saca de cada elemento su texto (`prompt`,
+  `texto`, `content`, ... o los campos simples del objeto) y trata las claves
+  sueltas del objeto raíz como contexto común. Si el texto no es JSON, o algún
+  elemento sale vacío, no se reparte nada y pasa entero, como antes.
+- `TextModuleHandler` ya no se rinde ante un contrato: inyecta
+  `BuildJsonPlannerInstruction`, que pide exactamente N elementos autocontenidos
+  dentro de la lista del contrato en vez de las marcas.
+- Un módulo configurado para 1 imagen que recibe texto con varias partes genera
+  una sola imagen con todas dentro, que es lo que su aviso ya prometía (antes
+  devolvía las partes y acababa haciendo una llamada por parte).
+
 ## Verificación
 
 ```bash
 dotnet test Server.Tests/Server.Tests.csproj --filter "FullyQualifiedName~ImagenMultiple"
 ```
 
-Cubre el reparto de las marcas en sus variantes habituales, que un texto sin
-marcas no se parta solo, que cada llamada lleve su parte más el contexto común,
+Cubre el reparto de las marcas en sus variantes habituales, el reparto por la
+lista de un contrato JSON, que un texto sin marcas no se parta solo, que cada llamada lleve su parte más el contexto común,
 que nunca se pida un lote `n>1` en el reparto, y que un puerto sin imagen no
 propague nada.
 
