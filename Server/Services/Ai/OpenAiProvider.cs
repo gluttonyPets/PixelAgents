@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
 using OpenAI.Images;
+using OpenAI.Responses;
 using Server.Models;
 
 namespace Server.Services.Ai
@@ -57,6 +58,15 @@ namespace Server.Services.Ai
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, timeoutCts.Token);
             var ct = linkedCts.Token;
 
+            // La busqueda web solo existe en la Responses API; Chat Completions
+            // sigue siendo el camino por defecto para no cambiar lo que ya funciona.
+            // Con imagenes de entrada se queda en Chat Completions: el SDK solo
+            // acepta imagenes en Responses como Uri, y un data URI de una imagen
+            // real supera el tamano maximo de System.Uri.
+            var webSearchRequested = WebSearchOption.IsEnabled(context.Configuration);
+            if (webSearchRequested && context.InputFiles is not { Count: > 0 })
+                return await GenerateTextWithWebSearchAsync(context, ct);
+
             var client = new ChatClient(model: context.ModelName, apiKey: context.ApiKey);
 
             var messages = new List<ChatMessage>();
@@ -110,7 +120,7 @@ namespace Server.Services.Ai
             var cachedTokens = usage.InputTokenDetails?.CachedTokenCount ?? 0;
             var reasoningTokens = usage.OutputTokenDetails?.ReasoningTokenCount ?? 0;
 
-            return new AiResult
+            var result = new AiResult
             {
                 Success = true,
                 TextOutput = text,
@@ -127,7 +137,67 @@ namespace Server.Services.Ai
                     ["reasoningTokens"] = reasoningTokens,
                 }
             };
+            if (webSearchRequested)
+                result.Metadata["webSearchSkipped"] = "OpenAI no admite busqueda web con imagenes de entrada en este modulo";
+            return result;
         }
+
+#pragma warning disable OPENAI001 // La Responses API sigue marcada como experimental en el SDK.
+        private async Task<AiResult> GenerateTextWithWebSearchAsync(AiExecutionContext context, CancellationToken ct)
+        {
+            var client = new ResponsesClient(context.ApiKey);
+
+            var parts = new List<ResponseContentPart> { ResponseContentPart.CreateInputTextPart(context.Input) };
+
+            var options = new CreateResponseOptions
+            {
+                Model = context.ModelName,
+                Instructions = SystemPromptComposer.Build(context),
+            };
+            options.InputItems.Add(ResponseItem.CreateUserMessageItem(parts));
+            options.Tools.Add(ResponseTool.CreateWebSearchTool());
+
+            if (context.Configuration.TryGetValue("temperature", out var temp))
+                options.Temperature = Convert.ToSingle(temp);
+            if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
+                options.MaxOutputTokenCount = Convert.ToInt32(maxTok);
+            if (SupportsReasoningEffort(context.ModelName)
+                && context.Configuration.TryGetValue("reasoningEffort", out var effort)
+                && effort is string effortStr
+                && !string.IsNullOrWhiteSpace(effortStr))
+            {
+                options.ReasoningOptions = new ResponseReasoningOptions
+                {
+                    ReasoningEffortLevel = new ResponseReasoningEffortLevel(effortStr.Trim().ToLowerInvariant()),
+                };
+            }
+
+            var response = (await client.CreateResponseAsync(options, ct)).Value;
+
+            var inputTokens = response.Usage?.InputTokenCount ?? 0;
+            var outputTokens = response.Usage?.OutputTokenCount ?? 0;
+            var cachedTokens = response.Usage?.InputTokenDetails?.CachedTokenCount ?? 0;
+            var reasoningTokens = response.Usage?.OutputTokenDetails?.ReasoningTokenCount ?? 0;
+            var webSearchRequests = response.OutputItems.OfType<WebSearchCallResponseItem>().Count();
+
+            return new AiResult
+            {
+                Success = true,
+                TextOutput = response.GetOutputText(),
+                EstimatedCost = PricingCatalog.EstimateTextCost(context.ModelName, inputTokens, outputTokens)
+                    + webSearchRequests * WebSearchOption.CostPerSearch,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["model"] = context.ModelName,
+                    ["inputTokens"] = inputTokens,
+                    ["outputTokens"] = outputTokens,
+                    ["cachedInputTokens"] = cachedTokens,
+                    ["reasoningTokens"] = reasoningTokens,
+                    ["webSearchRequests"] = webSearchRequests,
+                }
+            };
+        }
+#pragma warning restore OPENAI001
 
         /// <summary>
         /// gpt-5.x y la serie o aceptan reasoning_effort. gpt-5-chat es la variante

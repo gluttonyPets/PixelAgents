@@ -469,6 +469,24 @@ Providers registrados:
 `IAiProviderRegistry` resuelve proveedores por `ProviderType` y expone la lista
 de proveedores disponibles.
 
+**Busqueda en internet** (modulos de texto de Anthropic, OpenAI y Google): casilla
+del formulario del modulo, guardada como `"webSearch": true|false` en su config.
+Viene marcada al crear un modulo; los modulos sin la clave (anteriores a la
+opcion) cuentan como desactivados. La logica compartida esta en
+`Server/Services/Ai/WebSearchOption.cs`:
+
+- Anthropic declara las herramientas de servidor `web_search` y, en modelos 4.6
+  en adelante, `web_fetch` (leer URLs); reenvia la respuesta si la API corta el
+  turno con `pause_turn` y solo devuelve el texto posterior al ultimo resultado
+  de herramienta.
+- OpenAI pasa de Chat Completions a la Responses API con la herramienta
+  `web_search`. Si el nodo recibe imagenes se queda en Chat Completions sin
+  busqueda (metadato `webSearchSkipped`).
+- Google activa `GoogleSearch` y `UrlContext`.
+
+El coste estimado suma 0,01 USD por busqueda en Anthropic y OpenAI; el numero de
+busquedas queda en los metadatos del paso.
+
 ### Handlers De Modulo
 
 Todos los handlers implementan `IModuleHandler`:

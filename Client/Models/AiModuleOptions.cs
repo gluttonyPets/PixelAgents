@@ -79,6 +79,14 @@ public static class AiModuleOptions
     }
 
     /// <summary>
+    /// Modulos de texto que pueden buscar en internet. Debe coincidir con
+    /// WebSearchOption.SupportedProviders del servidor.
+    /// </summary>
+    public static bool SupportsWebSearch(string? providerType, string? moduleType) =>
+        moduleType == "Text"
+        && providerType is "Anthropic" or "OpenAI" or "Google";
+
+    /// <summary>
     /// gpt-5.x y la serie o aceptan reasoning_effort. gpt-5-chat es la variante
     /// sin razonamiento y lo rechaza, igual que gpt-4.x y anteriores.
     /// Debe coincidir con OpenAiProvider.SupportsReasoningEffort del servidor.

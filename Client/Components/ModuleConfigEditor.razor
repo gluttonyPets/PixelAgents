@@ -39,6 +39,16 @@ else if (m.ModuleType is "Text" or "Coordinator")
             <input type="number" min="1" max="200000" @bind="_editMaxTokens" />
         </div>
     </div>
+    @if (AiModuleOptions.SupportsWebSearch(m.ProviderType, m.ModuleType))
+    {
+        <div class="form-group">
+            <label class="form-check">
+                <input type="checkbox" @bind="_editWebSearch" />
+                Busqueda en internet
+                <span class="text-sm text-muted">(puede buscar y leer paginas web; cada busqueda tiene coste)</span>
+            </label>
+        </div>
+    }
     @if (AiModuleOptions.SupportsReasoningEffort(m.ProviderType, m.ModelName))
     {
         <div class="form-group">
@@ -406,6 +416,7 @@ else
     private string _editImageSize = "1024x1024";
     private string _editImageQuality = AiModuleOptions.DefaultImageQuality;
     private string _editReasoningEffort = "";
+    private bool _editWebSearch;
     private string _editTtsVoice = "alloy";
     private double _editTtsSpeed = 1.0;
     private int _editLeoWidth = 1024;
@@ -450,6 +461,7 @@ else
         _editImageSize = "1024x1024";
         _editImageQuality = AiModuleOptions.DefaultQualityForModel(module.ModelName);
         _editReasoningEffort = "";
+        _editWebSearch = false;
         _editTtsVoice = "alloy";
         _editTtsSpeed = 1.0;
         _editLeoWidth = 1024;
@@ -480,6 +492,7 @@ else
             if (root.TryGetProperty("quality", out var q))
                 _editImageQuality = AiModuleOptions.NormalizeQualityForModel(q.GetString(), module.ModelName);
             if (root.TryGetProperty("reasoningEffort", out var re)) _editReasoningEffort = re.GetString() ?? "";
+            if (root.TryGetProperty("webSearch", out var ws)) _editWebSearch = ws.ValueKind == System.Text.Json.JsonValueKind.True;
             if (root.TryGetProperty("voice", out var v)) _editTtsVoice = v.GetString() ?? "alloy";
             if (root.TryGetProperty("speed", out var spd)) _editTtsSpeed = spd.GetDouble();
             if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
@@ -519,6 +532,8 @@ else
             if (AiModuleOptions.SupportsReasoningEffort(providerType, Module.ModelName)
                 && !string.IsNullOrWhiteSpace(_editReasoningEffort))
                 parts.Add($"\"reasoningEffort\":\"{_editReasoningEffort}\"");
+            if (AiModuleOptions.SupportsWebSearch(providerType, moduleType))
+                parts.Add($"\"webSearch\":{(_editWebSearch ? "true" : "false")}");
         }
         else if (moduleType == "Image" && providerType == "Google")
         {

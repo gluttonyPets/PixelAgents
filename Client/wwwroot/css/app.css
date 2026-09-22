@@ -6818,3 +6818,18 @@ a.link:hover { text-decoration: underline; }
     padding-top: 0.5rem;
     border-top: 1px solid var(--border);
 }
+
+/* Casilla con texto en la misma linea dentro de un .form-group (p. ej. "Busqueda en internet"). */
+.form-group .form-check {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.form-group .form-check input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    accent-color: var(--accent);
+}

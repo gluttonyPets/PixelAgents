@@ -155,6 +155,16 @@
                         <input type="number" min="1" max="200000" @bind="_maxTokens" />
                     </div>
                 </div>
+                @if (AiModuleOptions.SupportsWebSearch(_provider, _moduleType))
+                {
+                    <div class="form-group">
+                        <label class="form-check">
+                            <input type="checkbox" @bind="_webSearch" />
+                            Busqueda en internet
+                            <span class="text-sm text-muted">(puede buscar y leer paginas web; cada busqueda tiene coste)</span>
+                        </label>
+                    </div>
+                }
                 @if (AiModuleOptions.SupportsReasoningEffort(_provider, _model))
                 {
                     <div class="form-group">
@@ -536,6 +546,16 @@
                                             <input type="number" min="1" max="200000" @bind="_editMaxTokens" />
                                         </div>
                                     </div>
+                                    @if (AiModuleOptions.SupportsWebSearch(m.ProviderType, m.ModuleType))
+                                    {
+                                        <div class="form-group">
+                                            <label class="form-check">
+                                                <input type="checkbox" @bind="_editWebSearch" />
+                                                Busqueda en internet
+                                                <span class="text-sm text-muted">(puede buscar y leer paginas web; cada busqueda tiene coste)</span>
+                                            </label>
+                                        </div>
+                                    }
                                     @if (AiModuleOptions.SupportsReasoningEffort(m.ProviderType, m.ModelName))
                                     {
                                         <div class="form-group">
@@ -900,6 +920,7 @@ else
     private string _editImageSize = "1024x1024";
     private string _editImageQuality = AiModuleOptions.DefaultImageQuality;
     private string _editReasoningEffort = "";
+    private bool _editWebSearch;
     private string _editTtsVoice = "alloy";
     private double _editTtsSpeed = 1.0;
     private int _editLeoWidth = 1024;
@@ -913,6 +934,7 @@ else
     private string _systemPrompt = "";
     private double _temperature = 0.7;
     private int _maxTokens = 4096;
+    private bool _webSearch = true;
 
     // ── Form: image config (OpenAI) ──
     private string _imageSize = "1024x1024";
@@ -1198,6 +1220,7 @@ else
         _systemPrompt = "";
         _temperature = 0.7;
         _maxTokens = 4096;
+        _webSearch = true;
         _imageSize = "1024x1024";
         _imageQuality = AiModuleOptions.DefaultQualityForModel(_model);
         _reasoningEffort = "";
@@ -1239,6 +1262,10 @@ else
             if (AiModuleOptions.SupportsReasoningEffort(_provider, _model)
                 && !string.IsNullOrWhiteSpace(_reasoningEffort))
                 parts.Add($"\"reasoningEffort\":\"{_reasoningEffort}\"");
+            // Se escribe siempre, tambien en false: un modulo sin la clave es uno
+            // anterior a la opcion y el servidor lo trata como desactivado.
+            if (AiModuleOptions.SupportsWebSearch(_provider, _moduleType))
+                parts.Add($"\"webSearch\":{(_webSearch ? "true" : "false")}");
         }
         else if (_moduleType == "Image" && _provider == "Google")
         {
@@ -1448,6 +1475,7 @@ else
         _editImageSize = "1024x1024";
         _editImageQuality = AiModuleOptions.DefaultQualityForModel(module.ModelName);
         _editReasoningEffort = "";
+        _editWebSearch = false;
         _editTtsVoice = "alloy";
         _editTtsSpeed = 1.0;
         _editLeoWidth = 1024;
@@ -1476,6 +1504,7 @@ else
                 if (root.TryGetProperty("quality", out var q))
                     _editImageQuality = AiModuleOptions.NormalizeQualityForModel(q.GetString(), module.ModelName);
                 if (root.TryGetProperty("reasoningEffort", out var re)) _editReasoningEffort = re.GetString() ?? "";
+                if (root.TryGetProperty("webSearch", out var ws)) _editWebSearch = ws.ValueKind == System.Text.Json.JsonValueKind.True;
                 if (root.TryGetProperty("voice", out var v)) _editTtsVoice = v.GetString() ?? "alloy";
                 if (root.TryGetProperty("speed", out var spd)) _editTtsSpeed = spd.GetDouble();
                 if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
@@ -1598,6 +1627,8 @@ else
             if (AiModuleOptions.SupportsReasoningEffort(providerType, modelName)
                 && !string.IsNullOrWhiteSpace(_editReasoningEffort))
                 parts.Add($"\"reasoningEffort\":\"{_editReasoningEffort}\"");
+            if (AiModuleOptions.SupportsWebSearch(providerType, moduleType))
+                parts.Add($"\"webSearch\":{(_editWebSearch ? "true" : "false")}");
         }
         else if (moduleType == "Image" && providerType == "Google")
         {

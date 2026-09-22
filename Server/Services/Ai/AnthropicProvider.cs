@@ -91,11 +91,12 @@ namespace Server.Services.Ai
         {
             var systemPrompt = BuildSystemPrompt(context);
 
-            // When the user wires file modules into a Text node we go via raw
-            // HTTP so we can mix image / document / text content blocks freely.
-            // The SDK path is kept for the text-only fast case.
-            if (context.InputFiles is { Count: > 0 })
-                return await GenerateTextWithAttachmentsAsync(context, systemPrompt);
+            // When the user wires file modules into a Text node, or turns on web
+            // search, we go via raw HTTP so we can mix image / document / text
+            // content blocks and declare server tools freely. The SDK path is kept
+            // for the plain text-only fast case.
+            if (context.InputFiles is { Count: > 0 } || WebSearchOption.IsEnabled(context.Configuration))
+                return await GenerateTextRawAsync(context, systemPrompt);
 
             var client = new AnthropicClient(context.ApiKey);
             var messages = new List<Message>
@@ -152,13 +153,16 @@ namespace Server.Services.Ai
         /// can attach PDFs (document blocks), images (image blocks with the real
         /// MIME) and plain-text files (inline text) in the same request — the
         /// scenarios the SDK helper does not cover uniformly across versions.
+        /// Also declares the web search / web fetch server tools when the module
+        /// has "Busqueda en internet" enabled.
         /// </summary>
-        private async Task<AiResult> GenerateTextWithAttachmentsAsync(AiExecutionContext context, string systemPrompt)
+        private async Task<AiResult> GenerateTextRawAsync(AiExecutionContext context, string systemPrompt)
         {
+            var inputFiles = context.InputFiles ?? [];
             var contentBlocks = new List<object>();
-            for (int i = 0; i < context.InputFiles!.Count; i++)
+            for (int i = 0; i < inputFiles.Count; i++)
             {
-                var fileBytes = context.InputFiles[i];
+                var fileBytes = inputFiles[i];
                 var meta = context.InputFileMetas is { } metas && i < metas.Count ? metas[i] : null;
                 var (kind, mediaType) = ResolveAttachmentKind(meta, fileBytes);
 
@@ -213,21 +217,26 @@ namespace Server.Services.Ai
             }
             contentBlocks.Add(new { type = "text", text = context.Input });
 
+            var webSearch = WebSearchOption.IsEnabled(context.Configuration);
+            var messages = new List<object>
+            {
+                new { role = "user", content = contentBlocks }
+            };
+
             var payload = new Dictionary<string, object?>
             {
                 ["model"] = context.ModelName,
                 ["max_tokens"] = 1024,
                 ["system"] = systemPrompt,
-                ["messages"] = new[]
-                {
-                    new { role = "user", content = contentBlocks }
-                }
+                ["messages"] = messages,
             };
 
             if (context.Configuration.TryGetValue("temperature", out var temp))
                 payload["temperature"] = Convert.ToDecimal(temp);
             if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
                 payload["max_tokens"] = Convert.ToInt32(maxTok);
+            if (webSearch)
+                payload["tools"] = WebSearchOption.AnthropicTools(context.ModelName);
 
             using var http = new HttpClient
             {
@@ -236,50 +245,105 @@ namespace Server.Services.Ai
             http.DefaultRequestHeaders.Add("x-api-key", context.ApiKey);
             http.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
 
-            var json = JsonSerializer.Serialize(payload);
-            using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var resp = await http.PostAsync("https://api.anthropic.com/v1/messages", content, context.CancellationToken);
-            var body = await resp.Content.ReadAsStringAsync(context.CancellationToken);
-
-            if (!resp.IsSuccessStatusCode)
-                return AiResult.Fail($"Anthropic HTTP {(int)resp.StatusCode}: {Truncate(body, 800)}");
-
-            using var doc = JsonDocument.Parse(body);
-            var root = doc.RootElement;
-
-            var textBuilder = new StringBuilder();
-            if (root.TryGetProperty("content", out var contentArr) && contentArr.ValueKind == JsonValueKind.Array)
+            // Con herramientas de servidor la API puede cortar el turno con
+            // stop_reason "pause_turn" para no alargar demasiado una sola
+            // peticion; se reenvia la respuesta parcial como turno del asistente
+            // y la API continua donde lo dejo.
+            var allBlocks = new List<JsonElement>();
+            int inputTokens = 0, outputTokens = 0, webSearchRequests = 0, webFetchRequests = 0;
+            for (var round = 0; ; round++)
             {
-                foreach (var block in contentArr.EnumerateArray())
+                var json = JsonSerializer.Serialize(payload);
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                using var resp = await http.PostAsync("https://api.anthropic.com/v1/messages", content, context.CancellationToken);
+                var body = await resp.Content.ReadAsStringAsync(context.CancellationToken);
+
+                if (!resp.IsSuccessStatusCode)
+                    return AiResult.Fail($"Anthropic HTTP {(int)resp.StatusCode}: {Truncate(body, 800)}");
+
+                using var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+
+                var roundBlocks = new List<JsonElement>();
+                if (root.TryGetProperty("content", out var contentArr) && contentArr.ValueKind == JsonValueKind.Array)
+                    roundBlocks.AddRange(contentArr.EnumerateArray().Select(b => b.Clone()));
+                allBlocks.AddRange(roundBlocks);
+
+                if (root.TryGetProperty("usage", out var usage))
                 {
-                    if (block.TryGetProperty("type", out var typeEl) && typeEl.GetString() == "text"
-                        && block.TryGetProperty("text", out var textEl))
+                    if (usage.TryGetProperty("input_tokens", out var inTok)) inputTokens += inTok.GetInt32();
+                    if (usage.TryGetProperty("output_tokens", out var outTok)) outputTokens += outTok.GetInt32();
+                    if (usage.TryGetProperty("server_tool_use", out var serverUse))
                     {
-                        textBuilder.Append(textEl.GetString());
+                        if (serverUse.TryGetProperty("web_search_requests", out var ws)) webSearchRequests += ws.GetInt32();
+                        if (serverUse.TryGetProperty("web_fetch_requests", out var wf)) webFetchRequests += wf.GetInt32();
                     }
                 }
+
+                var stopReason = root.TryGetProperty("stop_reason", out var sr) ? sr.GetString() : null;
+                if (stopReason != "pause_turn" || round >= MaxPauseTurnContinuations)
+                    break;
+
+                messages.Add(new { role = "assistant", content = roundBlocks });
             }
 
-            int inputTokens = 0, outputTokens = 0;
-            if (root.TryGetProperty("usage", out var usage))
+            var metadata = new Dictionary<string, object>
             {
-                if (usage.TryGetProperty("input_tokens", out var inTok)) inputTokens = inTok.GetInt32();
-                if (usage.TryGetProperty("output_tokens", out var outTok)) outputTokens = outTok.GetInt32();
+                ["model"] = context.ModelName,
+                ["inputTokens"] = inputTokens,
+                ["outputTokens"] = outputTokens,
+            };
+            if (inputFiles.Count > 0)
+                metadata["attachments"] = inputFiles.Count;
+            if (webSearch)
+            {
+                metadata["webSearchRequests"] = webSearchRequests;
+                metadata["webFetchRequests"] = webFetchRequests;
             }
 
             return new AiResult
             {
                 Success = true,
-                TextOutput = textBuilder.ToString(),
-                EstimatedCost = PricingCatalog.EstimateTextCost(context.ModelName, inputTokens, outputTokens),
-                Metadata = new Dictionary<string, object>
-                {
-                    ["model"] = context.ModelName,
-                    ["inputTokens"] = inputTokens,
-                    ["outputTokens"] = outputTokens,
-                    ["attachments"] = context.InputFiles.Count,
-                }
+                TextOutput = ExtractFinalText(allBlocks),
+                EstimatedCost = PricingCatalog.EstimateTextCost(context.ModelName, inputTokens, outputTokens)
+                    + webSearchRequests * WebSearchOption.CostPerSearch,
+                Metadata = metadata,
             };
+        }
+
+        private const int MaxPauseTurnContinuations = 5;
+
+        /// <summary>
+        /// Texto de la respuesta. Cuando el modelo ha usado herramientas de
+        /// servidor, el texto anterior al ultimo resultado ("voy a buscar...") es
+        /// narracion intermedia: solo cuenta lo que escribe despues. Sin
+        /// herramientas se devuelve todo el texto, como hasta ahora.
+        /// </summary>
+        public static string ExtractFinalText(IReadOnlyList<JsonElement> blocks)
+        {
+            static string? TypeOf(JsonElement b) =>
+                b.TryGetProperty("type", out var t) ? t.GetString() : null;
+
+            var lastToolResult = -1;
+            for (var i = 0; i < blocks.Count; i++)
+            {
+                if (TypeOf(blocks[i])?.EndsWith("_tool_result", StringComparison.Ordinal) == true)
+                    lastToolResult = i;
+            }
+
+            string Collect(int from)
+            {
+                var sb = new StringBuilder();
+                for (var i = from; i < blocks.Count; i++)
+                {
+                    if (TypeOf(blocks[i]) == "text" && blocks[i].TryGetProperty("text", out var textEl))
+                        sb.Append(textEl.GetString());
+                }
+                return sb.ToString();
+            }
+
+            var final = Collect(lastToolResult + 1);
+            return final.Length > 0 || lastToolResult < 0 ? final : Collect(0);
         }
 
         private static string Truncate(string s, int max) => s.Length <= max ? s : s.Substring(0, max) + "…";

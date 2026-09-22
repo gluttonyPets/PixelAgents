@@ -104,6 +104,18 @@ namespace Server.Services.Ai
             if (context.Configuration.TryGetValue("maxTokens", out var maxTok))
                 config.MaxOutputTokens = Convert.ToInt32(maxTok);
 
+            // Grounding con Google Search para buscar y URL context para leer
+            // las paginas que aparezcan en el prompt. URL context no existe en
+            // Gemini 1.x / 2.0: ahi solo se busca.
+            var webSearch = WebSearchOption.IsEnabled(context.Configuration);
+            if (webSearch)
+            {
+                config.Tools = [new Tool { GoogleSearch = new GoogleSearch() }];
+                if (!context.ModelName.StartsWith("gemini-1", StringComparison.OrdinalIgnoreCase)
+                    && !context.ModelName.StartsWith("gemini-2.0", StringComparison.OrdinalIgnoreCase))
+                    config.Tools.Add(new Tool { UrlContext = new UrlContext() });
+            }
+
             GenerateContentResponse response;
             if (context.InputFiles is { Count: > 0 })
             {
@@ -142,23 +154,33 @@ namespace Server.Services.Ai
                 );
             }
 
-            var text = response.Candidates?[0].Content?.Parts?[0].Text
-                ?? throw new InvalidOperationException("Gemini no devolvio texto en la respuesta");
+            // Con grounding la respuesta puede venir repartida en varias partes.
+            var textParts = response.Candidates?[0].Content?.Parts?
+                .Where(p => p.Text is not null && p.Thought != true)
+                .Select(p => p.Text!)
+                .ToList();
+            if (textParts is not { Count: > 0 })
+                throw new InvalidOperationException("Gemini no devolvio texto en la respuesta");
+            var text = string.Concat(textParts);
 
             var inputTokens = response.UsageMetadata?.PromptTokenCount ?? 0;
             var outputTokens = response.UsageMetadata?.CandidatesTokenCount ?? 0;
+
+            var metadata = new Dictionary<string, object>
+            {
+                ["model"] = context.ModelName,
+                ["inputTokens"] = inputTokens,
+                ["outputTokens"] = outputTokens,
+            };
+            if (webSearch)
+                metadata["webSearchQueries"] = response.Candidates?[0].GroundingMetadata?.WebSearchQueries?.Count ?? 0;
 
             return new AiResult
             {
                 Success = true,
                 TextOutput = text,
                 EstimatedCost = PricingCatalog.EstimateTextCost(context.ModelName, inputTokens, outputTokens),
-                Metadata = new Dictionary<string, object>
-                {
-                    ["model"] = context.ModelName,
-                    ["inputTokens"] = inputTokens,
-                    ["outputTokens"] = outputTokens,
-                }
+                Metadata = metadata,
             };
         }
 
