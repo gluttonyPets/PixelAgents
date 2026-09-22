@@ -2618,10 +2618,15 @@ a.link:hover { text-decoration: underline; }
     gap: 0.5rem;
     flex-shrink: 0;
 }
-.hc-open-btn {
+.hc-open-btn,
+.hc-export-btn {
     font-size: 0.75rem;
     padding: 0.25rem 0.6rem;
     white-space: nowrap;
+}
+.hc-export-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
 }
 .history-expand-icon {
     font-size: 0.65rem;

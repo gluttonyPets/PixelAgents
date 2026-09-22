@@ -461,7 +461,9 @@ public static class PipelineExporter
     private static string? Trimmed(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static string Slugify(string? value)
+    /// <summary>Texto apto para un nombre de fichero. Lo comparte el exportador
+    /// del log de ejecuciones para que ambos ficheros se nombren igual.</summary>
+    internal static string Slugify(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return "proyecto";
 

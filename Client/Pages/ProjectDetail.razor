@@ -880,6 +880,11 @@ else
                     </div>
                 </div>
 
+                @if (!string.IsNullOrEmpty(_exportError))
+                {
+                    <div class="alert alert-error" style="font-size: 0.78rem; margin-bottom: 0.5rem;">@_exportError</div>
+                }
+
                 var filtered  = FilteredHistory().ToList();
                 var pageItems = filtered.Take(_historyPageSize).ToList();
                 var dayGroups = pageItems
@@ -960,6 +965,11 @@ else
                                 <div class="history-card-actions">
                                     <button class="btn btn-sm hc-open-btn" @onclick="() => ViewExecution(e.Id)" @onclick:stopPropagation="true" title="Ver detalle completo">
                                         Ver detalle
+                                    </button>
+                                    <button class="btn btn-sm hc-export-btn" @onclick="() => ExportExecutionLog(e.Id)" @onclick:stopPropagation="true"
+                                            disabled="@(_exportingExecId == e.Id)"
+                                            title="Descargar un log de texto con toda la ejecución: pasos, entradas, salidas, archivos y logs">
+                                        @(_exportingExecId == e.Id ? "Exportando…" : "Exportar")
                                     </button>
                                     <span class="history-expand-icon @(isExpanded ? "hc-chevron-up" : "")">&#x25BC;</span>
                                 </div>
@@ -2365,6 +2375,10 @@ else
         _                      => status
     };
 
+    // Export del log de una ejecucion (boton "Exportar" del historial)
+    private Guid? _exportingExecId;
+    private string? _exportError;
+
     // History detail modal
     private bool _showExecDetailModal;
     private ExecutionDetailResponse? _execDetailModal;
@@ -3727,6 +3741,44 @@ else
             }
         }
         catch { }
+    }
+
+    /// <summary>Descarga un fichero de texto con toda la ejecucion: cabecera,
+    /// prompt, variables, cada paso con entrada/salida/error/archivos, los logs
+    /// del servidor y el feedback. El detalle y los logs se piden aqui porque la
+    /// tarjeta del historial solo tiene el resumen de la ejecucion.</summary>
+    private async Task ExportExecutionLog(Guid id)
+    {
+        if (_exportingExecId is not null) return;
+
+        _exportingExecId = id;
+        _exportError = null;
+        StateHasChanged();
+        try
+        {
+            var detail = await Api.GetExecutionDetailAsync(id);
+            if (detail is null)
+            {
+                _exportError = "No se pudo cargar la ejecución para exportarla.";
+                return;
+            }
+
+            var logs = await Api.GetExecutionLogsAsync(id);
+            var text = ExecutionLogExporter.ToText(new ExecutionLogExportInput(
+                _project?.Name, detail, logs, FeedbackFor(id)));
+            var fileName = ExecutionLogExporter.SuggestFileName(_project?.Name, detail.Id, detail.CreatedAt);
+
+            await JS.InvokeVoidAsync("pipelineEditor.downloadText", fileName, text, "text/plain;charset=utf-8");
+        }
+        catch (Exception ex)
+        {
+            _exportError = $"No se pudo exportar el log: {ex.Message}";
+        }
+        finally
+        {
+            _exportingExecId = null;
+            StateHasChanged();
+        }
     }
 
     private async Task RefreshExecDetail(Guid id)

@@ -402,6 +402,27 @@ Donde vive: `PipelineExporter` (`Client/Models/PipelineExport.cs`) decide la
 forma del JSON; `PipelineCanvas` reune los datos que ya tiene resueltos y
 `pipelineEditor.downloadText` guarda el fichero desde el navegador.
 
+## Historial: exportar el log de una ejecucion
+
+Cada tarjeta del historial lleva un boton **Exportar** junto a "Ver detalle" que
+descarga un `.txt` con la ejecucion entera:
+`log-ejecucion-<proyecto>-<fecha>-<id corto>.txt`.
+
+Contenido, en este orden: cabecera (proyecto, id de ejecucion, estado, inicio,
+fin, duracion, coste estimado y workspace), prompt, variables, cada paso con su
+estado, tiempos, coste, entrada, salida, error y archivos, los logs que guardo
+el servidor para esa ejecucion y el feedback recibido. No se recorta nada: el
+fichero es para leer la ejecucion fuera de la app (adjuntarla a una incidencia o
+pegarsela a un modelo), no el resumen que ya ensena la tarjeta.
+
+Se exporta desde el historial sin abrir el detalle, asi que el boton pide el
+detalle (`GET /api/executions/{id}`) y los logs (`GET /api/executions/{id}/logs`)
+al pulsarlo; el feedback sale del que la pagina ya tiene cargado del proyecto.
+
+Donde vive: `ExecutionLogExporter` (`Client/Models/ExecutionLogExport.cs`) escribe
+el texto, `ProjectDetail.ExportExecutionLog` reune los datos y, igual que el
+export del pipeline, `pipelineEditor.downloadText` guarda el fichero.
+
 ## Modulos soportados
 
 | Tipo          | Handler                    | Descripcion breve                                          |
