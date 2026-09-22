@@ -706,116 +706,6 @@ else
             </PipelineCanvas>
         </div> @* end tab-content *@
 
-        @* ── Edit step modal ── *@
-        @if (_editingPmId.HasValue)
-        {
-            var editPm = _project.Modules.FirstOrDefault(m => m.Id == _editingPmId);
-            if (editPm is not null)
-            {
-                var catalogModule = _modules.FirstOrDefault(m => m.Id == editPm.AiModuleId);
-                var catalogSystemPrompt = GetSystemPromptFromConfig(catalogModule?.Configuration);
-                <div class="modal-overlay" @onclick="CancelEdit">
-                    <div class="modal-content" @onclick:stopPropagation="true">
-                        <div class="modal-header">
-                            <span class="badge badge-@(editPm.ModuleType.ToLower())">@editPm.ModuleType</span>
-                            <strong style="flex:1">Editar modulo &mdash; @(editPm.StepName ?? editPm.AiModuleName)</strong>
-                            <button class="btn btn-xs" @onclick="CancelEdit">&#x2715;</button>
-                        </div>
-                        <div class="modal-body">
-                            @if (_editError is not null)
-                            {
-                                <div class="alert alert-error" style="margin-bottom:0.8rem;">@_editError</div>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(catalogSystemPrompt) && editPm.ModuleType is "Text" or "Orchestrator" or "Coordinator" or "Image")
-                            {
-                                <div class="form-group">
-                                    <label style="display:flex;align-items:center;gap:0.4rem;">
-                                        Instrucciones del modulo
-                                        <span class="text-sm text-muted">(definidas en el catalogo &mdash; solo lectura)</span>
-                                    </label>
-                                    <textarea rows="3" readonly style="background:var(--bg-secondary,#f5f5f5);color:var(--text-muted,#666);cursor:default;">@catalogSystemPrompt</textarea>
-                                </div>
-                            }
-                            <div class="form-group">
-                                <label>Nombre del paso</label>
-                                <input type="text" @bind="_editStepName" placeholder="Nombre personalizado" />
-                            </div>
-                            @if (editPm.ModuleType == "Image")
-                            {
-                                <div class="form-group">
-                                    <label>Prompt de imagen</label>
-                                    <textarea @bind="_imagePrompt" rows="3" placeholder="Prompt de imagen (opcional)"></textarea>
-                                </div>
-                            }
-                            @if (editPm.ModuleType == "Video")
-                            {
-                                <div class="form-group">
-                                    <label>Movimiento</label>
-                                    <textarea @bind="_videoPrompt" rows="3" placeholder="Movimiento de la camara (opcional)"></textarea>
-                                </div>
-                            }
-                            @if (editPm.ModuleType == "Publish")
-                            {
-                                <div class="form-group">
-                                    <label>Caption</label>
-                                    <textarea @bind="_publishCaption" rows="3" placeholder="Caption ({previous_output})"></textarea>
-                                </div>
-                                <div class="form-group">
-                                    <label>Tipo de publicacion</label>
-                                    <select @bind="_publishType">
-                                        <option value="post">Post</option>
-                                        <option value="reel">Reel</option>
-                                        <option value="story">Story</option>
-                                    </select>
-                                </div>
-                            }
-                            @if (editPm.ModuleType == "Interaction")
-                            {
-                                <div class="form-group">
-                                    <label>Plantilla de mensaje</label>
-                                    <textarea @bind="_interactionTemplate" rows="3" placeholder="Mensaje ({previous_output})"></textarea>
-                                </div>
-                                <div class="form-group">
-                                    <label>Tipo de mensaje</label>
-                                    <select @bind="_interactionMessageType">
-                                        <option value="combined">Texto + Imagenes</option>
-                                        <option value="text">Solo texto</option>
-                                        <option value="image">Solo imagenes</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Respuesta</label>
-                                    <select @bind="_interactionWaitForResponse">
-                                        <option value="true">Esperar respuesta</option>
-                                        <option value="false">Enviar y continuar</option>
-                                    </select>
-                                </div>
-                            }
-                            @if (editPm.ModuleType == "Design")
-                            {
-                                <div class="form-group">
-                                    <label>Titulo del diseno</label>
-                                    <input type="text" @bind="_canvaDesignTitle" placeholder="Titulo del diseno" />
-                                </div>
-                                <div class="form-group">
-                                    <label>Formato de exportacion</label>
-                                    <select @bind="_canvaExportFormat">
-                                        <option value="png">PNG</option>
-                                        <option value="jpg">JPG</option>
-                                        <option value="pdf">PDF</option>
-                                        <option value="pptx">PPTX</option>
-                                    </select>
-                                </div>
-                            }
-                            <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1rem; padding-top:0.8rem; border-top:1px solid var(--border);">
-                                <button class="btn" @onclick="CancelEdit">Cancelar</button>
-                                <button class="btn btn-primary" @onclick="SaveEdit">Guardar</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            }
-        }
     }
 
     <!-- Execute tab removed — UI is now in the pipeline inspector panel -->
@@ -2259,7 +2149,6 @@ else
     }
     private ExecutionDetailResponse? _result;
 
-    private bool _loading;
     private bool _executing;
     private PipelineCanvas? _pipelineCanvasRef;
 
@@ -2276,37 +2165,6 @@ else
 
     // Pipeline visual editor
     private List<ModuleConnectionResponse> _projectConnections = new();
-
-    // Add module
-    private string _stepModuleId = "";
-    private string _stepName = "";
-    private string? _stepError;
-
-    // Interaction step
-    private string _interactionTemplate = "";
-    private string _interactionMessageType = "combined";
-    private string _interactionWaitForResponse = "true";
-
-    // Publish step (Buffer)
-    private bool _isImagePrompt = false;
-    private int _imageCount = 1;
-
-    private string _publishCaption = "";
-    private string _publishType = "post";
-
-    // Orchestrator outputs (pending, before module is created)
-    private List<OrchestratorOutputRequest> _pendingOrchestratorOutputs = new();
-    private string _poLabel = "", _poPrompt = "", _poDataType = "text";
-
-    // Publish step (Canva)
-    private string _canvaExportFormat = "png";
-    private string _canvaDesignTitle = "";
-    private string _canvaStepBrandTemplateId = "";
-    private string _canvaDesignType = "doc";
-
-    // Image step
-    private string _imagePrompt = "";
-    private string _videoPrompt = "";
 
     // History expansion
     private Guid? _expandedExecId;
@@ -2391,9 +2249,7 @@ else
     private bool _contextSaving;
     private string? _contextError;
 
-    // Edit step
-    private Guid? _editingPmId;
-    private string _editStepName = "";
+    // Mensajes de error de acciones sobre pasos
     private string? _editError;
 
     // Execute
@@ -2525,7 +2381,6 @@ else
     private List<LogEntry> _logEntries = [];
     private Dictionary<Guid, string> _realtimeStepStatuses = new();
     private HubConnection? _hubConnection;
-    private ElementReference _logContainer;
     private System.Threading.Timer? _pollTimer;
 
     // API base URL for file downloads (images, etc.)
@@ -2752,7 +2607,6 @@ else
 
     private async Task LoadAll()
     {
-        _loading = true;
         try
         {
             _project = await Api.GetProjectDetailAsync(ProjectId);
@@ -2837,15 +2691,12 @@ else
             _projectConnections = _project?.Connections ?? new();
         }
         catch { }
-        _loading = false;
     }
 
     // ── Visual pipeline editor methods ──
 
     private async Task AddModuleFromCanvas(Guid moduleId)
     {
-        _stepError = null;
-        _loading = true;
         try
         {
             var req = new AddProjectModuleRequest(moduleId, null, null);
@@ -2854,14 +2705,11 @@ else
             else _editError = error;
         }
         catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
-        _loading = false;
     }
 
     private async Task AddSubProjectFromCanvas(Guid subProjectId)
     {
-        _stepError = null;
         _editError = null;
-        _loading = true;
         try
         {
             var req = new AddSubProjectRequest(subProjectId, null);
@@ -2870,7 +2718,6 @@ else
             else _editError = error;
         }
         catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
-        _loading = false;
     }
 
     private async Task RemoveModuleFromCanvas(Guid projectModuleId)
@@ -3172,251 +3019,6 @@ else
         var req = new UpdateProjectModuleRequest(pm.StepName, stepConfig, pm.IsActive);
         var (ok, _) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
         if (ok) await LoadAll();
-    }
-
-    private static int GetMaxPromptLength(string modelName) => modelName.ToLowerInvariant() switch
-    {
-        "dall-e-2" => 1000,
-        "dall-e-3" => 4000,
-        var m when m.StartsWith("gpt-image") => 4000,
-        var m when m.StartsWith("leonardo-") => 1500,
-        var m when m.StartsWith("imagen-") => 4000,
-        _ => 4000
-    };
-
-    private void AddPendingOutput()
-    {
-        if (string.IsNullOrWhiteSpace(_poLabel)) return;
-        _pendingOrchestratorOutputs.Add(new(_poLabel, _poPrompt, _poDataType, _pendingOrchestratorOutputs.Count + 1));
-        _poLabel = ""; _poPrompt = ""; _poDataType = "text";
-    }
-
-    private async Task AddStep()
-    {
-        _stepError = null;
-        if (!Guid.TryParse(_stepModuleId, out var moduleId))
-        {
-            _stepError = "Selecciona un modulo";
-            return;
-        }
-        _loading = true;
-        try
-        {
-            // Build config for interaction steps
-            string? stepConfig = null;
-            var mod = _modules.FirstOrDefault(m => m.Id == moduleId);
-            if (mod?.ModuleType == "Interaction")
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    messageTemplate = string.IsNullOrWhiteSpace(_interactionTemplate) ? "{previous_output}" : _interactionTemplate,
-                    messageType = _interactionMessageType,
-                    waitForResponse = _interactionWaitForResponse == "true"
-                });
-            }
-            if (mod?.ModuleType == "Text" && _isImagePrompt)
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    isImagePrompt = true,
-                    imageCount = _imageCount
-                });
-            }
-            if (mod?.ModuleType == "Design")
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    exportFormat = _canvaExportFormat,
-                    designTitle = string.IsNullOrWhiteSpace(_canvaDesignTitle) ? "PixelAgents Design" : _canvaDesignTitle,
-                    brandTemplateId = string.IsNullOrWhiteSpace(_canvaStepBrandTemplateId) ? (string?)null : _canvaStepBrandTemplateId,
-                    designType = _canvaDesignType
-                });
-            }
-            if (mod?.ModuleType == "Publish")
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption,
-                    publishType = _publishType
-                });
-            }
-            if (mod?.ModuleType == "Image" && !string.IsNullOrWhiteSpace(_imagePrompt))
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    imagePrompt = _imagePrompt.Trim()
-                });
-            }
-            if (mod?.ModuleType == "Video" && !string.IsNullOrWhiteSpace(_videoPrompt))
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    videoPrompt = _videoPrompt.Trim()
-                });
-            }
-            var req = new AddProjectModuleRequest(moduleId, string.IsNullOrWhiteSpace(_stepName) ? null : _stepName, stepConfig);
-            var (ok, error) = await Api.AddProjectModuleAsync(ProjectId, req);
-            if (ok)
-            {
-                // Create orchestrator outputs if any were defined
-                if (mod?.ModuleType == "Orchestrator" && _pendingOrchestratorOutputs.Count > 0)
-                {
-                    await LoadAll();
-                    var newPm = _project.Modules.LastOrDefault(m => m.AiModuleId == moduleId);
-                    if (newPm is not null)
-                    {
-                        foreach (var po in _pendingOrchestratorOutputs)
-                            await Api.CreateOrchestratorOutputAsync(ProjectId, newPm.Id, po);
-                    }
-                    _pendingOrchestratorOutputs.Clear();
-                }
-                _stepName = ""; _stepModuleId = ""; _interactionTemplate = ""; _interactionMessageType = "combined"; _interactionWaitForResponse = "true"; _isImagePrompt = false; _imageCount = 1; _imagePrompt = ""; _videoPrompt = ""; _publishCaption = ""; _publishType = "post"; _canvaExportFormat = "png"; _canvaDesignTitle = ""; _canvaStepBrandTemplateId = ""; _canvaDesignType = "doc";
-                await LoadAll();
-            }
-            else _stepError = error;
-        }
-        catch (Exception ex) { _stepError = $"Error de conexion: {ex.Message}"; }
-        _loading = false;
-    }
-
-    private void StartEdit(ProjectModuleResponse pm)
-    {
-        _editingPmId = pm.Id;
-        _editStepName = pm.StepName ?? "";
-        _editError = null;
-
-        // Reset all type-specific fields
-        _imagePrompt = "";
-        _videoPrompt = "";
-        _publishCaption = "";
-        _publishType = "post";
-        _interactionTemplate = "";
-        _interactionMessageType = "combined";
-        _interactionWaitForResponse = "true";
-        _canvaExportFormat = "png";
-        _canvaDesignTitle = "";
-        _canvaStepBrandTemplateId = "";
-        _canvaDesignType = "doc";
-
-        if (!string.IsNullOrWhiteSpace(pm.Configuration))
-        {
-            try
-            {
-                var cfg = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(pm.Configuration);
-                if (cfg is not null)
-                {
-                    if (cfg.TryGetValue("imagePrompt", out var ipEl))
-                        _imagePrompt = ipEl.GetString() ?? "";
-                    if (cfg.TryGetValue("videoPrompt", out var vpEl))
-                        _videoPrompt = vpEl.GetString() ?? "";
-                    if (cfg.TryGetValue("caption", out var capEl))
-                        _publishCaption = capEl.GetString() ?? "";
-                    if (cfg.TryGetValue("publishType", out var ptEl))
-                        _publishType = ptEl.GetString() ?? "post";
-                    if (cfg.TryGetValue("messageTemplate", out var mtEl))
-                        _interactionTemplate = mtEl.GetString() ?? "";
-                    if (cfg.TryGetValue("messageType", out var mtyEl))
-                        _interactionMessageType = mtyEl.GetString() ?? "combined";
-                    if (cfg.TryGetValue("waitForResponse", out var wfrEl))
-                        _interactionWaitForResponse = wfrEl.ValueKind == JsonValueKind.True ? "true" : "false";
-                    if (cfg.TryGetValue("exportFormat", out var efEl))
-                        _canvaExportFormat = efEl.GetString() ?? "png";
-                    if (cfg.TryGetValue("designTitle", out var dtEl))
-                        _canvaDesignTitle = dtEl.GetString() ?? "";
-                    if (cfg.TryGetValue("brandTemplateId", out var btEl))
-                        _canvaStepBrandTemplateId = btEl.GetString() ?? "";
-                    if (cfg.TryGetValue("designType", out var dtyEl))
-                        _canvaDesignType = dtyEl.GetString() ?? "doc";
-                }
-            }
-            catch { /* ignore parse errors */ }
-        }
-    }
-
-    private void CancelEdit()
-    {
-        _editingPmId = null;
-        _editError = null;
-    }
-
-    private async Task SaveEdit()
-    {
-        if (_editingPmId is null || _project is null) return;
-        _editError = null;
-
-        var pm = _project.Modules.FirstOrDefault(m => m.Id == _editingPmId);
-        if (pm is null) return;
-
-        try
-        {
-            // Rebuild step config based on module type
-            string? stepConfig = null;
-            if (pm.ModuleType == "Image")
-            {
-                if (!string.IsNullOrWhiteSpace(_imagePrompt))
-                    stepConfig = JsonSerializer.Serialize(new { imagePrompt = _imagePrompt.Trim() });
-            }
-            else if (pm.ModuleType == "Video")
-            {
-                if (!string.IsNullOrWhiteSpace(_videoPrompt))
-                    stepConfig = JsonSerializer.Serialize(new { videoPrompt = _videoPrompt.Trim() });
-            }
-            else if (pm.ModuleType == "Publish")
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    caption = string.IsNullOrWhiteSpace(_publishCaption) ? "{previous_output}" : _publishCaption,
-                    publishType = _publishType
-                });
-            }
-            else if (pm.ModuleType == "Interaction")
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    messageTemplate = string.IsNullOrWhiteSpace(_interactionTemplate) ? "{previous_output}" : _interactionTemplate,
-                    messageType = _interactionMessageType,
-                    waitForResponse = _interactionWaitForResponse == "true"
-                });
-            }
-            else if (pm.ModuleType == "Design")
-            {
-                stepConfig = JsonSerializer.Serialize(new
-                {
-                    exportFormat = _canvaExportFormat,
-                    designTitle = _canvaDesignTitle,
-                    brandTemplateId = string.IsNullOrWhiteSpace(_canvaStepBrandTemplateId) ? (string?)null : _canvaStepBrandTemplateId,
-                    designType = _canvaDesignType
-                });
-            }
-            else
-            {
-                stepConfig = pm.Configuration; // preserve existing for unknown types
-            }
-
-            // Preserve the "skipped" flag from existing config
-            if (IsStepSkipped(pm))
-            {
-                if (stepConfig is null)
-                {
-                    stepConfig = JsonSerializer.Serialize(new { skipped = true });
-                }
-                else
-                {
-                    var merged = JsonSerializer.Deserialize<Dictionary<string, object>>(stepConfig) ?? new();
-                    merged["skipped"] = true;
-                    stepConfig = JsonSerializer.Serialize(merged);
-                }
-            }
-
-            var req = new UpdateProjectModuleRequest(
-                string.IsNullOrWhiteSpace(_editStepName) ? null : _editStepName,
-                stepConfig,
-                pm.IsActive);
-            var (ok, error) = await Api.UpdateProjectModuleAsync(ProjectId, pm.Id, req);
-            if (ok) { _editingPmId = null; await LoadAll(); }
-            else _editError = error;
-        }
-        catch (Exception ex) { _editError = $"Error: {ex.Message}"; }
     }
 
     private async Task RemoveStep(Guid pmId)
@@ -4338,19 +3940,6 @@ else
             entries.Add(new CheckpointEntry("Datos", json));
         }
         return entries;
-    }
-
-    private static string? GetSystemPromptFromConfig(string? configuration)
-    {
-        if (string.IsNullOrWhiteSpace(configuration)) return null;
-        try
-        {
-            var doc = System.Text.Json.JsonDocument.Parse(configuration);
-            if (doc.RootElement.TryGetProperty("systemPrompt", out var sp))
-                return sp.GetString();
-        }
-        catch { }
-        return null;
     }
 
     private static ParsedInputData? ParseInputData(string? json)

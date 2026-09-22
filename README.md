@@ -630,7 +630,6 @@ Papelera de pipelines:
 Un pipeline en la papelera no se lista, no se abre, no se ejecuta (ni a mano, ni
 programado, ni como sub-proyecto de otro pipeline) y no cuenta en los usos de
 modulos ni de conexiones. Sus archivos tampoco salen en la biblioteca.
-- `/api/projects/{id}/graph`: guardar layout bruto.
 - `/api/projects/{projectId}/graph/save`: guardar posiciones, conexiones,
   conteos de escenas y configs de modulos.
 - `/api/projects/{projectId}/modules`: agregar modulos al proyecto.
@@ -685,8 +684,8 @@ Ejecucion y revision:
 
 Gestion de outputs configurables para un modulo `Orchestrator`:
 
-- listar en `/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs`.
-- crear, actualizar y eliminar outputs bajo la misma ruta.
+- crear, actualizar y eliminar en `/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs`;
+  el listado llega dentro de cada modulo en la respuesta del proyecto.
 
 ### Archivos De Ejecucion
 

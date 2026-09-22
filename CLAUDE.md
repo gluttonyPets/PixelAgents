@@ -94,3 +94,15 @@
     borra su doc en `docs/fixes/` en lugar de dejarlo obsoleto.
 - Sé responsable: deja solo información relevante y borra lo que sea basura o no
   aporte. El historial de git conserva lo eliminado.
+
+## Código muerto
+
+- Si al trabajar detectas código muerto (métodos, componentes, modales, campos,
+  endpoints o DTOs que nada usa), elimínalo en lugar de dejarlo.
+- Antes de borrar, comprueba que de verdad no tiene usos: búsqueda en el
+  repo (cliente, servidor, tests, scripts de `automation/` y `tools/`) y
+  avisos del compilador (`CS0169`, `CS0414`).
+- Hazlo en una rama aparte (`fix/limpiar-...`), no mezclado con la feature.
+- Actualiza los `.md` que mencionen lo borrado.
+- Si hay duda razonable de que algo externo lo use (p. ej. un endpoint
+  público), no lo borres: pregúntalo.

@@ -993,7 +993,6 @@ else
 
     // ── Edit: Module files ──
     private List<ModuleFileResponse> _editModuleFiles = [];
-    private bool _uploadingFiles;
     private string? _fileUploadError;
 
     // ── Model catalog ──
@@ -1537,7 +1536,6 @@ else
     {
         if (_editingModuleId is null) return;
         _fileUploadError = null;
-        _uploadingFiles = true;
         StateHasChanged();
 
         try
@@ -1552,7 +1550,6 @@ else
             _editModuleFiles.InsertRange(0, uploaded);
         }
         catch (Exception ex) { _fileUploadError = $"Error al subir: {ex.Message}"; }
-        _uploadingFiles = false;
     }
 
     private void OnCreateFilesSelected(InputFileChangeEventArgs e)

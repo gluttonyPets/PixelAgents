@@ -1627,22 +1627,6 @@ app.MapPut("/api/projects/{id}/group", async (
         project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
 }).RequireAuthorization();
 
-app.MapPut("/api/projects/{id}/graph", async (
-    Guid id, GraphLayoutRequest req, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var project = await db.Projects.FindAsync(id);
-    if (project is null) return Results.NotFound();
-
-    project.GraphLayout = req.GraphLayout;
-    project.UpdatedAt = DateTime.UtcNow;
-    await db.SaveChangesAsync();
-    return Results.Ok();
-}).RequireAuthorization();
-
 // Save full graph: node positions, connections and module configuration.
 app.MapPut("/api/projects/{projectId}/graph/save", async (
     Guid projectId, SaveGraphRequest req, HttpContext ctx,
@@ -3119,23 +3103,6 @@ app.MapPost("/api/executions/{executionId}/checkpoint-review", async (
 }).RequireAuthorization();
 
 // ── OrchestratorOutput CRUD ──
-app.MapGet("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs", async (
-    Guid projectId, Guid moduleId, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
-{
-    await using var db = await ResolveTenantDb(ctx, um, factory);
-    if (db is null) return Results.Unauthorized();
-
-    var outputs = await db.OrchestratorOutputs
-        .Where(o => o.ProjectModuleId == moduleId)
-        .OrderBy(o => o.SortOrder)
-        .Select(o => new OrchestratorOutputResponse(
-            o.Id, o.OutputKey, o.Label, o.Prompt, o.DataType, o.SortOrder))
-        .ToListAsync();
-
-    return Results.Ok(outputs);
-}).RequireAuthorization();
-
 app.MapPost("/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs", async (
     Guid projectId, Guid moduleId, OrchestratorOutputRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>

@@ -501,13 +501,6 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<ProjectResponse>();
     }
 
-    public async Task<(bool Ok, string? Error)> SaveGraphLayoutAsync(Guid projectId, string? graphLayout)
-    {
-        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/graph", new { graphLayout });
-        if (resp.IsSuccessStatusCode) return (true, null);
-        return (false, await ReadErrorAsync(resp));
-    }
-
     public async Task<(bool Ok, string? Error)> SaveGraphAsync(Guid projectId, SaveGraphRequest req)
     {
         var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/graph/save", req);
@@ -706,13 +699,6 @@ public class ApiClient
     }
 
     // ── OrchestratorOutput CRUD ──
-
-    public async Task<List<OrchestratorOutputResponse>> GetOrchestratorOutputsAsync(Guid projectId, Guid moduleId)
-    {
-        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/modules/{moduleId}/orchestrator-outputs");
-        if (!resp.IsSuccessStatusCode) return new();
-        return await resp.Content.ReadFromJsonAsync<List<OrchestratorOutputResponse>>() ?? new();
-    }
 
     public async Task<(OrchestratorOutputResponse? Output, string? Error)> CreateOrchestratorOutputAsync(
         Guid projectId, Guid moduleId, OrchestratorOutputRequest req)
