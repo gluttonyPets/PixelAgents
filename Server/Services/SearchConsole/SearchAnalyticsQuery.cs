@@ -96,7 +96,7 @@ public static class SearchAnalyticsQuery
     public static (SearchAnalyticsOptions? Options, string? Error) FromConfig(
         Func<string, string> getConfig, DateOnly today)
     {
-        var siteUrl = getConfig("siteUrl").Trim();
+        var siteUrl = NormalizeSiteUrl(getConfig("siteUrl"));
         if (siteUrl.Length == 0)
             return (null, "Falta la propiedad de Search Console (siteUrl). Ej: 'sc-domain:ejemplo.com' o 'https://www.ejemplo.com/'.");
         if (siteUrl.Contains("{{"))
@@ -154,6 +154,21 @@ public static class SearchAnalyticsQuery
             OrderBy = Pick(getConfig("orderBy"), ValidOrderBy, "clicks"),
             OutputFormat = Pick(getConfig("outputFormat"), ValidOutputFormats, "table"),
         }, null);
+    }
+
+    /// <summary>
+    /// Las propiedades de prefijo de URL se registran siempre con barra final
+    /// ("https://ejemplo.com/") y la API no encuentra "https://ejemplo.com": se
+    /// la anadimos si falta. Las de dominio ("sc-domain:...") van tal cual.
+    /// </summary>
+    public static string NormalizeSiteUrl(string? raw)
+    {
+        var site = (raw ?? "").Trim();
+        if ((site.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+             || site.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            && !site.EndsWith('/') && !site.Contains("{{"))
+            site += "/";
+        return site;
     }
 
     /// <summary>

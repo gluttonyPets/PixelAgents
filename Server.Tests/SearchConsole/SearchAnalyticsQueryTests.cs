@@ -114,6 +114,16 @@ public class SearchAnalyticsQueryTests
         Assert.Contains("variable sin valor", error);
     }
 
+    [Theory]
+    [InlineData("https://gluttony.es", "https://gluttony.es/")]
+    [InlineData(" https://gluttony.es/ ", "https://gluttony.es/")]
+    [InlineData("https://gluttony.es/blog", "https://gluttony.es/blog/")]
+    [InlineData("sc-domain:gluttony.es", "sc-domain:gluttony.es")]
+    public void NormalizeSiteUrl_AnadeBarraFinalAPropiedadesDeUrl(string raw, string expected)
+    {
+        Assert.Equal(expected, SearchAnalyticsQuery.NormalizeSiteUrl(raw));
+    }
+
     [Fact]
     public void ResolveDates_Personalizado()
     {
