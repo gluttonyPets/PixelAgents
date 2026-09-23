@@ -41,6 +41,10 @@ public class SearchConsoleModuleHandler : IModuleHandler
             json = await _searchConsole.QuerySearchAnalyticsAsync(
                 credentials, options.SiteUrl, SearchAnalyticsQuery.BuildRequestBody(options), ctx.CancellationToken);
         }
+        catch (SearchConsoleException ex) when (ex.IsSiteAccessDenied)
+        {
+            return ModuleResult.Failed(ex.Message + " " + await DescribeAccessibleSitesAsync(credentials, ctx.CancellationToken));
+        }
         catch (SearchConsoleException ex)
         {
             return ModuleResult.Failed(ex.Message);
@@ -76,5 +80,26 @@ public class SearchConsoleModuleHandler : IModuleHandler
         };
 
         return ModuleResult.Completed(output);
+    }
+
+    /// <summary>
+    /// Ante un "sin permiso" el problema casi siempre es el nombre de la propiedad
+    /// (dominio vs prefijo de URL, www o no) o que la cuenta no esta anadida. Listar
+    /// las propiedades que si ve la cuenta dice cual de los dos es y que escribir.
+    /// </summary>
+    private async Task<string> DescribeAccessibleSitesAsync(string credentials, CancellationToken ct)
+    {
+        try
+        {
+            var sites = await _searchConsole.ListSitesAsync(credentials, ct);
+            return sites.Count == 0
+                ? "La cuenta de servicio no tiene acceso a NINGUNA propiedad: falta anadir su email como usuario en Search Console."
+                : "Propiedades a las que si tiene acceso (usa una de estas tal cual): " +
+                  string.Join(", ", sites.Select(s => $"'{s.SiteUrl}'")) + ".";
+        }
+        catch (SearchConsoleException)
+        {
+            return "";
+        }
     }
 }

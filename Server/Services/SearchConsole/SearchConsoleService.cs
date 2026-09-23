@@ -10,7 +10,11 @@ namespace Server.Services.SearchConsole;
 public record SearchConsoleSiteDto(string SiteUrl, string PermissionLevel);
 
 /// <summary>Error de Search Console con un mensaje apto para mostrar al usuario.</summary>
-public class SearchConsoleException(string message) : Exception(message);
+public class SearchConsoleException(string message) : Exception(message)
+{
+    /// <summary>La cuenta de servicio no tiene acceso a la propiedad pedida.</summary>
+    public bool IsSiteAccessDenied { get; init; }
+}
 
 /// <summary>
 /// Credenciales de una cuenta de servicio de Google Cloud: el JSON que se
@@ -140,7 +144,8 @@ public class SearchConsoleService
                         $"La cuenta de servicio {creds.ClientEmail} no tiene acceso a la propiedad '{siteUrl}'. " +
                         "Anadela como usuario en Search Console (Configuracion > Usuarios y permisos) y revisa que la " +
                         "propiedad este escrita igual que alli ('sc-domain:dominio.com' para propiedades de dominio). " +
-                        $"Detalle: {apiMessage}"),
+                        $"Detalle: {apiMessage}")
+                    { IsSiteAccessDenied = true },
                 HttpStatusCode.Forbidden =>
                     new SearchConsoleException(
                         $"Acceso denegado por Search Console. Comprueba que la 'Google Search Console API' esta habilitada " +
