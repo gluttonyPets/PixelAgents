@@ -97,9 +97,9 @@ public class SearchConsoleModuleHandler : IModuleHandler
                 : "Propiedades a las que si tiene acceso (usa una de estas tal cual): " +
                   string.Join(", ", sites.Select(s => $"'{s.SiteUrl}'")) + ".";
         }
-        catch (SearchConsoleException)
+        catch (SearchConsoleException ex)
         {
-            return "";
+            return $"Tampoco se pudo listar a que propiedades tiene acceso: {ex.Message}";
         }
     }
 }
