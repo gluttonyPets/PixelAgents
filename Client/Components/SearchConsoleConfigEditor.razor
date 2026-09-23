@@ -88,7 +88,7 @@
 <div class="form-group">
     <label>Filtros <span class="text-sm text-muted">(uno por linea: dimension operador valor)</span></label>
     <textarea @bind="Config.Filters" rows="3"
-              placeholder="query contains zapatillas&#10;page notContains /blog/&#10;country equals esp&#10;device equals MOBILE"></textarea>
+              placeholder="@FiltersPlaceholder"></textarea>
     <span class="text-sm text-muted">
         Dimensiones: query, page, country, device, searchAppearance. Operadores: equals, notEquals,
         contains, notContains, includingRegex, excludingRegex. Admite {{variables}}.
@@ -171,6 +171,11 @@
 </span>
 
 @code {
+    // Blazor no decodifica entidades HTML en atributos: los saltos de linea del
+    // ejemplo tienen que ir como caracteres reales, no como "&#10;".
+    private const string FiltersPlaceholder =
+        "query contains zapatillas\npage notContains /blog/\ncountry equals esp\ndevice equals MOBILE";
+
     [Parameter, EditorRequired] public SearchConsoleConfig Config { get; set; } = new();
 
     /// <summary>API key "SearchConsole" elegida para el modulo (para listar propiedades).</summary>
