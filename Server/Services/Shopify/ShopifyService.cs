@@ -9,8 +9,8 @@ namespace Server.Services.Shopify
     /// Cliente minimo de la Admin GraphQL API de Shopify. Obtiene el access token
     /// mediante el flujo "client credentials" (Dev Dashboard, 2026+): intercambia
     /// Client ID + Client Secret por un token de 24 h en cada operacion, y luego
-    /// llama a la API. Solo cubre lo que el modulo de blog necesita: listar blogs
-    /// y crear un articulo.
+    /// llama a la API. Solo cubre lo que el modulo de blog necesita: listar blogs,
+    /// crear un articulo y modificar uno existente.
     /// </summary>
     public class ShopifyService
     {
@@ -400,36 +400,11 @@ namespace Server.Services.Shopify
         {
             var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
 
-            // Resolucion de la imagen destacada. Preferimos SIEMPRE subir los bytes a
-            // Shopify: es lo unico que no depende de que nuestro servidor sea alcanzable
-            // desde internet (con http/IP/puerto raro Shopify responde
-            // "Image upload failed. Invalid URL provided.").
-            string? warning = null;
+            var (resolvedImageUrl, warning) = await ResolveFeaturedImageAsync(
+                shopDomain, token, imageUrl, imageBytes, imageFileName, imageContentType, ct);
             // Handle del blog: lo devuelve la propia mutacion y hace falta para componer
             // la URL publica del articulo (/blogs/{blog}/{articulo}).
             string? blogHandle = null;
-            var resolvedImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
-
-            if (imageBytes is { Length: > 0 })
-            {
-                try
-                {
-                    resolvedImageUrl = await StageImageUploadAsync(
-                        shopDomain, token, imageBytes,
-                        string.IsNullOrWhiteSpace(imageFileName) ? "imagen.png" : imageFileName.Trim(),
-                        string.IsNullOrWhiteSpace(imageContentType) ? "image/png" : imageContentType.Trim(),
-                        ct);
-                }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
-                {
-                    warning = $"No se pudo subir la imagen destacada a Shopify: {ex.Message}";
-                    if (ex.Message.Contains("access denied", StringComparison.OrdinalIgnoreCase) ||
-                        ex.Message.Contains("not approved", StringComparison.OrdinalIgnoreCase))
-                        warning += ". Anade el scope 'write_files' a la app de Shopify y reinstalala.";
-                    // Se intentara con la URL publica si se aporto una.
-                }
-            }
 
             const string mutation = @"mutation CreateArticle($article: ArticleCreateInput!) {
   articleCreate(article: $article) {
@@ -594,6 +569,250 @@ namespace Server.Services.Shopify
         }
 
         /// <summary>
+        /// Resolucion de la imagen destacada. Preferimos SIEMPRE subir los bytes a
+        /// Shopify: es lo unico que no depende de que nuestro servidor sea alcanzable
+        /// desde internet (con http/IP/puerto raro Shopify responde
+        /// "Image upload failed. Invalid URL provided."). Si la subida falla se usa la
+        /// URL publica, si la hay, y se devuelve el motivo como aviso.
+        /// </summary>
+        private async Task<(string? Url, string? Warning)> ResolveFeaturedImageAsync(
+            string shopDomain, string token, string? imageUrl,
+            byte[]? imageBytes, string? imageFileName, string? imageContentType, CancellationToken ct)
+        {
+            var resolved = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl.Trim();
+            if (imageBytes is not { Length: > 0 })
+                return (resolved, null);
+
+            try
+            {
+                var staged = await StageImageUploadAsync(
+                    shopDomain, token, imageBytes,
+                    string.IsNullOrWhiteSpace(imageFileName) ? "imagen.png" : imageFileName.Trim(),
+                    string.IsNullOrWhiteSpace(imageContentType) ? "image/png" : imageContentType.Trim(),
+                    ct);
+                return (staged, null);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                var warning = $"No se pudo subir la imagen destacada a Shopify: {ex.Message}";
+                if (ex.Message.Contains("access denied", StringComparison.OrdinalIgnoreCase) ||
+                    ex.Message.Contains("not approved", StringComparison.OrdinalIgnoreCase))
+                    warning += ". Anade el scope 'write_files' a la app de Shopify y reinstalala.";
+                return (resolved, warning);
+            }
+        }
+
+        /// <summary>
+        /// Busca un articulo existente y devuelve su contenido actual. Con GID se lee
+        /// directamente; con handle se recorren los articulos del blog (el de la URL, el
+        /// del nodo o, si no hay ninguno, todos) porque la Admin API no permite buscar
+        /// articulos por handle.
+        /// </summary>
+        public async Task<ShopifyArticleSnapshot> FindArticleAsync(
+            string shopDomain, string clientId, string clientSecret,
+            ShopifyArticleTarget target, string? blogId, CancellationToken ct = default)
+        {
+            var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
+
+            var articleId = target.ArticleGid
+                ?? await FindArticleIdByHandleAsync(shopDomain, token, target, blogId, ct);
+
+            const string query = @"query GetArticle($id: ID!) {
+  article(id: $id) {
+    id handle title body summary tags isPublished
+    blog { id handle }
+    seoTitle: metafield(namespace: ""global"", key: ""title_tag"") { value }
+    seoDescription: metafield(namespace: ""global"", key: ""description_tag"") { value }
+  }
+}";
+            using var doc = await PostGraphQlAsync(shopDomain, token, new { query, variables = new { id = articleId } }, ct);
+            if (!doc.RootElement.GetProperty("data").TryGetProperty("article", out var a) || a.ValueKind != JsonValueKind.Object)
+                throw new HttpRequestException($"No existe ningun articulo con id {articleId} en la tienda.");
+
+            string? Str(JsonElement el, string name) =>
+                el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+            string? MetaValue(string alias) =>
+                a.TryGetProperty(alias, out var m) && m.ValueKind == JsonValueKind.Object ? Str(m, "value") : null;
+
+            var blog = a.TryGetProperty("blog", out var b) && b.ValueKind == JsonValueKind.Object ? b : default;
+            var tags = a.TryGetProperty("tags", out var t) && t.ValueKind == JsonValueKind.Array
+                ? t.EnumerateArray().Select(x => x.GetString() ?? "").Where(x => x.Length > 0).ToList()
+                : [];
+
+            return new ShopifyArticleSnapshot(
+                Str(a, "id") ?? articleId,
+                Str(a, "handle") ?? "",
+                Str(a, "title") ?? "",
+                Str(a, "body") ?? "",
+                Str(a, "summary"),
+                tags,
+                a.TryGetProperty("isPublished", out var p) && p.ValueKind == JsonValueKind.True,
+                blog.ValueKind == JsonValueKind.Object ? Str(blog, "id") : null,
+                blog.ValueKind == JsonValueKind.Object ? Str(blog, "handle") : null,
+                MetaValue("seoTitle"),
+                MetaValue("seoDescription"));
+        }
+
+        /// <summary>Maximo de paginas (de 250 articulos) que se recorren por blog.</summary>
+        private const int MaxArticlePages = 40;
+
+        private async Task<string> FindArticleIdByHandleAsync(
+            string shopDomain, string token, ShopifyArticleTarget target, string? blogId, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(target.Handle))
+                throw new HttpRequestException("No se indico que articulo modificar (URL, handle o id).");
+
+            // Blogs donde buscar: el del nodo si esta elegido y no contradice la URL; si
+            // no, los de la tienda (filtrados por el handle de la URL si lo trae).
+            List<(string Id, string Handle)> blogs;
+            using (var doc = await PostGraphQlAsync(shopDomain, token,
+                new { query = "query { blogs(first: 100) { nodes { id handle } } }" }, ct))
+            {
+                blogs = doc.RootElement.GetProperty("data").GetProperty("blogs").GetProperty("nodes")
+                    .EnumerateArray()
+                    .Select(n => (n.GetProperty("id").GetString() ?? "", n.GetProperty("handle").GetString() ?? ""))
+                    .ToList();
+            }
+
+            var candidates = blogs;
+            if (!string.IsNullOrWhiteSpace(target.BlogHandle))
+                candidates = blogs.Where(bl => bl.Handle.Equals(target.BlogHandle, StringComparison.OrdinalIgnoreCase)).ToList();
+            else if (!string.IsNullOrWhiteSpace(blogId))
+                candidates = blogs.Where(bl => bl.Id == blogId).ToList();
+
+            if (candidates.Count == 0)
+                throw new HttpRequestException(
+                    $"No hay ningun blog '{target.BlogHandle ?? blogId}' en la tienda. Blogs disponibles: " +
+                    string.Join(", ", blogs.Select(bl => bl.Handle)));
+
+            const string query = @"query BlogArticles($id: ID!, $after: String) {
+  blog(id: $id) {
+    articles(first: 250, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { id handle }
+    }
+  }
+}";
+            foreach (var (id, _) in candidates)
+            {
+                string? after = null;
+                for (var page = 0; page < MaxArticlePages; page++)
+                {
+                    using var doc = await PostGraphQlAsync(shopDomain, token, new { query, variables = new { id, after } }, ct);
+                    var articles = doc.RootElement.GetProperty("data").GetProperty("blog").GetProperty("articles");
+                    foreach (var n in articles.GetProperty("nodes").EnumerateArray())
+                        if (string.Equals(n.GetProperty("handle").GetString(), target.Handle, StringComparison.OrdinalIgnoreCase))
+                            return n.GetProperty("id").GetString()!;
+
+                    var pageInfo = articles.GetProperty("pageInfo");
+                    if (!pageInfo.GetProperty("hasNextPage").GetBoolean()) break;
+                    after = pageInfo.GetProperty("endCursor").GetString();
+                }
+            }
+
+            throw new HttpRequestException(
+                $"No se encontro el articulo '{target.Handle}' en " +
+                (candidates.Count == 1 ? $"el blog '{candidates[0].Handle}'" : "ningun blog de la tienda") +
+                ". Revisa la URL o el handle.");
+        }
+
+        /// <summary>
+        /// Modifica un articulo existente. Solo se envian los campos de
+        /// <paramref name="changes"/> que traen valor: el resto (y el estado de
+        /// publicacion y el handle) se quedan como estaban.
+        /// </summary>
+        public async Task<ShopifyArticleResult> UpdateArticleAsync(
+            string shopDomain, string clientId, string clientSecret,
+            ShopifyArticleSnapshot current, ShopifyArticleChanges changes, CancellationToken ct = default)
+        {
+            var token = await GetAccessTokenAsync(shopDomain, clientId, clientSecret, ct);
+
+            var article = new Dictionary<string, object?>();
+            if (!string.IsNullOrWhiteSpace(changes.Title)) article["title"] = changes.Title.Trim();
+            if (!string.IsNullOrWhiteSpace(changes.BodyHtml)) article["body"] = changes.BodyHtml;
+            if (!string.IsNullOrWhiteSpace(changes.Summary)) article["summary"] = changes.Summary.Trim();
+            if (!string.IsNullOrWhiteSpace(changes.AuthorName)) article["author"] = new { name = changes.AuthorName.Trim() };
+            var tagList = changes.Tags?.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim()).ToList();
+            if (tagList is { Count: > 0 }) article["tags"] = tagList;
+
+            var (imageUrl, warning) = await ResolveFeaturedImageAsync(
+                shopDomain, token, changes.ImageUrl, changes.ImageBytes, changes.ImageFileName, changes.ImageContentType, ct);
+            if (!string.IsNullOrWhiteSpace(imageUrl))
+            {
+                var image = new Dictionary<string, object?> { ["url"] = imageUrl };
+                if (!string.IsNullOrWhiteSpace(changes.ImageAltText)) image["altText"] = changes.ImageAltText.Trim();
+                article["image"] = image;
+            }
+
+            const string mutation = @"mutation UpdateArticle($id: ID!, $article: ArticleUpdateInput!) {
+  articleUpdate(id: $id, article: $article) {
+    article { id handle blog { handle } }
+    userErrors { field message }
+  }
+}";
+            async Task<(string? Error, bool OnlyImage)> SendUpdateAsync()
+            {
+                using var doc = await PostGraphQlAsync(shopDomain, token,
+                    new { query = mutation, variables = new { id = current.Id, article } }, ct);
+                var node = doc.RootElement.GetProperty("data").GetProperty("articleUpdate");
+                if (node.TryGetProperty("userErrors", out var errs) &&
+                    errs.ValueKind == JsonValueKind.Array && errs.GetArrayLength() > 0)
+                {
+                    var messages = errs.EnumerateArray().Select(ReadUserError)
+                        .Where(e => !string.IsNullOrWhiteSpace(e.Message)).Select(e => e.Message!).ToList();
+                    var onlyImage = article.ContainsKey("image") && messages.Count > 0 &&
+                        messages.All(m => m.Contains("image", StringComparison.OrdinalIgnoreCase));
+                    return (string.Join("; ", messages), onlyImage);
+                }
+                return (null, false);
+            }
+
+            if (article.Count > 0)
+            {
+                var (error, onlyImage) = await SendUpdateAsync();
+                // Si lo unico que Shopify rechaza es la imagen, se aplica el resto.
+                if (error is not null && onlyImage && article.Remove("image"))
+                {
+                    warning = Join(warning, $"Shopify rechazo la imagen destacada ({error}); se mantiene la anterior.");
+                    (error, _) = article.Count > 0 ? await SendUpdateAsync() : (null, false);
+                }
+                if (error is not null)
+                    return new ShopifyArticleResult(false, current.Id, current.Handle, error, warning);
+            }
+
+            // SEO: metafields global.title_tag / global.description_tag. metafieldsSet los
+            // crea o los sobrescribe, exista o no el valor anterior.
+            var metafields = new List<object>();
+            if (!string.IsNullOrWhiteSpace(changes.SeoTitle))
+                metafields.Add(new { ownerId = current.Id, @namespace = "global", key = "title_tag", type = "single_line_text_field", value = changes.SeoTitle.Trim() });
+            if (!string.IsNullOrWhiteSpace(changes.MetaDescription))
+                metafields.Add(new { ownerId = current.Id, @namespace = "global", key = "description_tag", type = "single_line_text_field", value = changes.MetaDescription.Trim() });
+            if (metafields.Count > 0)
+            {
+                const string setMutation = @"mutation SetSeo($metafields: [MetafieldsSetInput!]!) {
+  metafieldsSet(metafields: $metafields) { userErrors { field message } }
+}";
+                using var doc = await PostGraphQlAsync(shopDomain, token,
+                    new { query = setMutation, variables = new { metafields } }, ct);
+                var errs = doc.RootElement.GetProperty("data").GetProperty("metafieldsSet").GetProperty("userErrors");
+                if (errs.GetArrayLength() > 0)
+                {
+                    var messages = string.Join("; ", errs.EnumerateArray().Select(ReadUserError).Select(e => e.Message));
+                    // El resto de cambios ya se aplico: se informa, pero no se da por fallido.
+                    warning = Join(warning, $"No se pudo actualizar el SEO (titulo/metadescripcion): {messages}");
+                }
+            }
+
+            var storeUrl = await TryGetOnlineStoreUrlAsync(shopDomain, token, ct);
+            return new ShopifyArticleResult(true, current.Id, current.Handle, null, warning,
+                BuildAdminUrl(shopDomain, current.Id),
+                BuildPublicUrl(storeUrl, current.BlogHandle, current.Handle));
+
+            static string Join(string? a, string b) => a is null ? b : $"{a}. {b}";
+        }
+
+        /// <summary>
         /// Lee un userError de Shopify. El campo "field" es una lista de rutas
         /// (p. ej. ["article", "handle"]), asi que se aplana para poder buscar en el.
         /// </summary>
@@ -694,6 +913,44 @@ namespace Server.Services.Shopify
     /// <paramref name="AdminUrl"/> abre el articulo en el admin de Shopify (unica forma de revisar un borrador).
     /// <paramref name="PublicUrl"/> es la URL en la tienda: activa si el articulo esta publicado, futura si es borrador.
     /// </summary>
+    /// <summary>Contenido actual de un articulo, antes de modificarlo.</summary>
+    public record ShopifyArticleSnapshot(
+        string Id, string Handle, string Title, string BodyHtml, string? Summary,
+        IReadOnlyList<string> Tags, bool IsPublished, string? BlogId, string? BlogHandle,
+        string? SeoTitle, string? MetaDescription);
+
+    /// <summary>Cambios a aplicar a un articulo existente. null = no tocar ese campo.</summary>
+    public record ShopifyArticleChanges
+    {
+        public string? Title { get; init; }
+        public string? BodyHtml { get; init; }
+        public string? Summary { get; init; }
+        public string? AuthorName { get; init; }
+        public IReadOnlyList<string>? Tags { get; init; }
+        public string? SeoTitle { get; init; }
+        public string? MetaDescription { get; init; }
+        public string? ImageUrl { get; init; }
+        public string? ImageAltText { get; init; }
+        public byte[]? ImageBytes { get; init; }
+        public string? ImageFileName { get; init; }
+        public string? ImageContentType { get; init; }
+
+        /// <summary>Nombres legibles de los campos que se van a cambiar.</summary>
+        public List<string> ChangedFields()
+        {
+            var fields = new List<string>();
+            if (!string.IsNullOrWhiteSpace(Title)) fields.Add("titulo");
+            if (!string.IsNullOrWhiteSpace(BodyHtml)) fields.Add("cuerpo");
+            if (!string.IsNullOrWhiteSpace(Summary)) fields.Add("extracto");
+            if (!string.IsNullOrWhiteSpace(AuthorName)) fields.Add("autor");
+            if (Tags is { Count: > 0 }) fields.Add("tags");
+            if (!string.IsNullOrWhiteSpace(SeoTitle)) fields.Add("titulo SEO");
+            if (!string.IsNullOrWhiteSpace(MetaDescription)) fields.Add("metadescripcion");
+            if (ImageBytes is { Length: > 0 } || !string.IsNullOrWhiteSpace(ImageUrl)) fields.Add("imagen destacada");
+            return fields;
+        }
+    }
+
     public record ShopifyArticleResult(
         bool Success, string? ArticleId, string? Handle, string? Error, string? Warning = null,
         string? AdminUrl = null, string? PublicUrl = null);

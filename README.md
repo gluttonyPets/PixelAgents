@@ -774,6 +774,12 @@ luego cada proyecto solo asigna cual usar (no se reintroducen por proyecto):
   `imagen_alt`, `tags`); el nodo parsea ese JSON y reparte cada campo. Precedencia:
   config del nodo > JSON del modulo anterior > autogenerado. Si la salida no es JSON,
   todo el texto se usa como cuerpo (retrocompatible).
+  Con **Accion: Modificar un articulo existente** (config `mode=update`) el nodo edita un
+  articulo que ya existe: se indica en el nodo (`targetArticle`: URL, handle o id, admite
+  variables) o en el JSON del modulo anterior (`articulo_url`/`url`). Solo cambian los
+  campos que llegan con valor (titulo, cuerpo, extracto, autor, tags, SEO, imagen); el
+  handle y el estado de publicacion se conservan. Antes de escribir guarda la version
+  anterior como archivo de la ejecucion (`shopify-anterior-{handle}-{fecha}.json`).
 - Canales de Buffer disponibles para un token: `GET /api/buffer/channels?apiKey=...`.
 
 Asignacion por proyecto:

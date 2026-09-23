@@ -8,6 +8,8 @@ namespace Server.Services.Ai.Handlers;
 /// Publica un articulo de blog en Shopify usando la conexion Shopify asignada al
 /// proyecto. Toma el titulo y el cuerpo de los modulos anteriores (p. ej. un
 /// modulo de Texto) y el blog destino + opciones de la config del nodo.
+/// Con la config "mode" = "update" modifica un articulo que ya existe en vez de
+/// crear uno nuevo (ver <see cref="ExecuteUpdateAsync"/>).
 /// </summary>
 public class ShopifyBlogModuleHandler : IModuleHandler
 {
@@ -21,6 +23,9 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         var connection = ctx.Project.ShopifyConnection;
         if (connection is null)
             return ModuleResult.Failed("El proyecto no tiene una conexion de Shopify asignada");
+
+        if (string.Equals(ctx.GetConfig("mode"), UpdateMode, StringComparison.OrdinalIgnoreCase))
+            return await ExecuteUpdateAsync(ctx, connection);
 
         var blogId = ctx.GetConfig("blogId");
         if (string.IsNullOrWhiteSpace(blogId))
@@ -196,6 +201,146 @@ public class ShopifyBlogModuleHandler : IModuleHandler
         return ModuleResult.Completed(output);
     }
 
+    public const string UpdateMode = "update";
+
+    /// <summary>
+    /// Modifica un articulo existente. El articulo se indica en la config del nodo
+    /// ("targetArticle": URL, handle o id; admite variables) o, si esta vacia, en el
+    /// JSON del modulo anterior ("articulo_url", "url"...). Solo se cambian los campos
+    /// que llegan con valor (nodo > JSON > texto como cuerpo): lo que no llega, el
+    /// handle y el estado de publicacion se quedan como estaban. Antes de escribir se
+    /// guarda la version anterior como archivo de la ejecucion, para poder recuperarla.
+    /// </summary>
+    private async Task<ModuleResult> ExecuteUpdateAsync(
+        ModuleExecutionContext ctx, Server.Models.ShopifyConnection connection)
+    {
+        var rawInput = ctx.GetInputText("input_content");
+        var structured = StructuredArticle.TryParse(rawInput);
+
+        var targetText = ctx.GetConfig("targetArticle");
+        if (string.IsNullOrWhiteSpace(targetText))
+            targetText = structured?.TargetArticle ?? "";
+        if (targetText.Contains("{{"))
+            return ModuleResult.Failed($"El articulo a modificar ('{targetText}') tiene una variable sin valor en esta ejecucion.");
+        var target = ShopifyArticleTarget.Parse(targetText);
+        if (target is null)
+            return ModuleResult.Failed(
+                "No se sabe que articulo modificar. Indicalo en el nodo (\"Articulo a modificar\": URL, handle o id) " +
+                "o haz que el modulo anterior emita un JSON con \"articulo_url\".");
+
+        string? FromNodeOr(string configKey, string? fromJson)
+        {
+            var v = ctx.GetConfig(configKey);
+            return !string.IsNullOrWhiteSpace(v) ? v.Trim() : fromJson;
+        }
+
+        // Cuerpo: el del JSON; si la entrada no es JSON, todo el texto es el cuerpo nuevo.
+        var bodyText = structured is not null ? structured.Body : (string.IsNullOrWhiteSpace(rawInput) ? null : rawInput);
+        var tagsConfig = ctx.GetConfig("tags");
+        var tags = !string.IsNullOrWhiteSpace(tagsConfig)
+            ? tagsConfig.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            : structured?.Tags;
+
+        var changes = new ShopifyArticleChanges
+        {
+            Title = FromNodeOr("title", structured?.Title),
+            BodyHtml = string.IsNullOrWhiteSpace(bodyText) ? null : ToHtml(bodyText),
+            Summary = FromNodeOr("excerpt", structured?.Excerpt),
+            AuthorName = FromNodeOr("author", structured?.Author),
+            Tags = tags,
+            SeoTitle = FromNodeOr("seoTitle", structured?.SeoTitle),
+            MetaDescription = FromNodeOr("metaDescription", structured?.MetaDescription),
+        };
+
+        var imageFile = ctx.GetInputFiles("input_image").FirstOrDefault();
+        if (imageFile is not null)
+        {
+            var bytes = await ctx.ReadOutputFileBytesAsync(imageFile);
+            var candidateUrl = ctx.GetPublicFileUrl(imageFile);
+            changes = changes with
+            {
+                ImageBytes = bytes is { Length: > 0 } ? bytes : null,
+                ImageFileName = imageFile.FileName,
+                ImageContentType = imageFile.ContentType,
+                ImageUrl = IsPubliclyReachableImageUrl(candidateUrl) ? candidateUrl : null,
+                ImageAltText = FromNodeOr("imageAlt", structured?.ImageAlt),
+            };
+        }
+
+        var changed = changes.ChangedFields();
+        if (changed.Count == 0)
+            return ModuleResult.Failed(
+                "No hay nada que cambiar: la entrada no trae titulo, cuerpo, extracto, SEO, tags ni imagen.");
+
+        ShopifyArticleSnapshot current;
+        try
+        {
+            current = await _shopify.FindArticleAsync(
+                connection.ShopDomain, connection.ClientId, connection.ClientSecret,
+                target, ctx.GetConfig("blogId"), ctx.CancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            return ModuleResult.Failed($"No se encontro el articulo a modificar ({target}): {ex.Message}");
+        }
+
+        await ctx.LogInfoAsync(
+            $"Modificando articulo de Shopify \"{current.Title}\" ({current.Handle}) — campos: {string.Join(", ", changed)}");
+
+        // Copia de seguridad de lo que habia antes, como archivo de la ejecucion.
+        var backup = new ProducedFile
+        {
+            FileName = $"shopify-anterior-{current.Handle}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.json",
+            ContentType = "application/json",
+            Data = JsonSerializer.SerializeToUtf8Bytes(current, new JsonSerializerOptions { WriteIndented = true }),
+        };
+
+        ShopifyArticleResult result;
+        try
+        {
+            result = await _shopify.UpdateArticleAsync(
+                connection.ShopDomain, connection.ClientId, connection.ClientSecret,
+                current, changes, ctx.CancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            return ModuleResult.Failed($"Error Shopify: {ex.Message}");
+        }
+
+        if (!result.Success)
+            return ModuleResult.Failed($"Shopify rechazo la modificacion: {result.Error}");
+        if (!string.IsNullOrWhiteSpace(result.Warning))
+            await ctx.LogWarningAsync(result.Warning);
+
+        var lines = new List<string>
+        {
+            $"Articulo modificado en Shopify: {current.Handle}",
+            $"Campos cambiados: {string.Join(", ", changed)}",
+            $"Copia de la version anterior: {backup.FileName}",
+        };
+        if (!string.IsNullOrWhiteSpace(result.AdminUrl)) lines.Add($"Admin: {result.AdminUrl}");
+        if (!string.IsNullOrWhiteSpace(result.PublicUrl)) lines.Add($"URL publica: {result.PublicUrl}");
+        foreach (var line in lines.Skip(1))
+            await ctx.LogInfoAsync(line);
+
+        var output = new StepOutput
+        {
+            Type = "text",
+            Title = changes.Title ?? current.Title,
+            Content = string.Join("\n", lines),
+            Summary = $"Articulo modificado ({string.Join(", ", changed)})",
+        };
+        output.Metadata["articleId"] = current.Id;
+        output.Metadata["handle"] = current.Handle;
+        output.Metadata["changedFields"] = changed;
+        if (!string.IsNullOrWhiteSpace(result.AdminUrl)) output.Metadata["adminUrl"] = result.AdminUrl;
+        if (!string.IsNullOrWhiteSpace(result.PublicUrl)) output.Metadata["publicUrl"] = result.PublicUrl;
+
+        return ModuleResult.Completed(output, files: [backup]);
+    }
+
     /// <summary>
     /// Comprueba que la URL sirva como respaldo para la imagen destacada: Shopify tiene
     /// que poder descargarla desde sus servidores. Exige https absoluto con host publico.
@@ -343,6 +488,8 @@ internal sealed class StructuredArticle
     public string? Author { get; init; }
     public string? ImageAlt { get; init; }
     public string[]? Tags { get; init; }
+    /// <summary>Articulo a modificar (modo actualizar): URL, handle o id.</summary>
+    public string? TargetArticle { get; init; }
 
     private static readonly string[] TitleKeys = ["titulo", "title", "titulo_articulo"];
     private static readonly string[] BodyKeys = ["cuerpo", "contenido", "body", "content", "html"];
@@ -353,6 +500,7 @@ internal sealed class StructuredArticle
     private static readonly string[] AuthorKeys = ["autor", "author"];
     private static readonly string[] ImageAltKeys = ["imagen_alt", "image_alt", "alt", "alt_text", "texto_alternativo"];
     private static readonly string[] TagsKeys = ["tags", "etiquetas"];
+    private static readonly string[] TargetKeys = ["articulo_url", "url_articulo", "article_url", "url_original", "articulo_id", "article_id", "url"];
 
     public static StructuredArticle? TryParse(string? raw)
     {
@@ -384,6 +532,7 @@ internal sealed class StructuredArticle
                 Author = GetString(props, AuthorKeys),
                 ImageAlt = GetString(props, ImageAltKeys),
                 Tags = GetTags(props, TagsKeys),
+                TargetArticle = GetString(props, TargetKeys),
             };
         }
     }
