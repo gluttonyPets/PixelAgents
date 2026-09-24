@@ -204,29 +204,34 @@ public class ShopifyBlogModuleHandler : IModuleHandler
     public const string UpdateMode = "update";
 
     /// <summary>
-    /// Modifica un articulo existente. El articulo se indica en la config del nodo
-    /// ("targetArticle": URL, handle o id; admite variables) o, si esta vacia, en el
-    /// JSON del modulo anterior ("articulo_url", "url"...). Solo se cambian los campos
-    /// que llegan con valor (nodo > JSON > texto como cuerpo): lo que no llega, el
-    /// handle y el estado de publicacion se quedan como estaban. Antes de escribir se
-    /// guarda la version anterior como archivo de la ejecucion, para poder recuperarla.
+    /// Modifica un articulo existente. El articulo lo elige siempre la entrada: la
+    /// conexion de entrada tiene que llevar un "Formato de la conexion" con el campo
+    /// "url" (<see cref="ShopifyUpdateFormat"/>), y el modulo anterior emite ahi la URL
+    /// del articulo. Solo se cambian los campos que llegan con valor (nodo > JSON): lo
+    /// que no llega, el handle y el estado de publicacion se quedan como estaban. Antes
+    /// de escribir se guarda la version anterior como archivo de la ejecucion.
     /// </summary>
     private async Task<ModuleResult> ExecuteUpdateAsync(
         ModuleExecutionContext ctx, Server.Models.ShopifyConnection connection)
     {
+        if (!ShopifyUpdateFormat.HasUrlField(ctx.GetInputFormat("input_content")))
+            return ModuleResult.Failed(
+                "En modo \"Modificar un articulo existente\" la conexion de entrada (Contenido) tiene que tener un " +
+                "Formato de la conexion con, como minimo, el campo \"url\". Abre el formato de esa conexion y usa la " +
+                "plantilla \"Shopify Blog — modificar articulo existente\".");
+
         var rawInput = ctx.GetInputText("input_content");
         var structured = StructuredArticle.TryParse(rawInput);
+        if (structured is null)
+            return ModuleResult.Failed(
+                "La entrada no es el JSON del formato de la conexion: el modulo anterior tiene que devolver un JSON con \"url\".");
 
-        var targetText = ctx.GetConfig("targetArticle");
-        if (string.IsNullOrWhiteSpace(targetText))
-            targetText = structured?.TargetArticle ?? "";
-        if (targetText.Contains("{{"))
-            return ModuleResult.Failed($"El articulo a modificar ('{targetText}') tiene una variable sin valor en esta ejecucion.");
+        var targetText = structured.TargetArticle ?? "";
         var target = ShopifyArticleTarget.Parse(targetText);
         if (target is null)
-            return ModuleResult.Failed(
-                "No se sabe que articulo modificar. Indicalo en el nodo (\"Articulo a modificar\": URL, handle o id) " +
-                "o haz que el modulo anterior emita un JSON con \"articulo_url\".");
+            return ModuleResult.Failed(string.IsNullOrWhiteSpace(targetText)
+                ? "El modulo anterior no ha rellenado el campo \"url\" con el articulo a modificar."
+                : $"El campo \"url\" ('{targetText}') no es la URL de un articulo del blog (/blogs/<blog>/<articulo>).");
 
         string? FromNodeOr(string configKey, string? fromJson)
         {
@@ -234,8 +239,7 @@ public class ShopifyBlogModuleHandler : IModuleHandler
             return !string.IsNullOrWhiteSpace(v) ? v.Trim() : fromJson;
         }
 
-        // Cuerpo: el del JSON; si la entrada no es JSON, todo el texto es el cuerpo nuevo.
-        var bodyText = structured is not null ? structured.Body : (string.IsNullOrWhiteSpace(rawInput) ? null : rawInput);
+        var bodyText = structured.Body;
         var tagsConfig = ctx.GetConfig("tags");
         var tags = !string.IsNullOrWhiteSpace(tagsConfig)
             ? tagsConfig.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -488,7 +492,7 @@ internal sealed class StructuredArticle
     public string? Author { get; init; }
     public string? ImageAlt { get; init; }
     public string[]? Tags { get; init; }
-    /// <summary>Articulo a modificar (modo actualizar): URL, handle o id.</summary>
+    /// <summary>Articulo a modificar (modo actualizar): campo "url" del formato de la conexion.</summary>
     public string? TargetArticle { get; init; }
 
     private static readonly string[] TitleKeys = ["titulo", "title", "titulo_articulo"];
@@ -500,7 +504,7 @@ internal sealed class StructuredArticle
     private static readonly string[] AuthorKeys = ["autor", "author"];
     private static readonly string[] ImageAltKeys = ["imagen_alt", "image_alt", "alt", "alt_text", "texto_alternativo"];
     private static readonly string[] TagsKeys = ["tags", "etiquetas"];
-    private static readonly string[] TargetKeys = ["articulo_url", "url_articulo", "article_url", "url_original", "articulo_id", "article_id", "url"];
+    private static readonly string[] TargetKeys = [ShopifyUpdateFormat.UrlField];
 
     public static StructuredArticle? TryParse(string? raw)
     {

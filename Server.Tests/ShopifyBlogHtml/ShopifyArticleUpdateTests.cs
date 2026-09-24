@@ -61,6 +61,20 @@ public class ShopifyArticleUpdateTests
         Assert.Equal(["titulo", "titulo SEO"], changes.ChangedFields());
     }
 
+    [Theory]
+    [InlineData("{\"url\": \"\", \"titulo\": \"\"}", true)]
+    [InlineData("{\"URL\": \"\"}", true)]
+    [InlineData("{\"titulo\": \"\", \"cuerpo\": \"\"}", false)]
+    [InlineData("{\"articulo\": {\"url\": \"\"}}", false)]
+    [InlineData("[{\"url\": \"\"}]", false)]
+    [InlineData("no es json", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void FormatoDeLaConexion_ExigeCampoUrl(string? format, bool expected)
+    {
+        Assert.Equal(expected, ShopifyUpdateFormat.HasUrlField(format));
+    }
+
     [Fact]
     public void JsonDelModuloAnterior_TraeElArticuloAModificar()
     {
@@ -70,7 +84,7 @@ public class ShopifyArticleUpdateTests
         var parse = type.GetMethod("TryParse", BindingFlags.Public | BindingFlags.Static)!;
 
         var article = parse.Invoke(null, ["""
-            {"articulo_url": "https://gluttony.es/blogs/consejos-mascotas/mi-articulo",
+            {"url": "https://gluttony.es/blogs/consejos-mascotas/mi-articulo",
              "seo_titulo": "Titulo nuevo", "cuerpo": ""}
             """]);
 

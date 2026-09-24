@@ -857,7 +857,15 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                             <div class="inspector-section-title">Articulo de blog (Shopify)</div>
 
                             <div class="inspector-field">
-                                <label>Accion</label>
+                                <label>
+                                    Accion
+                                    @if (shopifyUpdate)
+                                    {
+                                        <i class="bi bi-question-circle" style="cursor:pointer; margin-left:0.25rem;"
+                                           title="@ShopifyUpdateFormat.HelpText"
+                                           @onclick="() => _shopifyUpdateHelpOpen = !_shopifyUpdateHelpOpen"></i>
+                                    }
+                                </label>
                                 <select value="@(shopifyUpdate ? "update" : "create")"
                                         @onchange="@(e => SetModuleConfig(sel.Id, "mode", e.Value?.ToString() ?? "create"))">
                                     <option value="create">Crear un articulo nuevo</option>
@@ -867,19 +875,34 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
                             @if (shopifyUpdate)
                             {
-                                <div class="inspector-field">
-                                    <label>Articulo a modificar <span class="text-sm text-muted">(URL, handle o id; admite {{variables}})</span></label>
-                                    <input type="text" value="@GetModuleConfig(sel.Id, "targetArticle", "")"
-                                           @onchange="@(e => SetModuleConfig(sel.Id, "targetArticle", e.Value?.ToString() ?? ""))"
-                                           placeholder="https://tienda.com/blogs/noticias/mi-articulo" />
-                                </div>
-                                <p class="text-sm text-muted" style="margin-bottom:0.5rem;">
-                                    <i class="bi bi-info-circle"></i>
-                                    Si lo dejas vacio, se usa el campo "articulo_url" (o "url") del JSON del modulo anterior.
-                                    Solo se cambian los campos que llegan con valor; el resto, el identificador URL y el
-                                    estado de publicacion se conservan. Antes de modificar se guarda una copia de la
-                                    version anterior como archivo de la ejecucion.
-                                </p>
+                                @if (_shopifyUpdateHelpOpen)
+                                {
+                                    <p class="text-sm text-muted" style="margin-bottom:0.5rem;">
+                                        <i class="bi bi-question-circle"></i> @ShopifyUpdateFormat.HelpText
+                                        Se conservan el identificador URL y el estado de publicacion, y antes de modificar
+                                        se guarda una copia de la version anterior como archivo de la ejecucion.
+                                    </p>
+                                }
+                                var updateInput = _connections.FirstOrDefault(c => c.ToModuleId == sel.Id && c.ToPort == ShopifyUpdateFormat.InputPort);
+                                @if (updateInput is null)
+                                {
+                                    <div class="alert alert-error" style="font-size:0.75rem; margin-bottom:0.5rem;">
+                                        <i class="bi bi-exclamation-circle"></i>
+                                        Conecta a la entrada "Contenido" el modulo que decide que articulo modificar.
+                                    </div>
+                                }
+                                else if (!ShopifyUpdateFormat.HasUrlField(updateInput.Format))
+                                {
+                                    var capturedUpdateInput = updateInput;
+                                    <div class="alert alert-error" style="font-size:0.75rem; margin-bottom:0.5rem;">
+                                        <i class="bi bi-exclamation-circle"></i>
+                                        La conexion de entrada necesita un Formato de la conexion con el campo "url".
+                                        <button class="btn btn-sm" style="margin-top:0.35rem;"
+                                                @onclick="() => OpenConnectionFormat(capturedUpdateInput.FromModuleId.ToString(), capturedUpdateInput.FromPort, capturedUpdateInput.ToModuleId.ToString(), capturedUpdateInput.ToPort)">
+                                            Configurar formato
+                                        </button>
+                                    </div>
+                                }
                             }
 
                             <p class="text-sm text-muted" style="margin-bottom:0.5rem;">
@@ -1186,6 +1209,13 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                 <p class="text-sm text-muted" style="margin-bottom: 0.4rem;">
                     Define el JSON que el modulo origen debe emitir para que el destino pueda leer cada campo en su sitio. Se inyecta como instruccion al prompt del origen y guia al destino en la lectura.
                 </p>
+                @if (_formatEditor.RequiresUrl)
+                {
+                    <p class="text-sm" style="margin-bottom: 0.4rem;">
+                        <i class="bi bi-question-circle" title="@ShopifyUpdateFormat.HelpText" style="margin-right: 0.25rem;"></i>
+                        <strong>Obligatorio: campo "url".</strong> @ShopifyUpdateFormat.HelpText
+                    </p>
+                }
                 <div style="display:flex; align-items:center; gap:0.4rem; margin-bottom:0.5rem;">
                     <label class="text-sm text-muted" style="white-space:nowrap; margin:0;">Plantilla:</label>
                     <select style="flex:1;" value="@_formatEditor.SelectedTemplate"
@@ -1217,7 +1247,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                 }
             </div>
             <div class="modal-footer">
-                <button class="btn btn-sm" @onclick="ClearFormatEditor" title="Quitar el formato de esta conexion">Quitar</button>
+                <button class="btn btn-sm" @onclick="ClearFormatEditor" disabled="@_formatEditor.RequiresUrl"
+                        title="@(_formatEditor.RequiresUrl ? "Esta conexion necesita formato: el nodo Shopify en modo Modificar lee el campo url" : "Quitar el formato de esta conexion")">Quitar</button>
                 <button class="btn btn-sm" @onclick="PrettyPrintFormat"
                         disabled="@(!_formatEditor.IsValid || string.IsNullOrWhiteSpace(_formatEditor.Draft))"
                         title="Reformatear el JSON con indentacion">
@@ -1481,8 +1512,14 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
     private FormatEditorState? _formatEditor;
 
+    // Ayuda (?) del modo "Modificar un articulo existente" del nodo ShopifyBlog.
+    private bool _shopifyUpdateHelpOpen;
+
     private sealed class FormatEditorState
     {
+        // Destino ShopifyBlog en modo Modificar: el formato es obligatorio y tiene
+        // que llevar el campo "url" (ShopifyUpdateFormat).
+        public bool RequiresUrl { get; set; }
         public Guid FromModuleId { get; set; }
         public string FromPort { get; set; } = "";
         public Guid ToModuleId { get; set; }
@@ -1509,7 +1546,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             "{\n  \"titulo\": \"\",\n  \"cuerpo\": \"\",\n  \"extracto\": \"\",\n  \"slug\": \"\",\n  \"seo_titulo\": \"\",\n  \"seo_descripcion\": \"\",\n  \"tags\": []\n}"),
         // Modo "Modificar un articulo existente": los campos vacios o ausentes no se tocan.
         new("shopify-update", "Shopify Blog — modificar articulo existente",
-            "{\n  \"articulo_url\": \"\",\n  \"titulo\": \"\",\n  \"cuerpo\": \"\",\n  \"extracto\": \"\",\n  \"seo_titulo\": \"\",\n  \"seo_descripcion\": \"\"\n}"),
+            "{\n  \"url\": \"\",\n  \"titulo\": \"\",\n  \"cuerpo\": \"\",\n  \"extracto\": \"\",\n  \"seo_titulo\": \"\",\n  \"seo_descripcion\": \"\"\n}"),
         new("slides", "Imagenes / slides",
             "{\n  \"images\": [\n    { \"prompt\": \"slide 1\" },\n    { \"prompt\": \"slide 2\" },\n    { \"prompt\": \"slide 3\" }\n  ]\n}"),
     };
@@ -2920,6 +2957,9 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             FromLabel = fromLabel,
             ToLabel = toLabel,
             Draft = conn.Format ?? "",
+            RequiresUrl = toModule?.ModuleType == "ShopifyBlog"
+                && toPort == ShopifyUpdateFormat.InputPort
+                && GetModuleConfig(toModule.Id, "mode", "create") == "update",
         };
 
         // Si el destino es ShopifyBlog y la conexion aun no tiene formato, sugerimos
@@ -3005,14 +3045,23 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         var draft = (_formatEditor.Draft ?? "").Trim();
         if (string.IsNullOrEmpty(draft))
         {
-            _formatEditor.IsValid = true;
-            _formatEditor.Error = null;
+            _formatEditor.IsValid = !_formatEditor.RequiresUrl;
+            _formatEditor.Error = _formatEditor.RequiresUrl
+                ? "Esta conexion necesita un formato con, como minimo, el campo \"url\"."
+                : null;
             _formatEditor.ShapeSummary = null;
             return;
         }
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(draft);
+            if (_formatEditor.RequiresUrl && !ShopifyUpdateFormat.HasUrlField(draft))
+            {
+                _formatEditor.IsValid = false;
+                _formatEditor.Error = "Falta el campo \"url\": el formato tiene que ser un objeto JSON con \"url\" en el primer nivel.";
+                _formatEditor.ShapeSummary = null;
+                return;
+            }
             _formatEditor.IsValid = true;
             _formatEditor.Error = null;
             _formatEditor.ShapeSummary = BuildShapeSummary(doc.RootElement, depth: 0);

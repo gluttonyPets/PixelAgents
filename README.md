@@ -775,8 +775,10 @@ luego cada proyecto solo asigna cual usar (no se reintroducen por proyecto):
   config del nodo > JSON del modulo anterior > autogenerado. Si la salida no es JSON,
   todo el texto se usa como cuerpo (retrocompatible).
   Con **Accion: Modificar un articulo existente** (config `mode=update`) el nodo edita un
-  articulo que ya existe: se indica en el nodo (`targetArticle`: URL, handle o id, admite
-  variables) o en el JSON del modulo anterior (`articulo_url`/`url`). Solo cambian los
+  articulo que ya existe. El articulo lo elige siempre la entrada: la conexion de entrada
+  tiene que llevar un Formato de la conexion con, como minimo, el campo `url` (el editor
+  no deja guardarlo sin el, y el nodo falla si falta), y el modulo anterior emite ahi la
+  URL del articulo. El icono (?) del nodo lo explica. Solo cambian los
   campos que llegan con valor (titulo, cuerpo, extracto, autor, tags, SEO, imagen); el
   handle y el estado de publicacion se conservan. Antes de escribir guarda la version
   anterior como archivo de la ejecucion (`shopify-anterior-{handle}-{fecha}.json`).
