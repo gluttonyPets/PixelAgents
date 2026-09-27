@@ -87,6 +87,13 @@ public static class FileDirectoryIndex
     {
         public List<ResolvedEntry> Entries { get; } = [];
         public List<string> Errors { get; } = [];
+
+        /// <summary>
+        /// Problemas de entradas que caen fuera de las carpetas elegidas para esta
+        /// ejecucion. No se publican, asi que no tumban el modulo: solo se avisan.
+        /// </summary>
+        public List<string> Warnings { get; } = [];
+
         public string? BaseUrl { get; set; }
 
         /// <summary>
@@ -327,6 +334,10 @@ public static class FileDirectoryIndex
         var hosted = (hostedFiles ?? []).ToList();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Errores de entradas con ruta, junto a su carpeta: si la ejecucion solo
+        // publica unas carpetas, los de las demas no deben tumbar el modulo.
+        var entryErrors = new List<(string Folder, string Message)>();
+
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
@@ -347,14 +358,14 @@ public static class FileDirectoryIndex
 
             if (!seen.Add(path))
             {
-                result.Errors.Add($"{position} (\"{path}\"): ruta repetida en el indice.");
+                entryErrors.Add((FolderOf(path), $"{position} (\"{path}\"): ruta repetida en el indice."));
                 continue;
             }
 
             var description = entry.Description?.Trim();
             if (string.IsNullOrWhiteSpace(description))
             {
-                result.Errors.Add($"{position} (\"{path}\"): falta la descripcion. El indice tiene que explicar que es cada fichero.");
+                entryErrors.Add((FolderOf(path), $"{position} (\"{path}\"): falta la descripcion. El indice tiene que explicar que es cada fichero."));
                 continue;
             }
 
@@ -362,19 +373,18 @@ public static class FileDirectoryIndex
                 ResolveUrl(entry, path, result.BaseUrl, hosted, hostedUrlFactory);
             if (url is null)
             {
-                result.Errors.Add($"{position} (\"{path}\"): no hay ruta accesible. {DescribeMiss(hosted)}");
+                entryErrors.Add((FolderOf(path), $"{position} (\"{path}\"): no hay ruta accesible. {DescribeMiss(hosted)}"));
                 continue;
             }
 
-            var separator = path.LastIndexOf('/');
-            var folder = separator < 0 ? "" : path[..separator];
-            var name = separator < 0 ? path : path[(separator + 1)..];
+            var folder = FolderOf(path);
+            var name = path[(path.LastIndexOf('/') + 1)..];
 
             result.Entries.Add(
                 new ResolvedEntry(path, folder, name, description!, url, source, sourceFile, sourceFileId));
         }
 
-        ApplyFolderSelection(result, folderSelection);
+        ApplyFolderSelection(result, folderSelection, entryErrors);
 
         return result;
     }
@@ -440,8 +450,15 @@ public static class FileDirectoryIndex
     /// Una carpeta que no existe es un error, no un filtro que no filtra: si se
     /// ignorase, el modulo publicaria la biblioteca entera justo cuando el usuario
     /// pidio una parte, y el modelo trabajaria con documentos que nadie eligio.
+    ///
+    /// Los errores de entradas que quedan fuera de la seleccion pasan a avisos: esas
+    /// entradas no se publican, asi que una descripcion pendiente en otra carpeta no
+    /// debe tumbar una ejecucion que no la usa.
     /// </summary>
-    private static void ApplyFolderSelection(ParseResult result, IEnumerable<string>? selection)
+    private static void ApplyFolderSelection(
+        ParseResult result,
+        IEnumerable<string>? selection,
+        List<(string Folder, string Message)> entryErrors)
     {
         var folders = (selection ?? [])
             .Select(NormalizePath)
@@ -450,12 +467,23 @@ public static class FileDirectoryIndex
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (folders.Count == 0) return;
+        if (folders.Count == 0)
+        {
+            result.Errors.AddRange(entryErrors.Select(e => e.Message));
+            return;
+        }
 
         result.SelectedFolders.AddRange(folders);
 
+        foreach (var (folder, message) in entryErrors)
+        {
+            var inScope = folders.Any(f => IsInFolder(folder, f));
+            (inScope ? result.Errors : result.Warnings).Add(message);
+        }
+
         var known = result.Entries
             .Select(e => e.Folder)
+            .Concat(entryErrors.Select(e => e.Folder))
             .Concat(result.DeclaredFolders)
             .Where(f => !string.IsNullOrEmpty(f))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -564,6 +592,13 @@ public static class FileDirectoryIndex
     /// <summary>Antepone la URL publica del servidor a una ruta relativa.</summary>
     public static string Absolutize(string? publicBaseUrl, string path) =>
         string.IsNullOrWhiteSpace(publicBaseUrl) ? path : $"{publicBaseUrl.TrimEnd('/')}{path}";
+
+    /// <summary>Carpeta de una ruta ya normalizada ("" si esta en la raiz).</summary>
+    private static string FolderOf(string path)
+    {
+        var separator = path.LastIndexOf('/');
+        return separator < 0 ? "" : path[..separator];
+    }
 
     /// <summary>
     /// Normaliza una ruta del indice: separadores en "/", sin barras sobrantes

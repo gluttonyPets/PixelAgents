@@ -100,6 +100,13 @@ public class FileDirectoryModuleHandler : IModuleHandler
             $"Directorio: {ctx.ModuleFiles.Count} fichero(s) subidos al nodo, "
             + $"{result.Entries.Count} entrada(s) resueltas del indice.");
 
+        if (result.Warnings.Count > 0)
+        {
+            await ctx.LogWarningAsync(
+                "Entradas fuera de la carpeta de esta ejecucion con problemas (no se publican, "
+                + "pero conviene arreglarlas): " + string.Join(" | ", result.Warnings));
+        }
+
         if (!result.IsValid)
         {
             var detail = result.Errors.Count > 0

@@ -235,6 +235,11 @@ escribir `{{carpeta}}` en su configuracion. Reglas:
 - Si hay variable de carpeta aplicable y la ejecucion no eligio ninguna, el modulo
   **falla**. Publicar la biblioteca entera seria lo contrario de lo que pide el
   pipeline, y es el error que el usuario puede arreglar eligiendo carpeta.
+- Con carpeta elegida, los fallos de entradas de **otras** carpetas (descripcion
+  vacia, ruta repetida, fichero sin URL) no tumban el modulo: pasan a
+  `ParseResult.Warnings` y se avisan en el log, porque esas entradas no se publican.
+  Sin carpeta elegida se publica todo y cualquier entrada mal sigue siendo error.
+  El explorador marca en el arbol las carpetas con ficheros sin descripcion.
 
 En la planificacion con IA el modelo tambien rellena estas variables: se le pasan las
 carpetas reales y se le exige elegir una (`PlannerSchema.BuildInstruction`), y al leer

@@ -86,6 +86,11 @@
                         }
                         <i class="bi @(_selected == folder ? "bi-folder2-open" : "bi-folder")"></i>
                         <span class="fd-tree-name">@NameOf(folder)</span>
+                        @if (MissingDescriptionsIn(folder) is var missing && missing > 0)
+                        {
+                            <i class="bi bi-exclamation-circle-fill fd-tree-warn"
+                               title="@missing archivo(s) sin descripcion en esta carpeta"></i>
+                        }
                         <span class="fd-count">@CountIn(folder)</span>
                     </div>
                 </li>
@@ -240,8 +245,14 @@
             }
             else if (sinDescripcion > 0)
             {
+                var carpetas = _files
+                    .Where(f => string.IsNullOrWhiteSpace(f.Description))
+                    .Select(f => f.Folder == "" ? "Directorio" : f.Folder)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
                 <span class="text-danger">
-                    @sinDescripcion de @total archivo(s) sin descripcion: el indice tiene que explicar que es cada uno.
+                    @sinDescripcion de @total archivo(s) sin descripcion (en @string.Join(", ", carpetas)):
+                    el indice tiene que explicar que es cada uno.
                 </span>
             }
             else
@@ -815,6 +826,12 @@
         .ToList();
 
     /// <summary>Cuenta lo que cuelga de una carpeta: subcarpetas directas y archivos.</summary>
+    /// <summary>Archivos sin descripcion en la carpeta o en sus subcarpetas.</summary>
+    private int MissingDescriptionsIn(string folder) => _files.Count(f =>
+        string.IsNullOrWhiteSpace(f.Description)
+        && (f.Folder.Equals(folder, StringComparison.OrdinalIgnoreCase)
+            || f.Folder.StartsWith(folder + "/", StringComparison.OrdinalIgnoreCase)));
+
     private int CountIn(string folder) => ChildFoldersOf(folder).Count + FilesIn(folder).Count;
 
     // ── Crear, renombrar y borrar carpetas ──

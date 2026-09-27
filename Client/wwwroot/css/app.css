@@ -6610,6 +6610,11 @@ a.link:hover { text-decoration: underline; }
     border-color: var(--danger);
 }
 
+.fd-tree-warn {
+    color: var(--danger);
+    font-size: 0.75rem;
+}
+
 /* ── Variables del pipeline ──
    Valores que se declaran en el proyecto y se fijan en cada ejecucion; se
    sustituyen en los prompts de todos los modulos. */

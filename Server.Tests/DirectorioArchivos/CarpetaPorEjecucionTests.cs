@@ -126,6 +126,50 @@ public class CarpetaPorEjecucionTests
         Assert.Contains(result.Errors, e => e.Contains("ningun fichero", StringComparison.OrdinalIgnoreCase));
     }
 
+    // ── Errores fuera de la carpeta elegida ──
+
+    private const string IndiceConHueco = """
+    {
+      "baseUrl": "https://cdn.ejemplo.com/marca",
+      "files": [
+        { "path": "pala/main.jpg",     "description": "Pala de arenero" },
+        { "path": "comedero/nuevo.png","description": "" }
+      ]
+    }
+    """;
+
+    [Fact]
+    public void DescripcionPendienteEnOtraCarpeta_SoloAvisa()
+    {
+        var result = FileDirectoryIndex.Resolve(IndiceConHueco, folderSelection: ["pala"]);
+
+        Assert.True(result.IsValid);
+        Assert.Equal("pala/main.jpg", Assert.Single(result.Entries).Path);
+        Assert.Contains(result.Warnings, w => w.Contains("comedero/nuevo.png"));
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public void DescripcionPendienteEnLaCarpetaElegida_Falla()
+    {
+        var result = FileDirectoryIndex.Resolve(IndiceConHueco, folderSelection: ["comedero"]);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("falta la descripcion"));
+        // La carpeta existe: que su unico fichero este mal no la convierte en inventada.
+        Assert.DoesNotContain(result.Errors, e => e.Contains("no existe"));
+    }
+
+    [Fact]
+    public void DescripcionPendienteSinCarpetaElegida_Falla()
+    {
+        var result = FileDirectoryIndex.Resolve(IndiceConHueco);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("comedero/nuevo.png"));
+        Assert.Empty(result.Warnings);
+    }
+
     // ── Salida ──
 
     [Fact]
