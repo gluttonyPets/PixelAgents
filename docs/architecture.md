@@ -438,7 +438,7 @@ export del pipeline, `pipelineEditor.downloadText` guarda el fichero.
 | FileDirectory | FileDirectoryModuleHandler | Publica un directorio de ficheros y emite su indice (ver seccion propia) |
 | Text          | TextModuleHandler          | Genera texto con un proveedor LLM                          |
 | Image         | ImageModuleHandler         | Genera imagenes con un proveedor de imagen; con varias salidas hace una llamada por imagen (ver seccion propia) |
-| Audio         | AudioModuleHandler         | Genera audio (TTS) con un proveedor                        |
+| Audio         | AudioModuleHandler         | Texto a voz (OpenAI); con el texto repartido en tomas genera un audio por toma (ver seccion propia) |
 | Video         | VideoModuleHandler         | Anima imagenes: un clip por imagen de entrada, con las llamadas en paralelo (ver seccion propia) |
 | VideoAssembly | VideoAssemblyModuleHandler | Une varios clips en un unico MP4 con ffmpeg (modulo de sistema, sin coste) |
 | Transcription | TranscriptionModuleHandler | Transcribe audio a texto via proveedor                     |
@@ -549,6 +549,36 @@ Cada puerto entrega **su** imagen: `output_image_2` propaga la segunda o no
 propaga nada. No cae en "todas las imagenes", que era lo que hacia que un modulo
 con una sola imagen la mandara por los dos puertos y pareciera haber generado
 dos.
+
+### Modulo Audio: texto a voz
+
+Solo OpenAI lo implementa (`OpenAiProvider` -> `POST /v1/audio/speech`, por
+HTTP directo porque el SDK no expone `instructions`). La peticion la arma
+`OpenAiSpeech`, porque los dos TTS no aceptan lo mismo:
+
+- `tts-1` / `tts-1-hd`: se manda `speed` (0.25-4.0) y nunca `instructions`.
+- `gpt-4o-mini-tts`: se manda `instructions` (campo "Instrucciones de voz",
+  clave `voiceInstructions`: tono, acento, ritmo) y no `speed`, que ignora; si
+  hay velocidad configurada se traduce a una indicacion de ritmo dentro de las
+  instrucciones.
+
+**Un audio por toma.** Si el texto llega repartido con el mismo contrato que el
+multi-imagen (marcas `===TOMA n===`, `===IMAGEN n===`... o el JSON de la
+conexion), se hace una locucion por toma y se entregan en orden como
+`voz_1.mp3`, `voz_2.mp3`... El texto anterior a la primera marca es contexto y
+no se locuta. Sin marcas sale un unico `output.mp3`. Es lo que permite cuadrar
+cada frase con su clip en el montaje: la duracion de cada toma es la de su
+audio, no una estimacion.
+
+**Si falla una toma, falla el modulo.** Al contrario que en Video: un hueco
+correria las voces siguientes un clip hacia delante, y repetir una locucion
+cuesta centimos.
+
+**Limites y coste.** OpenAI admite 4096 caracteres por locucion; un texto mas
+largo se rechaza con el motivo en vez de recortarse a mitad de frase. `tts-1`
+factura por caracter (coste exacto). `gpt-4o-mini-tts` factura tokens de audio
+que la respuesta no devuelve, asi que el coste es una estimacion por caracteres
+(~900 caracteres por minuto de locucion, ~$0,015/min).
 
 ### Modulo Video: imagen -> video
 

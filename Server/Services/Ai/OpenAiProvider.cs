@@ -16,7 +16,7 @@ namespace Server.Services.Ai
         public OpenAiProvider(ILogger<OpenAiProvider> log) { _log = log; }
 
         public string ProviderType => "OpenAI";
-        public IEnumerable<string> SupportedModuleTypes => new[] { "Text", "Image" };
+        public IEnumerable<string> SupportedModuleTypes => new[] { "Text", "Image", "Audio" };
 
         public async Task<AiResult> ExecuteAsync(AiExecutionContext context)
         {
@@ -26,6 +26,7 @@ namespace Server.Services.Ai
                 {
                     "Text" => await GenerateTextAsync(context),
                     "Image" => await GenerateImageAsync(context),
+                    "Audio" => await GenerateSpeechAsync(context),
                     _ => AiResult.Fail($"ModuleType '{context.ModuleType}' no soportado por OpenAI")
                 };
             }
@@ -198,6 +199,62 @@ namespace Server.Services.Ai
             };
         }
 #pragma warning restore OPENAI001
+
+        /// <summary>
+        /// Texto a voz. Va por HTTP directo y no por el AudioClient del SDK porque
+        /// el SDK no expone <c>instructions</c>, que es lo que controla tono y ritmo
+        /// en gpt-4o-mini-tts. Una llamada es una locucion: el reparto en tomas lo
+        /// hace el handler.
+        /// </summary>
+        private static async Task<AiResult> GenerateSpeechAsync(AiExecutionContext context)
+        {
+            var text = context.Input?.Trim() ?? "";
+            if (text.Length == 0)
+                return AiResult.Fail("Sin texto que locutar");
+
+            // Recortar una locucion la cortaria a mitad de frase sin que nadie lo
+            // oyera hasta montar el video, asi que se rechaza con el motivo.
+            if (text.Length > OpenAiSpeech.MaxInputChars)
+                return AiResult.Fail(
+                    $"El texto tiene {text.Length} caracteres y OpenAI admite {OpenAiSpeech.MaxInputChars} por locucion. "
+                    + "Acortalo o reparte el texto en tomas con marcas ===TOMA n===.");
+
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, timeoutCts.Token);
+            var ct = linkedCts.Token;
+
+            var json = OpenAiSpeech.BuildRequestJson(context.ModelName, text, context.Configuration);
+
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
+
+            using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync("https://api.openai.com/v1/audio/speech", content, ct);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var error = await response.Content.ReadAsStringAsync(ct);
+                // 5xx y 429 se relanzan como transitorios para que el executor reintente.
+                if ((int)response.StatusCode >= 500 || (int)response.StatusCode == 429)
+                    throw new HttpRequestException(
+                        $"OpenAI TTS {(int)response.StatusCode}: {error}", null,
+                        (int)response.StatusCode == 429 ? null : response.StatusCode);
+                return AiResult.Fail($"OpenAI TTS ({(int)response.StatusCode}): {error}");
+            }
+
+            var audio = await response.Content.ReadAsByteArrayAsync(ct);
+            if (audio.Length == 0)
+                return AiResult.Fail("OpenAI TTS devolvio un audio vacio");
+
+            var result = AiResult.OkFile(audio, "audio/mpeg", new Dictionary<string, object>
+            {
+                ["model"] = context.ModelName,
+                ["characters"] = text.Length,
+            });
+            result.EstimatedCost = OpenAiSpeech.EstimateCost(context.ModelName, text.Length);
+            result.SentPayload = json;
+            return result;
+        }
 
         /// <summary>
         /// gpt-5.x y la serie o aceptan reasoning_effort. gpt-5-chat es la variante

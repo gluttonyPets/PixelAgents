@@ -38,6 +38,7 @@ public class MultiImagePromptTests
     [InlineData("IMAGEN 1: uno\nIMAGEN 2: dos")]
     [InlineData("--- Imagen 1 ---\nuno\n--- Imagen 2 ---\ndos")]
     [InlineData("ESCENA 1\nuno\nESCENA 2\ndos")]
+    [InlineData("===TOMA 1===\nuno\n===TOMA 2===\ndos")]
     [InlineData("SLIDE 1:\nuno\n\nSLIDE 2:\ndos")]
     public void LasMarcasSeReconocenEnSusFormatosHabituales(string texto)
     {

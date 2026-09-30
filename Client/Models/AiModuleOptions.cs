@@ -82,6 +82,25 @@ public static class AiModuleOptions
     /// Modulos de texto que pueden buscar en internet. Debe coincidir con
     /// WebSearchOption.SupportedProviders del servidor.
     /// </summary>
+    /// <summary>
+    /// Voces de texto a voz de OpenAI. Las marcadas solo existen en
+    /// gpt-4o-mini-tts: tts-1 las rechaza.
+    /// </summary>
+    public static readonly (string Value, string Label)[] TtsVoices =
+    [
+        ("alloy", "Alloy"), ("ash", "Ash"), ("coral", "Coral"), ("echo", "Echo"),
+        ("fable", "Fable"), ("nova", "Nova"), ("onyx", "Onyx"), ("sage", "Sage"),
+        ("shimmer", "Shimmer"),
+        ("ballad", "Ballad (solo gpt-4o-mini-tts)"), ("verse", "Verse (solo gpt-4o-mini-tts)"),
+    ];
+
+    /// <summary>
+    /// gpt-4o-mini-tts acepta instrucciones de tono, acento y ritmo; tts-1 no.
+    /// Misma regla que <c>OpenAiSpeech.AcceptsInstructions</c> en el servidor.
+    /// </summary>
+    public static bool SupportsVoiceInstructions(string? model) =>
+        model?.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase) == true;
+
     public static bool SupportsWebSearch(string? providerType, string? moduleType) =>
         moduleType == "Text"
         && providerType is "Anthropic" or "OpenAI" or "Google";

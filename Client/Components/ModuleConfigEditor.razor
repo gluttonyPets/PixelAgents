@@ -423,6 +423,7 @@ else
     private bool _editWebSearch;
     private string _editTtsVoice = "alloy";
     private double _editTtsSpeed = 1.0;
+    private string _editTtsInstructions = "";
     private int _editLeoWidth = 1024;
     private int _editLeoHeight = 1024;
     private string _editLeoPresetStyle = "DYNAMIC";
@@ -470,6 +471,7 @@ else
         _editWebSearch = false;
         _editTtsVoice = "alloy";
         _editTtsSpeed = 1.0;
+        _editTtsInstructions = "";
         _editLeoWidth = 1024;
         _editLeoHeight = 1024;
         _editLeoPresetStyle = "DYNAMIC";
@@ -501,6 +503,7 @@ else
             if (root.TryGetProperty("webSearch", out var ws)) _editWebSearch = ws.ValueKind == System.Text.Json.JsonValueKind.True;
             if (root.TryGetProperty("voice", out var v)) _editTtsVoice = v.GetString() ?? "alloy";
             if (root.TryGetProperty("speed", out var spd)) _editTtsSpeed = spd.GetDouble();
+            if (root.TryGetProperty("voiceInstructions", out var vi)) _editTtsInstructions = vi.GetString() ?? "";
             if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
             if (root.TryGetProperty("height", out var lh)) _editLeoHeight = lh.GetInt32();
             if (root.TryGetProperty("presetStyle", out var lps)) _editLeoPresetStyle = lps.GetString() ?? "DYNAMIC";
@@ -587,6 +590,10 @@ else
             parts.Add($"\"voice\":\"{_editTtsVoice}\"");
             if (_editTtsSpeed != 1.0)
                 parts.Add($"\"speed\":{_editTtsSpeed}");
+            // Este editor no pinta el campo, pero reescribe la configuracion entera:
+            // sin esta linea guardar desde aqui borraria las instrucciones de voz.
+            if (!string.IsNullOrWhiteSpace(_editTtsInstructions))
+                parts.Add($"\"voiceInstructions\":{System.Text.Json.JsonSerializer.Serialize(_editTtsInstructions)}");
         }
         else if (moduleType == "Design" && providerType == "Canva")
         {

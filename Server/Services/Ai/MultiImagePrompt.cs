@@ -41,7 +41,7 @@ public static class MultiImagePrompt
     // Palabras que abren una marca de escena. Se aceptan varias porque el texto
     // lo escribe un modelo: la instruccion pide "IMAGEN n", pero conviene tolerar
     // los sinonimos que suele usar por su cuenta.
-    private const string Keywords = "IMAGEN|IMAGENES|IMAGE|SLIDE|ESCENA|PARTE";
+    private const string Keywords = "IMAGEN|IMAGENES|IMAGE|SLIDE|ESCENA|PARTE|TOMA";
 
     // Una marca ocupa el principio de su linea. Sin el ancla, cualquier "imagen 2"
     // dentro de una frase partiria el prompt por la mitad.

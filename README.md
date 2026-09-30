@@ -425,7 +425,8 @@ Handlers actuales:
 - `Video`: anima imagenes (imagen -> video). Genera un clip por imagen de
   entrada, con las llamadas en paralelo (ver `docs/architecture.md`).
 - `VideoAssembly`: une varios clips en un unico MP4 con ffmpeg.
-- `Audio`: texto a voz.
+- `Audio`: texto a voz (OpenAI). Con el texto repartido en tomas genera un
+  audio por toma (ver `docs/architecture.md`).
 - `Transcription`: audio a texto.
 - `Embeddings`: generacion de embeddings.
 - `Orchestrator`: planificacion y salidas multiples.

@@ -383,12 +383,10 @@
                     <div class="form-group">
                         <label>Voz</label>
                         <select @bind="_ttsVoice">
-                            <option value="alloy">Alloy</option>
-                            <option value="echo">Echo</option>
-                            <option value="fable">Fable</option>
-                            <option value="onyx">Onyx</option>
-                            <option value="nova">Nova</option>
-                            <option value="shimmer">Shimmer</option>
+                            @foreach (var (value, label) in AiModuleOptions.TtsVoices)
+                            {
+                                <option value="@value">@label</option>
+                            }
                         </select>
                     </div>
                     <div class="form-group">
@@ -396,6 +394,13 @@
                         <input type="number" step="0.25" min="0.25" max="4.0" @bind="_ttsSpeed" />
                     </div>
                 </div>
+                @if (AiModuleOptions.SupportsVoiceInstructions(_model))
+                {
+                    <div class="form-group">
+                        <label>Instrucciones de voz <span class="text-sm text-muted">(tono, acento, ritmo)</span></label>
+                        <textarea rows="2" @bind="_ttsInstructions" placeholder="Voz en off de anuncio, calida y cercana, acento de Espana."></textarea>
+                    </div>
+                }
             }
             else if (_moduleType == "Transcription" && _provider == "OpenAI")
             {
@@ -715,12 +720,10 @@
                                         <div class="form-group">
                                             <label>Voz</label>
                                             <select @bind="_editTtsVoice">
-                                                <option value="alloy">Alloy</option>
-                                                <option value="echo">Echo</option>
-                                                <option value="fable">Fable</option>
-                                                <option value="onyx">Onyx</option>
-                                                <option value="nova">Nova</option>
-                                                <option value="shimmer">Shimmer</option>
+                                                @foreach (var (value, label) in AiModuleOptions.TtsVoices)
+                                                {
+                                                    <option value="@value">@label</option>
+                                                }
                                             </select>
                                         </div>
                                         <div class="form-group">
@@ -728,6 +731,13 @@
                                             <input type="number" step="0.25" min="0.25" max="4.0" @bind="_editTtsSpeed" />
                                         </div>
                                     </div>
+                                    @if (AiModuleOptions.SupportsVoiceInstructions(m.ModelName))
+                                    {
+                                        <div class="form-group">
+                                            <label>Instrucciones de voz <span class="text-sm text-muted">(tono, acento, ritmo)</span></label>
+                                            <textarea rows="2" @bind="_editTtsInstructions" placeholder="Voz en off de anuncio, calida y cercana, acento de Espana."></textarea>
+                                        </div>
+                                    }
                                 }
                                 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
                                 {
@@ -938,6 +948,7 @@ else
     private bool _editWebSearch;
     private string _editTtsVoice = "alloy";
     private double _editTtsSpeed = 1.0;
+    private string _editTtsInstructions = "";
     private int _editLeoWidth = 1024;
     private int _editLeoHeight = 1024;
     private string _editLeoPresetStyle = "DYNAMIC";
@@ -985,6 +996,7 @@ else
     // ── Form: audio TTS ──
     private string _ttsVoice = "alloy";
     private double _ttsSpeed = 1.0;
+    private string _ttsInstructions = "";
 
     // ── Form: transcription ──
     private string _transcriptionLang = "";
@@ -1259,6 +1271,7 @@ else
         _grokImageCount = 1;
         _ttsVoice = "alloy";
         _ttsSpeed = 1.0;
+        _ttsInstructions = "";
         _transcriptionLang = "";
         _transcriptionFormat = "json";
         _canvaAccessToken = "";
@@ -1357,6 +1370,8 @@ else
             parts.Add($"\"voice\":\"{_ttsVoice}\"");
             if (_ttsSpeed != 1.0)
                 parts.Add($"\"speed\":{_ttsSpeed}");
+            if (!string.IsNullOrWhiteSpace(_ttsInstructions))
+                parts.Add($"\"voiceInstructions\":{System.Text.Json.JsonSerializer.Serialize(_ttsInstructions)}");
         }
         else if (_moduleType == "Transcription")
         {
@@ -1509,6 +1524,7 @@ else
         _editWebSearch = false;
         _editTtsVoice = "alloy";
         _editTtsSpeed = 1.0;
+        _editTtsInstructions = "";
         _editLeoWidth = 1024;
         _editLeoHeight = 1024;
         _editLeoPresetStyle = "DYNAMIC";
@@ -1539,6 +1555,7 @@ else
                 if (root.TryGetProperty("webSearch", out var ws)) _editWebSearch = ws.ValueKind == System.Text.Json.JsonValueKind.True;
                 if (root.TryGetProperty("voice", out var v)) _editTtsVoice = v.GetString() ?? "alloy";
                 if (root.TryGetProperty("speed", out var spd)) _editTtsSpeed = spd.GetDouble();
+                if (root.TryGetProperty("voiceInstructions", out var vi)) _editTtsInstructions = vi.GetString() ?? "";
                 if (root.TryGetProperty("width", out var lw)) _editLeoWidth = lw.GetInt32();
                 if (root.TryGetProperty("height", out var lh)) _editLeoHeight = lh.GetInt32();
                 if (root.TryGetProperty("presetStyle", out var lps)) _editLeoPresetStyle = lps.GetString() ?? "DYNAMIC";
@@ -1715,6 +1732,8 @@ else
             parts.Add($"\"voice\":\"{_editTtsVoice}\"");
             if (_editTtsSpeed != 1.0)
                 parts.Add($"\"speed\":{_editTtsSpeed}");
+            if (!string.IsNullOrWhiteSpace(_editTtsInstructions))
+                parts.Add($"\"voiceInstructions\":{System.Text.Json.JsonSerializer.Serialize(_editTtsInstructions)}");
         }
         else if (moduleType == "Design" && providerType == "Canva")
         {
