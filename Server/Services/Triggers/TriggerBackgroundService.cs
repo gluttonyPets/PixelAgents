@@ -41,8 +41,11 @@ public class TriggerBackgroundService : BackgroundService
         _log.LogInformation("TriggerBackgroundService started");
         while (!stoppingToken.IsCancellationRequested)
         {
+            // Nada de lo que pase aqui puede escapar: una excepcion no capturada en un
+            // BackgroundService para TODA la aplicacion (StopHost). Solo se sale al apagar.
             try { await TickAsync(stoppingToken); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { _log.LogError(ex, "Trigger tick failed"); }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested) { _log.LogError(ex, "Trigger tick failed"); }
+            catch (OperationCanceledException) { break; }
 
             try { await Task.Delay(TickInterval, stoppingToken); }
             catch (OperationCanceledException) { break; }
@@ -90,7 +93,7 @@ public class TriggerBackgroundService : BackgroundService
                     });
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 _log.LogError(ex, "Trigger tick failed for tenant {Db}", dbName);
             }
