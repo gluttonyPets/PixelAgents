@@ -8,7 +8,9 @@ namespace Server.Services.Ai
         /// <param name="variableValues">Valores de las variables del pipeline para esta
         /// ejecucion ("tematica", "keyword"...). Las que no vengan aqui corren sin valor;
         /// las que no declare el proyecto se ignoran.</param>
-        Task<ProjectExecution> ExecuteAsync(Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default, bool useHistory = true, IReadOnlyDictionary<string, string>? variableValues = null);
+        /// <param name="inputFiles">Archivos de entrada de la ejecucion (p. ej. el archivo
+        /// nuevo de Drive de un trigger). Los emite el modulo de Inicio junto al texto.</param>
+        Task<ProjectExecution> ExecuteAsync(Guid projectId, string? userInput, UserDbContext db, string tenantDbName, CancellationToken ct = default, bool useHistory = true, IReadOnlyDictionary<string, string>? variableValues = null, IReadOnlyList<Handlers.ProducedFile>? inputFiles = null);
         Task<ProjectExecution> RetryFromModuleAsync(Guid executionId, Guid moduleId, string? comment, UserDbContext db, string tenantDbName, CancellationToken ct = default);
         Task<ProjectExecution> ResumeFromInteractionAsync(Guid executionId, string responseText, UserDbContext db, string tenantDbName, CancellationToken ct = default);
         Task<ProjectExecution> AbortFromInteractionAsync(Guid executionId, UserDbContext db, string tenantDbName);

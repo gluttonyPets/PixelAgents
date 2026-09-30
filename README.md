@@ -72,7 +72,7 @@ Server/ ASP.NET Core Minimal API
   |-- GraphPipelineExecutor
   |-- AI providers and module handlers
   |-- SignalR ExecutionHub
-  |-- hosted services: Telegram polling and Scheduler
+  |-- hosted services: Telegram polling, Scheduler and Triggers
   v
 PostgreSQL
 
@@ -149,7 +149,8 @@ Servicios registrados relevantes:
 - `IPipelineExecutor -> GraphPipelineExecutor`.
 - `ExecutionCancellationService`.
 - `IExecutionLogger -> SignalRExecutionLogger`.
-- hosted services `TelegramPollingService` y `SchedulerBackgroundService`.
+- hosted services `TelegramPollingService`, `SchedulerBackgroundService` y
+  `TriggerBackgroundService`.
 
 ### Base De Datos
 
@@ -412,7 +413,8 @@ El flujo general de ejecucion:
 
 Handlers actuales:
 
-- `Start`: emite el prompt de entrada del usuario.
+- `Start`: emite el prompt de entrada del usuario. En un pipeline de tipo Trigger
+  se llama "Trigger" y emite ademas los archivos que trae el evento.
 - `StaticText`: emite texto fijo configurado.
 - `FileUpload`: expone archivos adjuntos como recurso de pipeline.
 - `FileDirectory`: publica un directorio de ficheros en carpetas y subcarpetas y
@@ -723,6 +725,35 @@ proyectos habilitados. La programacion tambien guarda el valor de las variables
 del pipeline que usara en cada corrida; cuando consume la cola del planificador,
 los valores que trae el prompt planificado mandan sobre los de la programacion.
 
+### Pipelines De Tipo Trigger
+
+Un pipeline es `Normal` (se lanza a mano o por programacion) o `Trigger` (lo lanza
+un evento externo): `Project.ProjectType`, con el evento en `Project.TriggerType` y
+su configuracion JSON en `Project.TriggerConfig`. El modulo de entrada sigue siendo
+`Start`, pero en un Trigger se renombra a "Trigger" y se pinta con un rayo; se
+configura desde el inspector de ese nodo.
+
+- `GET /api/trigger-types`: catalogo de eventos (`Services/Triggers/ProjectTypes.cs`).
+- `GET|PUT /api/projects/{id}/trigger`: tipo, evento, configuracion y estado del
+  vigilante (ultima comprobacion, ultimo disparo, ultimo error).
+- `POST /api/google-drive/check-folder`: comprueba que la cuenta de servicio ve la
+  carpeta.
+
+Eventos disponibles:
+
+- `DriveNewFile` (nuevo archivo en Google Drive): `TriggerBackgroundService`
+  consulta la carpeta cada N minutos (`pollMinutes`, 5 por defecto) con
+  `GoogleDriveService` y lanza una ejecucion por archivo nuevo, como mucho 10 por
+  consulta. El texto de entrada lleva nombre, tipo, enlace e ID; si
+  `downloadFile` esta activo, el archivo va adjunto (Docs/Presentaciones se
+  exportan a PDF, Hojas a CSV, limite 50 MB). La credencial es una API key del
+  proveedor `GoogleDrive` (JSON de cuenta de servicio con la "Google Drive API"
+  habilitada) y la carpeta debe compartirse con su `client_email`.
+  La primera consulta, o cambiar de carpeta, solo toma linea base: lo que ya habia
+  no dispara. Cada archivo se registra en `TriggerSeenItems` antes de ejecutar, asi
+  que dispara una sola vez aunque la ejecucion falle; el estado vive en
+  `ProjectTriggerStates`.
+
 ### Cola Del Planificador
 
 Las ejecuciones planificadas de un proyecto (`PlannedPrompt`): el prompt y el valor
@@ -907,9 +938,11 @@ webhook. `TelegramUpdateHandler` procesa updates y
 |   |   |   `-- Handlers/
 |   |   |-- Canva/
 |   |   |-- Instagram/
+|   |   |-- GoogleDrive/
 |   |   |-- Scheduler/
 |   |   |-- SearchConsole/
 |   |   |-- Telegram/
+|   |   |-- Triggers/
 |   |   `-- WhatsApp/
 |   |-- GeneratedMedia/     runtime
 |   `-- storage/            runtime

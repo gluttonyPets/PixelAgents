@@ -59,6 +59,28 @@ namespace Server.Services
             RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""DeletedAt"" timestamp with time zone", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_Projects_DeletedAt"" ON ""Projects"" (""DeletedAt"")", log);
 
+            // ── Tipo de pipeline (Normal / Trigger) y estado de los triggers ──
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""ProjectType"" varchar(50) NOT NULL DEFAULT 'Normal'", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""TriggerType"" varchar(100)", log);
+            RunSafe(ctx, @"ALTER TABLE ""Projects"" ADD COLUMN IF NOT EXISTS ""TriggerConfig"" text", log);
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""ProjectTriggerStates"" (
+                    ""ProjectId"" uuid NOT NULL PRIMARY KEY REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
+                    ""ConfigKey"" varchar(500) NOT NULL,
+                    ""BaselineAt"" timestamp with time zone,
+                    ""LastCheckedAt"" timestamp with time zone,
+                    ""LastFiredAt"" timestamp with time zone,
+                    ""LastError"" text,
+                    ""UpdatedAt"" timestamp with time zone NOT NULL
+                )", log);
+            RunSafe(ctx, @"
+                CREATE TABLE IF NOT EXISTS ""TriggerSeenItems"" (
+                    ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
+                    ""ItemKey"" varchar(500) NOT NULL,
+                    ""SeenAt"" timestamp with time zone NOT NULL,
+                    PRIMARY KEY (""ProjectId"", ""ItemKey"")
+                )", log);
+
             // ── Conexiones reutilizables (redes sociales + mensajeria) ──
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""SocialConnections"" (

@@ -93,6 +93,7 @@ builder.Services.AddTransient<IModuleHandler, SearchConsoleModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, SubProjectModuleHandler>();
 builder.Services.AddHttpClient<Server.Services.Shopify.ShopifyService>();
 builder.Services.AddHttpClient<Server.Services.SearchConsole.SearchConsoleService>();
+builder.Services.AddHttpClient<Server.Services.GoogleDrive.GoogleDriveService>();
 builder.Services.AddHttpClient<Server.Services.Telegram.TelegramService>();
 builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddSingleton<Server.Services.Instagram.BufferImagePoolService>();
@@ -100,6 +101,7 @@ builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
+builder.Services.AddHostedService<Server.Services.Triggers.TriggerBackgroundService>();
 builder.Services.AddTransient<IPipelineExecutor, GraphPipelineExecutor>();
 builder.Services.AddScoped<IPromptPlannerService, PromptPlannerService>();
 builder.Services.AddScoped<IPromptBuilderService, PromptBuilderService>();
@@ -227,6 +229,10 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ==================== Helper: resolve tenant DB ====================
+
+static ProjectTriggerResponse ToTriggerResponse(Project project, ProjectTriggerState? state) =>
+    new(project.ProjectType, project.TriggerType, project.TriggerConfig,
+        state is null ? null : new TriggerStatusResponse(state.BaselineAt, state.LastCheckedAt, state.LastFiredAt, state.LastError));
 
 static async Task<UserDbContext?> ResolveTenantDb(
     HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory)
@@ -1366,6 +1372,9 @@ app.MapPost("/api/projects", async (
         Name = req.Name,
         Description = req.Description,
         Context = req.Context,
+        ProjectType = Server.Services.Triggers.ProjectTypes.Normalize(req.ProjectType),
+        TriggerType = req.ProjectType == Server.Services.Triggers.ProjectTypes.Trigger
+            && Server.Services.Triggers.TriggerTypes.IsValid(req.TriggerType) ? req.TriggerType : null,
         IsTestProject = req.IsTestProject,
         // Solo se agrupa si el proyecto existe: un id fantasma dejaria el pipeline
         // invisible en el listado (agrupado bajo una seccion que no se pinta).
@@ -1403,7 +1412,7 @@ app.MapPost("/api/projects", async (
         Id = Guid.NewGuid(),
         ProjectId = project.Id,
         AiModuleId = startAiModule.Id,
-        StepName = "Inicio",
+        StepName = Server.Services.Triggers.ProjectTypes.EntryStepName(project.ProjectType),
         IsActive = true,
         PosX = 60,
         PosY = 200,
@@ -1416,7 +1425,7 @@ app.MapPost("/api/projects", async (
     return Results.Created($"/api/projects/{project.Id}",
         new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
             project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject,
-            project.ProjectGroupId));
+            project.ProjectGroupId, project.ProjectType, project.TriggerType));
 }).RequireAuthorization();
 
 app.MapGet("/api/projects", async (
@@ -1432,7 +1441,7 @@ app.MapGet("/api/projects", async (
         .OrderBy(p => p.IsTestProject)
         .ThenByDescending(p => p.IsPinned)
         .ThenByDescending(p => p.CreatedAt)
-        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt, p.IsPinned, p.IsTestProject, p.ProjectGroupId))
+        .Select(p => new ProjectResponse(p.Id, p.Name, p.Description, p.Context, p.CreatedAt, p.UpdatedAt, p.IsPinned, p.IsTestProject, p.ProjectGroupId, p.ProjectType, p.TriggerType))
         .ToListAsync();
 
     return Results.Ok(projects);
@@ -1483,7 +1492,7 @@ app.MapGet("/api/projects/{id:guid}", async (
             Id = Guid.NewGuid(),
             ProjectId = project.Id,
             AiModuleId = startAiModule.Id,
-            StepName = "Inicio",
+            StepName = Server.Services.Triggers.ProjectTypes.EntryStepName(project.ProjectType),
             IsActive = true,
             PosX = 60,
             PosY = 200,
@@ -1560,7 +1569,8 @@ app.MapGet("/api/projects/{id:guid}", async (
 
     return Results.Ok(new ProjectDetailResponse(
         project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, modules, project.GraphLayout, connections));
+        project.CreatedAt, project.UpdatedAt, modules, project.GraphLayout, connections,
+        project.ProjectType, project.TriggerType));
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{id}", async (
@@ -1582,7 +1592,126 @@ app.MapPut("/api/projects/{id}", async (
 
     await db.SaveChangesAsync();
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId,
+        project.ProjectType, project.TriggerType));
+}).RequireAuthorization();
+
+// ==================== Tipo de pipeline y trigger ====================
+
+app.MapGet("/api/trigger-types", () =>
+    Results.Ok(Server.Services.Triggers.TriggerTypes.All
+        .Select(t => new TriggerTypeResponse(t.Id, t.Label, t.Description))))
+    .RequireAuthorization();
+
+app.MapGet("/api/projects/{id:guid}/trigger", async (
+    Guid id, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null);
+    if (project is null) return Results.NotFound();
+
+    var state = await db.ProjectTriggerStates.FirstOrDefaultAsync(s => s.ProjectId == id);
+    return Results.Ok(ToTriggerResponse(project, state));
+}).RequireAuthorization();
+
+// Cambia el tipo del pipeline (Normal/Trigger), el evento que lo dispara y su
+// configuracion. El modulo de entrada se renombra a "Trigger" o "Inicio" segun el
+// tipo, salvo que el usuario le haya puesto otro nombre.
+app.MapPut("/api/projects/{id:guid}/trigger", async (
+    Guid id, UpdateProjectTriggerRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    if (!Server.Services.Triggers.ProjectTypes.IsValid(req.ProjectType))
+        return Results.BadRequest(new { error = "Tipo de pipeline no valido." });
+    var isTrigger = req.ProjectType == Server.Services.Triggers.ProjectTypes.Trigger;
+    var triggerType = isTrigger && !string.IsNullOrWhiteSpace(req.TriggerType) ? req.TriggerType : null;
+    if (triggerType is not null && !Server.Services.Triggers.TriggerTypes.IsValid(triggerType))
+        return Results.BadRequest(new { error = "Tipo de trigger no valido." });
+
+    var project = await db.Projects
+        .Include(p => p.ProjectModules).ThenInclude(pm => pm.AiModule)
+        .FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null);
+    if (project is null) return Results.NotFound();
+
+    // La configuracion se guarda normalizada y se conserva al volver a Normal, para
+    // no perderla si el usuario cambia de idea.
+    var config = req.TriggerConfig ?? project.TriggerConfig;
+    if (triggerType == Server.Services.Triggers.TriggerTypes.DriveNewFile)
+        config = Server.Services.Triggers.DriveTriggerConfig.Parse(config).Serialize();
+    else if (triggerType is null)
+        config = project.TriggerConfig;
+
+    var watchChanged = project.ProjectType != req.ProjectType || project.TriggerType != triggerType;
+    var configChanged = project.TriggerConfig != config;
+
+    project.ProjectType = req.ProjectType;
+    project.TriggerType = triggerType;
+    project.TriggerConfig = config;
+    project.UpdatedAt = DateTime.UtcNow;
+
+    foreach (var pm in project.ProjectModules.Where(pm => pm.AiModule.ModuleType == "Start"))
+    {
+        var renamed = Server.Services.Triggers.ProjectTypes.RenameEntryStep(pm.StepName, project.ProjectType);
+        if (renamed != pm.StepName)
+        {
+            pm.StepName = renamed;
+            pm.UpdatedAt = DateTime.UtcNow;
+        }
+    }
+
+    var state = await db.ProjectTriggerStates.FirstOrDefaultAsync(s => s.ProjectId == id);
+    if (watchChanged)
+    {
+        // Al activar (o reactivar) un trigger se empieza de cero: lo que llego mientras
+        // estaba apagado no dispara, solo forma la nueva linea base.
+        if (state is not null) db.ProjectTriggerStates.Remove(state);
+        await db.TriggerSeenItems.Where(i => i.ProjectId == id).ExecuteDeleteAsync();
+        state = null;
+    }
+    else if (configChanged && state is not null)
+    {
+        // Nueva configuracion: se consulta en el siguiente ciclo sin esperar al intervalo.
+        state.LastCheckedAt = null;
+        state.LastError = null;
+    }
+
+    await db.SaveChangesAsync();
+    return Results.Ok(ToTriggerResponse(project, state));
+}).RequireAuthorization();
+
+// Comprueba que la cuenta de servicio de una API key "GoogleDrive" ve la carpeta:
+// devuelve su nombre y cuantos archivos tiene. Para validar el trigger antes de activarlo.
+app.MapPost("/api/google-drive/check-folder", async (
+    DriveFolderCheckRequest req, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.GoogleDrive.GoogleDriveService drive) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var key = await db.ApiKeys.FindAsync(req.ApiKeyId);
+    if (key is null || key.ProviderType != Server.Services.Triggers.TriggerBackgroundService.DriveApiKeyProvider)
+        return Results.BadRequest(new { error = "La API key no existe o no es de Google Drive." });
+
+    var folderId = Server.Services.Triggers.DriveTriggerConfig.ExtractFolderId(req.Folder);
+    if (folderId is null)
+        return Results.BadRequest(new { error = "No se reconoce la carpeta: pega la URL de la carpeta de Drive o su ID." });
+
+    try
+    {
+        var creds = Server.Services.GoogleDrive.GoogleDriveService.ParseCredentials(key.EncryptedKey);
+        var folder = await drive.GetFolderAsync(key.EncryptedKey, folderId, ctx.RequestAborted);
+        var files = await drive.ListFilesAsync(key.EncryptedKey, folderId, ctx.RequestAborted);
+        return Results.Ok(new DriveFolderCheckResponse(folder.Id, folder.Name, files.Count, creds.ClientEmail));
+    }
+    catch (Server.Services.GoogleDrive.GoogleDriveException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 }).RequireAuthorization();
 
 // Fija o desfija un proyecto para que aparezca primero en el listado.
@@ -1601,7 +1730,8 @@ app.MapPut("/api/projects/{id}/pin", async (
     await db.SaveChangesAsync();
 
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId,
+        project.ProjectType, project.TriggerType));
 }).RequireAuthorization();
 
 // Mueve un pipeline de proyecto (agrupacion). null lo deja sin agrupar.
@@ -1626,7 +1756,8 @@ app.MapPut("/api/projects/{id}/group", async (
     await db.SaveChangesAsync();
 
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId,
+        project.ProjectType, project.TriggerType));
 }).RequireAuthorization();
 
 // Save full graph: node positions, connections and module configuration.
@@ -1871,7 +2002,8 @@ app.MapPost("/api/projects/{id:guid}/restore", async (
     await db.SaveChangesAsync();
 
     return Results.Ok(new ProjectResponse(project.Id, project.Name, project.Description, project.Context,
-        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId));
+        project.CreatedAt, project.UpdatedAt, project.IsPinned, project.IsTestProject, project.ProjectGroupId,
+        project.ProjectType, project.TriggerType));
 }).RequireAuthorization();
 
 // Borrado definitivo: solo desde la papelera y solo a peticion expresa del usuario.
@@ -1921,6 +2053,11 @@ app.MapPost("/api/projects/{id}/duplicate", async (
         Description = source.Description,
         Context = source.Context,
         IsTestProject = source.IsTestProject,
+        // La copia es del mismo tipo y vigila lo mismo; su linea base es propia, asi
+        // que no dispara con los archivos que ya existian.
+        ProjectType = source.ProjectType,
+        TriggerType = source.TriggerType,
+        TriggerConfig = source.TriggerConfig,
         // La copia se queda en el mismo proyecto que el original.
         ProjectGroupId = source.ProjectGroupId,
         InstagramConnectionId = source.InstagramConnectionId,
@@ -2040,7 +2177,8 @@ app.MapPost("/api/projects/{id}/duplicate", async (
     return Results.Created($"/api/projects/{newProject.Id}",
         new ProjectResponse(newProject.Id, newProject.Name, newProject.Description,
             newProject.Context, newProject.CreatedAt, newProject.UpdatedAt,
-            newProject.IsPinned, newProject.IsTestProject, newProject.ProjectGroupId));
+            newProject.IsPinned, newProject.IsTestProject, newProject.ProjectGroupId,
+            newProject.ProjectType, newProject.TriggerType));
 }).RequireAuthorization();
 
 // ==================== ProjectModule (Pipeline) Endpoints ====================

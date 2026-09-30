@@ -168,16 +168,17 @@ else
                             <option value="LeonardoAI">Leonardo AI</option>
                             <option value="xAI">xAI (Grok)</option>
                             <option value="SearchConsole">Google Search Console</option>
+                            <option value="GoogleDrive">Google Drive (triggers)</option>
                         </select>
                     </div>
                 </div>
-                @if (_provider == "SearchConsole")
+                @if (IsServiceAccount(_provider))
                 {
                     <div class="form-group">
                         <label>JSON de la cuenta de servicio</label>
                         <textarea @bind="_key" rows="6" spellcheck="false" autocomplete="off"
                                   placeholder='{ "type": "service_account", "client_email": "...", "private_key": "..." }'></textarea>
-                        <span class="text-sm text-muted">@ServiceAccountHelp</span>
+                        <span class="text-sm text-muted">@ServiceAccountHelp(_provider)</span>
                     </div>
                 }
                 else
@@ -232,10 +233,11 @@ else
                             <option value="LeonardoAI">Leonardo AI</option>
                             <option value="xAI">xAI (Grok)</option>
                             <option value="SearchConsole">Google Search Console</option>
+                            <option value="GoogleDrive">Google Drive (triggers)</option>
                         </select>
                     </div>
                 </div>
-                @if (_editProvider == "SearchConsole")
+                @if (IsServiceAccount(_editProvider))
                 {
                     <div class="form-group">
                         <label>Nuevo JSON de la cuenta de servicio <span class="text-muted" style="font-weight:400;">(opcional — deja vacío para conservar el actual)</span></label>
@@ -300,10 +302,16 @@ else
         _error = null;
     }
 
-    private const string ServiceAccountHelp =
-        "En Google Cloud: habilita la \"Google Search Console API\", crea una cuenta de servicio y descarga " +
-        "una clave JSON. Despues anade el email de la cuenta (client_email) como usuario de la propiedad en " +
-        "Search Console (Configuracion > Usuarios y permisos).";
+    // Proveedores cuya "API key" es el JSON de una cuenta de servicio de Google Cloud.
+    private static bool IsServiceAccount(string provider) => provider is "SearchConsole" or "GoogleDrive";
+
+    private static string ServiceAccountHelp(string provider) => provider == "GoogleDrive"
+        ? "En Google Cloud: habilita la \"Google Drive API\", crea una cuenta de servicio y descarga una clave " +
+          "JSON. Despues comparte la carpeta de Drive que quieras vigilar con el email de la cuenta " +
+          "(client_email), con permiso de lector."
+        : "En Google Cloud: habilita la \"Google Search Console API\", crea una cuenta de servicio y descarga " +
+          "una clave JSON. Despues anade el email de la cuenta (client_email) como usuario de la propiedad en " +
+          "Search Console (Configuracion > Usuarios y permisos).";
 
     // El JSON se guarda tal cual; aqui solo se evita guardar algo que seguro no sirve.
     private static string? ValidateServiceAccountJson(string? json)
@@ -327,7 +335,7 @@ else
 
     private async Task Create()
     {
-        if (_provider == "SearchConsole" && ValidateServiceAccountJson(_key) is { } jsonError)
+        if (IsServiceAccount(_provider) && ValidateServiceAccountJson(_key) is { } jsonError)
         {
             _error = jsonError;
             return;
@@ -389,7 +397,7 @@ else
             return;
         }
 
-        if (_editProvider == "SearchConsole" && !string.IsNullOrWhiteSpace(_editKey)
+        if (IsServiceAccount(_editProvider) && !string.IsNullOrWhiteSpace(_editKey)
             && ValidateServiceAccountJson(_editKey) is { } jsonError)
         {
             _editError = jsonError;
@@ -431,6 +439,7 @@ else
         "LeonardoAI" => ("", "badge-leonardo"),
         "xAI"        => ("", "badge-xai"),
         "SearchConsole" => ("", "badge-google"),
+        "GoogleDrive" => ("", "badge-google"),
         _            => ("", "badge-info")
     };
 

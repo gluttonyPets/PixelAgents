@@ -34,6 +34,8 @@ namespace Server.Data
         public DbSet<ModelCatalogSnapshot> ModelCatalogSnapshots => Set<ModelCatalogSnapshot>();
         public DbSet<ModelCatalogChange> ModelCatalogChanges => Set<ModelCatalogChange>();
         public DbSet<ModelScanRun> ModelScanRuns => Set<ModelScanRun>();
+        public DbSet<ProjectTriggerState> ProjectTriggerStates => Set<ProjectTriggerState>();
+        public DbSet<TriggerSeenItem> TriggerSeenItems => Set<TriggerSeenItem>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -100,6 +102,21 @@ namespace Server.Data
                 e.Property(x => x.ClientSecret).IsRequired();
             });
 
+            // ── Triggers: estado del vigilante y elementos ya vistos ──
+            modelBuilder.Entity<ProjectTriggerState>(e =>
+            {
+                e.HasKey(x => x.ProjectId);
+                e.Property(x => x.ConfigKey).IsRequired().HasMaxLength(500);
+                e.Property(x => x.LastError).HasColumnType("text");
+                e.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            });
+            modelBuilder.Entity<TriggerSeenItem>(e =>
+            {
+                e.HasKey(x => new { x.ProjectId, x.ItemKey });
+                e.Property(x => x.ItemKey).HasMaxLength(500);
+                e.HasOne<Project>().WithMany().HasForeignKey(x => x.ProjectId).OnDelete(DeleteBehavior.Cascade);
+            });
+
             // ── ProjectGroup (el "Proyecto" de alto nivel que agrupa pipelines) ──
             modelBuilder.Entity<ProjectGroup>(e =>
             {
@@ -118,6 +135,9 @@ namespace Server.Data
                 e.Property(x => x.Description).HasMaxLength(2000);
                 e.Property(x => x.Context).HasColumnType("text");
                 e.Property(x => x.GraphLayout).HasColumnType("text");
+                e.Property(x => x.ProjectType).IsRequired().HasMaxLength(50).HasDefaultValue("Normal");
+                e.Property(x => x.TriggerType).HasMaxLength(100);
+                e.Property(x => x.TriggerConfig).HasColumnType("text");
                 e.Property(x => x.LearningEnabled).HasDefaultValue(true);
 
                 // La agrupacion es organizativa: borrar el proyecto deja sus pipelines

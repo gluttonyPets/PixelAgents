@@ -25,16 +25,17 @@ public sealed record ServiceAccountCredentials(string ClientEmail, string Privat
 {
     public const string DefaultTokenUri = "https://oauth2.googleapis.com/token";
 
-    public static ServiceAccountCredentials Parse(string? json)
+    /// <param name="product">Servicio de Google que usa la credencial, para los mensajes de error.</param>
+    public static ServiceAccountCredentials Parse(string? json, string product = "Search Console")
     {
         if (string.IsNullOrWhiteSpace(json))
-            throw new SearchConsoleException("La API key de Search Console esta vacia: pega el JSON de la cuenta de servicio.");
+            throw new SearchConsoleException($"La API key de {product} esta vacia: pega el JSON de la cuenta de servicio.");
 
         JsonDocument doc;
         try { doc = JsonDocument.Parse(json); }
         catch (JsonException)
         {
-            throw new SearchConsoleException("La API key de Search Console no es un JSON valido: pega el fichero JSON completo de la cuenta de servicio.");
+            throw new SearchConsoleException($"La API key de {product} no es un JSON valido: pega el fichero JSON completo de la cuenta de servicio.");
         }
 
         using (doc)
@@ -184,14 +185,15 @@ public class SearchConsoleService
     }
 
     /// <summary>JWT RS256 para el grant jwt-bearer de Google (valido 1 h).</summary>
-    public static string BuildJwtAssertion(ServiceAccountCredentials creds, DateTimeOffset now)
+    /// <param name="scope">Permiso pedido; por defecto el de Search Console.</param>
+    public static string BuildJwtAssertion(ServiceAccountCredentials creds, DateTimeOffset now, string scope = Scope)
     {
         var header = new Dictionary<string, string> { ["alg"] = "RS256", ["typ"] = "JWT" };
         var iat = now.ToUnixTimeSeconds();
         var claims = new Dictionary<string, object>
         {
             ["iss"] = creds.ClientEmail,
-            ["scope"] = Scope,
+            ["scope"] = scope,
             ["aud"] = creds.TokenUri,
             ["iat"] = iat,
             ["exp"] = iat + 3600,
@@ -220,7 +222,7 @@ public class SearchConsoleService
 
     // Google devuelve {"error":{"message":...}} en la API y
     // {"error":"invalid_grant","error_description":...} en el endpoint de token.
-    private static string ReadGoogleError(string json)
+    internal static string ReadGoogleError(string json)
     {
         try
         {

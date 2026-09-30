@@ -1,0 +1,279 @@
+@using Client.Models
+@using Client.Services
+@using System.Text.Json
+@using System.Text.Json.Serialization
+@inject ApiClient Api
+
+@* Inspector del modulo de entrada: tipo de pipeline (Normal / Trigger), evento que lo
+   dispara y su configuracion. Guardar un cambio de tipo renombra el nodo a "Trigger"
+   o "Inicio" y avisa a la pagina para que recargue el grafo. *@
+
+<div class="inspector-section">
+    <div class="inspector-section-title">Tipo de pipeline</div>
+
+    @if (_loading)
+    {
+        <p class="text-sm text-muted">Cargando...</p>
+    }
+    else
+    {
+        <div class="inspector-field">
+            <label>Tipo</label>
+            <select @bind="_projectType">
+                <option value="Normal">Normal</option>
+                <option value="Trigger">Trigger</option>
+            </select>
+        </div>
+
+        @if (_projectType == "Trigger")
+        {
+            <div class="inspector-field">
+                <label>Tipo de trigger</label>
+                <select @bind="_triggerType">
+                    <option value="">Sin definir</option>
+                    @foreach (var t in _triggerTypes)
+                    {
+                        <option value="@t.Id" title="@t.Description">@t.Label</option>
+                    }
+                </select>
+            </div>
+
+            @if (_triggerType == DriveNewFile)
+            {
+                <div class="inspector-field">
+                    <label>API key de Google Drive</label>
+                    <select @bind="_driveKeySel">
+                        <option value="">Elige una...</option>
+                        @foreach (var k in _driveKeys)
+                        {
+                            <option value="@k.Id">@k.Name</option>
+                        }
+                    </select>
+                    @if (_driveKeys.Count == 0)
+                    {
+                        <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                            No hay ninguna. Crea una en Ajustes &gt; API keys con el proveedor
+                            "Google Drive" (JSON de una cuenta de servicio).
+                        </p>
+                    }
+                </div>
+                <div class="inspector-field">
+                    <label>Carpeta (URL o ID)</label>
+                    <input type="text" @bind="_driveConfig.Folder" placeholder="https://drive.google.com/drive/folders/..." />
+                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                        Comparte la carpeta con el email de la cuenta de servicio (lector).
+                    </p>
+                </div>
+                <div class="inspector-field">
+                    <button class="btn btn-xs" style="width: 100%;" @onclick="CheckFolder"
+                            disabled="@(_checking || string.IsNullOrWhiteSpace(_driveKeySel) || string.IsNullOrWhiteSpace(_driveConfig.Folder))">
+                        @(_checking ? "Comprobando..." : "Comprobar acceso")
+                    </button>
+                    @if (_check is not null)
+                    {
+                        <p class="text-sm" style="margin-top: 0.3rem; color: var(--success);">
+                            &#x2714; "@_check.FolderName": @_check.FileCount archivo(s). Acceso con @_check.ServiceAccountEmail.
+                        </p>
+                    }
+                    @if (_checkError is not null)
+                    {
+                        <p class="text-sm" style="margin-top: 0.3rem; color: var(--danger);">@_checkError</p>
+                    }
+                </div>
+                <div class="inspector-field">
+                    <label>Comprobar cada (minutos)</label>
+                    <input type="number" min="1" max="1440" @bind="_driveConfig.PollMinutes" />
+                </div>
+                <div class="inspector-field">
+                    <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                        <input type="checkbox" style="width: auto;" @bind="_driveConfig.DownloadFile" />
+                        Adjuntar el archivo al pipeline
+                    </label>
+                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">
+                        El Trigger emite los datos del archivo (nombre, enlace, tipo) y, si se marca, el propio
+                        archivo. Docs, Hojas y Presentaciones de Google se exportan a PDF/CSV.
+                    </p>
+                </div>
+                <p class="text-sm text-muted">
+                    La primera comprobacion solo registra los archivos que ya hay en la carpeta; a partir de ahi,
+                    cada archivo nuevo lanza una ejecucion.
+                </p>
+            }
+        }
+
+        @if (_error is not null)
+        {
+            <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin: 0.3rem 0;">@_error</div>
+        }
+
+        <button class="btn btn-xs btn-primary" style="width: 100%; margin-top: 0.3rem;" @onclick="Save"
+                disabled="@(_saving || !IsDirty)">
+            @(_saving ? "Guardando..." : IsDirty ? "Guardar" : "Guardado")
+        </button>
+
+        @if (_saved?.ProjectType == "Trigger" && _saved.TriggerType == DriveNewFile)
+        {
+            var st = _saved.Status;
+            <div class="inspector-field" style="margin-top: 0.5rem; font-size: 0.72rem;">
+                <button class="btn btn-xs" style="float: right;" title="Actualizar estado" @onclick="RefreshStatus">&#x21bb;</button>
+                @if (st is null || st.LastCheckedAt is null)
+                {
+                    <span class="text-muted">Pendiente de la primera comprobacion (en menos de un minuto).</span>
+                }
+                else
+                {
+                    <div class="text-muted">Ultima comprobacion: @Local(st.LastCheckedAt)</div>
+                    @if (st.LastFiredAt is not null)
+                    {
+                        <div class="text-muted">Ultima ejecucion lanzada: @Local(st.LastFiredAt)</div>
+                    }
+                    @if (st.LastError is not null)
+                    {
+                        <div style="color: var(--danger); margin-top: 0.2rem;">@st.LastError</div>
+                    }
+                    else if (st.BaselineAt is not null)
+                    {
+                        <div style="color: var(--success); margin-top: 0.2rem;">Vigilando la carpeta.</div>
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private const string DriveNewFile = "DriveNewFile";
+
+    [Parameter] public Guid ProjectId { get; set; }
+    /// <summary>Se invoca tras guardar un cambio de tipo: el nodo de entrada cambia de
+    /// nombre y aspecto, asi que la pagina debe recargar el grafo.</summary>
+    [Parameter] public EventCallback OnProjectTypeChanged { get; set; }
+
+    private bool _loading = true;
+    private bool _saving;
+    private bool _checking;
+    private string? _error;
+    private string? _checkError;
+    private DriveFolderCheckResponse? _check;
+
+    private ProjectTriggerResponse? _saved;
+    private List<TriggerTypeResponse> _triggerTypes = [];
+    private List<ApiKeyResponse> _driveKeys = [];
+
+    private string _projectType = "Normal";
+    private string _triggerType = "";
+    private string _driveKeySel = "";
+    private DriveConfig _driveConfig = new();
+    private string _savedSignature = "";
+
+    private Guid _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == ProjectId) return;
+        _loadedFor = ProjectId;
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        try
+        {
+            _triggerTypes = await Api.GetTriggerTypesAsync();
+            _driveKeys = (await Api.GetApiKeysAsync()).Where(k => k.ProviderType == "GoogleDrive").ToList();
+            _saved = await Api.GetProjectTriggerAsync(ProjectId);
+            ApplySaved();
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        _loading = false;
+    }
+
+    private void ApplySaved()
+    {
+        _projectType = _saved?.ProjectType ?? "Normal";
+        _triggerType = _saved?.TriggerType ?? "";
+        // La configuracion se conserva aunque el pipeline vuelva a Normal: al reactivar
+        // el trigger aparece como estaba.
+        _driveConfig = DriveConfig.Parse(_saved?.TriggerConfig);
+        _driveKeySel = _driveConfig.ApiKeyId?.ToString() ?? "";
+        _savedSignature = Signature();
+    }
+
+    private string Signature() => $"{_projectType}|{_triggerType}|{BuildConfigJson()}";
+
+    private bool IsDirty => Signature() != _savedSignature;
+
+    private string? BuildConfigJson()
+    {
+        if (_triggerType != DriveNewFile) return null;
+        _driveConfig.ApiKeyId = Guid.TryParse(_driveKeySel, out var id) ? id : null;
+        return JsonSerializer.Serialize(_driveConfig);
+    }
+
+    private async Task Save()
+    {
+        _error = null;
+        _saving = true;
+        var typeChanged = _saved?.ProjectType != _projectType;
+        try
+        {
+            var (trigger, error) = await Api.UpdateProjectTriggerAsync(ProjectId, new UpdateProjectTriggerRequest(
+                _projectType,
+                _projectType == "Trigger" && _triggerType != "" ? _triggerType : null,
+                _projectType == "Trigger" ? BuildConfigJson() : null));
+            if (trigger is null)
+            {
+                _error = error ?? "No se pudo guardar.";
+                return;
+            }
+            _saved = trigger;
+            ApplySaved();
+            if (typeChanged) await OnProjectTypeChanged.InvokeAsync();
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        finally { _saving = false; }
+    }
+
+    private async Task RefreshStatus()
+    {
+        var fresh = await Api.GetProjectTriggerAsync(ProjectId);
+        if (fresh is not null && _saved is not null) _saved = _saved with { Status = fresh.Status };
+    }
+
+    private async Task CheckFolder()
+    {
+        _check = null;
+        _checkError = null;
+        if (!Guid.TryParse(_driveKeySel, out var keyId) || string.IsNullOrWhiteSpace(_driveConfig.Folder)) return;
+
+        _checking = true;
+        try
+        {
+            var (folder, error) = await Api.CheckDriveFolderAsync(new DriveFolderCheckRequest(keyId, _driveConfig.Folder!));
+            if (folder is not null) _check = folder;
+            else _checkError = error ?? "No se pudo comprobar la carpeta.";
+        }
+        catch (Exception ex) { _checkError = $"Error de conexion: {ex.Message}"; }
+        _checking = false;
+    }
+
+    private static string Local(DateTime? utc) =>
+        utc is null ? "-" : DateTime.SpecifyKind(utc.Value, DateTimeKind.Utc).ToLocalTime().ToString("dd MMM HH:mm");
+
+    /// <summary>Misma forma que DriveTriggerConfig en el servidor.</summary>
+    private sealed class DriveConfig
+    {
+        [JsonPropertyName("apiKeyId")] public Guid? ApiKeyId { get; set; }
+        [JsonPropertyName("folder")] public string? Folder { get; set; }
+        [JsonPropertyName("pollMinutes")] public int PollMinutes { get; set; } = 5;
+        [JsonPropertyName("downloadFile")] public bool DownloadFile { get; set; } = true;
+
+        public static DriveConfig Parse(string? json)
+        {
+            if (string.IsNullOrWhiteSpace(json)) return new DriveConfig();
+            try { return JsonSerializer.Deserialize<DriveConfig>(json) ?? new DriveConfig(); }
+            catch (JsonException) { return new DriveConfig(); }
+        }
+    }
+}

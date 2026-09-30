@@ -1080,6 +1080,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                         </div>
                     }
 
+                    @if (sel.ModuleType == "Start")
+                    {
+                        <TriggerSettings ProjectId="ProjectId" OnProjectTypeChanged="OnModulesChanged" />
+                    }
+
                     @if (sel.ModuleType != "Start")
                     {
                         <div class="inspector-section">
@@ -1359,6 +1364,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     [Parameter] public string? ProjectName { get; set; }
     [Parameter] public string? ProjectDescription { get; set; }
     [Parameter] public string? ProjectContext { get; set; }
+    /// <summary>"Normal" o "Trigger": cambia el aspecto del modulo de entrada.</summary>
+    [Parameter] public string ProjectType { get; set; } = "Normal";
 
     [Parameter] public List<ProjectModuleResponse> Modules { get; set; } = [];
     [Parameter] public List<AiModuleResponse> AvailableModules { get; set; } = [];
@@ -1423,6 +1430,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     private CancellationTokenSource? _saveDebounce;
     private DotNetObjectReference<PipelineCanvas>? _dotNetRef;
     private int _lastModuleCount;
+    private string _lastProjectType = "Normal";
     private int _lastConnectionCount;
     private Dictionary<Guid, int> _sceneCountOverrides = new();
 
@@ -1885,9 +1893,16 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             await RebuildDrawflow();
             _lastModuleCount = Modules.Count;
             _lastConnectionCount = Connections.Count;
+            _lastProjectType = ProjectType;
         }
         else if (_jsInitialized)
         {
+            // Cambiar el tipo de pipeline renombra y repinta el nodo de entrada.
+            if (ProjectType != _lastProjectType)
+            {
+                _lastProjectType = ProjectType;
+                await RebuildDrawflow();
+            }
             if (Modules.Count != _lastModuleCount || Connections.Count != _lastConnectionCount)
             {
                 Console.WriteLine($"[PipelineCanvas] Rebuild triggered: modules {_lastModuleCount}→{Modules.Count}, conns {_lastConnectionCount}→{Connections.Count}");
@@ -1997,8 +2012,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                 pm.Id.ToString(),
                 pm.StepName ?? pm.AiModuleName,
                 pm.ModuleType,
-                ModulePortRegistry.GetModuleColor(pm.ModuleType),
-                ModulePortRegistry.GetModuleIcon(pm.ModuleType),
+                ModulePortRegistry.GetNodeColor(pm.ModuleType, ProjectType),
+                ModulePortRegistry.GetNodeIcon(pm.ModuleType, ProjectType),
                 JsonSerializer.Serialize(inputs),
                 JsonSerializer.Serialize(outputs),
                 pos.X, pos.Y,

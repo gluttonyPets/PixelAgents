@@ -14,6 +14,10 @@ public class ExecutionGraph
     public Guid ExecutionId { get; set; }
     public string WorkspacePath { get; set; } = "";
     public string? UserInput { get; set; }
+    /// <summary>Archivos de entrada de la ejecucion (los que trae un trigger). Solo
+    /// existen en memoria en la ejecucion original: el modulo de Inicio los emite y
+    /// a partir de ahi quedan guardados como archivos de su paso.</summary>
+    public IReadOnlyList<Handlers.ProducedFile> InputFiles { get; set; } = [];
     /// <summary>Tenant-level mandatory rules joined into a single block, injected
     /// into every AI provider call. Es el bloque sin excepciones; lo que recibe
     /// cada modulo lo resuelve <see cref="ModuleRules.MandatoryRulesFor"/>.</summary>

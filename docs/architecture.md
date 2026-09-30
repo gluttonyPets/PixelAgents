@@ -33,6 +33,7 @@ ASP.NET Core Minimal API (:5000)
   |-- ExecutionHub (SignalR)
   |-- TelegramPollingService    (hosted service)
   |-- SchedulerBackgroundService (hosted service, cron via Cronos)
+  |-- TriggerBackgroundService  (hosted service, pipelines de tipo Trigger)
   v
 PostgreSQL :5432 (Docker interno) / :5433 (host)
 ```
@@ -71,7 +72,8 @@ interaccion pertenece.
 `ProjectGroups` (proyectos de alto nivel que agrupan pipelines; ver mas abajo),
 `Projects`, `ProjectVariables` (variables del pipeline, ver mas abajo), `ProjectModules`,
 `ModuleConnections`, `ProjectExecutions`, `StepExecutions`,
-`ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `OrchestratorOutputs`, `Rules`,
+`ExecutionFiles`, `ExecutionLogs`, `ProjectSchedules`, `ProjectTriggerStates` y
+`TriggerSeenItems` (estado de los pipelines de tipo Trigger), `OrchestratorOutputs`, `Rules`,
 `PromptVersions` (historial de versiones del prompt de cada modulo) y las tres tablas del
 servicio de deteccion de cambios del catalogo de modelos: `ModelCatalogSnapshots` (la
 ultima foto conocida de cada modelo), `ModelCatalogChanges` (historico append-only de lo
@@ -868,6 +870,9 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 |              | `POST /api/project-groups/{id}/projects`          | Anade pipelines existentes al proyecto            |
 | Projects     | `GET|POST|PUT|DELETE /api/projects`               | Pipeline; incluye graph save y duplicar           |
 |              | `PUT /api/projects/{id}/group`                    | Mueve el pipeline de proyecto (`null` = sin proyecto) |
+|              | `GET|PUT /api/projects/{id}/trigger`              | Tipo de pipeline (Normal/Trigger), evento y configuracion; ver README "Pipelines De Tipo Trigger" |
+|              | `GET /api/trigger-types`                          | Catalogo de eventos que disparan un Trigger       |
+|              | `POST /api/google-drive/check-folder`             | Comprueba el acceso de la cuenta de servicio a una carpeta de Drive |
 | Papelera     | `DELETE /api/projects/{id}`                       | Borrado logico: el pipeline pasa a la papelera    |
 |              | `GET /api/projects/trash`                         | Pipelines en la papelera (no caducan)             |
 |              | `POST /api/projects/{id}/restore`                 | Restaura un pipeline de la papelera               |

@@ -1844,6 +1844,18 @@ a.link:hover { text-decoration: underline; }
     vertical-align: middle;
 }
 
+.project-card-trigger-badge {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #f9a825;
+    border: 1px solid #f9a825;
+    border-radius: 999px;
+    padding: 0.05rem 0.4rem;
+    margin-left: 0.35rem;
+    vertical-align: middle;
+}
+
 .project-test-toggle {
     display: flex;
     align-items: center;

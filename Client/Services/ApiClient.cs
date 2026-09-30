@@ -921,6 +921,39 @@ public class ApiClient
         return (null, await ReadErrorAsync(resp));
     }
 
+    // ── Tipo de pipeline y trigger ──
+
+    public async Task<List<TriggerTypeResponse>> GetTriggerTypesAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/trigger-types");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<TriggerTypeResponse>>() ?? [];
+    }
+
+    public async Task<ProjectTriggerResponse?> GetProjectTriggerAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/projects/{projectId}/trigger");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<ProjectTriggerResponse>();
+    }
+
+    public async Task<(ProjectTriggerResponse? Trigger, string? Error)> UpdateProjectTriggerAsync(
+        Guid projectId, UpdateProjectTriggerRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/trigger", req);
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<ProjectTriggerResponse>(), null);
+        return (null, await ReadErrorAsync(resp));
+    }
+
+    public async Task<(DriveFolderCheckResponse? Folder, string? Error)> CheckDriveFolderAsync(DriveFolderCheckRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/google-drive/check-folder", req);
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<DriveFolderCheckResponse>(), null);
+        return (null, await ReadErrorAsync(resp));
+    }
+
     // ── Schedule ──
 
     public async Task<ScheduleResponse?> GetScheduleAsync(Guid projectId)

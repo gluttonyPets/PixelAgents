@@ -256,6 +256,34 @@
                         <input type="text" @bind="_desc" placeholder="Pipeline que genera texto e imagen" />
                     </div>
                 </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Tipo de pipeline</label>
+                        <select @bind="_createType">
+                            <option value="Normal">Normal</option>
+                            <option value="Trigger">Trigger</option>
+                        </select>
+                        <span class="text-sm text-muted">
+                            @(_createType == "Trigger"
+                                ? "Se ejecuta solo cuando ocurre un evento."
+                                : "Se ejecuta a mano o con una programacion.")
+                        </span>
+                    </div>
+                    @if (_createType == "Trigger")
+                    {
+                        <div class="form-group">
+                            <label>Tipo de trigger</label>
+                            <select @bind="_createTriggerType">
+                                <option value="">Sin definir</option>
+                                @foreach (var t in _triggerTypes)
+                                {
+                                    <option value="@t.Id">@t.Label</option>
+                                }
+                            </select>
+                            <span class="text-sm text-muted">Se configura en el nodo Trigger del pipeline.</span>
+                        </div>
+                    }
+                </div>
                 <div class="form-group">
                     <label>Proyecto</label>
                     <select @bind="_createGroupSel">
@@ -307,6 +335,9 @@
     private string _context = "";
     private bool _isTestProject;
     private string _createGroupSel = "";
+    private string _createType = "Normal";
+    private string _createTriggerType = "";
+    private List<TriggerTypeResponse> _triggerTypes = [];
 
     // Alta y edicion de proyecto (agrupacion)
     private bool _showCreateGroupModal;
@@ -381,6 +412,10 @@
                         {
                             <span class="project-card-test-badge" title="Pipeline de prueba">prueba</span>
                         }
+                        @if (p.ProjectType == "Trigger")
+                        {
+                            <span class="project-card-trigger-badge" title="@TriggerTitle(p)"><i class="bi bi-lightning-charge"></i> trigger</span>
+                        }
                     </div>
                     <div class="project-card-desc">@(p.Description ?? "Sin descripcion")</div>
                     @if (!string.IsNullOrEmpty(p.Context))
@@ -422,6 +457,7 @@
         {
             _groups = await Api.GetProjectGroupsAsync();
             _projects = await Api.GetProjectsAsync();
+            if (_triggerTypes.Count == 0) _triggerTypes = await Api.GetTriggerTypesAsync();
             _trashCount = (await Api.GetTrashedProjectsAsync()).Count;
         }
         catch { }
@@ -622,6 +658,8 @@
         _context = "";
         _isTestProject = false;
         _createGroupSel = groupId?.ToString() ?? "";
+        _createType = "Normal";
+        _createTriggerType = "";
         _showCreateModal = true;
     }
 
@@ -630,7 +668,11 @@
         _showCreateModal = false;
         _error = null;
         _name = ""; _desc = ""; _context = ""; _isTestProject = false; _createGroupSel = "";
+        _createType = "Normal"; _createTriggerType = "";
     }
+
+    private string TriggerTitle(ProjectResponse p) =>
+        _triggerTypes.FirstOrDefault(t => t.Id == p.TriggerType)?.Label ?? "Pipeline de tipo trigger (sin definir)";
 
     private async Task Create()
     {
@@ -648,7 +690,9 @@
                 string.IsNullOrWhiteSpace(_desc) ? null : _desc.Trim(),
                 string.IsNullOrWhiteSpace(_context) ? null : _context.Trim(),
                 _isTestProject,
-                ParseGroup(_createGroupSel)));
+                ParseGroup(_createGroupSel),
+                _createType,
+                _createType == "Trigger" && _createTriggerType != "" ? _createTriggerType : null));
             if (ok)
             {
                 CloseCreateModal();

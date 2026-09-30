@@ -66,7 +66,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
         string tenantDbName,
         CancellationToken ct = default,
         bool useHistory = true,
-        IReadOnlyDictionary<string, string>? variableValues = null)
+        IReadOnlyDictionary<string, string>? variableValues = null,
+        IReadOnlyList<ProducedFile>? inputFiles = null)
     {
         _logger = _baseLogger.WithTenant(_tenantFactory, tenantDbName);
 
@@ -107,6 +108,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         var connections = await LoadConnectionsAsync(projectId, db, ct);
         var modules = project.ProjectModules.Where(pm => pm.IsActive).ToList();
         var graph = BuildGraph(projectId, execution, userInput, modules, connections);
+        graph.InputFiles = inputFiles ?? [];
         variables.ApplyTo(graph);
         await LogVariablesAsync(projectId, executionId, variables);
         await LoadRulesIntoGraphAsync(db, graph, ct);

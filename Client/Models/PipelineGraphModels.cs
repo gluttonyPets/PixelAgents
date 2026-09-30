@@ -329,6 +329,17 @@ public static class ModulePortRegistry
         _ => "bi-gear"
     };
 
+    // En un pipeline de tipo Trigger el modulo de entrada ("Start") se pinta como
+    // Trigger: rayo y color propio, para distinguirlo a simple vista.
+    public const string TriggerIcon = "bi-lightning-charge";
+    public const string TriggerColor = "#f9a825";
+
+    public static string GetNodeIcon(string moduleType, string? projectType) =>
+        moduleType == "Start" && projectType == "Trigger" ? TriggerIcon : GetModuleIcon(moduleType);
+
+    public static string GetNodeColor(string moduleType, string? projectType) =>
+        moduleType == "Start" && projectType == "Trigger" ? TriggerColor : GetModuleColor(moduleType);
+
     public static string GetModuleColor(string moduleType) => moduleType switch
     {
         "Text" => "#6c63ff",

@@ -20,7 +20,13 @@ else
     <!-- ═══════════ PROJECT HEADER ═══════════ -->
     <div class="project-header">
         <div class="project-header-info">
-            <h2 class="project-title">@_project.Name</h2>
+            <h2 class="project-title">
+                @_project.Name
+                @if (_project.ProjectType == "Trigger")
+                {
+                    <span class="project-card-trigger-badge" title="Lo lanza un evento; se configura en el nodo Trigger"><i class="bi bi-lightning-charge"></i> trigger</span>
+                }
+            </h2>
             <p class="project-meta">@(_project.Description ?? "") &middot; Creado @_project.CreatedAt.ToString("dd MMM yyyy")</p>
         </div>
         <div class="project-header-actions">
@@ -106,6 +112,7 @@ else
                             ProjectName="_project.Name"
                             ProjectDescription="_project.Description"
                             ProjectContext="_project.Context"
+                            ProjectType="@_project.ProjectType"
                             Modules="_project.Modules.ToList()"
                             AvailableModules="_modules"
                             AvailableProjects="_allProjects"

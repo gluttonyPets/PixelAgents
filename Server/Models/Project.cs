@@ -26,6 +26,16 @@ namespace Server.Models
         /// el usuario lo restaure o lo elimine definitivamente. Nunca caduca solo.</summary>
         public DateTime? DeletedAt { get; set; }
 
+        // ── Tipo de pipeline ──
+        /// <summary>"Normal" (se lanza a mano o por programacion) o "Trigger" (lo lanza un
+        /// evento externo). Ver <see cref="Server.Services.Triggers.ProjectTypes"/>.</summary>
+        public string ProjectType { get; set; } = Server.Services.Triggers.ProjectTypes.Normal;
+        /// <summary>Evento que dispara un pipeline de tipo Trigger ("DriveNewFile"...);
+        /// null = aun sin elegir. Ver <see cref="Server.Services.Triggers.TriggerTypes"/>.</summary>
+        public string? TriggerType { get; set; }
+        /// <summary>Configuracion del trigger en JSON; su forma depende de TriggerType.</summary>
+        public string? TriggerConfig { get; set; }
+
         // ── Aprendizaje: modelo "analista" que procesa el feedback de abortos ──
         /// <summary>Si está activo, cada abort con comentario dispara el analista de aprendizaje.
         /// Activado por defecto: sin configurar nada, el aprendizaje funciona con un modelo por defecto.</summary>
