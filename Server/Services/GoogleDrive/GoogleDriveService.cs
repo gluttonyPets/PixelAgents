@@ -11,6 +11,9 @@ public class GoogleDriveException(string message) : Exception(message);
 
 public record DriveFolderInfo(string Id, string Name);
 
+/// <summary>Carpeta (o unidad compartida) que ve la cuenta de servicio, para el explorador.</summary>
+public record DriveFolderEntry(string Id, string Name, bool IsSharedDrive = false);
+
 public record DriveFile(string Id, string Name, string MimeType, DateTime? CreatedTime, string? WebViewLink, long? Size);
 
 public record DriveDownload(byte[] Data, string FileName, string ContentType);
@@ -83,6 +86,91 @@ public class GoogleDriveService
     }
 
     /// <summary>
+    /// Carpetas para el explorador. Sin <paramref name="parentId"/> devuelve el nivel
+    /// raiz de lo que ve la cuenta de servicio: las unidades compartidas donde es miembro,
+    /// las carpetas que le han compartido y las de su propia unidad. Con el, las
+    /// subcarpetas directas de esa carpeta. Ordenadas por nombre.
+    /// </summary>
+    public async Task<List<DriveFolderEntry>> ListFoldersAsync(string credentialsJson, string? parentId, CancellationToken ct = default)
+    {
+        var creds = ParseCredentials(credentialsJson);
+        if (!string.IsNullOrWhiteSpace(parentId))
+        {
+            var children = await ListFolderQueryAsync(creds, BuildFolderChildrenQuery(parentId), parentId, ct);
+            return children.OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
+
+        var drives = await ListSharedDrivesAsync(creds, ct);
+        var shared = await ListFolderQueryAsync(creds,
+            $"sharedWithMe = true and mimeType = '{FolderMimeType}' and trashed = false", "(raiz)", ct);
+        var own = await ListFolderQueryAsync(creds,
+            $"'root' in parents and mimeType = '{FolderMimeType}' and trashed = false", "(raiz)", ct);
+
+        var seen = new HashSet<string>(drives.Select(d => d.Id));
+        var folders = shared.Concat(own).Where(f => seen.Add(f.Id))
+            .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase);
+        return drives.OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).Concat(folders).ToList();
+    }
+
+    /// <summary>Consulta de files.list para las subcarpetas directas de una carpeta.</summary>
+    public static string BuildFolderChildrenQuery(string parentId) =>
+        $"'{EscapeQuery(parentId)}' in parents and mimeType = '{FolderMimeType}' and trashed = false";
+
+    private async Task<List<DriveFolderEntry>> ListFolderQueryAsync(
+        ServiceAccountCredentials creds, string query, string context, CancellationToken ct)
+    {
+        var result = new List<DriveFolderEntry>();
+        string? pageToken = null;
+        do
+        {
+            var url = $"{ApiBase}/files?q={Uri.EscapeDataString(query)}" +
+                      "&fields=nextPageToken,files(id,name)&pageSize=200" +
+                      "&supportsAllDrives=true&includeItemsFromAllDrives=true" +
+                      (pageToken is null ? "" : $"&pageToken={Uri.EscapeDataString(pageToken)}");
+            var json = await GetStringAsync(creds, url, context, ct);
+            var (page, next) = ParseFolderList(json, "files");
+            result.AddRange(page);
+            pageToken = next;
+        } while (pageToken is not null && result.Count < MaxListedFiles);
+        return result;
+    }
+
+    private async Task<List<DriveFolderEntry>> ListSharedDrivesAsync(ServiceAccountCredentials creds, CancellationToken ct)
+    {
+        var result = new List<DriveFolderEntry>();
+        string? pageToken = null;
+        do
+        {
+            var url = $"{ApiBase}/drives?pageSize=100&fields=nextPageToken,drives(id,name)" +
+                      (pageToken is null ? "" : $"&pageToken={Uri.EscapeDataString(pageToken)}");
+            var json = await GetStringAsync(creds, url, "(unidades compartidas)", ct);
+            var (page, next) = ParseFolderList(json, "drives");
+            result.AddRange(page.Select(d => d with { IsSharedDrive = true }));
+            pageToken = next;
+        } while (pageToken is not null && result.Count < MaxListedFiles);
+        return result;
+    }
+
+    /// <summary>Lee un listado de files.list ("files") o drives.list ("drives").</summary>
+    public static (List<DriveFolderEntry> Folders, string? NextPageToken) ParseFolderList(string json, string arrayName)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        var folders = new List<DriveFolderEntry>();
+        if (root.TryGetProperty(arrayName, out var arr) && arr.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var f in arr.EnumerateArray())
+            {
+                var id = ReadString(f, "id");
+                if (string.IsNullOrWhiteSpace(id)) continue;
+                folders.Add(new DriveFolderEntry(id!, ReadString(f, "name") ?? id!));
+            }
+        }
+        var next = ReadString(root, "nextPageToken");
+        return (folders, string.IsNullOrWhiteSpace(next) ? null : next);
+    }
+
+    /// <summary>
     /// Descarga el archivo. Los documentos nativos de Google (Docs, Hojas, Presentaciones,
     /// Dibujos) se exportan a un formato que los modelos entienden. Devuelve null si el
     /// tipo no se puede descargar o supera <see cref="MaxDownloadBytes"/>.
@@ -143,7 +231,9 @@ public class GoogleDriveService
     /// <summary>Consulta de files.list: hijos directos de la carpeta que no son
     /// carpetas ni estan en la papelera.</summary>
     public static string BuildListQuery(string folderId) =>
-        $"'{folderId.Replace("\\", "\\\\").Replace("'", "\\'")}' in parents and trashed = false and mimeType != '{FolderMimeType}'";
+        $"'{EscapeQuery(folderId)}' in parents and trashed = false and mimeType != '{FolderMimeType}'";
+
+    private static string EscapeQuery(string value) => value.Replace("\\", "\\\\").Replace("'", "\\'");
 
     /// <summary>Formato al que se exporta un documento nativo de Google; null si no
     /// tiene contenido exportable (formularios, accesos directos, mapas...).</summary>

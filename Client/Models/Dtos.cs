@@ -186,6 +186,10 @@ public record ProjectTriggerResponse(string ProjectType, string? TriggerType, st
     TriggerStatusResponse? Status);
 public record DriveFolderCheckRequest(Guid ApiKeyId, string Folder);
 public record DriveFolderCheckResponse(string FolderId, string FolderName, int FileCount, string ServiceAccountEmail);
+public record DriveFolderEntryResponse(string Id, string Name, bool IsSharedDrive);
+public record DriveFolderListResponse(List<DriveFolderEntryResponse> Folders, string ServiceAccountEmail);
+/// <summary>Carpeta elegida en el explorador: su ID y la ruta para mostrarla.</summary>
+public record DriveFolderPick(string Id, string Path);
 // ── Papelera de pipelines ──
 public record TrashedProjectResponse(
     Guid Id, string Name, string? Description, bool IsTestProject,

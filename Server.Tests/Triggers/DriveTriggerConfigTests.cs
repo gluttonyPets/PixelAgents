@@ -49,12 +49,13 @@ public class DriveTriggerConfigTests
     public void IdaYVueltaPorJson()
     {
         var key = Guid.NewGuid();
-        var json = new DriveTriggerConfig { ApiKeyId = key, Folder = Id, PollMinutes = 15, DownloadFile = false }.Serialize();
+        var json = new DriveTriggerConfig { ApiKeyId = key, Folder = Id, FolderName = "Equipo / Facturas", PollMinutes = 15, DownloadFile = false }.Serialize();
         Assert.DoesNotContain("PollInterval", json);
         Assert.DoesNotContain("FolderId", json);
         var back = DriveTriggerConfig.Parse(json);
         Assert.Equal(key, back.ApiKeyId);
         Assert.Equal(Id, back.Folder);
+        Assert.Equal("Equipo / Facturas", back.FolderName);
         Assert.Equal(15, back.PollMinutes);
         Assert.False(back.DownloadFile);
     }

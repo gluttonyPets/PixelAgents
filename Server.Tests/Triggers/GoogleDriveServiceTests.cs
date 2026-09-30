@@ -61,6 +61,25 @@ public class GoogleDriveServiceTests
         Assert.Null(GoogleDriveService.ParseFileList("""{ "files": [] }""").NextPageToken);
 
     [Fact]
+    public void ElExploradorPideSoloSubcarpetas() =>
+        Assert.Equal("'abc' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+            GoogleDriveService.BuildFolderChildrenQuery("abc"));
+
+    [Fact]
+    public void LeeCarpetasYUnidadesCompartidas()
+    {
+        var (files, next) = GoogleDriveService.ParseFolderList(
+            """{ "nextPageToken": "p2", "files": [ { "id": "f1", "name": "Facturas" }, { "name": "sin id" } ] }""", "files");
+        Assert.Equal("p2", next);
+        var f = Assert.Single(files);
+        Assert.Equal(new DriveFolderEntry("f1", "Facturas"), f);
+
+        var (drives, _) = GoogleDriveService.ParseFolderList(
+            """{ "drives": [ { "id": "d1", "name": "Equipo" } ] }""", "drives");
+        Assert.Equal("Equipo", Assert.Single(drives).Name);
+    }
+
+    [Fact]
     public void UnaCredencialInvalidaDaUnErrorDeDrive()
     {
         var ex = Assert.Throws<GoogleDriveException>(() => GoogleDriveService.ParseCredentials("{}"));

@@ -21,6 +21,11 @@ public sealed partial class DriveTriggerConfig
     [JsonPropertyName("folder")]
     public string? Folder { get; set; }
 
+    /// <summary>Ruta legible de la carpeta elegida en el explorador ("Unidad / Facturas");
+    /// solo se muestra, lo que manda es <see cref="Folder"/>.</summary>
+    [JsonPropertyName("folderName")]
+    public string? FolderName { get; set; }
+
     /// <summary>Cada cuantos minutos se consulta la carpeta.</summary>
     [JsonPropertyName("pollMinutes")]
     public int PollMinutes { get; set; } = DefaultPollMinutes;

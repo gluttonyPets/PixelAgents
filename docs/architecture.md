@@ -873,6 +873,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 |              | `GET|PUT /api/projects/{id}/trigger`              | Tipo de pipeline (Normal/Trigger), evento y configuracion; ver README "Pipelines De Tipo Trigger" |
 |              | `GET /api/trigger-types`                          | Catalogo de eventos que disparan un Trigger       |
 |              | `POST /api/google-drive/check-folder`             | Comprueba el acceso de la cuenta de servicio a una carpeta de Drive |
+|              | `GET /api/google-drive/folders`                   | Explorador de carpetas de Drive (raiz o subcarpetas de `parentId`) |
 | Papelera     | `DELETE /api/projects/{id}`                       | Borrado logico: el pipeline pasa a la papelera    |
 |              | `GET /api/projects/trash`                         | Pipelines en la papelera (no caducan)             |
 |              | `POST /api/projects/{id}/restore`                 | Restaura un pipeline de la papelera               |

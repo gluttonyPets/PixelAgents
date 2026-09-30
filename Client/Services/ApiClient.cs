@@ -946,6 +946,16 @@ public class ApiClient
         return (null, await ReadErrorAsync(resp));
     }
 
+    public async Task<(DriveFolderListResponse? List, string? Error)> GetDriveFoldersAsync(Guid apiKeyId, string? parentId)
+    {
+        var url = $"/api/google-drive/folders?apiKeyId={apiKeyId}" +
+                  (string.IsNullOrEmpty(parentId) ? "" : $"&parentId={Uri.EscapeDataString(parentId)}");
+        var resp = await SendAsync(HttpMethod.Get, url);
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<DriveFolderListResponse>(), null);
+        return (null, await ReadErrorAsync(resp));
+    }
+
     public async Task<(DriveFolderCheckResponse? Folder, string? Error)> CheckDriveFolderAsync(DriveFolderCheckRequest req)
     {
         var resp = await SendAsync(HttpMethod.Post, "/api/google-drive/check-folder", req);

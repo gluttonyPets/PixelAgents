@@ -1684,6 +1684,35 @@ app.MapPut("/api/projects/{id:guid}/trigger", async (
     return Results.Ok(ToTriggerResponse(project, state));
 }).RequireAuthorization();
 
+// Explorador de carpetas de Drive: sin parentId, el nivel raiz de lo que ve la cuenta
+// de servicio (unidades compartidas y carpetas compartidas con ella); con parentId,
+// sus subcarpetas. Devuelve tambien el email de la cuenta, para indicar con quien
+// hay que compartir una carpeta que no aparece.
+app.MapGet("/api/google-drive/folders", async (
+    Guid apiKeyId, string? parentId, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Server.Services.GoogleDrive.GoogleDriveService drive) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var key = await db.ApiKeys.FindAsync(apiKeyId);
+    if (key is null || key.ProviderType != Server.Services.Triggers.TriggerBackgroundService.DriveApiKeyProvider)
+        return Results.BadRequest(new { error = "La API key no existe o no es de Google Drive." });
+
+    try
+    {
+        var creds = Server.Services.GoogleDrive.GoogleDriveService.ParseCredentials(key.EncryptedKey);
+        var folders = await drive.ListFoldersAsync(key.EncryptedKey, parentId, ctx.RequestAborted);
+        return Results.Ok(new DriveFolderListResponse(
+            folders.Select(f => new DriveFolderEntryResponse(f.Id, f.Name, f.IsSharedDrive)).ToList(),
+            creds.ClientEmail));
+    }
+    catch (Server.Services.GoogleDrive.GoogleDriveException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).RequireAuthorization();
+
 // Comprueba que la cuenta de servicio de una API key "GoogleDrive" ve la carpeta:
 // devuelve su nombre y cuantos archivos tiene. Para validar el trigger antes de activarlo.
 app.MapPost("/api/google-drive/check-folder", async (

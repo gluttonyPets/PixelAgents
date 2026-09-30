@@ -1,0 +1,145 @@
+@using Client.Models
+@using Client.Services
+@inject ApiClient Api
+
+@* Explorador de carpetas de Google Drive para el trigger. Navega por lo que ve la
+   cuenta de servicio de la API key: unidades compartidas y carpetas compartidas con
+   ella en la raiz, y sus subcarpetas al entrar. Devuelve el ID y la ruta legible. *@
+
+<div class="modal-overlay" @onclick="Cancel">
+    <div class="modal-content drive-picker" @onclick:stopPropagation="true">
+        <div class="modal-header">
+            <span style="font-size: 1.05rem; font-weight: 600;"><i class="bi bi-google"></i> Elegir carpeta de Drive</span>
+            <button class="modal-close-btn" @onclick="Cancel" title="Cerrar">&#x2715;</button>
+        </div>
+        <div class="modal-body">
+            <nav class="drive-picker-crumbs">
+                <button class="drive-picker-crumb" @onclick="() => GoTo(-1)" disabled="@_loading">
+                    <i class="bi bi-hdd-network"></i> Drive
+                </button>
+                @for (var i = 0; i < _path.Count; i++)
+                {
+                    var idx = i;
+                    <span class="drive-picker-sep">/</span>
+                    <button class="drive-picker-crumb" @onclick="() => GoTo(idx)" disabled="@_loading">@_path[idx].Name</button>
+                }
+            </nav>
+
+            <div class="drive-picker-list">
+                @if (_loading)
+                {
+                    <div class="drive-picker-empty">Cargando carpetas...</div>
+                }
+                else if (_error is not null)
+                {
+                    <div class="alert alert-error" style="margin: 0.5rem;">@_error</div>
+                }
+                else if (_folders.Count == 0)
+                {
+                    <div class="drive-picker-empty">
+                        @if (_path.Count == 0)
+                        {
+                            <text>La cuenta de servicio no ve ninguna carpeta. Comparte la carpeta en Drive con
+                            <strong>@_email</strong> (permiso de lector) y vuelve a abrir el explorador.</text>
+                        }
+                        else
+                        {
+                            <text>Esta carpeta no tiene subcarpetas.</text>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @foreach (var f in _folders)
+                    {
+                        var folder = f;
+                        <div class="drive-picker-row" @ondblclick="() => Open(folder)">
+                            <button class="drive-picker-open" @onclick="() => Open(folder)" title="Abrir">
+                                <i class="bi @(folder.IsSharedDrive ? "bi-hdd-stack" : "bi-folder-fill")"></i>
+                                <span>@folder.Name</span>
+                                <i class="bi bi-chevron-right drive-picker-chevron"></i>
+                            </button>
+                            <button class="btn btn-xs" @onclick="() => Pick(folder)">Elegir</button>
+                        </div>
+                    }
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(_email) && _path.Count == 0 && _folders.Count > 0)
+            {
+                <p class="text-sm text-muted" style="margin-top: 0.5rem;">
+                    ¿No aparece la carpeta? Compártela con <strong>@_email</strong>.
+                </p>
+            }
+        </div>
+        <div class="modal-footer">
+            <button class="btn" @onclick="Cancel">Cancelar</button>
+            <button class="btn btn-primary" @onclick="PickCurrent" disabled="@(_path.Count == 0 || _loading)"
+                    title="@(_path.Count == 0 ? "Entra en una carpeta para elegirla" : "")">
+                Elegir "@(_path.Count == 0 ? "..." : _path[^1].Name)"
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid ApiKeyId { get; set; }
+    [Parameter] public EventCallback<DriveFolderPick> OnPicked { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly List<DriveFolderEntryResponse> _path = [];
+    private List<DriveFolderEntryResponse> _folders = [];
+    private string _email = "";
+    private bool _loading;
+    private string? _error;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var parent = _path.Count == 0 ? null : _path[^1].Id;
+            var (list, error) = await Api.GetDriveFoldersAsync(ApiKeyId, parent);
+            if (list is null)
+            {
+                _folders = [];
+                _error = error ?? "No se pudieron listar las carpetas.";
+            }
+            else
+            {
+                _folders = list.Folders;
+                _email = list.ServiceAccountEmail;
+            }
+        }
+        catch (Exception ex) { _error = $"Error de conexion: {ex.Message}"; }
+        _loading = false;
+    }
+
+    private async Task Open(DriveFolderEntryResponse folder)
+    {
+        if (_loading) return;
+        _path.Add(folder);
+        await Load();
+    }
+
+    /// <summary>-1 = raiz; si no, se queda en ese nivel de la ruta.</summary>
+    private async Task GoTo(int index)
+    {
+        if (index == _path.Count - 1) return;
+        _path.RemoveRange(index + 1, _path.Count - index - 1);
+        await Load();
+    }
+
+    private Task Pick(DriveFolderEntryResponse folder) =>
+        OnPicked.InvokeAsync(new DriveFolderPick(folder.Id, PathName(_path.Append(folder))));
+
+    private Task PickCurrent() =>
+        _path.Count == 0 ? Task.CompletedTask : OnPicked.InvokeAsync(new DriveFolderPick(_path[^1].Id, PathName(_path)));
+
+    private Task Cancel() => OnCancel.InvokeAsync();
+
+    private static string PathName(IEnumerable<DriveFolderEntryResponse> path) => string.Join(" / ", path.Select(p => p.Name));
+}

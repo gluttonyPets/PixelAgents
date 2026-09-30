@@ -58,12 +58,33 @@
                     }
                 </div>
                 <div class="inspector-field">
-                    <label>Carpeta (URL o ID)</label>
-                    <input type="text" @bind="_driveConfig.Folder" placeholder="https://drive.google.com/drive/folders/..." />
+                    <label>Carpeta</label>
+                    @if (!string.IsNullOrWhiteSpace(_driveConfig.Folder))
+                    {
+                        <div class="drive-picked" title="@_driveConfig.Folder">
+                            <i class="bi bi-folder-fill"></i>
+                            <span>@(string.IsNullOrWhiteSpace(_driveConfig.FolderName) ? _driveConfig.Folder : _driveConfig.FolderName)</span>
+                        </div>
+                    }
+                    <button class="btn btn-xs" style="width: 100%;" @onclick="() => _showPicker = true"
+                            disabled="@(!Guid.TryParse(_driveKeySel, out _))"
+                            title="@(Guid.TryParse(_driveKeySel, out _) ? "" : "Elige primero la API key")">
+                        <i class="bi bi-folder2-open"></i>
+                        @(string.IsNullOrWhiteSpace(_driveConfig.Folder) ? "Explorar carpetas..." : "Cambiar carpeta...")
+                    </button>
+                    <details style="margin-top: 0.3rem;">
+                        <summary class="text-sm text-muted" style="cursor: pointer;">o pega la URL / ID de la carpeta</summary>
+                        <input type="text" value="@_driveConfig.Folder" @onchange="OnManualFolder"
+                               placeholder="https://drive.google.com/drive/folders/..." style="margin-top: 0.25rem;" />
+                    </details>
                     <p class="text-sm text-muted" style="margin-top: 0.15rem;">
-                        Comparte la carpeta con el email de la cuenta de servicio (lector).
+                        Solo aparecen las carpetas compartidas con el email de la cuenta de servicio (lector).
                     </p>
                 </div>
+                @if (_showPicker && Guid.TryParse(_driveKeySel, out var pickerKey))
+                {
+                    <DriveFolderPicker ApiKeyId="pickerKey" OnPicked="OnFolderPicked" OnCancel="() => _showPicker = false" />
+                }
                 <div class="inspector-field">
                     <button class="btn btn-xs" style="width: 100%;" @onclick="CheckFolder"
                             disabled="@(_checking || string.IsNullOrWhiteSpace(_driveKeySel) || string.IsNullOrWhiteSpace(_driveConfig.Folder))">
@@ -155,6 +176,7 @@
     private string? _error;
     private string? _checkError;
     private DriveFolderCheckResponse? _check;
+    private bool _showPicker;
 
     private ProjectTriggerResponse? _saved;
     private List<TriggerTypeResponse> _triggerTypes = [];
@@ -241,6 +263,24 @@
         if (fresh is not null && _saved is not null) _saved = _saved with { Status = fresh.Status };
     }
 
+    private void OnFolderPicked(DriveFolderPick pick)
+    {
+        _driveConfig.Folder = pick.Id;
+        _driveConfig.FolderName = pick.Path;
+        _showPicker = false;
+        _check = null;
+        _checkError = null;
+    }
+
+    // Una URL pegada a mano no trae ruta legible: se muestra la URL tal cual.
+    private void OnManualFolder(ChangeEventArgs e)
+    {
+        _driveConfig.Folder = e.Value?.ToString()?.Trim();
+        _driveConfig.FolderName = null;
+        _check = null;
+        _checkError = null;
+    }
+
     private async Task CheckFolder()
     {
         _check = null;
@@ -266,6 +306,7 @@
     {
         [JsonPropertyName("apiKeyId")] public Guid? ApiKeyId { get; set; }
         [JsonPropertyName("folder")] public string? Folder { get; set; }
+        [JsonPropertyName("folderName")] public string? FolderName { get; set; }
         [JsonPropertyName("pollMinutes")] public int PollMinutes { get; set; } = 5;
         [JsonPropertyName("downloadFile")] public bool DownloadFile { get; set; } = true;
 

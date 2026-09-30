@@ -69,6 +69,8 @@ namespace Server.Models
         TriggerStatusResponse? Status);
     public record DriveFolderCheckRequest(Guid ApiKeyId, string Folder);
     public record DriveFolderCheckResponse(string FolderId, string FolderName, int FileCount, string ServiceAccountEmail);
+    public record DriveFolderEntryResponse(string Id, string Name, bool IsSharedDrive);
+    public record DriveFolderListResponse(List<DriveFolderEntryResponse> Folders, string ServiceAccountEmail);
     // ── Papelera de pipelines ──
     // Los contadores dan una idea de lo que se pierde al eliminar definitivamente.
     public record TrashedProjectResponse(

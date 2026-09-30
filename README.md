@@ -736,6 +736,9 @@ configura desde el inspector de ese nodo.
 - `GET /api/trigger-types`: catalogo de eventos (`Services/Triggers/ProjectTypes.cs`).
 - `GET|PUT /api/projects/{id}/trigger`: tipo, evento, configuracion y estado del
   vigilante (ultima comprobacion, ultimo disparo, ultimo error).
+- `GET /api/google-drive/folders?apiKeyId=...&parentId=...`: explorador de carpetas
+  del inspector. Sin `parentId`, las unidades compartidas y las carpetas
+  compartidas con la cuenta de servicio; con el, sus subcarpetas.
 - `POST /api/google-drive/check-folder`: comprueba que la cuenta de servicio ve la
   carpeta.
 
