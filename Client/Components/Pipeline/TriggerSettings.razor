@@ -144,6 +144,7 @@
                 else
                 {
                     <div class="text-muted">Ultima comprobacion: @Local(st.LastCheckedAt)</div>
+                    <div class="text-muted">Siguiente: hacia las @Local(st.LastCheckedAt.Value.AddMinutes(Math.Clamp(_driveConfig.PollMinutes, 1, 1440)))</div>
                     @if (st.LastFiredAt is not null)
                     {
                         <div class="text-muted">Ultima ejecucion lanzada: @Local(st.LastFiredAt)</div>
@@ -156,6 +157,14 @@
                     {
                         <div style="color: var(--success); margin-top: 0.2rem;">Vigilando la carpeta.</div>
                     }
+                }
+                <button class="btn btn-xs" style="width: 100%; margin-top: 0.4rem;" @onclick="CheckNow" disabled="@IsDirty"
+                        title="@(IsDirty ? "Guarda primero los cambios" : "Consulta la carpeta en menos de un minuto, sin esperar al intervalo")">
+                    <i class="bi bi-arrow-repeat"></i> Comprobar ahora
+                </button>
+                @if (_checkNowMsg is not null)
+                {
+                    <div class="text-muted" style="margin-top: 0.2rem;">@_checkNowMsg</div>
                 }
             </div>
         }
@@ -257,8 +266,18 @@
         finally { _saving = false; }
     }
 
+    private string? _checkNowMsg;
+
+    private async Task CheckNow()
+    {
+        var fresh = await Api.CheckTriggerNowAsync(ProjectId);
+        if (fresh is not null && _saved is not null) _saved = _saved with { Status = fresh.Status };
+        _checkNowMsg = "Se consultara en menos de un minuto. Pulsa \u21bb para ver el resultado.";
+    }
+
     private async Task RefreshStatus()
     {
+        _checkNowMsg = null;
         var fresh = await Api.GetProjectTriggerAsync(ProjectId);
         if (fresh is not null && _saved is not null) _saved = _saved with { Status = fresh.Status };
     }

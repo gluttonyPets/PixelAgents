@@ -753,7 +753,9 @@ Eventos disponibles:
   proveedor `GoogleDrive` (JSON de cuenta de servicio con la "Google Drive API"
   habilitada) y la carpeta debe compartirse con su `client_email`.
   La primera consulta, o cambiar de carpeta, solo toma linea base: lo que ya habia
-  no dispara. Cada archivo se registra en `TriggerSeenItems` antes de ejecutar, asi
+  no dispara, pero si lo creado despues de guardar el trigger
+  (`ProjectTriggerStates.ArmedAt`). `POST /api/projects/{id}/trigger/check-now`
+  ("Comprobar ahora") fuerza la consulta sin esperar al intervalo. Cada archivo se registra en `TriggerSeenItems` antes de ejecutar, asi
   que dispara una sola vez aunque la ejecucion falle; el estado vive en
   `ProjectTriggerStates`.
 

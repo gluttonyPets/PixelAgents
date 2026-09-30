@@ -14,6 +14,10 @@ namespace Server.Models
         /// <summary>Cuando se tomo la linea base; null = aun no (p. ej. la configuracion
         /// esta incompleta y solo se ha guardado el error).</summary>
         public DateTime? BaselineAt { get; set; }
+        /// <summary>Cuando se activo o cambio la configuracion del trigger. En la linea base,
+        /// los archivos creados despues de este momento SI disparan: los ha subido el
+        /// usuario tras guardar, aunque la primera consulta aun no hubiera pasado.</summary>
+        public DateTime? ArmedAt { get; set; }
         public DateTime? LastCheckedAt { get; set; }
         public DateTime? LastFiredAt { get; set; }
         /// <summary>Ultimo error de la consulta (credenciales, carpeta sin acceso...);

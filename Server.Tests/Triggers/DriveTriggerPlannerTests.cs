@@ -27,6 +27,24 @@ public class DriveTriggerPlannerTests
     }
 
     [Fact]
+    public void EnLaLineaBaseDisparaLoSubidoTrasActivar()
+    {
+        // Se guarda el trigger a las 10:05 y el usuario sube "b" a las 10:06, antes de
+        // que pase la primera consulta: "a" ya estaba y no dispara, "b" si.
+        var activado = new DateTime(2026, 9, 30, 10, 5, 0, DateTimeKind.Utc);
+        var plan = DriveTriggerPlanner.Plan(null, hasBaseline: false, Key, [File("a", 0), File("b", 6)], Vistos(), activado);
+        Assert.True(plan.TakeBaseline);
+        Assert.Equal(["b"], plan.NewFiles.Select(f => f.Id));
+    }
+
+    [Fact]
+    public void SinMomentoDeActivacionLaLineaBaseNoDispara()
+    {
+        var plan = DriveTriggerPlanner.Plan(null, hasBaseline: false, Key, [File("b", 6)], Vistos(), armedAt: null);
+        Assert.Empty(plan.NewFiles);
+    }
+
+    [Fact]
     public void OtraCarpetaRehaceLaLineaBase()
     {
         var plan = DriveTriggerPlanner.Plan(DriveTriggerPlanner.ConfigKey("otra"), hasBaseline: true, Key,

@@ -1671,13 +1671,23 @@ app.MapPut("/api/projects/{id:guid}/trigger", async (
         // estaba apagado no dispara, solo forma la nueva linea base.
         if (state is not null) db.ProjectTriggerStates.Remove(state);
         await db.TriggerSeenItems.Where(i => i.ProjectId == id).ExecuteDeleteAsync();
+        await db.SaveChangesAsync();
         state = null;
     }
-    else if (configChanged && state is not null)
+    if (isTrigger && triggerType is not null && (watchChanged || configChanged))
     {
-        // Nueva configuracion: se consulta en el siguiente ciclo sin esperar al intervalo.
+        // Momento de activacion: lo que se suba a partir de ahora dispara aunque la
+        // primera consulta (linea base) aun no haya pasado. Y se consulta en el
+        // siguiente ciclo, sin esperar al intervalo.
+        if (state is null)
+        {
+            state = new ProjectTriggerState { ProjectId = id, ConfigKey = "" };
+            db.ProjectTriggerStates.Add(state);
+        }
+        state.ArmedAt = DateTime.UtcNow;
         state.LastCheckedAt = null;
         state.LastError = null;
+        state.UpdatedAt = DateTime.UtcNow;
     }
 
     await db.SaveChangesAsync();
@@ -1711,6 +1721,24 @@ app.MapGet("/api/google-drive/folders", async (
     {
         return Results.BadRequest(new { error = ex.Message });
     }
+}).RequireAuthorization();
+
+// Fuerza que el trigger se consulte en el siguiente ciclo (menos de un minuto) sin
+// esperar a su intervalo. Util para probar tras subir un archivo.
+app.MapPost("/api/projects/{id:guid}/trigger/check-now", async (
+    Guid id, HttpContext ctx, UserManager<ApplicationUser> um, ITenantDbContextFactory factory) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var project = await db.Projects.FirstOrDefaultAsync(p => p.Id == id && p.DeletedAt == null);
+    if (project is null) return Results.NotFound();
+
+    await db.ProjectTriggerStates
+        .Where(s => s.ProjectId == id)
+        .ExecuteUpdateAsync(set => set.SetProperty(s => s.LastCheckedAt, (DateTime?)null));
+    var state = await db.ProjectTriggerStates.FirstOrDefaultAsync(s => s.ProjectId == id);
+    return Results.Ok(ToTriggerResponse(project, state));
 }).RequireAuthorization();
 
 // Comprueba que la cuenta de servicio de una API key "GoogleDrive" ve la carpeta:

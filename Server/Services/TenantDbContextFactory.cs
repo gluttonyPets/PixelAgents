@@ -68,11 +68,13 @@ namespace Server.Services
                     ""ProjectId"" uuid NOT NULL PRIMARY KEY REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,
                     ""ConfigKey"" varchar(500) NOT NULL,
                     ""BaselineAt"" timestamp with time zone,
+                    ""ArmedAt"" timestamp with time zone,
                     ""LastCheckedAt"" timestamp with time zone,
                     ""LastFiredAt"" timestamp with time zone,
                     ""LastError"" text,
                     ""UpdatedAt"" timestamp with time zone NOT NULL
                 )", log);
+            RunSafe(ctx, @"ALTER TABLE ""ProjectTriggerStates"" ADD COLUMN IF NOT EXISTS ""ArmedAt"" timestamp with time zone", log);
             RunSafe(ctx, @"
                 CREATE TABLE IF NOT EXISTS ""TriggerSeenItems"" (
                     ""ProjectId"" uuid NOT NULL REFERENCES ""Projects""(""Id"") ON DELETE CASCADE,

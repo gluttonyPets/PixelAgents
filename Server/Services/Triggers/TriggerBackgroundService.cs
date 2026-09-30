@@ -162,26 +162,33 @@ public class TriggerBackgroundService : BackgroundService
                     .Select(i => i.ItemKey)
                     .ToListAsync(ct))
                 .ToHashSet();
-            var plan = DriveTriggerPlanner.Plan(state.ConfigKey, state.BaselineAt is not null, configKey, listed, seen);
+            var plan = DriveTriggerPlanner.Plan(state.ConfigKey, state.BaselineAt is not null, configKey, listed, seen, state.ArmedAt);
             state.LastError = null;
 
             if (plan.TakeBaseline)
             {
-                // Lo que ya estaba en la carpeta no dispara: solo se toma nota.
+                // Lo que ya estaba en la carpeta no dispara: solo se toma nota. Los archivos
+                // subidos tras activar el trigger (plan.NewFiles) quedan fuera y disparan abajo.
+                // Todos los posteriores a la activacion quedan sin marcar, aunque en esta
+                // pasada solo disparen MaxFilesPerCheck: el resto dispara en las siguientes.
+                var fireNow = listed.Where(f => DriveTriggerPlanner.CreatedAfterArming(f, state.ArmedAt))
+                    .Select(f => f.Id).ToHashSet();
                 await db.TriggerSeenItems.Where(i => i.ProjectId == projectId).ExecuteDeleteAsync(ct);
                 db.TriggerSeenItems.AddRange(listed
+                    .Where(f => !fireNow.Contains(f.Id))
                     .Select(f => DriveTriggerPlanner.ItemKey(f.Id))
                     .Distinct()
                     .Select(k => new TriggerSeenItem { ProjectId = projectId, ItemKey = k, SeenAt = now }));
                 state.ConfigKey = configKey;
                 state.BaselineAt = now;
                 await db.SaveChangesAsync(ct);
-                _log.LogInformation("Drive trigger {ProjectId}: linea base con {Count} archivo(s) en '{Folder}'",
-                    projectId, listed.Count, folder.Name);
-                return;
+                _log.LogInformation("Drive trigger {ProjectId}: linea base con {Count} archivo(s) en '{Folder}', {New} nuevo(s) desde la activacion",
+                    projectId, listed.Count - fireNow.Count, folder.Name, fireNow.Count);
             }
-
-            await db.SaveChangesAsync(ct);
+            else
+            {
+                await db.SaveChangesAsync(ct);
+            }
 
             foreach (var file in plan.NewFiles)
             {

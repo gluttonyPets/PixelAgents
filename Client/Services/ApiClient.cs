@@ -946,6 +946,13 @@ public class ApiClient
         return (null, await ReadErrorAsync(resp));
     }
 
+    public async Task<ProjectTriggerResponse?> CheckTriggerNowAsync(Guid projectId)
+    {
+        var resp = await SendAsync(HttpMethod.Post, $"/api/projects/{projectId}/trigger/check-now");
+        if (!resp.IsSuccessStatusCode) return null;
+        return await resp.Content.ReadFromJsonAsync<ProjectTriggerResponse>();
+    }
+
     public async Task<(DriveFolderListResponse? List, string? Error)> GetDriveFoldersAsync(Guid apiKeyId, string? parentId)
     {
         var url = $"/api/google-drive/folders?apiKeyId={apiKeyId}" +

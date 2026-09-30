@@ -18,25 +18,35 @@ public static class DriveTriggerPlanner
 
     public static string ItemKey(string fileId) => $"drive:{fileId}";
 
+    /// <summary>Margen para relojes desajustados entre este servidor y Google.</summary>
+    public static readonly TimeSpan ArmedTolerance = TimeSpan.FromMinutes(1);
+
     /// <summary>
-    /// Si hace falta linea base (primera consulta o carpeta distinta), no dispara nada:
-    /// todo lo listado pasa a "visto". Si no, devuelve los archivos aun no vistos, de
-    /// mas antiguo a mas nuevo, como mucho <see cref="MaxFilesPerCheck"/>.
+    /// Si hace falta linea base (primera consulta o carpeta distinta), lo que ya habia
+    /// pasa a "visto" sin disparar, salvo los archivos creados despues de activar el
+    /// trigger (<paramref name="armedAt"/>): esos los subio el usuario tras guardar y
+    /// disparan. Si no, devuelve los archivos aun no vistos. Siempre de mas antiguo a
+    /// mas nuevo y como mucho <see cref="MaxFilesPerCheck"/>.
     /// </summary>
     public static DrivePlan Plan(string? storedConfigKey, bool hasBaseline, string configKey,
-        IReadOnlyList<DriveFile> listed, IReadOnlySet<string> seenItemKeys)
+        IReadOnlyList<DriveFile> listed, IReadOnlySet<string> seenItemKeys, DateTime? armedAt = null)
     {
-        if (!hasBaseline || storedConfigKey != configKey)
-            return new DrivePlan(true, []);
+        var baseline = !hasBaseline || storedConfigKey != configKey;
+        var candidates = baseline
+            ? listed.Where(f => CreatedAfterArming(f, armedAt))
+            : listed.Where(f => !seenItemKeys.Contains(ItemKey(f.Id)));
 
-        var fresh = listed
-            .Where(f => !seenItemKeys.Contains(ItemKey(f.Id)))
+        var fresh = candidates
             .OrderBy(f => f.CreatedTime ?? DateTime.MaxValue)
             .ThenBy(f => f.Name, StringComparer.Ordinal)
             .Take(MaxFilesPerCheck)
             .ToList();
-        return new DrivePlan(false, fresh);
+        return new DrivePlan(baseline, fresh);
     }
+
+    /// <summary>Archivo creado despues de activar el trigger (con margen de reloj).</summary>
+    public static bool CreatedAfterArming(DriveFile file, DateTime? armedAt) =>
+        armedAt is { } a && file.CreatedTime is { } c && c >= a - ArmedTolerance;
 
     /// <summary>Texto que emite el Trigger: los datos del archivo, para que el pipeline
     /// sepa que ha llegado aunque el archivo no se haya podido adjuntar.</summary>

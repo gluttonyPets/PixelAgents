@@ -78,7 +78,7 @@ public class GoogleDriveService
         {
             var url = $"{ApiBase}/files?q={Uri.EscapeDataString(BuildListQuery(folderId))}" +
                       "&fields=nextPageToken,files(id,name,mimeType,createdTime,webViewLink,size)" +
-                      "&orderBy=createdTime&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true" +
+                      "&orderBy=createdTime&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives" +
                       (pageToken is null ? "" : $"&pageToken={Uri.EscapeDataString(pageToken)}");
             var json = await GetStringAsync(creds, url, folderId, ct);
             var (page, next) = ParseFileList(json);
@@ -142,7 +142,7 @@ public class GoogleDriveService
         {
             var url = $"{ApiBase}/files?q={Uri.EscapeDataString(query)}" +
                       "&fields=nextPageToken,files(id,name,parents)&pageSize=200" +
-                      "&supportsAllDrives=true&includeItemsFromAllDrives=true" +
+                      "&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives" +
                       (pageToken is null ? "" : $"&pageToken={Uri.EscapeDataString(pageToken)}");
             var json = await GetStringAsync(creds, url, context, ct);
             var (page, next) = ParseFolderList(json, "files");
