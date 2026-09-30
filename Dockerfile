@@ -1,5 +1,5 @@
 # ── Stage 1: Build Server ──
-# trigger rebuild: 2026-09-10 (reglas: sub-pestanas Mis reglas / Constantes)
+# trigger rebuild: 2026-09-30 (triggers de Drive; redeploy tras liberar disco)
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-server
 WORKDIR /src
 
