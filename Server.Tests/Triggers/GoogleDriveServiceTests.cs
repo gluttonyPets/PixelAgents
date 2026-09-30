@@ -72,11 +72,40 @@ public class GoogleDriveServiceTests
             """{ "nextPageToken": "p2", "files": [ { "id": "f1", "name": "Facturas" }, { "name": "sin id" } ] }""", "files");
         Assert.Equal("p2", next);
         var f = Assert.Single(files);
-        Assert.Equal(new DriveFolderEntry("f1", "Facturas"), f);
+        Assert.Equal(("f1", "Facturas"), (f.Id, f.Name));
+        Assert.Empty(f.Parents);
 
         var (drives, _) = GoogleDriveService.ParseFolderList(
             """{ "drives": [ { "id": "d1", "name": "Equipo" } ] }""", "drives");
         Assert.Equal("Equipo", Assert.Single(drives).Name);
+    }
+
+    [Fact]
+    public void LeeLosPadresDeCadaCarpeta()
+    {
+        var (files, _) = GoogleDriveService.ParseFolderList(
+            """{ "files": [ { "id": "sub", "name": "Enero", "parents": ["f1"] } ] }""", "files");
+        Assert.Equal(["f1"], Assert.Single(files).Parents);
+    }
+
+    [Fact]
+    public void LaRaizSonLasCarpetasCuyoPadreNoSeVe()
+    {
+        // La cuenta de servicio ve la carpeta compartida (su padre esta en "Mi unidad" del
+        // usuario, invisible), sus subcarpetas y una carpeta de una unidad compartida.
+        DriveFolderEntry F(string id, string name, params string[] parents) => new(id, name) { Parents = parents };
+        var visibles = new[]
+        {
+            F("fact", "Facturas", "mi-unidad-del-usuario"),
+            F("ene", "Enero", "fact"),
+            F("feb", "Febrero", "fact"),
+            F("camp", "Campañas", "drv1"),
+            F("suelta", "Sin padre"),
+        };
+
+        var raiz = GoogleDriveService.RootFolders(visibles, ["drv1"]);
+
+        Assert.Equal(["fact", "suelta"], raiz.Select(f => f.Id));
     }
 
     [Fact]

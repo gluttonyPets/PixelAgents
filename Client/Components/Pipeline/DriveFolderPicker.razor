@@ -39,8 +39,19 @@
                     <div class="drive-picker-empty">
                         @if (_path.Count == 0)
                         {
-                            <text>La cuenta de servicio no ve ninguna carpeta. Comparte la carpeta en Drive con
-                            <strong>@_email</strong> (permiso de lector) y vuelve a abrir el explorador.</text>
+                            <div style="text-align: left;">
+                                <p>La cuenta de servicio no ve ninguna carpeta. Revisa:</p>
+                                <ul style="margin: 0.3rem 0 0.3rem 1.1rem; padding: 0;">
+                                    <li>En Drive, "Compartir" la carpeta con <strong>@_email</strong> (lector).
+                                        Tiene que ser ese email exacto, no el tuyo.</li>
+                                    <li>Si acabas de compartirla, espera un minuto y pulsa "Reintentar".</li>
+                                    <li>Si tu Google Workspace no permite compartir fuera de la organizacion,
+                                        Drive no deja compartirla con esa cuenta.</li>
+                                </ul>
+                                <p>Tambien puedes cerrar el explorador, pegar la URL de la carpeta y usar
+                                    "Comprobar acceso": te dira el motivo exacto.</p>
+                                <button class="btn btn-xs" @onclick="Load">Reintentar</button>
+                            </div>
                         }
                         else
                         {

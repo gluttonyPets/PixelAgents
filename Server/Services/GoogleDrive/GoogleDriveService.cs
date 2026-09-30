@@ -12,7 +12,11 @@ public class GoogleDriveException(string message) : Exception(message);
 public record DriveFolderInfo(string Id, string Name);
 
 /// <summary>Carpeta (o unidad compartida) que ve la cuenta de servicio, para el explorador.</summary>
-public record DriveFolderEntry(string Id, string Name, bool IsSharedDrive = false);
+public record DriveFolderEntry(string Id, string Name, bool IsSharedDrive = false)
+{
+    /// <summary>Carpetas padre segun Drive; solo sirve para calcular la raiz del explorador.</summary>
+    public IReadOnlyList<string> Parents { get; init; } = [];
+}
 
 public record DriveFile(string Id, string Name, string MimeType, DateTime? CreatedTime, string? WebViewLink, long? Size);
 
@@ -100,16 +104,29 @@ public class GoogleDriveService
             return children.OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
 
+        // No se usa "sharedWithMe": con cuentas de servicio no siempre devuelve lo que
+        // les han compartido. Se piden TODAS las carpetas visibles y son raiz las que no
+        // tienen su carpeta padre a la vista (la compartida, no sus subcarpetas).
         var drives = await ListSharedDrivesAsync(creds, ct);
-        var shared = await ListFolderQueryAsync(creds,
-            $"sharedWithMe = true and mimeType = '{FolderMimeType}' and trashed = false", "(raiz)", ct);
-        var own = await ListFolderQueryAsync(creds,
-            $"'root' in parents and mimeType = '{FolderMimeType}' and trashed = false", "(raiz)", ct);
+        var visible = await ListFolderQueryAsync(creds,
+            $"mimeType = '{FolderMimeType}' and trashed = false", "(raiz)", ct);
+        var roots = RootFolders(visible, drives.Select(d => d.Id));
+        return drives.OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).Concat(roots).ToList();
+    }
 
-        var seen = new HashSet<string>(drives.Select(d => d.Id));
-        var folders = shared.Concat(own).Where(f => seen.Add(f.Id))
-            .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase);
-        return drives.OrderBy(d => d.Name, StringComparer.CurrentCultureIgnoreCase).Concat(folders).ToList();
+    /// <summary>
+    /// Carpetas del nivel raiz del explorador: las visibles cuyo padre no es visible ni es
+    /// una unidad compartida listada (esas cuelgan de la unidad). Ordenadas por nombre.
+    /// </summary>
+    public static List<DriveFolderEntry> RootFolders(IReadOnlyList<DriveFolderEntry> visible, IEnumerable<string> sharedDriveIds)
+    {
+        var known = new HashSet<string>(visible.Select(f => f.Id));
+        known.UnionWith(sharedDriveIds);
+        return visible
+            .Where(f => f.Parents.Count == 0 || !f.Parents.Any(known.Contains))
+            .GroupBy(f => f.Id).Select(g => g.First())
+            .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
     }
 
     /// <summary>Consulta de files.list para las subcarpetas directas de una carpeta.</summary>
@@ -124,7 +141,7 @@ public class GoogleDriveService
         do
         {
             var url = $"{ApiBase}/files?q={Uri.EscapeDataString(query)}" +
-                      "&fields=nextPageToken,files(id,name)&pageSize=200" +
+                      "&fields=nextPageToken,files(id,name,parents)&pageSize=200" +
                       "&supportsAllDrives=true&includeItemsFromAllDrives=true" +
                       (pageToken is null ? "" : $"&pageToken={Uri.EscapeDataString(pageToken)}");
             var json = await GetStringAsync(creds, url, context, ct);
@@ -163,7 +180,10 @@ public class GoogleDriveService
             {
                 var id = ReadString(f, "id");
                 if (string.IsNullOrWhiteSpace(id)) continue;
-                folders.Add(new DriveFolderEntry(id!, ReadString(f, "name") ?? id!));
+                var parents = f.TryGetProperty("parents", out var pa) && pa.ValueKind == JsonValueKind.Array
+                    ? pa.EnumerateArray().Select(x => x.GetString()).OfType<string>().ToList()
+                    : new List<string>();
+                folders.Add(new DriveFolderEntry(id!, ReadString(f, "name") ?? id!) { Parents = parents });
             }
         }
         var next = ReadString(root, "nextPageToken");
