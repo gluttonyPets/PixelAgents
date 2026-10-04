@@ -3,19 +3,32 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PixelAgents</title>
+    <title>PixelAgents · Orquesta agentes de IA en un lienzo visual</title>
+    <meta name="description" content="PixelAgents: crea pipelines visuales de agentes de IA que generan texto, imagen, vídeo y audio, con aprobación humana y publicación automática." />
+    <meta name="theme-color" content="#0b0d14" />
+    <meta property="og:title" content="PixelAgents" />
+    <meta property="og:description" content="Orquesta agentes de IA en un lienzo visual, sin código." />
     <base href="/" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jerosoler/Drawflow@0.0.60/dist/drawflow.min.css" />
-    <link rel="stylesheet" href="css/app.css?v=22" />
+    <link rel="stylesheet" href="css/app.css?v=23" />
 </head>
 <body>
     <div id="app">
-        <div class="loading">Cargando PixelAgents...</div>
+        <div class="loading">
+            <div class="splash">
+                <div class="brand-mark brand-mark-lg"><i class="bi bi-diagram-3-fill"></i></div>
+                <span>Cargando PixelAgents...</span>
+            </div>
+        </div>
     </div>
 
     <div id="blazor-error-ui">
-        Error inesperado.
+        <i class="bi bi-exclamation-triangle-fill"></i> Ha ocurrido un error inesperado.
         <a href="" class="reload">Recargar</a>
         <a class="dismiss">X</a>
     </div>

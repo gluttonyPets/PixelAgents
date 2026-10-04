@@ -1,4 +1,4 @@
-@inject ApiClient Api
+﻿@inject ApiClient Api
 @inject AuthStateService AuthState
 @implements IDisposable
 
@@ -6,6 +6,12 @@
 {
     <div class="modal-overlay" @onclick="CloseOnBackdrop">
         <div class="modal-content login-popup" @onclick:stopPropagation="true">
+            <button class="login-popup-close" title="Cerrar" @onclick="CloseOnBackdrop"><i class="bi bi-x-lg"></i></button>
+            <div class="login-popup-brand">
+                <span class="brand-mark brand-mark-lg"><i class="bi bi-diagram-3-fill"></i></span>
+                <h3>@(_tab == "login" ? "Bienvenido de nuevo" : "Crea tu cuenta")</h3>
+                <p>@(_tab == "login" ? "Accede a tus pipelines de IA." : "Empieza a orquestar agentes de IA en minutos.")</p>
+            </div>
             <div class="login-popup-tabs">
                 <button class="tab-btn @(_tab == "login" ? "active" : "")" @onclick='() => _tab = "login"'>Iniciar sesión</button>
                 <button class="tab-btn @(_tab == "register" ? "active" : "")" @onclick='() => _tab = "register"'>Registrarse</button>
@@ -20,13 +26,13 @@
                     }
                     <div class="form-group">
                         <label>Email</label>
-                        <input type="email" @bind="_loginEmail" @bind:event="oninput" @onkeydown="OnLoginKeyDown" />
+                        <input type="email" placeholder="tu@empresa.com" autocomplete="email" @bind="_loginEmail" @bind:event="oninput" @onkeydown="OnLoginKeyDown" />
                     </div>
                     <div class="form-group">
                         <label>Contraseña</label>
-                        <input type="password" @bind="_loginPassword" @bind:event="oninput" @onkeydown="OnLoginKeyDown" />
+                        <input type="password" placeholder="••••••••" autocomplete="current-password" @bind="_loginPassword" @bind:event="oninput" @onkeydown="OnLoginKeyDown" />
                     </div>
-                    <button class="btn btn-primary" @onclick="Login" disabled="@_loading">
+                    <button class="btn btn-primary btn-block btn-lg" @onclick="Login" disabled="@_loading">
                         @(_loading ? "Entrando..." : "Entrar")
                     </button>
                 </div>
@@ -44,13 +50,13 @@
                     }
                     <div class="form-group">
                         <label>Email</label>
-                        <input type="email" @bind="_regEmail" @bind:event="oninput" />
+                        <input type="email" placeholder="tu@empresa.com" autocomplete="email" @bind="_regEmail" @bind:event="oninput" />
                     </div>
                     <div class="form-group">
                         <label>Contraseña</label>
-                        <input type="password" @bind="_regPassword" @bind:event="oninput" />
+                        <input type="password" placeholder="Mínimo 6 caracteres" autocomplete="new-password" @bind="_regPassword" @bind:event="oninput" />
                     </div>
-                    <button class="btn btn-primary" @onclick="Register" disabled="@_loading">
+                    <button class="btn btn-primary btn-block btn-lg" @onclick="Register" disabled="@_loading">
                         @(_loading ? "Registrando..." : "Crear cuenta")
                     </button>
                 </div>

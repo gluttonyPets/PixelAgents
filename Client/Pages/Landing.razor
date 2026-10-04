@@ -1,0 +1,355 @@
+@page "/"
+@layout LandingLayout
+@inject ApiClient Api
+@inject AuthStateService AuthState
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>PixelAgents · Orquesta agentes de IA en un lienzo visual</PageTitle>
+
+@* Portada comercial. Si el usuario ya tiene sesion no se le ensena: va directo al
+   panel, como hacia antes la ruta raiz. *@
+@if (_checking)
+{
+    <div class="loading"><div class="splash"><div class="brand-mark brand-mark-lg"><i class="bi bi-diagram-3-fill"></i></div><span>Cargando PixelAgents...</span></div></div>
+}
+else
+{
+<div class="lp">
+    <div class="lp-bg" aria-hidden="true">
+        <div class="lp-glow lp-glow-1"></div>
+        <div class="lp-glow lp-glow-2"></div>
+        <div class="lp-grid"></div>
+    </div>
+
+    @* ── Navegacion ── *@
+    <header class="lp-nav">
+        <a class="lp-logo" href="/">
+            <span class="brand-mark"><i class="bi bi-diagram-3-fill"></i></span>
+            <span>Pixel<strong>Agents</strong></span>
+        </a>
+        <nav class="lp-nav-links">
+            <a href="#producto">Producto</a>
+            <a href="#como-funciona">Cómo funciona</a>
+            <a href="#casos">Casos de uso</a>
+            <a href="#precios">Precios</a>
+            <a href="#faq">FAQ</a>
+        </nav>
+        <div class="lp-nav-cta">
+            <button class="btn btn-ghost" @onclick="AuthState.RequireLogin">Iniciar sesión</button>
+            <button class="btn btn-primary btn-glow" @onclick="AuthState.RequireLogin">Empezar gratis <i class="bi bi-arrow-right"></i></button>
+        </div>
+    </header>
+
+    @* ── Hero ── *@
+    <section class="lp-hero">
+        <div class="lp-hero-copy">
+            <span class="lp-pill"><span class="lp-pill-dot"></span> Orquestación multimodelo · texto, imagen, vídeo y audio</span>
+            <h1>Diseña agentes de IA <span class="text-gradient">como si dibujaras un diagrama</span></h1>
+            <p class="lp-lead">
+                PixelAgents convierte flujos de trabajo con IA en pipelines visuales. Conecta modelos de
+                OpenAI, Anthropic, Google y más, añade aprobación humana por Telegram o WhatsApp y publica
+                el resultado en tus canales. Sin código y en tiempo real.
+            </p>
+            <div class="lp-hero-actions">
+                <button class="btn btn-primary btn-lg btn-glow" @onclick="AuthState.RequireLogin">Crear mi primer pipeline <i class="bi bi-arrow-right"></i></button>
+                <a class="btn btn-outline btn-lg" href="#como-funciona"><i class="bi bi-play-circle"></i> Ver cómo funciona</a>
+            </div>
+            <ul class="lp-hero-checks">
+                <li><i class="bi bi-check-circle-fill"></i> Sin tarjeta de crédito</li>
+                <li><i class="bi bi-check-circle-fill"></i> Usa tus propias API keys</li>
+                <li><i class="bi bi-check-circle-fill"></i> Datos aislados por cuenta</li>
+            </ul>
+        </div>
+
+        @* Maqueta del editor: nodos y conexiones animadas, solo HTML/CSS. *@
+        <div class="lp-hero-visual" aria-hidden="true">
+            <div class="mock-window">
+                <div class="mock-titlebar">
+                    <span></span><span></span><span></span>
+                    <div class="mock-title"><i class="bi bi-diagram-3"></i> Campaña de lanzamiento</div>
+                    <div class="mock-run"><span class="mock-run-dot"></span> Ejecutando</div>
+                </div>
+                <div class="mock-canvas">
+                    <svg class="mock-edges" viewBox="0 0 560 340" preserveAspectRatio="none">
+                        <defs>
+                            <linearGradient id="lpEdge" x1="0" x2="1">
+                                <stop offset="0" stop-color="#6c63ff" />
+                                <stop offset="1" stop-color="#22d3ee" />
+                            </linearGradient>
+                        </defs>
+                        <path d="M150 70 C 210 70, 200 170, 250 170" />
+                        <path d="M150 270 C 210 270, 200 170, 250 170" />
+                        <path d="M390 170 C 430 170, 420 80, 455 80" />
+                        <path d="M390 170 C 430 170, 420 260, 455 260" />
+                    </svg>
+                    <div class="mock-node done" style="left:2%;top:10%">
+                        <div class="mock-node-head"><ProviderIcon Provider="Google" Size="14" /> Tendencias SEO</div>
+                        <div class="mock-node-body">Search Console</div>
+                    </div>
+                    <div class="mock-node done" style="left:2%;top:68%">
+                        <div class="mock-node-head"><i class="bi bi-folder2-open"></i> Brief de marca</div>
+                        <div class="mock-node-body">Biblioteca</div>
+                    </div>
+                    <div class="mock-node running" style="left:44%;top:39%">
+                        <div class="mock-node-head"><ProviderIcon Provider="Anthropic" Size="14" /> Copywriter</div>
+                        <div class="mock-node-body">Generando texto…</div>
+                        <div class="mock-progress"><span></span></div>
+                    </div>
+                    <div class="mock-node" style="left:80%;top:13%">
+                        <div class="mock-node-head"><ProviderIcon Provider="OpenAI" Size="14" /> Imagen</div>
+                        <div class="mock-node-body">En cola</div>
+                    </div>
+                    <div class="mock-node" style="left:80%;top:66%">
+                        <div class="mock-node-head"><i class="bi bi-telegram"></i> Aprobación</div>
+                        <div class="mock-node-body">Humano</div>
+                    </div>
+                </div>
+            </div>
+            <div class="mock-float mock-float-1">
+                <i class="bi bi-lightning-charge-fill"></i>
+                <div><strong>Paso completado</strong><span>Tendencias SEO · 2,1 s</span></div>
+            </div>
+            <div class="mock-float mock-float-2">
+                <i class="bi bi-send-check-fill"></i>
+                <div><strong>Publicado</strong><span>Instagram · LinkedIn</span></div>
+            </div>
+        </div>
+    </section>
+
+    @* ── Proveedores ── *@
+    <section class="lp-logos">
+        <p>Trabaja con los modelos que ya conoces</p>
+        <div class="lp-logos-row">
+            <span><ProviderIcon Provider="OpenAI" Size="22" /> OpenAI</span>
+            <span><ProviderIcon Provider="Anthropic" Size="22" /> Anthropic</span>
+            <span><ProviderIcon Provider="Google" Size="22" /> Google</span>
+            <span><ProviderIcon Provider="xAI" Size="22" /> xAI</span>
+            <span><ProviderIcon Provider="LeonardoAI" Size="22" /> Leonardo AI</span>
+            <span><ProviderIcon Provider="Canva" Size="22" /> Canva</span>
+        </div>
+    </section>
+
+    @* ── Cifras ── *@
+    <section class="lp-stats">
+        <div><strong>4</strong><span>formatos: texto, imagen, vídeo y audio</span></div>
+        <div><strong>6+</strong><span>proveedores de IA integrados</span></div>
+        <div><strong>100%</strong><span>visual, sin escribir código</span></div>
+        <div><strong>24/7</strong><span>ejecuciones programadas</span></div>
+    </section>
+
+    @* ── Producto ── *@
+    <section class="lp-section" id="producto">
+        <div class="lp-section-head">
+            <span class="lp-eyebrow">Producto</span>
+            <h2>Todo lo que necesitas para poner la IA a trabajar</h2>
+            <p>Desde la primera idea hasta la publicación final, en una única plataforma.</p>
+        </div>
+        <div class="lp-features">
+            @foreach (var f in Features)
+            {
+                <article class="lp-feature">
+                    <div class="lp-feature-icon" style="--tone:@f.Tone"><i class="bi @f.Icon"></i></div>
+                    <h3>@f.Title</h3>
+                    <p>@f.Text</p>
+                </article>
+            }
+        </div>
+    </section>
+
+    @* ── Como funciona ── *@
+    <section class="lp-section" id="como-funciona">
+        <div class="lp-section-head">
+            <span class="lp-eyebrow">Cómo funciona</span>
+            <h2>De la idea al resultado en tres pasos</h2>
+        </div>
+        <ol class="lp-steps">
+            <li>
+                <span class="lp-step-num">01</span>
+                <h3>Conecta tus proveedores</h3>
+                <p>Guarda tus API keys de forma segura. Cada cuenta tiene su propia base de datos aislada.</p>
+            </li>
+            <li>
+                <span class="lp-step-num">02</span>
+                <h3>Dibuja tu pipeline</h3>
+                <p>Arrastra módulos al lienzo, conéctalos y define qué recibe y qué entrega cada paso.</p>
+            </li>
+            <li>
+                <span class="lp-step-num">03</span>
+                <h3>Ejecuta y escala</h3>
+                <p>Lánzalo al momento o prográmalo. Sigue el progreso en vivo y descarga cada archivo generado.</p>
+            </li>
+        </ol>
+    </section>
+
+    @* ── Casos de uso ── *@
+    <section class="lp-section" id="casos">
+        <div class="lp-section-head">
+            <span class="lp-eyebrow">Casos de uso</span>
+            <h2>Pensado para equipos que producen contenido a escala</h2>
+        </div>
+        <div class="lp-cases">
+            <article class="lp-case">
+                <i class="bi bi-megaphone"></i>
+                <h3>Marketing y redes sociales</h3>
+                <p>Genera copys, imágenes y vídeos para cada campaña y publícalos con aprobación previa del equipo.</p>
+                <ul><li>Calendario editorial automático</li><li>Variantes por canal</li><li>Revisión por Telegram</li></ul>
+            </article>
+            <article class="lp-case">
+                <i class="bi bi-bag-check"></i>
+                <h3>E-commerce</h3>
+                <p>Crea y actualiza fichas de producto en Shopify con descripciones optimizadas y fotos generadas.</p>
+                <ul><li>Fichas en lote</li><li>Tono de marca consistente</li><li>Actualización programada</li></ul>
+            </article>
+            <article class="lp-case">
+                <i class="bi bi-graph-up-arrow"></i>
+                <h3>SEO y contenidos</h3>
+                <p>Parte de los datos reales de Search Console para detectar oportunidades y redactar artículos.</p>
+                <ul><li>Análisis de consultas</li><li>Briefs automáticos</li><li>Artículos listos para publicar</li></ul>
+            </article>
+        </div>
+    </section>
+
+    @* ── Precios ── *@
+    <section class="lp-section" id="precios">
+        <div class="lp-section-head">
+            <span class="lp-eyebrow">Precios</span>
+            <h2>Planes que crecen contigo</h2>
+            <p>Pagas la plataforma; el consumo de modelos va con tus propias claves, sin recargos.</p>
+        </div>
+        <div class="lp-pricing">
+            @foreach (var p in Plans)
+            {
+                <article class="lp-plan @(p.Featured ? "featured" : "")">
+                    @if (p.Featured)
+                    {
+                        <span class="lp-plan-badge">Más popular</span>
+                    }
+                    <h3>@p.Name</h3>
+                    <p class="lp-plan-desc">@p.Description</p>
+                    <div class="lp-plan-price"><strong>@p.Price</strong><span>@p.Period</span></div>
+                    <button class="btn @(p.Featured ? "btn-primary btn-glow" : "btn-outline") btn-block" @onclick="AuthState.RequireLogin">@p.Cta</button>
+                    <ul>
+                        @foreach (var item in p.Items)
+                        {
+                            <li><i class="bi bi-check2"></i> @item</li>
+                        }
+                    </ul>
+                </article>
+            }
+        </div>
+    </section>
+
+    @* ── FAQ ── *@
+    <section class="lp-section lp-section-narrow" id="faq">
+        <div class="lp-section-head">
+            <span class="lp-eyebrow">FAQ</span>
+            <h2>Preguntas frecuentes</h2>
+        </div>
+        <div class="lp-faq">
+            @foreach (var q in Faqs)
+            {
+                <details>
+                    <summary>@q.Question <i class="bi bi-plus-lg"></i></summary>
+                    <p>@q.Answer</p>
+                </details>
+            }
+        </div>
+    </section>
+
+    @* ── Llamada final ── *@
+    <section class="lp-cta">
+        <h2>Empieza a automatizar hoy</h2>
+        <p>Crea tu cuenta en menos de un minuto y monta tu primer pipeline de IA.</p>
+        <button class="btn btn-primary btn-lg btn-glow" @onclick="AuthState.RequireLogin">Crear cuenta gratis <i class="bi bi-arrow-right"></i></button>
+    </section>
+
+    <footer class="lp-footer">
+        <div class="lp-logo">
+            <span class="brand-mark"><i class="bi bi-diagram-3-fill"></i></span>
+            <span>Pixel<strong>Agents</strong></span>
+        </div>
+        <nav>
+            <a href="#producto">Producto</a>
+            <a href="#precios">Precios</a>
+            <a href="#faq">FAQ</a>
+        </nav>
+        <span class="lp-footer-copy">© @DateTime.Now.Year PixelAgents. Todos los derechos reservados.</span>
+    </footer>
+</div>
+}
+
+@code {
+    // Destino al entrar con sesion. Es el mismo al que redirigia antes la raiz:
+    // sin API keys guardadas no se puede ejecutar nada.
+    private const string AppHome = "/configuracion/apikeys";
+
+    private bool _checking = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthState.OnChange += OnAuthChanged;
+
+        if (!AuthState.IsAuthenticated)
+        {
+            try
+            {
+                var user = await Api.GetMeAsync();
+                if (user is not null) AuthState.SetUser(user);
+            }
+            catch { }
+        }
+
+        if (AuthState.IsAuthenticated)
+        {
+            Nav.NavigateTo(AppHome, replace: true);
+            return;
+        }
+        _checking = false;
+    }
+
+    // Login hecho desde el popup de la portada: entrar directamente al panel.
+    private void OnAuthChanged()
+    {
+        if (AuthState.IsAuthenticated)
+            InvokeAsync(() => Nav.NavigateTo(AppHome));
+    }
+
+    public void Dispose() => AuthState.OnChange -= OnAuthChanged;
+
+    private record Feature(string Icon, string Title, string Text, string Tone);
+    private record Plan(string Name, string Description, string Price, string Period, string Cta, bool Featured, string[] Items);
+    private record Faq(string Question, string Answer);
+
+    private static readonly Feature[] Features =
+    [
+        new("bi-diagram-3", "Editor visual de pipelines", "Conecta módulos en un lienzo, ramifica flujos y reutiliza sub-proyectos como piezas.", "#6c63ff"),
+        new("bi-stars", "Multimodelo y multimodal", "Combina texto, imagen, vídeo y audio de distintos proveedores en un mismo flujo.", "#22d3ee"),
+        new("bi-broadcast", "Ejecución en tiempo real", "Logs, progreso y estado de cada paso al instante, sin recargar la página.", "#10b981"),
+        new("bi-person-check", "Humano en el bucle", "Pausa el pipeline y pide aprobación o feedback por Telegram o WhatsApp.", "#f59e0b"),
+        new("bi-calendar2-week", "Programación inteligente", "Ejecuciones recurrentes con expresiones cron y vista de las próximas ejecuciones.", "#ec4899"),
+        new("bi-share", "Publicación integrada", "Envía el resultado a redes sociales o actualiza tu tienda Shopify automáticamente.", "#8b5cf6"),
+        new("bi-shield-lock", "Reglas y gobierno", "Define reglas obligatorias que se inyectan en cada ejecución para mantener tu tono y políticas.", "#3b82f6"),
+        new("bi-collection", "Biblioteca de archivos", "Todo lo generado queda asociado a su ejecución, listo para revisar y descargar.", "#14b8a6"),
+        new("bi-cpu", "Catálogo de modelos", "Compara tarifas y capacidades y recibe avisos cuando un modelo va a retirarse.", "#f43f5e"),
+    ];
+
+    private static readonly Plan[] Plans =
+    [
+        new("Starter", "Para probar y proyectos personales.", "0 €", "/mes", "Empezar gratis", false,
+            ["3 pipelines activos", "Ejecución manual", "Biblioteca de archivos", "Soporte de la comunidad"]),
+        new("Pro", "Para profesionales y equipos pequeños.", "29 €", "/mes", "Probar Pro", true,
+            ["Pipelines ilimitados", "Ejecuciones programadas", "Aprobación por Telegram y WhatsApp", "Publicación en redes y Shopify", "Soporte prioritario"]),
+        new("Empresa", "Para organizaciones con necesidades a medida.", "A medida", "", "Hablar con ventas", false,
+            ["Todo lo de Pro", "Reglas y gobierno avanzados", "Despliegue dedicado", "Acompañamiento en la puesta en marcha"]),
+    ];
+
+    private static readonly Faq[] Faqs =
+    [
+        new("¿Necesito saber programar?", "No. Los pipelines se construyen arrastrando y conectando módulos en un lienzo visual. Los prompts se editan por bloques y hay asistentes con IA para redactarlos."),
+        new("¿Qué modelos puedo usar?", "Modelos de OpenAI, Anthropic, Google, xAI y Leonardo AI, entre otros. Puedes mezclar varios proveedores dentro del mismo pipeline."),
+        new("¿Cómo se paga el consumo de los modelos?", "Usas tus propias API keys, así que el consumo se factura directamente con cada proveedor y sin intermediarios."),
+        new("¿Mis datos están seguros?", "Cada cuenta tiene su propia base de datos aislada y las credenciales se guardan por cuenta. Nadie más accede a tus pipelines ni a tus archivos."),
+        new("¿Puedo revisar el contenido antes de publicarlo?", "Sí. Añade un paso de interacción humana y el pipeline se pausa hasta que respondas desde Telegram o WhatsApp."),
+    ];
+}

@@ -93,7 +93,11 @@ Su `Program.cs` configura:
 
 Rutas actuales:
 
-- `/`: registro, login y estado de usuario.
+- `/`: portada comercial publica (`Pages/Landing.razor`, layout
+  `LandingLayout` sin barra lateral): hero, funcionalidades, casos de uso,
+  precios y FAQ. El acceso y el registro abren `LoginPopup`. Con sesion iniciada
+  redirige a `/configuracion/apikeys`; al cerrar sesion se vuelve aqui. Los
+  precios mostrados son orientativos y se editan en el propio componente.
 - `/modules`: catalogo y configuracion de modulos.
 - `/biblioteca`: archivos subidos a modulos.
 - `/projects`: listado de proyectos y pipelines. Cada proyecto es una agrupacion

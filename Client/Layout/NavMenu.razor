@@ -1,26 +1,36 @@
-@inject ApiClient Api
+﻿@inject ApiClient Api
 @inject AuthStateService AuthState
+@inject NavigationManager Nav
 @implements IDisposable
 
 <nav class="sidebar">
-    <div class="sidebar-brand">PixelAgents</div>
+    <a class="sidebar-brand" href="/projects">
+        <span class="brand-mark"><i class="bi bi-diagram-3-fill"></i></span>
+        <span>Pixel<strong>Agents</strong></span>
+    </a>
 
-    <NavLink href="/modules"><i class="bi bi-boxes"></i> Modulos IA</NavLink>
-    <NavLink href="/modelos"><i class="bi bi-cpu"></i> Modelos</NavLink>
-    <NavLink href="/biblioteca"><i class="bi bi-files"></i> Biblioteca</NavLink>
+    <div class="sidebar-section">Espacio de trabajo</div>
     <NavLink href="/projects"><i class="bi bi-kanban"></i> Proyectos</NavLink>
+    <NavLink href="/modules"><i class="bi bi-boxes"></i> Modulos IA</NavLink>
+    <NavLink href="/biblioteca"><i class="bi bi-files"></i> Biblioteca</NavLink>
+
+    <div class="sidebar-section">Recursos</div>
+    <NavLink href="/modelos"><i class="bi bi-cpu"></i> Modelos</NavLink>
     @* Configuracion cierra el menu: es lo que menos se toca del dia a dia. *@
     <NavLink href="/configuracion"><i class="bi bi-gear"></i> Configuracion</NavLink>
 
     <div class="auth-status">
         @if (AuthState.IsAuthenticated)
         {
-            <div>@AuthState.User!.Email</div>
-            <button class="btn btn-sm btn-danger mt-1" @onclick="Logout">Cerrar sesión</button>
+            <div class="user-chip">
+                <span class="user-avatar">@Initial(AuthState.User!.Email)</span>
+                <span class="user-email" title="@AuthState.User!.Email">@AuthState.User!.Email</span>
+                <button class="user-logout" title="Cerrar sesión" @onclick="Logout"><i class="bi bi-box-arrow-right"></i></button>
+            </div>
         }
         else
         {
-            <button class="btn btn-sm btn-primary" @onclick="AuthState.RequireLogin">Iniciar sesión</button>
+            <button class="btn btn-sm btn-primary btn-block" @onclick="AuthState.RequireLogin">Iniciar sesión</button>
         }
         @if (_buildInfo is not null)
         {
@@ -78,10 +88,15 @@
         return detail;
     }
 
+    private static string Initial(string? email) =>
+        string.IsNullOrWhiteSpace(email) ? "?" : email.Trim()[0].ToString().ToUpperInvariant();
+
     private async Task Logout()
     {
         await Api.LogoutAsync();
         AuthState.SetUser(null);
+        // Sin sesion el sitio natural es la portada.
+        Nav.NavigateTo("/");
     }
 
     public void Dispose()
