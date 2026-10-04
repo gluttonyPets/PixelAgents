@@ -104,7 +104,9 @@ Rutas actuales:
   plegable (titulo, descripcion y sus pipelines dentro) a la que se pueden anadir
   pipelines nuevos o ya existentes; los que no pertenecen a ninguno se listan al
   final en "Sin proyecto" y "Pipelines de prueba". Dentro de cada seccion, los
-  pipelines fijados se muestran primero.
+  pipelines fijados se muestran primero. La cabecera resume el total de
+  proyectos, pipelines, triggers y actividad reciente, y hay buscador y filtros
+  (todos, fijados, trigger, prueba) que se aplican en cliente.
 - `/projects/{ProjectId:guid}`: detalle, editor visual, ejecuciones e
   integraciones del pipeline.
 - `/papelera`: pipelines borrados. Se pueden restaurar o eliminar
