@@ -36,7 +36,7 @@ public record ModelLifecycleInfo(
 /// guardado que apunte a un modelo retirado debe seguir siendo visible para que el
 /// usuario entienda por qué falla, en vez de desaparecer sin explicación.
 ///
-/// Última revisión contra https://developers.openai.com/api/docs/deprecations: 2026-08-10.
+/// Última revisión contra https://developers.openai.com/api/docs/deprecations: 2026-10-04.
 /// </summary>
 public static class ModelLifecycle
 {
@@ -51,12 +51,14 @@ public static class ModelLifecycle
     {
         // ── OpenAI: imagen ──
         // DALL-E se apagó en mayo de 2026; las llamadas ya fallan.
-        Add("dall-e-2", "2026-05-12", "gpt-image-2");
-        Add("dall-e-3", "2026-05-12", "gpt-image-2");
-        // Toda la familia gpt-image-1.x se retira a la vez a favor de gpt-image-2.
-        Add("gpt-image-1", "2026-12-01", "gpt-image-2");
-        Add("gpt-image-1-mini", "2026-12-01", "gpt-image-2");
-        Add("gpt-image-1.5", "2026-12-01", "gpt-image-2");
+        Add("dall-e-2", "2026-05-12", "gpt-image-2.5-flare");
+        Add("dall-e-3", "2026-05-12", "gpt-image-2.5-flare");
+        // OpenAI recomienda migrar la familia gpt-image-1.x a gpt-image-2.5 (Sunburst
+        // para edición de precisión, Flare para generación rápida). gpt-image-1 se
+        // apaga antes que sus hermanos.
+        Add("gpt-image-1", "2026-10-23", "gpt-image-2.5-flare");
+        Add("gpt-image-1-mini", "2026-12-01", "gpt-image-2.5-flare");
+        Add("gpt-image-1.5", "2026-12-01", "gpt-image-2.5-flare");
 
         // ── OpenAI: texto ──
         // OpenAI anuncia la retirada sobre el snapshot con fecha, pero el alias sin
@@ -71,11 +73,26 @@ public static class ModelLifecycle
         Add("o1", "2026-10-23", "gpt-5.6-sol");
         Add("o3-mini", "2026-10-23", "gpt-5.6-terra");
         Add("o4-mini", "2026-10-23", "gpt-5.6-terra");
+        Add("gpt-4.1-nano", "2026-10-23", "gpt-5.6-luna");
         // El alias gpt-4o sigue vigente: solo se retira este snapshot concreto.
         Add("gpt-4o-2024-05-13", "2026-10-23", "gpt-5.6-sol");
 
+        Add("gpt-5.1", "2027-04-01", "gpt-6-sol");
+        Add("gpt-5.4-nano", "2027-04-01", "gpt-6-luna");
+
         // ── OpenAI: audio / transcripción ──
+        // OpenAI propone gpt-realtime-2.1-mini como sustituto de los TTS clásicos,
+        // pero es un modelo Realtime que el módulo de audio no usa. El alias
+        // gpt-4o-mini-tts no está anunciado (solo sus snapshots), así que es el
+        // destino que sí funciona sin cambiar de API.
+        Add("tts-1", "2027-01-06", "gpt-4o-mini-tts",
+            "OpenAI recomienda gpt-realtime-2.1-mini, que usa la Realtime API.");
+        Add("tts-1-hd", "2027-01-06", "gpt-4o-mini-tts",
+            "OpenAI recomienda gpt-realtime-2.1-mini, que usa la Realtime API.");
+
         Add("gpt-4o-mini-transcribe", "2027-01-20", "gpt-transcribe");
+        Add("gpt-4o-transcribe", "2027-02-26", "gpt-transcribe");
+        Add("whisper-1", "2027-02-26", "gpt-transcribe");
     }
 
     /// <summary>

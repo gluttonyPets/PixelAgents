@@ -106,7 +106,7 @@ public static class AiModuleOptions
         && providerType is "Anthropic" or "OpenAI" or "Google";
 
     /// <summary>
-    /// gpt-5.x y la serie o aceptan reasoning_effort. gpt-5-chat es la variante
+    /// gpt-5.x, gpt-6.x y la serie o aceptan reasoning_effort. gpt-5-chat es la variante
     /// sin razonamiento y lo rechaza, igual que gpt-4.x y anteriores.
     /// Debe coincidir con OpenAiProvider.SupportsReasoningEffort del servidor.
     /// </summary>
@@ -117,6 +117,7 @@ public static class AiModuleOptions
         if (model!.Contains("chat", StringComparison.OrdinalIgnoreCase)) return false;
 
         return model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase)
+            || model.StartsWith("gpt-6", StringComparison.OrdinalIgnoreCase)
             || model.StartsWith("o1", StringComparison.OrdinalIgnoreCase)
             || model.StartsWith("o3", StringComparison.OrdinalIgnoreCase)
             || model.StartsWith("o4", StringComparison.OrdinalIgnoreCase);

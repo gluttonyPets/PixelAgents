@@ -50,6 +50,9 @@ namespace Server.Services.Ai
         // Solo se muestran los cuyo proveedor tenga API key configurada.
         private static readonly IReadOnlyList<PromptBuilderModelOption> _candidateModels = new List<PromptBuilderModelOption>
         {
+            new("OpenAI",    "gpt-6.1-sol",                    "GPT-6.1 Sol"),
+            new("OpenAI",    "gpt-6-astra",                    "GPT-6 Astra"),
+            new("OpenAI",    "gpt-6-luna",                     "GPT-6 Luna"),
             new("OpenAI",    "gpt-5.6-sol",                    "GPT-5.6 Sol"),
             new("OpenAI",    "gpt-5.6-terra",                  "GPT-5.6 Terra"),
             new("OpenAI",    "gpt-5.6-luna",                   "GPT-5.6 Luna"),

@@ -1031,10 +1031,18 @@ else
 
     private static readonly ModelInfo[] AllModels =
     [
+        // ─── OpenAI: Chat / Text (GPT-6) ───
+        // Misma nomenclatura que 5.6: Astra es el tope de gama, Sol el equilibrado y
+        // Luna el economico. GPT-6.1 Sol sustituye a GPT-6 Sol.
+        new("gpt-6-astra",      "GPT-6 Astra",       "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Flagship actual. El mas capaz para el trabajo mas exigente; salida cara.", "1M"),
+        new("gpt-6.1-sol",      "GPT-6.1 Sol",       "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Casi al nivel de Astra a una fraccion del coste. Recomendado por defecto.", "1M"),
+        new("gpt-6-sol",        "GPT-6 Sol",         "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Primera version de Sol en GPT-6. Sustituido por GPT-6.1 Sol.", "1M"),
+        new("gpt-6-luna",       "GPT-6 Luna",        "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "El mas rapido y economico. Ideal para tareas de alto volumen.", "1M"),
+
         // ─── OpenAI: Chat / Text (GPT-5.6) ───
         // Nomenclatura nueva: el numero es la generacion y Sol/Terra/Luna son niveles
         // de capacidad que avanzan por su cuenta. El alias "gpt-5.6" resuelve a Sol.
-        new("gpt-5.6-sol",      "GPT-5.6 Sol",       "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Flagship actual. Razonamiento profundo, trabajo agentico largo y codigo.", "1M"),
+        new("gpt-5.6-sol",      "GPT-5.6 Sol",       "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Generacion anterior. Razonamiento profundo, trabajo agentico largo y codigo.", "1M"),
         new("gpt-5.6-terra",    "GPT-5.6 Terra",     "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "Equilibrado: rinde como GPT-5.5 a una fraccion del coste.", "1M"),
         new("gpt-5.6-luna",     "GPT-5.6 Luna",      "OpenAI", ["Text","Orchestrator","Coordinator"], ["text","vision","reasoning","streaming"], "El mas rapido y economico de la generacion 5.6.", "1M"),
 
@@ -1069,7 +1077,9 @@ else
         new("o4-mini",          "o4 Mini",           "OpenAI", ["Text"],        ["text","vision","reasoning","streaming"], "Razonamiento con vision, version compacta.", "200K"),
 
         // ─── OpenAI: Image Generation ───
-        new("gpt-image-2",      "GPT Image 2",       "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Ultimo modelo de imagen. Planifica la composicion antes de generar y acierta el texto en cualquier alfabeto."),
+        new("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "OpenAI", ["Image"], ["image-generation", "image-edit"], "El modelo de imagen mas capaz. Pensado para edicion de precision."),
+        new("gpt-image-2.5-flare",    "GPT Image 2.5 Flare",    "OpenAI", ["Image"], ["image-generation", "image-edit"], "Generacion rapida y de alta calidad para el dia a dia. Mismo precio por token que GPT Image 2."),
+        new("gpt-image-2",      "GPT Image 2",       "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion anterior. Planifica la composicion antes de generar y acierta el texto en cualquier alfabeto."),
         new("gpt-image-1.5",    "GPT Image 1.5",     "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion anterior. Soporta edicion imagen-a-imagen."),
         new("gpt-image-1",      "GPT Image 1",       "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion de imagenes de alta calidad. Soporta edicion imagen-a-imagen."),
         new("gpt-image-1-mini", "GPT Image 1 Mini",  "OpenAI", ["Image"],       ["image-generation", "image-edit"],  "Generacion de imagenes rapida y economica. Soporta edicion imagen-a-imagen."),

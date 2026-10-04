@@ -10,9 +10,15 @@ namespace Server.Services.Ai
         private static readonly Dictionary<string, (decimal InputPerMTok, decimal OutputPerMTok)> TextPrices =
             new(StringComparer.OrdinalIgnoreCase)
             {
-                // OpenAI — revisado contra developers.openai.com/api/docs/pricing el 2026-08-10.
-                ["gpt-5.6"]          = (5.00m,  30.00m),   // alias: resuelve a Sol y factura como Sol
-                ["gpt-5.6-sol"]      = (5.00m,  30.00m),
+                // OpenAI — revisado contra developers.openai.com/api/docs/pricing el 2026-10-04.
+                ["gpt-6-astra"]      = (10.00m, 50.00m),
+                ["gpt-6.1-sol"]      = (2.00m,  10.00m),
+                ["gpt-6-sol"]        = (2.00m,  10.00m),
+                ["gpt-6-luna"]       = (0.10m,   0.50m),
+                // gpt-5.6-sol tiene precio promocional ($4/$20 en vez de $5/$30) hasta el
+                // 2026-11-21. Pasada esa fecha hay que volver a revisar la tarifa.
+                ["gpt-5.6"]          = (4.00m,  20.00m),   // alias: resuelve a Sol y factura como Sol
+                ["gpt-5.6-sol"]      = (4.00m,  20.00m),
                 ["gpt-5.6-terra"]    = (2.00m,  12.00m),
                 ["gpt-5.6-luna"]     = (0.20m,   1.20m),
                 ["gpt-5.5"]          = (5.00m,  30.00m),
@@ -143,9 +149,11 @@ namespace Server.Services.Ai
                 ["gpt-image-1"] = 0.042m,
                 // gpt-image-1-mini (medium quality 1024x1024 approx)
                 ["gpt-image-1-mini"] = 0.015m,
-                // gpt-image-1.5 / gpt-image-2 (medium quality 1024x1024 approx)
+                // gpt-image-1.5 / gpt-image-2 / gpt-image-2.5-* (medium quality 1024x1024 approx)
                 ["gpt-image-1.5"] = 0.034m,
                 ["gpt-image-2"] = 0.032m,
+                ["gpt-image-2.5-sunburst"] = 0.032m,
+                ["gpt-image-2.5-flare"] = 0.032m,
 
                 // Gemini Imagen (via Gemini native image gen)
                 ["gemini-2.5-flash-image"]         = 0.039m,   // ~1290 tokens de salida por imagen
@@ -208,8 +216,9 @@ namespace Server.Services.Ai
         // (low/medium/high), 1024x1536 = 408/1584/6240, 1536x1024 = 400/1568/6208.
         // El coste por imagen es esos tokens por la tarifa de salida del modelo,
         // que es lo unico que cambia entre versiones: $40/1M en gpt-image-1,
-        // $32/1M en gpt-image-1.5 y $30/1M en gpt-image-2. Las tablas de abajo son
-        // ese producto ya resuelto, igual que la de gpt-image-1.
+        // $32/1M en gpt-image-1.5 y $30/1M en gpt-image-2 y en los dos gpt-image-2.5
+        // (Sunburst y Flare), que comparten tabla con gpt-image-2. Las tablas de abajo
+        // son ese producto ya resuelto, igual que la de gpt-image-1.
         private static readonly Dictionary<string, decimal> GptImage15Detailed =
             new(StringComparer.OrdinalIgnoreCase)
             {
@@ -376,7 +385,9 @@ namespace Server.Services.Ai
                 // que gpt-image-1.5 se estimaba un 25% mas caro de lo que factura.
                 var (table, fallback) = modelName.ToLowerInvariant() switch
                 {
-                    "gpt-image-2"      => (GptImage2Detailed,    0.032m),
+                    "gpt-image-2"
+                        or "gpt-image-2.5-sunburst"
+                        or "gpt-image-2.5-flare" => (GptImage2Detailed, 0.032m),
                     "gpt-image-1.5"    => (GptImage15Detailed,   0.034m),
                     "gpt-image-1-mini" => (GptImageMiniDetailed, 0.015m),
                     _                  => (GptImageDetailed,     0.042m),

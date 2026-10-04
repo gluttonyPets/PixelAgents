@@ -16,6 +16,7 @@ public static class VisionCapability
             return modelName.Contains("gpt-4o", StringComparison.OrdinalIgnoreCase)
                 || modelName.Contains("gpt-4.1", StringComparison.OrdinalIgnoreCase)
                 || modelName.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase)
+                || modelName.StartsWith("gpt-6", StringComparison.OrdinalIgnoreCase)
                 || modelName.StartsWith("o3", StringComparison.OrdinalIgnoreCase)
                 || modelName.StartsWith("o4", StringComparison.OrdinalIgnoreCase);
         if (providerType.Equals("Anthropic", StringComparison.OrdinalIgnoreCase))

@@ -257,7 +257,7 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// gpt-5.x y la serie o aceptan reasoning_effort. gpt-5-chat es la variante
+        /// gpt-5.x, gpt-6.x y la serie o aceptan reasoning_effort. gpt-5-chat es la variante
         /// sin razonamiento y lo rechaza, igual que gpt-4.x y anteriores.
         /// </summary>
         private static bool SupportsReasoningEffort(string modelName)
@@ -266,6 +266,7 @@ namespace Server.Services.Ai
             if (modelName.Contains("chat", StringComparison.OrdinalIgnoreCase)) return false;
 
             return modelName.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase)
+                || modelName.StartsWith("gpt-6", StringComparison.OrdinalIgnoreCase)
                 || modelName.StartsWith("o1", StringComparison.OrdinalIgnoreCase)
                 || modelName.StartsWith("o3", StringComparison.OrdinalIgnoreCase)
                 || modelName.StartsWith("o4", StringComparison.OrdinalIgnoreCase);

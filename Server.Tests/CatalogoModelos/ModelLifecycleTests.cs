@@ -29,7 +29,7 @@ public class ModelLifecycleTests
 
         Assert.Equal(ModelStatus.Deprecated, info.Status);
         Assert.Equal(new DateOnly(2026, 12, 1), info.ShutdownDate);
-        Assert.Equal("gpt-image-2", info.ReplacementId);
+        Assert.Equal("gpt-image-2.5-flare", info.ReplacementId);
         Assert.Equal(113, info.DaysUntilShutdown(Hoy));
     }
 

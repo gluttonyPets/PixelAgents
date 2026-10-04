@@ -15,10 +15,14 @@ public class PricingCatalogTests
     private const int UnMillon = 1_000_000;
 
     [Theory]
-    [InlineData("gpt-5.6-sol", 5.00, 30.00)]
+    [InlineData("gpt-6-astra", 10.00, 50.00)]
+    [InlineData("gpt-6.1-sol", 2.00, 10.00)]
+    [InlineData("gpt-6-sol", 2.00, 10.00)]
+    [InlineData("gpt-6-luna", 0.10, 0.50)]
+    [InlineData("gpt-5.6-sol", 4.00, 20.00)]       // promocional hasta 2026-11-21
     [InlineData("gpt-5.6-terra", 2.00, 12.00)]
     [InlineData("gpt-5.6-luna", 0.20, 1.20)]
-    [InlineData("gpt-5.6", 5.00, 30.00)]           // el alias factura como Sol
+    [InlineData("gpt-5.6", 4.00, 20.00)]           // el alias factura como Sol
     [InlineData("gpt-5.5", 5.00, 30.00)]
     [InlineData("gpt-5.5-pro", 30.00, 180.00)]
     [InlineData("gpt-5.4", 2.50, 15.00)]
@@ -109,6 +113,23 @@ public class PricingCatalogTests
         // Igual que el resto de gpt-image: sin config va quality=medium y size=auto,
         // que la API resuelve a retrato.
         Assert.Equal(0.0475m, PricingCatalog.EstimateImageCost("gpt-image-2"));
+    }
+
+    [Theory]
+    [InlineData("gpt-image-2.5-sunburst")]
+    [InlineData("gpt-image-2.5-flare")]
+    public void GptImage25_FacturaComoGptImage2(string modelo)
+    {
+        // Las dos variantes de 2.5 tienen la misma tarifa de salida que gpt-image-2
+        // ($30/1M). Sin entrada propia caerian en la tabla de gpt-image-1, un 33% mas cara.
+        var config = new Dictionary<string, object>
+        {
+            ["quality"] = "high",
+            ["size"] = "1024x1024",
+        };
+
+        Assert.Equal(0.1248m, PricingCatalog.EstimateImageCost(modelo, config));
+        Assert.Equal(0.0475m, PricingCatalog.EstimateImageCost(modelo));
     }
 
     [Fact]

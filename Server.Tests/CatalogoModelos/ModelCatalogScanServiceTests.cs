@@ -124,7 +124,7 @@ public class ModelCatalogScanServiceTests
         await svc.RunScanAsync(db);
 
         var snap = await db.ModelCatalogSnapshots.FirstAsync(s => s.ModelId == "gpt-5.6-sol");
-        snap.OutputPerMTok = 15.00m;   // el catalogo dice 30: es el doble
+        snap.OutputPerMTok = 10.00m;   // el catalogo dice 20: es el doble
         await db.SaveChangesAsync();
 
         var result = await svc.RunScanAsync(db);

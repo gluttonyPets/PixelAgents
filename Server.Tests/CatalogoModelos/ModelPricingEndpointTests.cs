@@ -18,8 +18,8 @@ public class ModelPricingEndpointTests
         var rate = PricingCatalog.GetTextRate("gpt-5.6-sol");
 
         Assert.NotNull(rate);
-        Assert.Equal(5.00m, rate!.Value.InputPerMTok);
-        Assert.Equal(30.00m, rate.Value.OutputPerMTok);
+        Assert.Equal(4.00m, rate!.Value.InputPerMTok);
+        Assert.Equal(20.00m, rate.Value.OutputPerMTok);
     }
 
     [Fact]

@@ -133,8 +133,13 @@ calidad+tamaño son fijos y publicados:
 
 El coste por imagen es esos tokens por la tarifa de salida del modelo, que es lo
 único que cambia entre versiones ($40/1M en `gpt-image-1`, $32/1M en
-`gpt-image-1.5`, $30/1M en `gpt-image-2`). Cada versión tiene su tabla ya resuelta
-en `PricingCatalog`.
+`gpt-image-1.5`, $30/1M en `gpt-image-2` y en `gpt-image-2.5-sunburst` /
+`gpt-image-2.5-flare`, que comparten tabla con `gpt-image-2`). Cada versión tiene
+su tabla ya resuelta en `PricingCatalog`.
+
+Los `gpt-image-2.5` aceptan además las calidades `xhigh` y `max`, pero OpenAI no
+publica sus tokens por imagen; la UI sigue ofreciendo solo `low`/`medium`/`high`
+hasta que haya cifras con las que estimar el coste.
 
 ### Vídeo
 
@@ -150,6 +155,9 @@ devuelve en `apiCreditCost` los que gastó cada generación. Ese es el coste rea
 que se apunta en la ejecución, convertido con `PricingCatalog.LeonardoCreditUsd`;
 la tarifa por segundo del catálogo es solo la estimación a priori que necesita la
 pantalla de modelos, donde todavía no hay ninguna llamada hecha.
+
+OpenAI no tiene modelo de vídeo disponible: `sora-2` y `sora-2-pro` (y la Videos
+API) se apagaron el 2026-09-24, así que no están en el catálogo.
 
 ### Embeddings, audio y transcripción
 
@@ -199,7 +207,7 @@ de vida y los resuelve contra las API keys del tenant.
   "status": "deprecated",          // active | deprecated | retired
   "shutdownDate": "2026-12-01",
   "daysUntilShutdown": 113,
-  "replacementId": "gpt-image-2",
+  "replacementId": "gpt-image-2.5-flare",
   "note": null,
   "available": true,               // null = no se ha podido comprobar
   "priceIsExact": null             // null en modelos que no son de texto

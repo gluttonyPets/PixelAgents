@@ -12,6 +12,8 @@ namespace Server.Tests.ImagenMultiple;
 public class LimitePromptImagenTests
 {
     [Theory]
+    [InlineData("gpt-image-2.5-sunburst", 32_000)]
+    [InlineData("gpt-image-2.5-flare", 32_000)]
     [InlineData("gpt-image-2", 32_000)]
     [InlineData("gpt-image-1.5", 32_000)]
     [InlineData("gpt-image-1", 32_000)]

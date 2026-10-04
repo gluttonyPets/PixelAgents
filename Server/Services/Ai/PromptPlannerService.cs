@@ -47,9 +47,13 @@ namespace Server.Services.Ai
         private const string PlannerProvider = "OpenAI";
 
         // Los modelos actuales van primero: el primero de la lista es el que la UI
-        // preselecciona, y hasta ahora era GPT-4o con la generacion 5.6 ya publicada.
+        // preselecciona. GPT-6.1 Sol va delante porque rinde mas que 5.6 Terra y
+        // cuesta menos ($2/$10 frente a $2/$12 por 1M tokens).
         private static readonly IReadOnlyList<PromptPlannerModelOption> _availableModels = new List<PromptPlannerModelOption>
         {
+            new(PlannerProvider, "gpt-6.1-sol", "GPT-6.1 Sol"),
+            new(PlannerProvider, "gpt-6-luna", "GPT-6 Luna"),
+            new(PlannerProvider, "gpt-6-astra", "GPT-6 Astra"),
             new(PlannerProvider, "gpt-5.6-terra", "GPT-5.6 Terra"),
             new(PlannerProvider, "gpt-5.6-luna", "GPT-5.6 Luna"),
             new(PlannerProvider, "gpt-5.6-sol", "GPT-5.6 Sol"),

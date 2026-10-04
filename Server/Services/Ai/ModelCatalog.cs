@@ -42,6 +42,14 @@ public static class ModelCatalog
     public static readonly CatalogModel[] AllModels =
     [
         // ─── OpenAI: Text ───
+        new("gpt-6-astra",      "GPT-6 Astra",      "OpenAI", ["Text","Orchestrator","Coordinator"],
+            ["text","vision","reasoning","streaming"], 1_050_000),
+        new("gpt-6.1-sol",      "GPT-6.1 Sol",      "OpenAI", ["Text","Orchestrator","Coordinator"],
+            ["text","vision","reasoning","streaming"], 1_050_000),
+        new("gpt-6-sol",        "GPT-6 Sol",        "OpenAI", ["Text","Orchestrator","Coordinator"],
+            ["text","vision","reasoning","streaming"], 1_050_000),
+        new("gpt-6-luna",       "GPT-6 Luna",       "OpenAI", ["Text","Orchestrator","Coordinator"],
+            ["text","vision","reasoning","streaming"], 1_050_000),
         new("gpt-5.6-sol",      "GPT-5.6 Sol",      "OpenAI", ["Text","Orchestrator","Coordinator"],
             ["text","vision","reasoning","streaming"], 1_000_000),
         new("gpt-5.6-terra",    "GPT-5.6 Terra",    "OpenAI", ["Text","Orchestrator","Coordinator"],
@@ -90,6 +98,10 @@ public static class ModelCatalog
             ["text","vision","reasoning","streaming"], 200_000),
 
         // ─── OpenAI: Image ───
+        new("gpt-image-2.5-sunburst", "GPT Image 2.5 Sunburst", "OpenAI", ["Image"],
+            ["image-generation","image-edit"], null, PromptChars: 32_000),
+        new("gpt-image-2.5-flare",    "GPT Image 2.5 Flare",    "OpenAI", ["Image"],
+            ["image-generation","image-edit"], null, PromptChars: 32_000),
         new("gpt-image-2",      "GPT Image 2",      "OpenAI", ["Image"],
             ["image-generation","image-edit"], null, PromptChars: 32_000),
         new("gpt-image-1.5",    "GPT Image 1.5",    "OpenAI", ["Image"],
