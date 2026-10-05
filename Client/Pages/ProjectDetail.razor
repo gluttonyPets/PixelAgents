@@ -20,6 +20,7 @@ else
     <!-- ═══════════ PROJECT HEADER ═══════════ -->
     <div class="project-header">
         <div class="project-header-info">
+            <a class="project-breadcrumb" href="/projects"><i class="bi bi-arrow-left"></i> Proyectos</a>
             <h2 class="project-title">
                 @_project.Name
                 @if (_project.ProjectType == "Trigger")
@@ -31,20 +32,24 @@ else
         </div>
         <div class="project-header-actions">
             <!-- Integration status pills -->
+            @{
+                var hasTelegram = !string.IsNullOrWhiteSpace(_telegramConnSel);
+                var hasBuffer = !(string.IsNullOrWhiteSpace(_instagramConnSel) && string.IsNullOrWhiteSpace(_tiktokConnSel) && string.IsNullOrWhiteSpace(_pinterestConnSel) && string.IsNullOrWhiteSpace(_threadsConnSel));
+                var hasSchedule = _schedule is not null && _schedule.IsEnabled;
+            }
             <div class="integration-pills">
-                <span class="pill @(string.IsNullOrWhiteSpace(_telegramConnSel) ? "pill-off" : "pill-on")" title="Telegram">TG</span>
-                <span class="pill @(string.IsNullOrWhiteSpace(_instagramConnSel) && string.IsNullOrWhiteSpace(_tiktokConnSel) && string.IsNullOrWhiteSpace(_pinterestConnSel) && string.IsNullOrWhiteSpace(_threadsConnSel) ? "pill-off" : "pill-on")" title="Buffer">BF</span>
-                @if (_schedule is not null && _schedule.IsEnabled)
-                {
-                    <span class="pill pill-on" title="Programacion activa">&#x23f0;</span>
-                }
-                else
-                {
-                    <span class="pill pill-off" title="Sin programacion">&#x23f0;</span>
-                }
+                <span class="pill @(hasTelegram ? "pill-on" : "pill-off")" title="@(hasTelegram ? "Telegram conectado" : "Telegram sin conectar")">
+                    <i class="bi bi-telegram"></i> Telegram
+                </span>
+                <span class="pill @(hasBuffer ? "pill-on" : "pill-off")" title="@(hasBuffer ? "Redes sociales conectadas (Buffer)" : "Sin redes sociales conectadas")">
+                    <i class="bi bi-share"></i> Redes
+                </span>
+                <span class="pill @(hasSchedule ? "pill-on" : "pill-off")" title="@(hasSchedule ? "Programacion activa" : "Sin programacion")">
+                    <i class="bi bi-alarm"></i> @(hasSchedule ? "Programado" : "Manual")
+                </span>
             </div>
-            <button class="btn-icon" @onclick="() => _showSettings = true" title="Configuracion">
-                &#x2699;
+            <button class="btn btn-secondary project-settings-btn" @onclick="() => _showSettings = true" title="Configuracion del pipeline">
+                <i class="bi bi-gear"></i> Ajustes
             </button>
         </div>
     </div>
@@ -70,27 +75,27 @@ else
     else if (!string.IsNullOrWhiteSpace(_project.Context))
     {
         <div class="context-bar" @onclick="StartContextEdit" style="cursor:pointer;" title="Clic para editar">
-            <span class="context-label">Contexto</span>
+            <span class="context-label"><i class="bi bi-quote"></i> Contexto</span>
             <span class="context-text">@_project.Context</span>
-            <span class="context-edit-icon">&#x270E;</span>
+            <span class="context-edit-icon"><i class="bi bi-pencil"></i></span>
         </div>
     }
     else
     {
-        <button class="btn btn-sm" style="margin-bottom:8px;" @onclick="StartContextEdit">+ Agregar contexto</button>
+        <button class="btn btn-sm btn-ghost context-add-btn" @onclick="StartContextEdit"><i class="bi bi-plus-lg"></i> Agregar contexto</button>
     }
 
     <!-- ═══════════ TABS ═══════════ -->
     <div class="tab-bar">
         <button class="tab @(_activeTab == "pipeline" ? "tab-active" : "")" @onclick='() => _activeTab = "pipeline"'>
-            Pipeline
+            <i class="bi bi-diagram-3"></i> Pipeline
             @if (_project.Modules.Count > 0)
             {
                 <span class="tab-count">@_project.Modules.Count</span>
             }
         </button>
         <button class="tab @(_activeTab == "history" ? "tab-active" : "")" @onclick="SwitchToHistoryTab">
-            Historial
+            <i class="bi bi-clock-history"></i> Historial
             @if (_executions.Count > 0)
             {
                 <span class="tab-count">@_executions.Count</span>
@@ -132,6 +137,7 @@ else
                             OnPlannerPanelOpened="LoadPlannerData">
                 <TopPanel>
                     <div class="execute-inline">
+                        <div class="execute-inline-title"><i class="bi bi-play-circle"></i> Ejecutar pipeline</div>
                         @if (_execError is not null)
                         {
                             <div class="alert alert-error" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; margin-bottom: 0.3rem;">@_execError</div>
@@ -160,21 +166,22 @@ else
                             <input type="checkbox" @bind="_useHistory" />
                             <span>No repetir tematicas anteriores</span>
                         </label>
-                        <div style="display: flex; gap: 0.3rem; margin-top: 0.3rem;">
-                            <button class="btn btn-success btn-sm" style="flex: 1; font-size: 0.75rem; padding: 0.3rem;" @onclick="Execute" disabled="@_executing">
+                        <div class="execute-actions">
+                            <button class="btn btn-primary execute-run-btn" @onclick="Execute" disabled="@_executing">
                                 @if (_executing)
                                 {
-                                    <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
+                                    <span class="spinner" style="width: 0.75rem; height: 0.75rem;"></span>
                                     <span>Ejecutando...</span>
                                 }
                                 else
                                 {
+                                    <i class="bi bi-play-fill"></i>
                                     <span>Ejecutar</span>
                                 }
                             </button>
                             @if (_executing)
                             {
-                                <button class="btn btn-danger btn-sm" style="font-size: 0.75rem; padding: 0.3rem;" @onclick="CancelExecution">Cancelar</button>
+                                <button class="btn btn-danger execute-cancel-btn" @onclick="CancelExecution"><i class="bi bi-stop-fill"></i> Cancelar</button>
                             }
                         </div>
                         @if (_executing || _result is not null)
@@ -192,25 +199,29 @@ else
                                     {
                                         <span class="text-muted" style="font-size: 0.65rem;">~$@_result.TotalEstimatedCost.ToString("F4")</span>
                                     }
-                                    <button class="btn btn-sm" style="font-size: 0.65rem; padding: 0.1rem 0.3rem; margin-left: auto;"
-                                            @onclick='() => { _activeTab = "history"; }'>Ver detalles</button>
+                                    <button class="btn btn-sm btn-ghost execute-details-btn"
+                                            @onclick='() => { _activeTab = "history"; }'>Ver detalles <i class="bi bi-arrow-right"></i></button>
                                 }
                             </div>
                         }
                         @if (_showCheckpointModal || _result?.Status == "WaitingForCheckpoint")
                         {
-                            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 0.4rem 0.6rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem;">
-                                <span style="font-size: 0.75rem; color: #856404; flex: 1;">Checkpoint esperando revision</span>
-                                <button class="btn btn-success btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" @onclick="@(() => ReviewCheckpoint(true))">Continuar</button>
-                                <button class="btn btn-danger btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;" @onclick="@(() => ReviewCheckpoint(false))">Abortar</button>
-                                <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; border: 1px solid var(--border-color);" @onclick="@(() => { _showCheckpointModal = true; StateHasChanged(); })">Ver datos</button>
+                            <div class="exec-banner is-warning">
+                                <span class="exec-banner-text"><i class="bi bi-pause-circle-fill"></i> Checkpoint esperando revision</span>
+                                <div class="exec-banner-actions">
+                                    <button class="btn btn-success btn-sm" @onclick="@(() => ReviewCheckpoint(true))">Continuar</button>
+                                    <button class="btn btn-danger btn-sm" @onclick="@(() => ReviewCheckpoint(false))">Abortar</button>
+                                    <button class="btn btn-secondary btn-sm" @onclick="@(() => { _showCheckpointModal = true; StateHasChanged(); })">Ver datos</button>
+                                </div>
                             </div>
                         }
                         @if (_showOrchestratorModal || _result?.Status == "WaitingForReview")
                         {
-                            <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 6px; padding: 0.4rem 0.6rem; margin-top: 0.3rem; display: flex; align-items: center; gap: 0.4rem;">
-                                <span style="font-size: 0.75rem; color: #1565c0; flex: 1;">Orquestador esperando revision</span>
-                                <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.2rem 0.5rem; background: #2196f3; color: #fff; border: none;" @onclick="@(() => { _showOrchestratorModal = true; StateHasChanged(); })">Revisar plan</button>
+                            <div class="exec-banner is-info">
+                                <span class="exec-banner-text"><i class="bi bi-diagram-3-fill"></i> Orquestador esperando revision</span>
+                                <div class="exec-banner-actions">
+                                    <button class="btn btn-primary btn-sm" @onclick="@(() => { _showOrchestratorModal = true; StateHasChanged(); })">Revisar plan</button>
+                                </div>
                             </div>
                         }
                     </div>
@@ -1013,10 +1024,11 @@ else
             }
             else
             {
-                <div class="empty-state">
-                    <span class="empty-state-icon">&#x1F4CB;</span>
-                    <p>Sin ejecuciones aun</p>
-                    <p class="text-sm text-muted">Ejecuta el pipeline para ver resultados aqui</p>
+                <div class="empty-hero is-compact">
+                    <div class="empty-hero-icon"><i class="bi bi-clock-history"></i></div>
+                    <h3>Sin ejecuciones todavía</h3>
+                    <p>Lanza el pipeline desde la pestaña Pipeline y aquí verás cada ejecución con sus pasos, archivos y coste.</p>
+                    <button class="btn btn-primary" @onclick='() => _activeTab = "pipeline"'><i class="bi bi-play-fill"></i> Ir a ejecutar</button>
                 </div>
             }
         </div>

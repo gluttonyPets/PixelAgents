@@ -1,4 +1,4 @@
-@using Client.Models
+﻿@using Client.Models
 @using Client.Services
 @using System.Text.Json
 @inject IJSRuntime JS
@@ -12,7 +12,7 @@
         <!-- Toolbar -->
         <div class="canvas-toolbar">
             <button class="toolbar-btn toolbar-btn-primary" @onclick="ToggleModulePanel" title="Agregar modulo">
-                <span class="toolbar-btn-icon">&#x2795;</span> Modulo
+                <span class="toolbar-btn-icon"><i class="bi bi-plus-lg"></i></span> Modulo
             </button>
             @if (VariablesPanel is not null)
             {
@@ -23,7 +23,7 @@
                 </button>
             }
             <button class="toolbar-btn" @onclick="ToggleSubProjectPanel" title="Insertar un proyecto entero como modulo">
-                <span class="toolbar-btn-icon">&#x2795;</span> Sub-proyecto
+                <span class="toolbar-btn-icon"><i class="bi bi-box-seam"></i></span> Sub-proyecto
             </button>
             <button class="toolbar-btn" @onclick="UndoLast" disabled="@(_undoStack.Count == 0)"
                     title="@(_undoStack.Count == 0 ? "Nada que deshacer" : $"Deshacer {_undoStack[^1].Description} (Ctrl+Z)")">
@@ -153,7 +153,7 @@
                                     <span class="module-category-icon"><i class="bi @category.Icon"></i></span>
                                     <span class="module-category-label">@category.Label</span>
                                     <span class="module-category-count">@modulesInCategory.Count</span>
-                                    <span class="module-category-chevron @(_expandedCategories.Contains(category.Key) ? "expanded" : "")">&#x25B6;</span>
+                                    <span class="module-category-chevron @(_expandedCategories.Contains(category.Key) ? "expanded" : "")"><i class="bi bi-chevron-right"></i></span>
                                 </button>
                                 @if (_expandedCategories.Contains(category.Key))
                                 {
@@ -250,9 +250,9 @@
         @if (Modules.Count == 0 && _jsInitialized)
         {
             <div class="canvas-empty-overlay">
-                <span class="canvas-empty-state-icon">&#x1F9E9;</span>
-                <p>Pipeline vacio</p>
-                <p class="text-sm">Pulsa <strong>+ Modulo</strong> para empezar a construir tu pipeline</p>
+                <span class="canvas-empty-state-icon"><i class="bi bi-diagram-3"></i></span>
+                <p class="canvas-empty-title">Tu pipeline está vacío</p>
+                <p class="text-sm">Pulsa <strong>Modulo</strong> en la barra superior para añadir el primer paso y conéctalo arrastrando desde sus puertos.</p>
             </div>
         }
     </div>
@@ -272,7 +272,7 @@
             if (sel is not null)
             {
                 <div class="inspector-header">
-                    <span>@(sel.StepName ?? sel.AiModuleName)</span>
+                    <span class="inspector-header-title"><i class="bi bi-sliders"></i> @(sel.StepName ?? sel.AiModuleName)</span>
                     <button class="node-btn" @onclick="DeselectNode">&#x2715;</button>
                 </div>
                 <div class="inspector-body">
@@ -1097,8 +1097,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         }
         else
         {
-            <div class="inspector-header"><span>Inspector</span></div>
-            <div class="inspector-empty">Selecciona un nodo para ver sus propiedades</div>
+            <div class="inspector-header"><span class="inspector-header-title"><i class="bi bi-sliders"></i> Inspector</span></div>
+            <div class="inspector-empty">
+                <i class="bi bi-cursor"></i>
+                <span>Selecciona un nodo del lienzo para ver y editar sus propiedades</span>
+            </div>
         }
 
         @if (Executing || (ExecutionLogs is { Count: > 0 }))
