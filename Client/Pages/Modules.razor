@@ -625,6 +625,443 @@
     </div>
 }
 
+@* Editor de un modulo ya creado: General (nombre, descripcion, API key), Modelo
+   (mismas tarjetas con estadisticas que el asistente de alta) y Configuracion
+   (campos propios del tipo). Todo se guarda de una vez con "Guardar cambios". *@
+@if (EditingModule is { } em)
+{
+    // Copia con el modelo y la clave pendientes: los campos de configuracion se
+    // adaptan al modelo elegido aunque todavia no se haya guardado.
+    var m = em with { ModelName = _editModel, ApiKeyId = Guid.TryParse(_editApiKeyId, out var pk) ? pk : null };
+    var dirty = IsEditDirty(em);
+    <div class="modal-overlay" @onclick="CloseEditor">
+        <div class="modal-content module-wizard module-editor" @onclick:stopPropagation="true">
+            <div class="wizard-header">
+                <div class="settings-modal-title">
+                    <span class="module-editor-logo"><ProviderIcon Provider="@em.ProviderType" Size="24" /></span>
+                    <div>
+                        <h3>@(string.IsNullOrWhiteSpace(_editName) ? em.Name : _editName)</h3>
+                        <p>@TypeMetaFor(em.ModuleType).Label · @ProviderLabel(em.ProviderType) · <span class="module-editor-model">@(AllModels.FirstOrDefault(x => x.Id == _editModel)?.DisplayName ?? _editModel)</span></p>
+                    </div>
+                </div>
+                <button class="btn-icon" title="Cerrar" @onclick="CloseEditor"><i class="bi bi-x-lg"></i></button>
+            </div>
+
+            @if (_editUsage is { ProjectCount: > 0 })
+            {
+                <div class="module-editor-usage">
+                    <i class="bi bi-diagram-3"></i>
+                    <span>
+                        Se usa en <strong>@_editUsage.ProjectCount @(_editUsage.ProjectCount == 1 ? "pipeline" : "pipelines")</strong>:
+                        @string.Join(", ", _editUsage.ProjectNames.Take(4))@(_editUsage.ProjectNames.Count > 4 ? $" y {_editUsage.ProjectNames.Count - 4} más" : "").
+                        Los cambios se aplican en todos.
+                    </span>
+                </div>
+            }
+
+            <div class="pipeline-settings-layout module-editor-layout">
+                <nav class="settings-nav" aria-label="Secciones del modulo">
+                    <button class="settings-nav-item @(_editTab == "general" ? "is-active" : "")" @onclick='() => _editTab = "general"'>
+                        <span class="settings-nav-icon" style="--tone:#8b83ff"><i class="bi bi-card-text"></i></span>
+                        <span class="settings-nav-text"><strong>General</strong><small>Nombre, descripcion y API key</small></span>
+                    </button>
+                    @if (em.ProviderType != "System")
+                    {
+                        <button class="settings-nav-item @(_editTab == "model" ? "is-active" : "")" @onclick='() => _editTab = "model"'>
+                            <span class="settings-nav-icon" style="--tone:#22d3ee"><i class="bi bi-cpu"></i></span>
+                            <span class="settings-nav-text"><strong>Modelo</strong><small>Cambia el modelo del modulo</small></span>
+                        </button>
+                    }
+                    <button class="settings-nav-item @(_editTab == "config" ? "is-active" : "")" @onclick='() => _editTab = "config"'>
+                        <span class="settings-nav-icon" style="--tone:#f59e0b"><i class="bi bi-sliders"></i></span>
+                        <span class="settings-nav-text"><strong>Configuracion</strong><small>Prompt y parametros</small></span>
+                    </button>
+                </nav>
+
+                <div class="settings-modal-body">
+                    @if (_editConfigError is not null)
+                    {
+                        <div class="alert alert-error">@_editConfigError</div>
+                    }
+
+                    @switch (_editTab)
+                    {
+                        case "model":
+                            var candidates = ModelsFor(em.ProviderType, em.ModuleType);
+                            var stats = ComputeStats(candidates);
+                            @if (candidates.Count == 0)
+                            {
+                                <p class="text-muted">No hay otros modelos disponibles para este tipo de modulo.</p>
+                            }
+                            else
+                            {
+                                <div class="wizard-models">
+                                    @foreach (var mi in candidates)
+                                    {
+                                        var st = stats[mi.Id];
+                                        var lc = GetLifecycle(mi.Id);
+                                        <button class="wizard-model @(_editModel == mi.Id ? "is-selected" : "") @(lc?.Status == "retired" ? "is-retired" : "")"
+                                                @onclick="() => SelectEditModel(mi.Id)">
+                                            @if (mi.Id == em.ModelName)
+                                            {
+                                                <span class="wizard-model-ribbon is-current"><i class="bi bi-bookmark-fill"></i> Actual</span>
+                                            }
+                                            else if (mi.Description.Contains("Recomendado", StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                <span class="wizard-model-ribbon"><i class="bi bi-star-fill"></i> Recomendado</span>
+                                            }
+                                            <span class="wizard-model-head">
+                                                <span class="wizard-model-avatar"><ProviderIcon Provider="@mi.Provider" Size="22" /></span>
+                                                <span class="wizard-model-name">
+                                                    <strong>@mi.DisplayName</strong>
+                                                    <small>@mi.Id</small>
+                                                </span>
+                                                @if (_editModel == mi.Id)
+                                                {
+                                                    <span class="wizard-model-check"><i class="bi bi-check-lg"></i></span>
+                                                }
+                                            </span>
+                                            <span class="wizard-model-desc">@mi.Description</span>
+                                            <span class="wizard-stats">
+                                                @foreach (var stat in st.Bars)
+                                                {
+                                                    <span class="wizard-stat">
+                                                        <span class="wizard-stat-label"><i class="bi @stat.Icon"></i> @stat.Label</span>
+                                                        <span class="wizard-stat-track"><span class="wizard-stat-fill" style="--w:@(stat.Percent)%; --tone:@stat.Tone"></span></span>
+                                                        <span class="wizard-stat-value">@stat.Value</span>
+                                                    </span>
+                                                }
+                                            </span>
+                                            <span class="wizard-model-caps">
+                                                @foreach (var cap in mi.Capabilities)
+                                                {
+                                                    <span class="cap-chip">@CapLabelEs(cap)</span>
+                                                }
+                                                <ModelLifecycleBadge Info="@lc" Compact="true" />
+                                            </span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                            break;
+
+                        case "config":
+                            <div class="module-editor-section">
+                    @if (m.ModuleType is "Text" or "Coordinator" or "Orchestrator")
+                    {
+                        <div class="form-group">
+                            <label>System Prompt</label>
+                            <textarea @bind="_editSystemPrompt" rows="4" placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : m.ModuleType == "Orchestrator" ? "Ej: Prioriza videos de stock sobre generacion. Maximo 5 tareas por plan." : "Ej: Eres un asistente experto en...")"></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Temperatura <span class="text-sm text-muted">(0.0 - 2.0)</span></label>
+                                <input type="number" step="0.1" min="0" max="2" @bind="_editTemperature" />
+                            </div>
+                            <div class="form-group">
+                                <label>Max Tokens</label>
+                                <input type="number" min="1" max="200000" @bind="_editMaxTokens" />
+                            </div>
+                        </div>
+                        @if (AiModuleOptions.SupportsWebSearch(m.ProviderType, m.ModuleType))
+                        {
+                            <div class="form-group">
+                                <label class="form-check">
+                                    <input type="checkbox" @bind="_editWebSearch" />
+                                    Busqueda en internet
+                                    <span class="text-sm text-muted">(puede buscar y leer paginas web; cada busqueda tiene coste)</span>
+                                </label>
+                            </div>
+                        }
+                        @if (AiModuleOptions.SupportsReasoningEffort(m.ProviderType, m.ModelName))
+                        {
+                            <div class="form-group">
+                                <label>
+                                    Esfuerzo de razonamiento
+                                    <span class="text-sm text-muted">(los tokens de razonamiento se facturan como salida)</span>
+                                </label>
+                                <select @bind="_editReasoningEffort">
+                                    @foreach (var (value, label) in AiModuleOptions.ReasoningEffortOptions)
+                                    {
+                                        <option value="@value">@label</option>
+                                    }
+                                </select>
+                            </div>
+                        }
+                    }
+                    else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
+                    {
+                        <div class="form-group">
+                            <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                            <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Tamano</label>
+                                <select @bind="_editImageSize">
+                                    @foreach (var s in GetImageSizesForModel(m.ModelName))
+                                    {
+                                        <option value="@s">@s</option>
+                                    }
+                                </select>
+                            </div>
+                            @if (AiModuleOptions.SupportsQuality(m.ModelName))
+                            {
+                                <div class="form-group">
+                                    <label>Calidad</label>
+                                    <select @bind="_editImageQuality">
+                                        @foreach (var (value, label) in AiModuleOptions.GetImageQualitiesForModel(m.ModelName))
+                                        {
+                                            <option value="@value">@label</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (m.ModuleType == "Image" && m.ProviderType == "Google")
+                    {
+                        <div class="form-group">
+                            <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                            <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Relacion de aspecto</label>
+                                <select @bind="_editGeminiAspectRatio">
+                                    <option value="1:1">1:1 (Cuadrado)</option>
+                                    <option value="16:9">16:9 (Paisaje)</option>
+                                    <option value="9:16">9:16 (Retrato)</option>
+                                    <option value="4:3">4:3 (Clasico)</option>
+                                    <option value="3:4">3:4 (Retrato clasico)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+                                <input type="number" min="1" max="4" @bind="_editGeminiImageCount" />
+                            </div>
+                        </div>
+                    }
+                    else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
+                    {
+                        <div class="form-group">
+                            <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                            <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+                                <input type="number" min="1" max="4" @bind="_editGrokImageCount" />
+                            </div>
+                        </div>
+                    }
+                    else if (m.ModuleType == "Video")
+                    {
+                        <div class="form-group">
+                            <label>Movimiento por defecto <span class="text-sm text-muted">(se antepone a lo que llegue por el puerto)</span></label>
+                            <textarea @bind="_editVideoPrompt" rows="3" placeholder="Ej: Camara con un lento zoom de acercamiento, movimiento suave, sin cortes..."></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Resolucion</label>
+                                <select @bind="_editVideoResolution">
+                                    <option value="RESOLUTION_480">480p</option>
+                                    <option value="RESOLUTION_720">720p</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Interpolacion de fotogramas</label>
+                                <select @bind="_editVideoFrameInterpolation">
+                                    <option value="true">Si (movimiento mas fluido)</option>
+                                    <option value="false">No</option>
+                                </select>
+                            </div>
+                        </div>
+                    }
+                    else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
+                    {
+                        <div class="form-group">
+                            <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+                            <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Ancho</label>
+                                <select @bind="_editLeoWidth">
+                                    <option value="512">512</option>
+                                    <option value="768">768</option>
+                                    <option value="1024">1024</option>
+                                    <option value="1360">1360</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Alto</label>
+                                <select @bind="_editLeoHeight">
+                                    <option value="512">512</option>
+                                    <option value="768">768</option>
+                                    <option value="1024">1024</option>
+                                    <option value="1360">1360</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Estilo</label>
+                            <select @bind="_editLeoPresetStyle">
+                                <option value="DYNAMIC">Dynamic</option>
+                                <option value="NONE">Ninguno</option>
+                                <option value="ANIME">Anime</option>
+                                <option value="CINEMATIC">Cinematico</option>
+                                <option value="PHOTOGRAPHY">Fotografia</option>
+                                <option value="ILLUSTRATION">Ilustracion</option>
+                                <option value="RAYTRACED">Raytraced</option>
+                            </select>
+                        </div>
+                    }
+                    else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
+                    {
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Voz</label>
+                                <select @bind="_editTtsVoice">
+                                    @foreach (var (value, label) in AiModuleOptions.TtsVoices)
+                                    {
+                                        <option value="@value">@label</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Velocidad <span class="text-sm text-muted">(0.25 - 4.0)</span></label>
+                                <input type="number" step="0.25" min="0.25" max="4.0" @bind="_editTtsSpeed" />
+                            </div>
+                        </div>
+                        @if (AiModuleOptions.SupportsVoiceInstructions(m.ModelName))
+                        {
+                            <div class="form-group">
+                                <label>Instrucciones de voz <span class="text-sm text-muted">(tono, acento, ritmo)</span></label>
+                                <textarea rows="2" @bind="_editTtsInstructions" placeholder="Voz en off de anuncio, calida y cercana, acento de Espana."></textarea>
+                            </div>
+                        }
+                    }
+                    else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
+                    {
+                        <div class="form-group">
+                            <label>Access Token</label>
+                            <input type="password" @bind="_editCanvaAccessToken" placeholder="Token OAuth de Canva" />
+                        </div>
+                        <div class="form-group">
+                            <label>Formato de exportacion</label>
+                            <select @bind="_editCanvaExportFormat">
+                                <option value="png">PNG (imagen)</option>
+                                <option value="jpg">JPG (imagen)</option>
+                                <option value="pdf">PDF (documento)</option>
+                                <option value="pptx">PPTX (presentacion)</option>
+                            </select>
+                        </div>
+                        @if (m.ModelName == "canva-autofill")
+                        {
+                            <div class="form-group">
+                                <label>Brand Template ID</label>
+                                <input type="text" @bind="_editCanvaBrandTemplate" placeholder="Ej: DAVZr1z5464..." />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="form-group">
+                                <label>Tipo de diseno</label>
+                                <select @bind="_editCanvaDesignType">
+                                    <option value="doc">Documento</option>
+                                    <option value="presentation">Presentacion</option>
+                                    <option value="whiteboard">Pizarra</option>
+                                </select>
+                            </div>
+                        }
+                    }
+                    else if (m.ModuleType == SearchConsoleConfig.ModuleType)
+                    {
+                        <SearchConsoleConfigEditor Config="_editSearchConsole" ApiKeyId="m.ApiKeyId" />
+                    }
+                    else if (m.ModuleType == "StaticText")
+                    {
+                        <div class="form-group">
+                            <label>Contenido de texto</label>
+                            <textarea @bind="_editStaticTextContent" rows="5" placeholder="Texto que este modulo emitira como salida..."></textarea>
+                            <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
+                    }
+
+                            </div>
+                            break;
+
+                        default:
+                            <div class="module-editor-section">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Nombre del modulo</label>
+                                        <input type="text" @bind="_editName" @bind:event="oninput" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Descripcion</label>
+                                        <input type="text" @bind="_editDesc" @bind:event="oninput" placeholder="Descripcion opcional" />
+                                    </div>
+                                </div>
+                                @if (em.ProviderType != "System")
+                                {
+                                    var provKeys = _keys.Where(k => k.ProviderType.Equals(em.ProviderType, StringComparison.OrdinalIgnoreCase)).ToList();
+                                    <div class="form-group">
+                                        <label>API Key (@ProviderLabel(em.ProviderType))</label>
+                                        <select @bind="_editApiKeyId">
+                                            <option value="">-- Sin API Key --</option>
+                                            @foreach (var k in provKeys)
+                                            {
+                                                <option value="@k.Id">@k.Name</option>
+                                            }
+                                        </select>
+                                        @if (provKeys.Count == 0)
+                                        {
+                                            <span class="text-sm text-muted">No tienes API keys de @ProviderLabel(em.ProviderType). <a class="link" href="/configuracion/apikeys">Crear una</a></span>
+                                        }
+                                        else if (string.IsNullOrEmpty(_editApiKeyId))
+                                        {
+                                            <span class="module-warning"><i class="bi bi-exclamation-triangle-fill"></i> Sin API key el modulo no puede ejecutarse</span>
+                                        }
+                                    </div>
+                                }
+                                <div class="module-editor-facts">
+                                    <div><span>Proveedor</span><strong><ProviderIcon Provider="@em.ProviderType" Size="13" /> @ProviderLabel(em.ProviderType)</strong></div>
+                                    <div><span>Tipo</span><strong><i class="bi @TypeMetaFor(em.ModuleType).Icon"></i> @TypeMetaFor(em.ModuleType).Label</strong></div>
+                                    <div><span>Creado</span><strong>@em.CreatedAt.ToLocalTime().ToString("dd MMM yyyy")</strong></div>
+                                    <div><span>Ultimo cambio</span><strong>@em.UpdatedAt.ToLocalTime().ToString("dd MMM yyyy HH:mm")</strong></div>
+                                </div>
+                                <p class="text-sm text-muted">El proveedor y el tipo no se pueden cambiar: si necesitas otro, crea un modulo nuevo.</p>
+                            </div>
+                            break;
+                    }
+                </div>
+            </div>
+
+            <div class="wizard-footer">
+                @if (_editConfigSuccess && !dirty)
+                {
+                    <span class="module-editor-saved"><i class="bi bi-check2-circle"></i> Cambios guardados</span>
+                }
+                else if (dirty)
+                {
+                    <span class="module-editor-dirty"><i class="bi bi-circle-fill"></i> Cambios sin guardar</span>
+                }
+                <span class="wizard-footer-spacer"></span>
+                <button class="btn btn-secondary" @onclick="CloseEditor">@(dirty ? "Descartar" : "Cerrar")</button>
+                <button class="btn btn-primary" @onclick="SaveModuleEdits" disabled="@(_editConfigSaving || !dirty)">
+                    <i class="bi bi-check2"></i> @(_editConfigSaving ? "Guardando..." : "Guardar cambios")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
 @if (!_loaded)
 {
     @* El esqueleto ya se pinta arriba; aqui no va nada hasta tener los datos. *@
@@ -725,279 +1162,6 @@ else if (UserModules.Count > 0)
                         }
                     </td>
                 </tr>
-                @if (_editingModuleId == m.Id)
-                {
-                    <tr>
-                        <td colspan="5">
-                            <div class="card" style="margin: 0.5rem 0;">
-                                @if (_editConfigError is not null)
-                                {
-                                    <div class="alert alert-error">@_editConfigError</div>
-                                }
-                                @if (_editConfigSuccess)
-                                {
-                                    <div class="alert alert-success">Configuracion guardada</div>
-                                }
-
-                                @if (m.ModuleType is "Text" or "Coordinator" or "Orchestrator")
-                                {
-                                    <div class="form-group">
-                                        <label>System Prompt</label>
-                                        <textarea @bind="_editSystemPrompt" rows="4" placeholder="@(m.ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas. Genera un JSON array de recursos..." : m.ModuleType == "Orchestrator" ? "Ej: Prioriza videos de stock sobre generacion. Maximo 5 tareas por plan." : "Ej: Eres un asistente experto en...")"></textarea>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Temperatura <span class="text-sm text-muted">(0.0 - 2.0)</span></label>
-                                            <input type="number" step="0.1" min="0" max="2" @bind="_editTemperature" />
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Max Tokens</label>
-                                            <input type="number" min="1" max="200000" @bind="_editMaxTokens" />
-                                        </div>
-                                    </div>
-                                    @if (AiModuleOptions.SupportsWebSearch(m.ProviderType, m.ModuleType))
-                                    {
-                                        <div class="form-group">
-                                            <label class="form-check">
-                                                <input type="checkbox" @bind="_editWebSearch" />
-                                                Busqueda en internet
-                                                <span class="text-sm text-muted">(puede buscar y leer paginas web; cada busqueda tiene coste)</span>
-                                            </label>
-                                        </div>
-                                    }
-                                    @if (AiModuleOptions.SupportsReasoningEffort(m.ProviderType, m.ModelName))
-                                    {
-                                        <div class="form-group">
-                                            <label>
-                                                Esfuerzo de razonamiento
-                                                <span class="text-sm text-muted">(los tokens de razonamiento se facturan como salida)</span>
-                                            </label>
-                                            <select @bind="_editReasoningEffort">
-                                                @foreach (var (value, label) in AiModuleOptions.ReasoningEffortOptions)
-                                                {
-                                                    <option value="@value">@label</option>
-                                                }
-                                            </select>
-                                        </div>
-                                    }
-                                }
-                                else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
-                                {
-                                    <div class="form-group">
-                                        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
-                                        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Tamano</label>
-                                            <select @bind="_editImageSize">
-                                                @foreach (var s in GetImageSizesForModel(m.ModelName))
-                                                {
-                                                    <option value="@s">@s</option>
-                                                }
-                                            </select>
-                                        </div>
-                                        @if (AiModuleOptions.SupportsQuality(m.ModelName))
-                                        {
-                                            <div class="form-group">
-                                                <label>Calidad</label>
-                                                <select @bind="_editImageQuality">
-                                                    @foreach (var (value, label) in AiModuleOptions.GetImageQualitiesForModel(m.ModelName))
-                                                    {
-                                                        <option value="@value">@label</option>
-                                                    }
-                                                </select>
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                                else if (m.ModuleType == "Image" && m.ProviderType == "Google")
-                                {
-                                    <div class="form-group">
-                                        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
-                                        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Relacion de aspecto</label>
-                                            <select @bind="_editGeminiAspectRatio">
-                                                <option value="1:1">1:1 (Cuadrado)</option>
-                                                <option value="16:9">16:9 (Paisaje)</option>
-                                                <option value="9:16">9:16 (Retrato)</option>
-                                                <option value="4:3">4:3 (Clasico)</option>
-                                                <option value="3:4">3:4 (Retrato clasico)</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
-                                            <input type="number" min="1" max="4" @bind="_editGeminiImageCount" />
-                                        </div>
-                                    </div>
-                                }
-                                else if (m.ModuleType == "Image" && m.ProviderType == "xAI")
-                                {
-                                    <div class="form-group">
-                                        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
-                                        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
-                                            <input type="number" min="1" max="4" @bind="_editGrokImageCount" />
-                                        </div>
-                                    </div>
-                                }
-                                else if (m.ModuleType == "Video")
-                                {
-                                    <div class="form-group">
-                                        <label>Movimiento por defecto <span class="text-sm text-muted">(se antepone a lo que llegue por el puerto)</span></label>
-                                        <textarea @bind="_editVideoPrompt" rows="3" placeholder="Ej: Camara con un lento zoom de acercamiento, movimiento suave, sin cortes..."></textarea>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Resolucion</label>
-                                            <select @bind="_editVideoResolution">
-                                                <option value="RESOLUTION_480">480p</option>
-                                                <option value="RESOLUTION_720">720p</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Interpolacion de fotogramas</label>
-                                            <select @bind="_editVideoFrameInterpolation">
-                                                <option value="true">Si (movimiento mas fluido)</option>
-                                                <option value="false">No</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                }
-                                else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
-                                {
-                                    <div class="form-group">
-                                        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
-                                        <textarea @bind="_editSystemPrompt" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
-                                    </div>
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Ancho</label>
-                                            <select @bind="_editLeoWidth">
-                                                <option value="512">512</option>
-                                                <option value="768">768</option>
-                                                <option value="1024">1024</option>
-                                                <option value="1360">1360</option>
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Alto</label>
-                                            <select @bind="_editLeoHeight">
-                                                <option value="512">512</option>
-                                                <option value="768">768</option>
-                                                <option value="1024">1024</option>
-                                                <option value="1360">1360</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Estilo</label>
-                                        <select @bind="_editLeoPresetStyle">
-                                            <option value="DYNAMIC">Dynamic</option>
-                                            <option value="NONE">Ninguno</option>
-                                            <option value="ANIME">Anime</option>
-                                            <option value="CINEMATIC">Cinematico</option>
-                                            <option value="PHOTOGRAPHY">Fotografia</option>
-                                            <option value="ILLUSTRATION">Ilustracion</option>
-                                            <option value="RAYTRACED">Raytraced</option>
-                                        </select>
-                                    </div>
-                                }
-                                else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
-                                {
-                                    <div class="form-row">
-                                        <div class="form-group">
-                                            <label>Voz</label>
-                                            <select @bind="_editTtsVoice">
-                                                @foreach (var (value, label) in AiModuleOptions.TtsVoices)
-                                                {
-                                                    <option value="@value">@label</option>
-                                                }
-                                            </select>
-                                        </div>
-                                        <div class="form-group">
-                                            <label>Velocidad <span class="text-sm text-muted">(0.25 - 4.0)</span></label>
-                                            <input type="number" step="0.25" min="0.25" max="4.0" @bind="_editTtsSpeed" />
-                                        </div>
-                                    </div>
-                                    @if (AiModuleOptions.SupportsVoiceInstructions(m.ModelName))
-                                    {
-                                        <div class="form-group">
-                                            <label>Instrucciones de voz <span class="text-sm text-muted">(tono, acento, ritmo)</span></label>
-                                            <textarea rows="2" @bind="_editTtsInstructions" placeholder="Voz en off de anuncio, calida y cercana, acento de Espana."></textarea>
-                                        </div>
-                                    }
-                                }
-                                else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
-                                {
-                                    <div class="form-group">
-                                        <label>Access Token</label>
-                                        <input type="password" @bind="_editCanvaAccessToken" placeholder="Token OAuth de Canva" />
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Formato de exportacion</label>
-                                        <select @bind="_editCanvaExportFormat">
-                                            <option value="png">PNG (imagen)</option>
-                                            <option value="jpg">JPG (imagen)</option>
-                                            <option value="pdf">PDF (documento)</option>
-                                            <option value="pptx">PPTX (presentacion)</option>
-                                        </select>
-                                    </div>
-                                    @if (m.ModelName == "canva-autofill")
-                                    {
-                                        <div class="form-group">
-                                            <label>Brand Template ID</label>
-                                            <input type="text" @bind="_editCanvaBrandTemplate" placeholder="Ej: DAVZr1z5464..." />
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <div class="form-group">
-                                            <label>Tipo de diseno</label>
-                                            <select @bind="_editCanvaDesignType">
-                                                <option value="doc">Documento</option>
-                                                <option value="presentation">Presentacion</option>
-                                                <option value="whiteboard">Pizarra</option>
-                                            </select>
-                                        </div>
-                                    }
-                                }
-                                else if (m.ModuleType == SearchConsoleConfig.ModuleType)
-                                {
-                                    <SearchConsoleConfigEditor Config="_editSearchConsole" ApiKeyId="m.ApiKeyId" />
-                                }
-                                else if (m.ModuleType == "StaticText")
-                                {
-                                    <div class="form-group">
-                                        <label>Contenido de texto</label>
-                                        <textarea @bind="_editStaticTextContent" rows="5" placeholder="Texto que este modulo emitira como salida..."></textarea>
-                                        <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo.</p>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
-                                }
-
-                                @* Los archivos viven en cada instancia ProjectModule del proyecto,
-                                   no en el catalogo. Se gestionan desde el editor de cada proyecto. *@
-
-                                @if (m.ModuleType is "Text" or "Image" or "Video" or "Audio" or "Design")
-                                {
-                                    <button class="btn btn-primary btn-sm" @onclick="() => SaveConfig(m)" disabled="@_editConfigSaving">
-                                        @(_editConfigSaving ? "Guardando..." : "Guardar")
-                                    </button>
-                                }
-                            </div>
-                        </td>
-                    </tr>
-                }
                     }
                 </tbody>
             </table>
@@ -1904,15 +2068,15 @@ else
 
     private async Task ToggleEditConfig(AiModuleResponse module)
     {
-        if (_editingModuleId == module.Id)
-        {
-            _editingModuleId = null;
-            return;
-        }
-
         _editingModuleId = module.Id;
         _editConfigError = null;
         _editConfigSuccess = false;
+        _editTab = "general";
+        _editName = module.Name;
+        _editDesc = module.Description ?? "";
+        _editModel = module.ModelName;
+        _editApiKeyId = module.ApiKeyId?.ToString() ?? "";
+        _editUsage = null;
 
         // Parse existing configuration
         _editSystemPrompt = "";
@@ -1979,7 +2143,103 @@ else
         // Ya no se cargan archivos en el catalogo: viven en cada ProjectModule.
         _editModuleFiles = [];
         _fileUploadError = null;
-        await Task.CompletedTask;
+
+        // Linea base para saber si hay cambios sin guardar: se compara con la
+        // configuracion tal y como la reconstruye el propio editor.
+        _editBaselineConfig = EditableConfig(module.ModuleType)
+            ? BuildEditConfigJson(module.ModuleType, module.ProviderType, module.ModelName)
+            : module.Configuration;
+
+        StateHasChanged();
+        try { _editUsage = await Api.GetModuleUsageAsync(module.Id); } catch { }
+        if (_pricing.Count == 0)
+        {
+            try { _pricing = (await Api.GetModelPricingAsync()).ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase); }
+            catch { }
+        }
+    }
+
+    // ── Editor de modulo existente ──
+    private string _editTab = "general";
+    private string _editName = "";
+    private string _editDesc = "";
+    private string _editModel = "";
+    private string _editApiKeyId = "";
+    private string? _editBaselineConfig;
+    private ModuleUsageResponse? _editUsage;
+
+    private AiModuleResponse? EditingModule =>
+        _editingModuleId is { } id ? _modules.FirstOrDefault(x => x.Id == id) : null;
+
+    private void CloseEditor()
+    {
+        _editingModuleId = null;
+        _editConfigError = null;
+        _editConfigSuccess = false;
+    }
+
+    private List<ModelInfo> ModelsFor(string provider, string type) =>
+        AllModels.Where(x => x.Provider == provider && x.Types.Contains(type)).ToList();
+
+    private void SelectEditModel(string modelId)
+    {
+        _editModel = modelId;
+        // Mismo reencuadre que al crear: tamano y calidad validos para el modelo nuevo.
+        var sizes = GetImageSizesForModel(modelId);
+        if (!sizes.Contains(_editImageSize)) _editImageSize = sizes[0];
+        _editImageQuality = AiModuleOptions.NormalizeQualityForModel(_editImageQuality, modelId);
+        _editConfigSuccess = false;
+    }
+
+    /// <summary>
+    /// Tipos cuya configuracion reconstruye el editor. En el resto se conserva tal
+    /// cual la guardada, para no perder claves que el formulario no conoce.
+    /// </summary>
+    private static bool EditableConfig(string moduleType) =>
+        moduleType is "Text" or "Orchestrator" or "Coordinator" or "Image" or "Video" or "Audio" or "Design"
+            or "StaticText" or "SearchConsole";
+
+    private string? PendingConfig(AiModuleResponse module) =>
+        EditableConfig(module.ModuleType)
+            ? BuildEditConfigJson(module.ModuleType, module.ProviderType, _editModel)
+            : module.Configuration;
+
+    private bool IsEditDirty(AiModuleResponse module) =>
+        _editName != module.Name
+        || _editDesc != (module.Description ?? "")
+        || _editModel != module.ModelName
+        || _editApiKeyId != (module.ApiKeyId?.ToString() ?? "")
+        || PendingConfig(module) != _editBaselineConfig;
+
+    private async Task SaveModuleEdits()
+    {
+        if (EditingModule is not { } module) return;
+        _editConfigError = null;
+        _editConfigSuccess = false;
+        if (string.IsNullOrWhiteSpace(_editName)) { _editConfigError = "El nombre del modulo es obligatorio."; _editTab = "general"; return; }
+
+        _editConfigSaving = true;
+        try
+        {
+            var updated = module with
+            {
+                Name = _editName.Trim(),
+                Description = string.IsNullOrWhiteSpace(_editDesc) ? null : _editDesc.Trim(),
+                ModelName = _editModel,
+                ApiKeyId = Guid.TryParse(_editApiKeyId, out var k) ? k : null,
+                Configuration = PendingConfig(module),
+            };
+            var (ok, error) = await Api.UpdateModuleAsync(module.Id, updated);
+            if (ok)
+            {
+                _modules = await Api.GetModulesAsync();
+                _editBaselineConfig = PendingConfig(EditingModule ?? updated);
+                _editConfigSuccess = true;
+            }
+            else _editConfigError = error;
+        }
+        catch (Exception ex) { _editConfigError = $"Error: {ex.Message}"; }
+        _editConfigSaving = false;
     }
 
     private async Task OnModuleFilesSelected(InputFileChangeEventArgs e)
@@ -2033,30 +2293,6 @@ else
         if (bytes < 1024) return $"{bytes} B";
         if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
         return $"{bytes / (1024.0 * 1024.0):F1} MB";
-    }
-
-    private async Task SaveConfig(AiModuleResponse module)
-    {
-        _editConfigError = null;
-        _editConfigSuccess = false;
-        _editConfigSaving = true;
-
-        try
-        {
-            var config = BuildEditConfigJson(module.ModuleType, module.ProviderType, module.ModelName);
-            var (ok, error) = await Api.UpdateModuleConfigAsync(module.Id, module, config);
-            if (ok)
-            {
-                _editConfigSuccess = true;
-                _modules = await Api.GetModulesAsync();
-            }
-            else
-            {
-                _editConfigError = error;
-            }
-        }
-        catch (Exception ex) { _editConfigError = $"Error: {ex.Message}"; }
-        _editConfigSaving = false;
     }
 
     private string? BuildEditConfigJson(string moduleType, string providerType, string modelName)

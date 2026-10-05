@@ -105,6 +105,9 @@ Rutas actuales:
   estadisticas de economia, contexto y versatilidad sacadas de
   `/api/models/pricing` y del catalogo) y resumen con nombre, descripcion, API key
   y configuracion.
+  "Configurar" abre el editor del modulo: General (nombre, descripcion, API
+  key), Modelo (las mismas tarjetas con estadisticas) y Configuracion; avisa de
+  en cuantos pipelines se usa y lo guarda todo de una vez.
 - `/biblioteca`: archivos subidos a modulos, en cuadricula (con miniatura de
   las imagenes) o en lista, con resumen, buscador y filtro por tipo.
 - `/projects`: listado de proyectos y pipelines. Cada proyecto es una agrupacion

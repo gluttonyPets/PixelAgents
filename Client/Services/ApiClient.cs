@@ -1,4 +1,4 @@
-using System.Net.Http.Json;
+﻿using System.Net.Http.Json;
 using Microsoft.AspNetCore.Components.WebAssembly.Http;
 using Client.Models;
 
@@ -244,6 +244,25 @@ public class ApiClient
             return (true, null, created?.Id);
         }
         return (false, await ReadErrorAsync(resp), null);
+    }
+
+    /// <summary>Guarda de una vez todos los campos editables de un modulo.</summary>
+    public async Task<(bool Ok, string? Error)> UpdateModuleAsync(Guid moduleId, AiModuleResponse module)
+    {
+        var body = new
+        {
+            module.Name,
+            module.Description,
+            module.ProviderType,
+            module.ModuleType,
+            module.ModelName,
+            module.ApiKeyId,
+            module.Configuration,
+            module.IsEnabled
+        };
+        var resp = await SendAsync(HttpMethod.Put, $"/api/modules/{moduleId}", body);
+        if (resp.IsSuccessStatusCode) return (true, null);
+        return (false, await ReadErrorAsync(resp));
     }
 
     public async Task<(bool Ok, string? Error)> UpdateModuleApiKeyAsync(Guid moduleId, AiModuleResponse current, Guid? newApiKeyId)

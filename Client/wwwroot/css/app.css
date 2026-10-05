@@ -8312,3 +8312,39 @@ td.cell-actions .icon-btn { margin-left: 0.15rem; }
 @media (prefers-reduced-motion: reduce) {
     .module-wizard *, .module-wizard *::before, .module-wizard *::after { animation: none !important; transition: none !important; }
 }
+
+/* ═══════════ Editor de modulo existente ═══════════ */
+.module-editor { max-width: 1080px; }
+.module-editor-logo {
+    width: 42px; height: 42px; flex-shrink: 0; border-radius: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.06); border: 1px solid var(--border-strong);
+}
+.module-editor-model { color: #a5a0ff; font-weight: 600; }
+.module-editor-usage {
+    display: flex; align-items: flex-start; gap: 0.55rem;
+    margin: 0 1.3rem 0.8rem; padding: 0.55rem 0.8rem;
+    border-radius: 10px; font-size: 0.8rem;
+    color: #93c5fd; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.module-editor-usage .bi { margin-top: 0.1rem; }
+.module-editor-layout { border-top: 1px solid var(--border); }
+.module-editor-section { max-width: 760px; }
+.module-editor-section > .form-group:first-child { margin-top: 0; }
+.module-editor-facts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem;
+    margin: 0.4rem 0 0.8rem;
+}
+.module-editor-facts > div {
+    display: flex; flex-direction: column; gap: 0.2rem;
+    padding: 0.6rem 0.75rem; border-radius: 10px;
+    background: rgba(255, 255, 255, 0.025); border: 1px solid var(--border);
+}
+.module-editor-facts span { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 600; }
+.module-editor-facts strong { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; }
+.module-editor-dirty { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: #fbbf24; }
+.module-editor-dirty .bi { font-size: 0.45rem; }
+.module-editor-saved { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: #34d399; }
+.wizard-model-ribbon.is-current { color: #fff; background: var(--gradient); box-shadow: 0 6px 14px -6px rgba(108, 99, 255, 0.8); }
+.module-editor .wizard-models { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.module-editor .module-warning { margin: 0.35rem 0 0; }
