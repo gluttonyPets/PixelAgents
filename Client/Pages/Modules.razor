@@ -1,28 +1,66 @@
-@page "/modules"
+﻿@page "/modules"
 @using Microsoft.AspNetCore.Components.Forms
 @inject ApiClient Api
 
-@* Cabecera de página: muestra el título y el botón que abre el modal de creación.
-   El formulario de creación ya no ocupa espacio permanente en la página; se abre bajo demanda. *@
-<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem;">
-    <h2 style="margin:0;">Módulos IA</h2>
-    @* Al hacer clic se activa el flag _showCreateModal, lo que renderiza el modal overlay *@
-    <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
-        <i class="bi bi-plus-lg"></i> Nuevo módulo
-    </button>
+@* Cabecera de página: título, resumen y botón que abre el modal de creación.
+   El formulario de creación no ocupa espacio permanente en la página; se abre bajo demanda. *@
+<div class="page-header">
+    <div class="page-title">
+        <h2>Módulos IA</h2>
+        <p>Piezas reutilizables con su proveedor, modelo y configuración. Úsalas en cualquier pipeline.</p>
+    </div>
+    <div class="page-actions">
+        <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
+            <i class="bi bi-plus-lg"></i> Nuevo módulo
+        </button>
+    </div>
 </div>
 
-@* Buscador de módulos: filtra por nombre, proveedor, modelo o tipo en tiempo real.
-   Solo se muestra cuando el usuario tiene al menos un módulo creado. *@
-@if (_modules.Any(m => !m.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase)))
+@* Resumen y buscador: solo cuando el usuario tiene al menos un módulo propio. *@
+@if (UserModules.Count > 0)
 {
-    <div class="modules-search-wrap">
-        <input class="modules-search" type="text" @bind="_search" @bind:event="oninput"
-               placeholder="🔍 Buscar por nombre, proveedor o modelo…" />
-        @if (!string.IsNullOrEmpty(_search))
-        {
-            <button class="modules-search-clear" @onclick="ClearSearch" title="Limpiar">&#x2715;</button>
-        }
+    var withoutKey = UserModules.Count(NeedsKey);
+    <div class="stat-row">
+        <div class="stat-tile">
+            <span class="stat-icon tone-violet"><i class="bi bi-boxes"></i></span>
+            <div><strong>@UserModules.Count</strong><span>Módulos</span></div>
+        </div>
+        <div class="stat-tile">
+            <span class="stat-icon tone-cyan"><i class="bi bi-diagram-2"></i></span>
+            <div><strong>@UserModules.Select(m => m.ModuleType).Distinct().Count()</strong><span>Tipos distintos</span></div>
+        </div>
+        <div class="stat-tile">
+            <span class="stat-icon tone-green"><i class="bi bi-plug"></i></span>
+            <div><strong>@UserModules.Select(m => m.ProviderType).Distinct().Count()</strong><span>Proveedores</span></div>
+        </div>
+        <div class="stat-tile @(withoutKey > 0 ? "is-warning" : "")">
+            <span class="stat-icon tone-amber"><i class="bi bi-key"></i></span>
+            <div><strong>@withoutKey</strong><span>Sin API key</span></div>
+        </div>
+    </div>
+
+    <div class="page-toolbar">
+        <div class="search-box">
+            <i class="bi bi-search"></i>
+            <input type="text" @bind="_search" @bind:event="oninput"
+                   placeholder="Buscar por nombre, proveedor o modelo..." />
+            @if (!string.IsNullOrEmpty(_search))
+            {
+                <button class="search-box-clear" @onclick="ClearSearch" title="Limpiar"><i class="bi bi-x-lg"></i></button>
+            }
+        </div>
+        <div class="seg-filters">
+            <button class="seg-filter @(_providerFilter is null ? "active" : "")" @onclick="() => _providerFilter = null">
+                Todos <span class="seg-filter-count">@UserModules.Count</span>
+            </button>
+            @foreach (var prov in UserModules.Select(m => m.ProviderType).Distinct().OrderBy(x => x))
+            {
+                <button class="seg-filter @(_providerFilter == prov ? "active" : "")" @onclick="() => _providerFilter = prov">
+                    <ProviderIcon Provider="@prov" Size="13" /> @prov
+                    <span class="seg-filter-count">@UserModules.Count(m => m.ProviderType == prov)</span>
+                </button>
+            }
+        </div>
     </div>
 }
 
@@ -441,25 +479,26 @@
     </div>
 }
 
-@if (_modules.Count > 0)
+@if (UserModules.Count > 0)
 {
     var _groups = GetModuleGroups();
-    if (_groups.Count == 0 && !string.IsNullOrWhiteSpace(_search))
+    if (_groups.Count == 0 && (!string.IsNullOrWhiteSpace(_search) || _providerFilter is not null))
     {
-        @* Sin coincidencias para el término de búsqueda actual *@
-        <div style="text-align:center; padding:2.5rem 1rem; color:var(--text-muted, #888);">
-            <div style="font-size:2rem; margin-bottom:0.5rem;"><i class="bi bi-search"></i></div>
-            <p style="font-size:0.95rem; margin-bottom:0.75rem;">No hay módulos que coincidan con «@_search».</p>
-            <button class="btn btn-sm" @onclick="ClearSearch">Limpiar búsqueda</button>
+        @* Sin coincidencias para la búsqueda o el filtro actual *@
+        <div class="empty-hero is-compact">
+            <div class="empty-hero-icon"><i class="bi bi-search"></i></div>
+            <h3>Sin resultados</h3>
+            <p>No hay módulos que coincidan con la búsqueda o el filtro.</p>
+            <button class="btn btn-secondary" @onclick="ClearSearch">Limpiar filtros</button>
         </div>
     }
     @foreach (var group in _groups)
     {
         <div class="module-group" data-type="@group.Type">
             <div class="module-group-header">
-                <span class="module-group-icon">@group.Icon</span>
+                <span class="module-group-icon"><i class="bi @group.Icon"></i></span>
                 <h3 class="module-group-title">@group.Label</h3>
-                <span class="badge badge-@(group.Type.ToLower()) module-group-count">@group.Modules.Count</span>
+                <span class="projects-section-count module-group-count">@group.Modules.Count</span>
             </div>
             <div class="table-wrap">
             <table class="data-table">
@@ -475,8 +514,14 @@
                 <tbody>
                     @foreach (var m in group.Modules)
                     {
-                <tr>
-                    <td>@m.Name</td>
+                <tr class="@(_editingModuleId == m.Id ? "is-editing" : "")">
+                    <td>
+                        <span class="module-name">@m.Name</span>
+                        @if (NeedsKey(m))
+                        {
+                            <span class="module-warning" title="Sin API key no se puede ejecutar"><i class="bi bi-exclamation-triangle-fill"></i> Sin API key</span>
+                        }
+                    </td>
                     <td>
                         <span class="badge @GetModuleProviderBadgeClass(m.ProviderType)">
                             <ProviderIcon Provider="@m.ProviderType" Size="13" />&nbsp;@m.ProviderType
@@ -519,14 +564,14 @@
                         }
                     </td>
                     <td class="cell-actions">
-                        <button class="btn btn-sm" @onclick="() => ToggleEditConfig(m)">Configurar</button>
+                        <button class="btn btn-sm btn-ghost" @onclick="() => ToggleEditConfig(m)"><i class="bi bi-sliders"></i> Configurar</button>
                         @if (IsBuiltInSystemModule(m))
                         {
                             <span class="text-muted" style="align-self: center; font-size: 0.8rem;">Integrado</span>
                         }
                         else
                         {
-                            <button class="btn btn-danger btn-sm" @onclick="() => Delete(m.Id)">Eliminar</button>
+                            <button class="icon-btn icon-btn-danger" title="Eliminar" @onclick="() => Delete(m.Id)"><i class="bi bi-trash3"></i></button>
                         }
                     </td>
                 </tr>
@@ -814,13 +859,19 @@ else
 {
     @* Estado vacío: se muestra cuando el usuario aún no tiene ningún módulo.
        El botón "Crear primer módulo" abre el mismo modal que el botón de la cabecera. *@
-    <div style="text-align:center; padding:3rem 1rem; color:var(--text-muted, #888);">
-        <div style="font-size:2.5rem; margin-bottom:0.75rem;"><i class="bi bi-boxes"></i></div>
-        <p style="font-size:1rem; margin-bottom:0.5rem;">No tienes módulos creados todavía.</p>
-        <p style="font-size:0.875rem; margin-bottom:1rem;">Crea tu primer módulo para empezar a usarlo en tus proyectos.</p>
-        <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
-            <i class="bi bi-plus-lg"></i> Crear primer módulo
-        </button>
+    <div class="empty-hero">
+        <div class="empty-hero-icon"><i class="bi bi-boxes"></i></div>
+        <h3>Crea tu primer módulo</h3>
+        <p>
+            Un módulo combina un proveedor, un modelo y su configuración (instrucciones, temperatura,
+            tamaño de imagen...). Lo creas una vez y lo reutilizas en todos tus pipelines.
+        </p>
+        <div class="empty-hero-actions">
+            <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
+                <i class="bi bi-plus-lg"></i> Crear primer módulo
+            </button>
+            <a class="btn btn-secondary" href="/configuracion/apikeys"><i class="bi bi-key"></i> Configurar API keys</a>
+        </div>
     </div>
 }
 
@@ -830,27 +881,27 @@ else
 
     private static readonly (string Type, string Label, string Icon)[] ModuleTypeOrder =
     [
-        ("Text",        "Generacion de texto",   "T"),
-        ("Image",       "Generacion de imagen",  "I"),
-        ("Audio",       "Generacion de audio",   "A"),
-        ("Video",       "Generacion de video",   "V"),
-        ("Interaction", "Interaccion",           "C"),
-        ("Publish",     "Publicacion",           "P"),
-        ("Design",      "Diseno",                "D"),
-        ("FileUpload",  "Archivos",              "F"),
-        ("StaticText",  "Texto plano",           "T"),
-        ("Checkpoint",  "Checkpoint",            "C"),
-        ("Orchestrator","Orquestador",           "O"),
-        ("Coordinator", "Coordinador",           "K"),
-        ("SearchConsole", "Search Console",      "S"),
+        ("Text",        "Generacion de texto",   "bi-fonts"),
+        ("Image",       "Generacion de imagen",  "bi-image"),
+        ("Audio",       "Generacion de audio",   "bi-soundwave"),
+        ("Video",       "Generacion de video",   "bi-camera-reels"),
+        ("Interaction", "Interaccion",           "bi-chat-dots"),
+        ("Publish",     "Publicacion",           "bi-send"),
+        ("Design",      "Diseno",                "bi-palette"),
+        ("FileUpload",  "Archivos",              "bi-paperclip"),
+        ("StaticText",  "Texto plano",           "bi-text-paragraph"),
+        ("Checkpoint",  "Checkpoint",            "bi-flag"),
+        ("Orchestrator","Orquestador",           "bi-diagram-3"),
+        ("Coordinator", "Coordinador",           "bi-people"),
+        ("SearchConsole", "Search Console",      "bi-graph-up"),
     ];
 
     private List<ModuleGroup> GetModuleGroups()
     {
         // System modules (Start, StaticText, FileUpload, FileDirectory, Checkpoint, Scene, Interaction,
         // Publish) are built-in and managed internally — they do not appear in this page.
-        var userModules = _modules
-            .Where(m => !m.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase))
+        var userModules = UserModules
+            .Where(m => _providerFilter is null || m.ProviderType == _providerFilter)
             .ToList();
 
         // Filtro del buscador: coincide por nombre, proveedor, modelo o tipo (case-insensitive).
@@ -877,7 +928,7 @@ else
         var knownTypes = ModuleTypeOrder.Select(t => t.Type).ToHashSet();
         var others = userModules.Where(m => !knownTypes.Contains(m.ModuleType)).ToList();
         if (others.Count > 0)
-            groups.Add(new ModuleGroup("other", "Otros", "?", others));
+            groups.Add(new ModuleGroup("other", "Otros", "bi-question-circle", others));
         return groups;
     }
 
@@ -903,8 +954,24 @@ else
     // Término del buscador de módulos (filtra la lista en tiempo real por nombre/proveedor/modelo/tipo).
     private string _search = "";
 
-    // Limpia el término de búsqueda (botón X del buscador y enlace del estado sin resultados).
-    private void ClearSearch() => _search = "";
+    // Filtro por proveedor de la barra de herramientas (null = todos).
+    private string? _providerFilter;
+
+    // Limpia la búsqueda y el filtro (botón X del buscador y estado sin resultados).
+    private void ClearSearch()
+    {
+        _search = "";
+        _providerFilter = null;
+    }
+
+    // Módulos propios del usuario: los de sistema se gestionan internamente y no se listan.
+    private List<AiModuleResponse> UserModules => _modules
+        .Where(m => !m.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    // Un módulo de proveedor sin clave asignada no puede ejecutarse.
+    private static bool NeedsKey(AiModuleResponse m) =>
+        !m.ProviderType.Equals("System", StringComparison.OrdinalIgnoreCase) && m.ApiKeyId is null;
     // Flag que controla la visibilidad del modal de creación de módulo.
     // true = modal abierto; false = modal cerrado (por X, clic en overlay o creación exitosa).
     private bool _showCreateModal;

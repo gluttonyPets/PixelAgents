@@ -1,4 +1,4 @@
-@* Catalogo de modelos: que hay, que sabe hacer cada uno y cuanto cuesta.
+﻿@* Catalogo de modelos: que hay, que sabe hacer cada uno y cuanto cuesta.
 
    La ruta /precios se mantiene porque la pantalla se llamaba asi y hay enlaces
    guardados apuntando ahi. *@
@@ -6,20 +6,65 @@
 @page "/precios"
 @inject ApiClient Api
 
-<div class="apikeys-page-header">
-    <h2>Modelos</h2>
+<div class="page-header">
+    <div class="page-title">
+        <h2>Modelos</h2>
+        <p>Compara tarifas, capacidades y contexto de cada modelo antes de elegirlo para un módulo.</p>
+    </div>
 </div>
 
 @if (_loading)
 {
-    <p class="text-muted">Cargando catalogo...</p>
+    <div class="stat-row">
+        @for (var i = 0; i < 4; i++)
+        {
+            <div class="stat-tile"><div class="skeleton skeleton-avatar"></div><div class="skeleton skeleton-line w-60" style="width:90px"></div></div>
+        }
+    </div>
 }
 else if (_models.Count == 0)
 {
-    <p class="text-muted">No se ha podido cargar el catalogo de modelos.</p>
+    <div class="empty-hero is-compact">
+        <div class="empty-hero-icon"><i class="bi bi-cloud-slash"></i></div>
+        <h3>No se ha podido cargar el catálogo</h3>
+        <p>Revisa la conexión con el servidor y vuelve a intentarlo.</p>
+        <button class="btn btn-secondary" @onclick="ReloadAsync"><i class="bi bi-arrow-clockwise"></i> Reintentar</button>
+    </div>
 }
 else
 {
+    var cheapest = _models
+        .Where(m => m.Kind == "text" && m.Lifecycle.Status != "retired" && (m.InputPerMTok ?? 0) + (m.OutputPerMTok ?? 0) > 0)
+        .OrderBy(m => m.CostFor(_inputTokens, _outputTokens))
+        .FirstOrDefault();
+    var biggest = _models.Where(m => m.ContextTokens is > 0).OrderByDescending(m => m.ContextTokens).FirstOrDefault();
+    var warnings = _models.Count(m => m.Lifecycle.Status is "deprecated" or "retired");
+
+    <div class="stat-row">
+        <div class="stat-tile">
+            <span class="stat-icon tone-violet"><i class="bi bi-cpu"></i></span>
+            <div><strong>@_models.Count</strong><span>Modelos de @_providers.Count proveedores</span></div>
+        </div>
+        <div class="stat-tile">
+            <span class="stat-icon tone-green"><i class="bi bi-piggy-bank"></i></span>
+            <div>
+                <strong>@(cheapest is null ? "—" : Money(cheapest.CostFor(_inputTokens, _outputTokens), 4))</strong>
+                <span title="Modelo de texto mas barato con los tokens indicados">@(cheapest?.DisplayName ?? "Texto más barato") · por ejecución</span>
+            </div>
+        </div>
+        <div class="stat-tile">
+            <span class="stat-icon tone-cyan"><i class="bi bi-arrows-angle-expand"></i></span>
+            <div>
+                <strong>@(biggest is null ? "—" : Tokens(biggest.ContextTokens!.Value))</strong>
+                <span>Mayor contexto · @(biggest?.DisplayName ?? "")</span>
+            </div>
+        </div>
+        <div class="stat-tile @(warnings > 0 ? "is-warning" : "")">
+            <span class="stat-icon tone-amber"><i class="bi bi-hourglass-split"></i></span>
+            <div><strong>@warnings</strong><span>Retirados o por retirar</span></div>
+        </div>
+    </div>
+
     <div class="models-tabs">
         <button class="models-tab @(_view == View.Charts ? "active" : "")"
                 @onclick="() => _view = View.Charts">
@@ -57,7 +102,7 @@ else
                         var count = _models.Count(m => m.Provider == p);
                         <button class="filter-pill @ProviderPalette.PillClass(p) @(_provider == p ? "active" : "")"
                                 @onclick="() => _provider = p">
-                            @p <span class="filter-count">@count</span>
+                            <ProviderIcon Provider="@p" Size="13" /> @p <span class="filter-count">@count</span>
                         </button>
                     }
                 </div>
@@ -125,7 +170,7 @@ else
 
             <div class="pricing-search-wrap">
                 <input class="apikeys-search" type="text" @bind="_search" @bind:event="oninput"
-                       placeholder="🔍 Buscar modelo..." />
+                       placeholder="Buscar modelo..." />
             </div>
         </div>
 
@@ -142,7 +187,11 @@ else
 
         @if (visible.Count == 0)
         {
-            <p class="text-muted">Ningun modelo cumple todos los filtros.</p>
+            <div class="empty-hero is-compact">
+                <div class="empty-hero-icon"><i class="bi bi-funnel"></i></div>
+                <h3>Sin resultados</h3>
+                <p>Ningún modelo cumple todos los filtros.</p>
+            </div>
         }
         else if (_view == View.Charts)
         {

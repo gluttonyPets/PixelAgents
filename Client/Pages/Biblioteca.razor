@@ -1,20 +1,148 @@
-@page "/biblioteca"
+﻿@page "/biblioteca"
 @inject ApiClient Api
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
-<h2>Biblioteca de Archivos</h2>
+<div class="page-header">
+    <div class="page-title">
+        <h2>Biblioteca</h2>
+        <p>Todos los archivos subidos a tus módulos, listos para revisar, compartir o descargar.</p>
+    </div>
+</div>
 
 @if (_loading)
 {
-    <p class="text-muted">Cargando...</p>
+    <div class="library-grid">
+        @for (var i = 0; i < 8; i++)
+        {
+            <div class="library-card is-skeleton">
+                <div class="skeleton library-skeleton-thumb"></div>
+                <div class="library-card-body">
+                    <div class="skeleton skeleton-line w-60"></div>
+                    <div class="skeleton skeleton-line w-40"></div>
+                </div>
+            </div>
+        }
+    </div>
 }
 else if (_files.Count == 0)
 {
-    <p class="text-muted">No hay archivos subidos. Sube archivos desde un modulo de un proyecto.</p>
+    <div class="empty-hero">
+        <div class="empty-hero-icon"><i class="bi bi-collection"></i></div>
+        <h3>Tu biblioteca está vacía</h3>
+        <p>
+            Los archivos aparecen aquí cuando los subes a un módulo de Archivos o Directorio dentro de
+            un pipeline. Desde la biblioteca podrás descargarlos y copiar su URL pública.
+        </p>
+        <div class="empty-hero-actions">
+            <a class="btn btn-primary" href="/projects"><i class="bi bi-kanban"></i> Ir a proyectos</a>
+        </div>
+    </div>
 }
 else
 {
+    var visible = _files.Where(Matches).ToList();
+
+    <div class="stat-row">
+        <div class="stat-tile">
+            <span class="stat-icon tone-violet"><i class="bi bi-files"></i></span>
+            <div><strong>@_files.Count</strong><span>Archivos</span></div>
+        </div>
+        <div class="stat-tile">
+            <span class="stat-icon tone-cyan"><i class="bi bi-hdd"></i></span>
+            <div><strong>@FormatFileSize(_files.Sum(f => f.FileSize))</strong><span>Espacio usado</span></div>
+        </div>
+        <div class="stat-tile">
+            <span class="stat-icon tone-amber"><i class="bi bi-image"></i></span>
+            <div><strong>@_files.Count(f => Category(f) == "image")</strong><span>Imágenes</span></div>
+        </div>
+        <div class="stat-tile">
+            <span class="stat-icon tone-green"><i class="bi bi-globe2"></i></span>
+            <div><strong>@_files.Count(f => !string.IsNullOrWhiteSpace(f.PublicUrl))</strong><span>Con URL pública</span></div>
+        </div>
+    </div>
+
+    <div class="page-toolbar">
+        <div class="search-box">
+            <i class="bi bi-search"></i>
+            <input type="text" placeholder="Buscar por archivo, proyecto o módulo..."
+                   @bind="_query" @bind:event="oninput" />
+            @if (!string.IsNullOrEmpty(_query))
+            {
+                <button class="search-box-clear" title="Limpiar" @onclick='() => _query = ""'><i class="bi bi-x-lg"></i></button>
+            }
+        </div>
+        <div class="seg-filters">
+            @foreach (var c in Categories)
+            {
+                <button class="seg-filter @(_category == c.Id ? "active" : "")" @onclick="() => _category = c.Id">
+                    <i class="bi @c.Icon"></i> @c.Label
+                    <span class="seg-filter-count">@(c.Id == "all" ? _files.Count : _files.Count(f => Category(f) == c.Id))</span>
+                </button>
+            }
+        </div>
+        <div class="view-toggle" role="group" aria-label="Vista">
+            <button class="@(_grid ? "active" : "")" title="Cuadrícula" @onclick="() => _grid = true"><i class="bi bi-grid-3x3-gap"></i></button>
+            <button class="@(!_grid ? "active" : "")" title="Lista" @onclick="() => _grid = false"><i class="bi bi-list-ul"></i></button>
+        </div>
+    </div>
+
+    @if (visible.Count == 0)
+    {
+        <div class="empty-hero is-compact">
+            <div class="empty-hero-icon"><i class="bi bi-search"></i></div>
+            <h3>Sin resultados</h3>
+            <p>Ningún archivo coincide con la búsqueda o el filtro.</p>
+            <button class="btn btn-secondary" @onclick="ClearFilters">Limpiar filtros</button>
+        </div>
+    }
+    else if (_grid)
+    {
+        <div class="library-grid">
+            @foreach (var f in visible)
+            {
+                var cat = Category(f);
+                <article class="library-card">
+                    <div class="library-thumb cat-@cat">
+                        <i class="bi @CategoryIcon(f)"></i>
+                        @if (cat == "image")
+                        {
+                            @* La miniatura se pinta como fondo sobre el icono: si no carga, queda el icono. *@
+                            <div class="library-thumb-img" style="background-image:url('/api/module-files/@f.Id/download')"></div>
+                        }
+                        <span class="library-type">@GetFileTypeLabel(f.ContentType)</span>
+                        @if (!string.IsNullOrWhiteSpace(f.PublicUrl))
+                        {
+                            <span class="library-public" title="Tiene URL pública"><i class="bi bi-globe2"></i></span>
+                        }
+                    </div>
+                    <div class="library-card-body">
+                        <div class="library-name" title="@f.FileName">@f.FileName</div>
+                        <div class="library-origin">
+                            <a href="@($"/projects/{f.ProjectId}")" class="link">@f.ProjectName</a>
+                            <span> · @ModuleLabel(f)</span>
+                        </div>
+                        <div class="library-meta">
+                            <span>@FormatFileSize(f.FileSize)</span>
+                            <span>@f.CreatedAt.ToString("dd MMM yyyy")</span>
+                        </div>
+                    </div>
+                    <div class="library-actions">
+                        <a href="/api/module-files/@f.Id/download" target="_blank" class="icon-btn" title="Descargar"><i class="bi bi-download"></i></a>
+                        @if (!string.IsNullOrWhiteSpace(f.PublicUrl))
+                        {
+                            <button class="icon-btn @(_copiedUrl == f.PublicUrl ? "is-done" : "")" title="Copiar URL pública" @onclick="() => CopyUrl(f.PublicUrl)">
+                                <i class="bi @(_copiedUrl == f.PublicUrl ? "bi-check2" : "bi-link-45deg")"></i>
+                            </button>
+                        }
+                        <button class="icon-btn icon-btn-danger" title="Eliminar" @onclick="() => Delete(f.Id)"><i class="bi bi-trash3"></i></button>
+                    </div>
+                </article>
+            }
+        </div>
+    }
+    else
+    {
     <div class="table-wrap">
     <table class="data-table">
         <thead>
@@ -30,20 +158,21 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var f in _files)
+            @foreach (var f in visible)
             {
                 <tr>
                     <td>
-                        <span title="@f.FileName">@TruncateName(f.FileName, 40)</span>
+                        <span class="library-row-name" title="@f.FileName">
+                            <span class="library-row-icon cat-@Category(f)"><i class="bi @CategoryIcon(f)"></i></span>
+                            @TruncateName(f.FileName, 40)
+                        </span>
                     </td>
                     <td><span class="badge badge-info">@GetFileTypeLabel(f.ContentType)</span></td>
                     <td>@FormatFileSize(f.FileSize)</td>
                     <td>
                         <a href="@($"/projects/{f.ProjectId}")" class="link">@f.ProjectName</a>
                     </td>
-                    <td>
-                        @(string.IsNullOrWhiteSpace(f.StepName) ? f.ModuleName : $"{f.StepName} ({f.ModuleName})")
-                    </td>
+                    <td>@ModuleLabel(f)</td>
                     <td class="cell-public-url">
                         @if (string.IsNullOrWhiteSpace(f.PublicUrl))
                         {
@@ -63,20 +192,81 @@ else
                     </td>
                     <td>@f.CreatedAt.ToString("dd MMM yyyy HH:mm")</td>
                     <td class="cell-actions">
-                        <a href="/api/module-files/@f.Id/download" target="_blank" class="btn btn-sm">Descargar</a>
-                        <button class="btn btn-danger btn-sm" @onclick="() => Delete(f.Id)">Eliminar</button>
+                        <a href="/api/module-files/@f.Id/download" target="_blank" class="icon-btn" title="Descargar"><i class="bi bi-download"></i></a>
+                        <button class="icon-btn icon-btn-danger" title="Eliminar" @onclick="() => Delete(f.Id)"><i class="bi bi-trash3"></i></button>
                     </td>
                 </tr>
             }
         </tbody>
     </table>
     </div>
+    }
 }
 
 @code {
     private List<ModuleFileResponse> _files = [];
     private bool _loading = true;
     private string? _copiedUrl;
+
+    // Busqueda, filtro por tipo y vista (solo en cliente).
+    private string _query = "";
+    private string _category = "all";
+    private bool _grid = true;
+
+    private sealed record CategoryOption(string Id, string Label, string Icon);
+    private static readonly CategoryOption[] Categories =
+    [
+        new("all", "Todos", "bi-grid"),
+        new("image", "Imágenes", "bi-image"),
+        new("doc", "Documentos", "bi-file-earmark-text"),
+        new("data", "Datos", "bi-table"),
+        new("other", "Otros", "bi-file-earmark"),
+    ];
+
+    private bool Matches(ModuleFileResponse f)
+    {
+        if (_category != "all" && Category(f) != _category) return false;
+        if (string.IsNullOrWhiteSpace(_query)) return true;
+        var q = _query.Trim();
+        return f.FileName.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || f.ProjectName.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || f.ModuleName.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || (f.StepName?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private void ClearFilters()
+    {
+        _query = "";
+        _category = "all";
+    }
+
+    private static string ModuleLabel(ModuleFileResponse f) =>
+        string.IsNullOrWhiteSpace(f.StepName) ? f.ModuleName : $"{f.StepName} ({f.ModuleName})";
+
+    /// <summary>Familia del archivo para filtrar y elegir icono.</summary>
+    private static string Category(ModuleFileResponse f) => f.ContentType switch
+    {
+        var t when t.StartsWith("image/") => "image",
+        var t when t == "application/pdf" || t.Contains("word") || t.Contains("document")
+                   || t == "text/plain" || t == "text/markdown" => "doc",
+        var t when t.Contains("spreadsheet") || t.Contains("excel") || t == "text/csv"
+                   || t == "application/json" => "data",
+        _ => "other",
+    };
+
+    private static string CategoryIcon(ModuleFileResponse f) => f.ContentType switch
+    {
+        var t when t.StartsWith("image/") => "bi-file-earmark-image",
+        "application/pdf" => "bi-file-earmark-pdf",
+        var t when t.Contains("spreadsheet") || t.Contains("excel") || t == "text/csv" => "bi-file-earmark-spreadsheet",
+        var t when t.Contains("word") || t.Contains("document") => "bi-file-earmark-word",
+        "application/json" => "bi-filetype-json",
+        "text/markdown" => "bi-markdown",
+        var t when t.StartsWith("text/") => "bi-file-earmark-text",
+        var t when t.StartsWith("video/") => "bi-file-earmark-play",
+        var t when t.StartsWith("audio/") => "bi-file-earmark-music",
+        _ => "bi-file-earmark",
+    };
 
     /// <summary>
     /// Copia la URL al portapapeles. Si el navegador no lo permite (contexto no

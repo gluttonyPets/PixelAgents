@@ -1,4 +1,4 @@
-@page "/configuracion"
+﻿@page "/configuracion"
 @page "/configuracion/{Section?}"
 @inject NavigationManager Nav
 
@@ -12,51 +12,62 @@
     concreta desde otras pantallas.
 *@
 
-<h2>Configuracion</h2>
-
-<div class="settings-tabs">
-    @foreach (var tab in Tabs)
-    {
-        <button class="settings-tab @(tab.Slug == CurrentSlug ? "is-active" : "")"
-                @onclick="() => Go(tab.Slug)">
-            <i class="bi @tab.Icon"></i> @tab.Label
-        </button>
-    }
+<div class="page-header">
+    <div class="page-title">
+        <h2>Configuración</h2>
+        <p>Conecta proveedores, canales y tiendas, y define las reglas que siguen tus pipelines.</p>
+    </div>
 </div>
 
-<div class="settings-body">
-    @switch (CurrentSlug)
-    {
-        case "redes-sociales":
-            <SocialConnections />
-            break;
-        case "mensajeria":
-            <Messaging />
-            break;
-        case "shopify":
-            <ShopifyConnections />
-            break;
-        case "reglas":
-            <Rules />
-            break;
-        default:
-            <ApiKeys />
-            break;
-    }
+<div class="settings-layout">
+    <nav class="settings-nav" aria-label="Secciones de configuracion">
+        @foreach (var tab in Tabs)
+        {
+            <button class="settings-nav-item @(tab.Slug == CurrentSlug ? "is-active" : "")"
+                    @onclick="() => Go(tab.Slug)">
+                <span class="settings-nav-icon" style="--tone:@tab.Tone"><i class="bi @tab.Icon"></i></span>
+                <span class="settings-nav-text">
+                    <strong>@tab.Label</strong>
+                    <small>@tab.Hint</small>
+                </span>
+            </button>
+        }
+    </nav>
+
+    <section class="settings-panel">
+        @switch (CurrentSlug)
+        {
+            case "redes-sociales":
+                <SocialConnections />
+                break;
+            case "mensajeria":
+                <Messaging />
+                break;
+            case "shopify":
+                <ShopifyConnections />
+                break;
+            case "reglas":
+                <Rules />
+                break;
+            default:
+                <ApiKeys />
+                break;
+        }
+    </section>
 </div>
 
 @code {
     [Parameter] public string? Section { get; set; }
 
-    private sealed record SettingsTab(string Slug, string Label, string Icon);
+    private sealed record SettingsTab(string Slug, string Label, string Icon, string Hint, string Tone);
 
     private static readonly SettingsTab[] Tabs =
     [
-        new("apikeys", "API Keys", "bi-key"),
-        new("redes-sociales", "Redes sociales", "bi-share"),
-        new("mensajeria", "Mensajeria", "bi-chat-dots"),
-        new("shopify", "Shopify", "bi-shop"),
-        new("reglas", "Reglas", "bi-list-check"),
+        new("apikeys", "API Keys", "bi-key", "Claves de los proveedores de IA", "#8b83ff"),
+        new("redes-sociales", "Redes sociales", "bi-share", "Cuentas de Buffer para publicar", "#ec4899"),
+        new("mensajeria", "Mensajeria", "bi-chat-dots", "Bot de Telegram para aprobaciones", "#22d3ee"),
+        new("shopify", "Shopify", "bi-shop", "Tiendas conectadas", "#34d399"),
+        new("reglas", "Reglas", "bi-list-check", "Normas obligatorias en ejecuciones", "#f59e0b"),
     ];
 
     /// <summary>Seccion activa. Una ruta desconocida cae en la primera pestana.</summary>

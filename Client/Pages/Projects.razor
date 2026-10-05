@@ -6,12 +6,12 @@
    con titulo y descripcion (ProjectGroup) y dentro viven los pipelines, que son
    los que se editan y ejecutan. La agrupacion es solo organizativa. *@
 
-<div class="projects-page-header">
-    <div class="projects-page-title">
+<div class="page-header">
+    <div class="page-title">
         <h2>Proyectos</h2>
         <p>Organiza tus pipelines por cliente, marca o temática y lánzalos desde aquí.</p>
     </div>
-    <div class="projects-page-actions">
+    <div class="page-actions">
         <button class="btn btn-secondary trash-link" @onclick="GoToTrash"
                 title="Pipelines borrados; se pueden restaurar">
             <i class="bi bi-trash3"></i> Papelera
@@ -28,41 +28,41 @@
 @if (_loaded && (_groups.Count > 0 || _projects.Count > 0))
 {
     @* Resumen rapido: todo sale de los datos ya cargados, sin llamadas extra. *@
-    <div class="projects-stats">
-        <div class="projects-stat">
-            <span class="projects-stat-icon tone-violet"><i class="bi bi-folder2"></i></span>
+    <div class="stat-row">
+        <div class="stat-tile">
+            <span class="stat-icon tone-violet"><i class="bi bi-folder2"></i></span>
             <div><strong>@_groups.Count</strong><span>Proyectos</span></div>
         </div>
-        <div class="projects-stat">
-            <span class="projects-stat-icon tone-cyan"><i class="bi bi-diagram-3"></i></span>
+        <div class="stat-tile">
+            <span class="stat-icon tone-cyan"><i class="bi bi-diagram-3"></i></span>
             <div><strong>@_projects.Count(p => !p.IsTestProject)</strong><span>Pipelines</span></div>
         </div>
-        <div class="projects-stat">
-            <span class="projects-stat-icon tone-amber"><i class="bi bi-lightning-charge"></i></span>
+        <div class="stat-tile">
+            <span class="stat-icon tone-amber"><i class="bi bi-lightning-charge"></i></span>
             <div><strong>@_projects.Count(p => p.ProjectType == "Trigger")</strong><span>Con trigger</span></div>
         </div>
-        <div class="projects-stat">
-            <span class="projects-stat-icon tone-green"><i class="bi bi-clock-history"></i></span>
+        <div class="stat-tile">
+            <span class="stat-icon tone-green"><i class="bi bi-clock-history"></i></span>
             <div><strong>@_projects.Count(p => (DateTime.UtcNow - p.UpdatedAt.ToUniversalTime()).TotalDays < 7)</strong><span>Activos esta semana</span></div>
         </div>
     </div>
 
-    <div class="projects-toolbar">
-        <div class="projects-search">
+    <div class="page-toolbar">
+        <div class="search-box">
             <i class="bi bi-search"></i>
             <input type="text" placeholder="Buscar pipelines o proyectos..."
                    @bind="_query" @bind:event="oninput" />
             @if (!string.IsNullOrEmpty(_query))
             {
-                <button class="projects-search-clear" title="Limpiar" @onclick='() => _query = ""'><i class="bi bi-x-lg"></i></button>
+                <button class="search-box-clear" title="Limpiar" @onclick='() => _query = ""'><i class="bi bi-x-lg"></i></button>
             }
         </div>
-        <div class="projects-filters">
+        <div class="seg-filters">
             @foreach (var f in Filters)
             {
-                <button class="projects-filter @(_filter == f.Id ? "active" : "")" @onclick="() => _filter = f.Id">
+                <button class="seg-filter @(_filter == f.Id ? "active" : "")" @onclick="() => _filter = f.Id">
                     <i class="bi @f.Icon"></i> @f.Label
-                    <span class="projects-filter-count">@CountFor(f.Id)</span>
+                    <span class="seg-filter-count">@CountFor(f.Id)</span>
                 </button>
             }
         </div>
@@ -187,8 +187,8 @@
 
 @if (_loaded && FilterActive && !AnyVisible())
 {
-    <div class="projects-empty is-compact">
-        <div class="projects-empty-icon"><i class="bi bi-search"></i></div>
+    <div class="empty-hero is-compact">
+        <div class="empty-hero-icon"><i class="bi bi-search"></i></div>
         <h3>Sin resultados</h3>
         <p>No hay pipelines que coincidan con la búsqueda o el filtro.</p>
         <button class="btn btn-secondary" @onclick="ClearFilters">Limpiar filtros</button>
@@ -197,18 +197,18 @@
 
 @if (_groups.Count == 0 && _projects.Count == 0 && _loaded)
 {
-    <div class="projects-empty">
-        <div class="projects-empty-icon"><i class="bi bi-diagram-3"></i></div>
+    <div class="empty-hero">
+        <div class="empty-hero-icon"><i class="bi bi-diagram-3"></i></div>
         <h3>Crea tu primer pipeline</h3>
         <p>
             Un pipeline conecta módulos de IA en un lienzo visual. Si quieres organizar el trabajo
             por temática o cliente, crea antes un proyecto y agrupa ahí tus pipelines.
         </p>
-        <div class="projects-empty-actions">
+        <div class="empty-hero-actions">
             <button class="btn btn-secondary" @onclick="OpenCreateGroupModal"><i class="bi bi-folder-plus"></i> Crear proyecto</button>
             <button class="btn btn-primary" @onclick="() => OpenCreateModal(null)"><i class="bi bi-plus-lg"></i> Crear pipeline</button>
         </div>
-        <div class="projects-empty-steps">
+        <div class="empty-hero-steps">
             <div><span>1</span> Crea el pipeline</div>
             <div><span>2</span> Arrastra y conecta módulos</div>
             <div><span>3</span> Ejecútalo o prográmalo</div>

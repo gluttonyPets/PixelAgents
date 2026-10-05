@@ -1,4 +1,4 @@
-@inject ApiClient Api
+﻿@inject ApiClient Api
 
 <div class="apikeys-page-header">
     <h3>API Keys</h3>
@@ -34,7 +34,7 @@ else if (_keys.Count > 0)
     <div class="apikeys-toolbar">
         <div class="apikeys-search-wrap">
             <input class="apikeys-search" type="text" @bind="_search" @bind:event="oninput"
-                   placeholder="🔍 Buscar por nombre…" />
+                   placeholder="Buscar por nombre..." />
         </div>
         <div class="apikeys-filters">
             <button class="filter-pill @(string.IsNullOrEmpty(_filterProvider) ? "active" : "")"
@@ -57,7 +57,7 @@ else if (_keys.Count > 0)
     @if (filtered.Count == 0)
     {
         <div class="apikeys-empty">
-            <div class="apikeys-empty-icon">🔍</div>
+            <div class="apikeys-empty-icon"><i class="bi bi-search"></i></div>
             <div class="apikeys-empty-title">Sin resultados</div>
             <div class="apikeys-empty-desc">No hay claves que coincidan con los filtros aplicados.</div>
         </div>
@@ -135,7 +135,7 @@ else if (_keys.Count > 0)
 else
 {
     <div class="apikeys-empty">
-        <div class="apikeys-empty-icon">🔑</div>
+        <div class="apikeys-empty-icon"><i class="bi bi-key"></i></div>
         <div class="apikeys-empty-title">Sin API Keys configuradas</div>
         <div class="apikeys-empty-desc">Pulsa <strong>+ Nueva API Key</strong> para conectar con los proveedores de IA.</div>
     </div>

@@ -98,8 +98,10 @@ Rutas actuales:
   precios y FAQ. El acceso y el registro abren `LoginPopup`. Con sesion iniciada
   redirige a `/configuracion/apikeys`; al cerrar sesion se vuelve aqui. Los
   precios mostrados son orientativos y se editan en el propio componente.
-- `/modules`: catalogo y configuracion de modulos.
-- `/biblioteca`: archivos subidos a modulos.
+- `/modules`: catalogo y configuracion de modulos, agrupados por tipo, con
+  resumen (incluidos los que no tienen API key), buscador y filtro por proveedor.
+- `/biblioteca`: archivos subidos a modulos, en cuadricula (con miniatura de
+  las imagenes) o en lista, con resumen, buscador y filtro por tipo.
 - `/projects`: listado de proyectos y pipelines. Cada proyecto es una agrupacion
   plegable (titulo, descripcion y sus pipelines dentro) a la que se pueden anadir
   pipelines nuevos o ya existentes; los que no pertenecen a ninguno se listan al
@@ -112,7 +114,7 @@ Rutas actuales:
 - `/papelera`: pipelines borrados. Se pueden restaurar o eliminar
   definitivamente; no caducan solos.
 - `/configuracion/{seccion?}`: ajustes del tenant en una sola pagina, con una
-  pestana por seccion: `apikeys` (claves de proveedor), `redes-sociales`,
+  navegacion lateral por seccion: `apikeys` (claves de proveedor), `redes-sociales`,
   `mensajeria`, `shopify` y `reglas` (reglas obligatorias, con sub-pestanas
   "Mis reglas" y "Constantes"). Cada seccion es un componente de
   `Client/Components/Settings/` y solo se monta la activa.

@@ -1,11 +1,11 @@
-@page "/papelera"
+﻿@page "/papelera"
 @inject ApiClient Api
 @inject NavigationManager Nav
 
 @* Los pipelines borrados se guardan aqui enteros y no caducan: solo desaparecen
    cuando el usuario los elimina definitivamente desde esta pantalla. *@
 
-<div class="projects-page-header">
+<div class="page-header">
     <div>
         <h2>Papelera</h2>
         <p class="trash-page-hint">
@@ -79,8 +79,8 @@
 }
 else if (!_loading)
 {
-    <div class="projects-empty">
-        <div class="projects-empty-icon">&#x1F5D1;</div>
+    <div class="empty-hero">
+        <div class="empty-hero-icon">&#x1F5D1;</div>
         <p>La papelera esta vacia.</p>
         <p class="text-sm text-muted">Los pipelines que borres desde Proyectos apareceran aqui.</p>
     </div>
