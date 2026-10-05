@@ -739,51 +739,53 @@ else
                 var totalCost    = _executions.Sum(e => e.TotalEstimatedCost);
                 var successRate  = _executions.Count > 0 ? (int)Math.Round(100.0 * doneCount / _executions.Count) : 0;
 
-                @* ── Summary stats ── *@
-                <div class="history-stats">
-                    <div class="hstat">
-                        <span class="hstat-value">@_executions.Count</span>
-                        <span class="hstat-label">Ejecuciones</span>
+                @* ── Resumen ── *@
+                <div class="stat-row history-stat-row">
+                    <div class="stat-tile">
+                        <span class="stat-icon tone-violet"><i class="bi bi-lightning-charge"></i></span>
+                        <div><strong>@_executions.Count</strong><span>Ejecuciones</span></div>
                     </div>
-                    <div class="hstat">
-                        <span class="hstat-value hstat-ok">@successRate%</span>
-                        <span class="hstat-label">Éxito</span>
+                    <div class="stat-tile">
+                        <span class="stat-icon tone-green"><i class="bi bi-check2-circle"></i></span>
+                        <div><strong>@successRate%</strong><span>Tasa de éxito</span></div>
                     </div>
-                    <div class="hstat">
-                        <span class="hstat-value">~$@totalCost.ToString("F2")</span>
-                        <span class="hstat-label">Coste total</span>
+                    <div class="stat-tile">
+                        <span class="stat-icon tone-cyan"><i class="bi bi-currency-dollar"></i></span>
+                        <div><strong>~$@totalCost.ToString("F2")</strong><span>Coste total</span></div>
+                    </div>
+                    <div class="stat-tile @(failedCount > 0 ? "is-warning" : "")">
+                        <span class="stat-icon tone-amber"><i class="bi bi-exclamation-triangle"></i></span>
+                        <div><strong>@failedCount</strong><span>Fallidas@(runningCount > 0 ? $" · {runningCount} en curso" : "")</span></div>
                     </div>
                 </div>
 
                 @* ── Toolbar: search + status filters ── *@
-                <div class="history-toolbar">
-                    <div class="history-search">
-                        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
-                            <circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5" stroke-linecap="round"/>
-                        </svg>
-                        <input type="text" placeholder="Buscar por prompt…" value="@_historySearch"
+                <div class="page-toolbar">
+                    <div class="search-box">
+                        <i class="bi bi-search"></i>
+                        <input type="text" placeholder="Buscar por prompt..." value="@_historySearch"
                                @oninput="OnHistorySearchInput" />
                         @if (!string.IsNullOrEmpty(_historySearch))
                         {
-                            <button class="history-search-clear" @onclick="@(() => SetHistoryStatus(_historyStatusFilter, clearSearch: true))" title="Limpiar">&#x2715;</button>
+                            <button class="search-box-clear" @onclick="@(() => SetHistoryStatus(_historyStatusFilter, clearSearch: true))" title="Limpiar"><i class="bi bi-x-lg"></i></button>
                         }
                     </div>
-                    <div class="history-filters">
-                        <button class="hf-chip @(_historyStatusFilter == "all" ? "hf-chip-active" : "")"
+                    <div class="seg-filters">
+                        <button class="seg-filter @(_historyStatusFilter == "all" ? "active" : "")"
                                 @onclick="@(() => SetHistoryStatus("all"))">
-                            Todas <span class="hf-count">@_executions.Count</span>
+                            <i class="bi bi-grid"></i> Todas <span class="seg-filter-count">@_executions.Count</span>
                         </button>
-                        <button class="hf-chip hf-ok @(_historyStatusFilter == "completed" ? "hf-chip-active" : "")"
+                        <button class="seg-filter @(_historyStatusFilter == "completed" ? "active" : "")"
                                 @onclick="@(() => SetHistoryStatus("completed"))">
-                            Completadas <span class="hf-count">@doneCount</span>
+                            <i class="bi bi-check2-circle"></i> Completadas <span class="seg-filter-count">@doneCount</span>
                         </button>
-                        <button class="hf-chip hf-fail @(_historyStatusFilter == "failed" ? "hf-chip-active" : "")"
+                        <button class="seg-filter @(_historyStatusFilter == "failed" ? "active" : "")"
                                 @onclick="@(() => SetHistoryStatus("failed"))">
-                            Fallidas <span class="hf-count">@failedCount</span>
+                            <i class="bi bi-x-circle"></i> Fallidas <span class="seg-filter-count">@failedCount</span>
                         </button>
-                        <button class="hf-chip hf-run @(_historyStatusFilter == "running" ? "hf-chip-active" : "")"
+                        <button class="seg-filter @(_historyStatusFilter == "running" ? "active" : "")"
                                 @onclick="@(() => SetHistoryStatus("running"))">
-                            En curso <span class="hf-count">@runningCount</span>
+                            <i class="bi bi-hourglass-split"></i> En curso <span class="seg-filter-count">@runningCount</span>
                         </button>
                     </div>
                 </div>
@@ -802,10 +804,11 @@ else
 
                 @if (filtered.Count == 0)
                 {
-                    <div class="empty-state" style="padding: 2.5rem 1rem;">
-                        <span class="empty-state-icon">&#x1F50D;</span>
-                        <p class="text-sm text-muted">Ninguna ejecución coincide con los filtros</p>
-                        <button class="btn btn-sm" @onclick="@(() => SetHistoryStatus("all", clearSearch: true))">Limpiar filtros</button>
+                    <div class="empty-hero is-compact">
+                        <div class="empty-hero-icon"><i class="bi bi-search"></i></div>
+                        <h3>Sin resultados</h3>
+                        <p>Ninguna ejecución coincide con la búsqueda o el filtro.</p>
+                        <button class="btn btn-secondary" @onclick="@(() => SetHistoryStatus("all", clearSearch: true))">Limpiar filtros</button>
                     </div>
                 }
                 else
@@ -846,7 +849,7 @@ else
                                         @if (hdrFeedback.Count > 0)
                                         {
                                             <span class="hc-feedback-badge" title="Hay feedback del usuario sobre esta ejecución">
-                                                💬 Feedback@(hdrFeedback.Count > 1 ? $" ({hdrFeedback.Count})" : "")
+                                                <i class="bi bi-chat-left-text"></i> Feedback@(hdrFeedback.Count > 1 ? $" ({hdrFeedback.Count})" : "")
                                             </span>
                                         }
                                     </div>
@@ -871,15 +874,22 @@ else
                                     </div>
                                 </div>
                                 <div class="history-card-actions">
-                                    <button class="btn btn-sm hc-open-btn" @onclick="() => ViewExecution(e.Id)" @onclick:stopPropagation="true" title="Ver detalle completo">
-                                        Ver detalle
+                                    <button class="btn btn-sm btn-ghost hc-open-btn" @onclick="() => ViewExecution(e.Id)" @onclick:stopPropagation="true" title="Ver detalle completo">
+                                        <i class="bi bi-box-arrow-up-right"></i> Ver detalle
                                     </button>
-                                    <button class="btn btn-sm hc-export-btn" @onclick="() => ExportExecutionLog(e.Id)" @onclick:stopPropagation="true"
+                                    <button class="icon-btn hc-export-btn" @onclick="() => ExportExecutionLog(e.Id)" @onclick:stopPropagation="true"
                                             disabled="@(_exportingExecId == e.Id)"
-                                            title="Descargar un log de texto con toda la ejecución: pasos, entradas, salidas, archivos y logs">
-                                        @(_exportingExecId == e.Id ? "Exportando…" : "Exportar")
+                                            title="Exportar: descarga un log de texto con toda la ejecución (pasos, entradas, salidas, archivos y logs)">
+                                        @if (_exportingExecId == e.Id)
+                                        {
+                                            <span class="spinner" style="width:0.8rem;height:0.8rem;margin:0;"></span>
+                                        }
+                                        else
+                                        {
+                                            <i class="bi bi-download"></i>
+                                        }
                                     </button>
-                                    <span class="history-expand-icon @(isExpanded ? "hc-chevron-up" : "")">&#x25BC;</span>
+                                    <span class="history-expand-icon @(isExpanded ? "hc-chevron-up" : "")"><i class="bi bi-chevron-down"></i></span>
                                 </div>
                             </div>
 
@@ -900,7 +910,7 @@ else
                                             {
                                                 <div class="hc-feedback-item @(fb.Rating == "positive" ? "hc-feedback-positive" : "hc-feedback-negative")">
                                                     <div class="hc-feedback-head">
-                                                        <span class="hc-feedback-icon">@(fb.Rating == "positive" ? "👍" : "👎")</span>
+                                                        <span class="hc-feedback-icon"><i class="bi @(fb.Rating == "positive" ? "bi-hand-thumbs-up-fill" : "bi-hand-thumbs-down-fill")"></i></span>
                                                         <span class="hc-feedback-source">@FeedbackSourceLabel(fb.Source)</span>
                                                         <span class="hc-feedback-time">@fb.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</span>
                                                     </div>
@@ -922,7 +932,7 @@ else
                                         {
                                             <div class="hc-step-block hc-step-checkpoint">
                                                 <div class="hc-step-label">
-                                                    <span class="hc-step-icon">⏸</span>
+                                                    <span class="hc-step-icon"><i class="bi bi-pause-circle"></i></span>
                                                     <span class="hc-step-name">@step.ModuleName</span>
                                                     <span class="hc-step-tag hc-tag-warning">Checkpoint</span>
                                                     @if (e.Status == "WaitingForCheckpoint")
@@ -943,7 +953,7 @@ else
                                             {
                                                 <div class="hc-step-block">
                                                     <div class="hc-step-label">
-                                                        <span class="hc-step-icon">🖼</span>
+                                                        <span class="hc-step-icon"><i class="bi bi-image"></i></span>
                                                         <span class="hc-step-name">@step.ModuleName</span>
                                                         <span class="hc-step-tag">@parsed.Files.Count imagen(es)</span>
                                                     </div>
@@ -962,7 +972,7 @@ else
                                             {
                                                 <div class="hc-step-block">
                                                     <div class="hc-step-label">
-                                                        <span class="hc-step-icon">🎬</span>
+                                                        <span class="hc-step-icon"><i class="bi bi-camera-reels"></i></span>
                                                         <span class="hc-step-name">@step.ModuleName</span>
                                                     </div>
                                                     @foreach (var f in parsed.Files)
@@ -978,7 +988,7 @@ else
                                             {
                                                 <div class="hc-step-block">
                                                     <div class="hc-step-label">
-                                                        <span class="hc-step-icon">✍</span>
+                                                        <span class="hc-step-icon"><i class="bi bi-fonts"></i></span>
                                                         <span class="hc-step-name">@step.ModuleName</span>
                                                     </div>
                                                     <div class="hc-text-preview">
@@ -991,7 +1001,7 @@ else
                                         {
                                             <div class="hc-step-block hc-step-error">
                                                 <div class="hc-step-label">
-                                                    <span class="hc-step-icon">✗</span>
+                                                    <span class="hc-step-icon"><i class="bi bi-x-circle"></i></span>
                                                     <span class="hc-step-name">@step.ModuleName</span>
                                                 </div>
                                                 <div class="hc-error-msg">@step.ErrorMessage</div>
@@ -1004,8 +1014,8 @@ else
                             {
                                 <div class="history-card-body">
                                     <div class="hc-loading">
-                                        <span class="spinner" style="width:1rem;height:1rem;"></span>
-                                        <span class="text-sm text-muted">Cargando...</span>
+                                        <span class="page-loader-spinner is-small"></span>
+                                        <span class="text-sm text-muted">Cargando resultados...</span>
                                     </div>
                                 </div>
                             }
@@ -1017,7 +1027,7 @@ else
                 {
                     <div class="hc-load-more">
                         <span class="text-sm text-muted">Mostrando @pageItems.Count de @filtered.Count</span>
-                        <button class="btn btn-sm" @onclick="() => _historyPageSize += 20">Ver 20 más</button>
+                        <button class="btn btn-sm btn-secondary" @onclick="() => _historyPageSize += 20"><i class="bi bi-chevron-down"></i> Ver 20 más</button>
                     </div>
                 }
                 }
@@ -1040,47 +1050,65 @@ else
     @if (_showExecDetailModal)
     {
         <div class="modal-overlay" @onclick="() => _showExecDetailModal = false">
-            <div class="settings-modal" @onclick:stopPropagation="true" style="max-width: 1100px; width: 95vw;">
+            <div class="settings-modal exec-detail-modal" @onclick:stopPropagation="true">
                 <div class="settings-modal-header">
-                    <h3 style="margin: 0;">Detalle de ejecucion</h3>
-                    @if (_execDetailModal is not null && (_execDetailModal.Status == "Running" || _execDetailModal.Status == "WaitingForInput"))
-                    {
-                        <button class="btn btn-sm" style="margin-left: 0.5rem; font-size: 0.7rem;" @onclick="() => RefreshExecDetail(_execDetailModal.Id)">
-                            &#x21BB; Actualizar
-                        </button>
-                    }
-                    <button class="btn-icon" @onclick="() => { _showExecDetailModal = false; _execDetailRefreshTimer?.Dispose(); }">&#x2715;</button>
+                    <div class="settings-modal-title">
+                        <span class="settings-modal-icon"><i class="bi bi-activity"></i></span>
+                        <div>
+                            <h3>Detalle de ejecución</h3>
+                            @if (_execDetailModal is not null)
+                            {
+                                <p>@_execDetailModal.CreatedAt.ToLocalTime().ToString("dddd dd MMM yyyy · HH:mm")</p>
+                            }
+                        </div>
+                    </div>
+                    <div class="exec-detail-header-actions">
+                        @if (_execDetailModal is not null && (_execDetailModal.Status == "Running" || _execDetailModal.Status == "WaitingForInput"))
+                        {
+                            <button class="btn btn-sm btn-secondary" @onclick="() => RefreshExecDetail(_execDetailModal.Id)">
+                                <i class="bi bi-arrow-clockwise"></i> Actualizar
+                            </button>
+                        }
+                        <button class="btn-icon" title="Cerrar" @onclick="() => { _showExecDetailModal = false; _execDetailRefreshTimer?.Dispose(); }"><i class="bi bi-x-lg"></i></button>
+                    </div>
                 </div>
-                <div class="settings-modal-body" style="max-height: 75vh; overflow: hidden; padding: 0;">
+                <div class="settings-modal-body exec-detail-body">
                     @if (_execDetailModal is null)
                     {
-                        <p class="text-muted" style="padding: 1rem;">Cargando...</p>
+                        <PageLoader Variant="page" Label="Cargando ejecución..." />
                     }
                     else
                     {
-                        <div style="padding: 0.5rem 0.8rem;">
-                            <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap;">
-                                <span class="badge @StatusBadge(_execDetailModal.Status)">@_execDetailModal.Status</span>
-                                <span class="text-sm text-muted">@_execDetailModal.CreatedAt.ToString("dd MMM yyyy HH:mm")</span>
-                                @if (_execDetailModal.CompletedAt.HasValue)
+                        var execDuration = _execDetailModal.CompletedAt.HasValue
+                            ? _execDetailModal.CompletedAt.Value - _execDetailModal.CreatedAt
+                            : (TimeSpan?)null;
+                        <div class="exec-detail-summary">
+                            <div class="exec-summary-chips">
+                                <span class="hc-status-pill hc-pill-@(_execDetailModal.Status.ToLower())">
+                                    <span class="hc-dot hc-dot-@(_execDetailModal.Status.ToLower())"></span>
+                                    @StatusLabelEs(_execDetailModal.Status)
+                                </span>
+                                <span class="exec-summary-chip"><i class="bi bi-list-ol"></i> @_execDetailModal.Steps.Count(st => !PassThroughModuleTypes.Contains(st.ModuleType)) pasos</span>
+                                @if (execDuration is { } d)
                                 {
-                                    <span class="text-sm text-muted">- @_execDetailModal.CompletedAt.Value.ToString("HH:mm")</span>
+                                    <span class="exec-summary-chip"><i class="bi bi-stopwatch"></i> @(d.TotalMinutes >= 1 ? $"{(int)d.TotalMinutes} min {d.Seconds} s" : $"{Math.Max(1, (int)d.TotalSeconds)} s")</span>
                                 }
                                 @if (_execDetailModal.TotalEstimatedCost > 0)
                                 {
-                                    <span class="text-sm text-muted">~$@_execDetailModal.TotalEstimatedCost.ToString("F4")</span>
+                                    <span class="exec-summary-chip"><i class="bi bi-currency-dollar"></i> ~$@_execDetailModal.TotalEstimatedCost.ToString("F4")</span>
                                 }
                             </div>
                             @if (_execDetailModal.UserInput is not null)
                             {
-                                <div class="output-block" style="font-size: 0.8rem; margin-bottom: 0.5rem; max-height: 60px; overflow-y: auto;">
-                                    <strong>Prompt:</strong> @_execDetailModal.UserInput
+                                <div class="exec-detail-prompt">
+                                    <span class="exec-detail-prompt-label"><i class="bi bi-chat-left-quote"></i> Prompt</span>
+                                    <div class="exec-detail-prompt-text">@_execDetailModal.UserInput</div>
                                 </div>
                             }
                             @if (_execDetailModal.Variables is { Count: > 0 })
                             {
-                                <div class="output-block" style="font-size: 0.8rem; margin-bottom: 0.5rem;">
-                                    <strong>Variables:</strong>
+                                <div class="exec-detail-prompt">
+                                    <span class="exec-detail-prompt-label"><i class="bi bi-braces"></i> Variables</span>
                                     <span class="variables-chips">
                                         @foreach (var kv in _execDetailModal.Variables.OrderBy(k => k.Key))
                                         {
@@ -1091,9 +1119,10 @@ else
                             }
                         </div>
 
-                        <div style="display: flex; gap: 0; height: calc(75vh - 130px); overflow: hidden;">
+                        <div class="exec-detail-columns">
                             <!-- Left: Steps -->
-                            <div style="flex: 1; overflow-y: auto; padding: 0 0.8rem 0.8rem; border-right: 1px solid var(--border);">
+                            <div class="exec-detail-steps">
+                                <div class="exec-detail-col-title"><i class="bi bi-diagram-3"></i> Pasos</div>
                                 @{ var visibleSteps = _execDetailModal.Steps
                                     .Where(s => !PassThroughModuleTypes.Contains(s.ModuleType))
                                     .OrderBy(s => s.CreatedAt).ToList();
@@ -1110,15 +1139,20 @@ else
                                         <div class="exec-step-header" @onclick="() => ToggleStepExpanded(capturedModuleId)">
                                             <span class="exec-step-badge">@stepIdx</span>
                                             <span class="exec-step-name">@step.ModuleName</span>
-                                            <span class="badge @StatusBadge(step.Status)" style="font-size: 0.58rem;">@step.Status</span>
-                                            @if (step.EstimatedCost > 0)
-                                            {
-                                                <span class="text-sm text-muted">$@step.EstimatedCost.ToString("F4")</span>
-                                            }
-                                            @if (duration > 0)
-                                            {
-                                                <span class="text-sm text-muted">@(duration < 1 ? "<1s" : $"{duration:F0}s")</span>
-                                            }
+                                            <span class="hc-status-pill hc-pill-@(step.Status.ToLower())">
+                                                <span class="hc-dot hc-dot-@(step.Status.ToLower())"></span>
+                                                @StatusLabelEs(step.Status)
+                                            </span>
+                                            <span class="exec-step-meta">
+                                                @if (step.EstimatedCost > 0)
+                                                {
+                                                    <span><i class="bi bi-currency-dollar"></i>@step.EstimatedCost.ToString("F4")</span>
+                                                }
+                                                @if (duration > 0)
+                                                {
+                                                    <span><i class="bi bi-stopwatch"></i>@(duration < 1 ? "<1s" : $"{duration:F0}s")</span>
+                                                }
+                                            </span>
                                             @if (step.Status == "WaitingForCheckpoint" && _execDetailModal.Status == "WaitingForCheckpoint")
                                             {
                                                 <button class="btn btn-success btn-xs" style="font-size: 0.6rem; margin-left: auto; padding: 0.1rem 0.35rem;"
@@ -1127,7 +1161,7 @@ else
                                                     Revisar
                                                 </button>
                                             }
-                                            <span class="exec-step-chevron @(isExpanded ? "expanded" : "")">&#x25B6;</span>
+                                            <span class="exec-step-chevron @(isExpanded ? "expanded" : "")"><i class="bi bi-chevron-right"></i></span>
                                         </div>
 
                                         @if (step.ErrorMessage is not null)
@@ -1183,7 +1217,7 @@ else
                                                             @if (!string.IsNullOrWhiteSpace(inputParsed.PastExecutionsLearning))
                                                             {
                                                                 <div class="exec-io-section exec-io-learning">
-                                                                    <div class="exec-io-title exec-io-learning-title">🧠 Aprendizaje de ejecuciones pasadas</div>
+                                                                    <div class="exec-io-title exec-io-learning-title"><i class="bi bi-lightbulb"></i> Aprendizaje de ejecuciones pasadas</div>
                                                                     <div class="exec-io-block">@inputParsed.PastExecutionsLearning</div>
                                                                 </div>
                                                             }
@@ -1326,7 +1360,7 @@ else
                                                                 var capturedExecId = _execDetailModal.Id;
                                                                 <button class="btn btn-sm" style="font-size: 0.7rem; padding: 0.12rem 0.35rem;"
                                                                         @onclick="() => DownloadFile(capturedExecId, capturedFile.Id, capturedFile.FileName)">
-                                                                    &#x2B73; @file.FileName <span class="text-muted">(@FormatFileSize(file.FileSize))</span>
+                                                                    <i class="bi bi-download"></i> @file.FileName <span class="text-muted">(@FormatFileSize(file.FileSize))</span>
                                                                 </button>
                                                             }
                                                         </div>
@@ -1340,7 +1374,7 @@ else
                                                     <div style="margin-top: 0.4rem; display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;">
                                                         <button class="btn btn-sm btn-outline" style="font-size: 0.68rem; padding: 0.12rem 0.4rem;"
                                                                 @onclick="() => ToggleRetryPanel(capturedModuleIdForRetry)">
-                                                            &#x21BB; Reiniciar desde aqui
+                                                            <i class="bi bi-arrow-clockwise"></i> Reiniciar desde aqui
                                                         </button>
                                                         @if (_retryModuleId == capturedModuleIdForRetry)
                                                         {
@@ -1364,9 +1398,9 @@ else
                             </div>
 
                             <!-- Right: Logs -->
-                            <div style="width: 360px; min-width: 280px; overflow-y: auto; padding: 0 0.8rem 0.8rem; display: flex; flex-direction: column;">
-                                <div style="font-weight: 600; font-size: 0.85rem; padding: 0.45rem 0 0.4rem; margin-bottom: 0.2rem; position: sticky; top: 0; background: var(--bg-card); border-bottom: 1px solid var(--border); z-index: 1; display: flex; align-items: center; gap: 0.4rem;">
-                                    <span>Logs</span>
+                            <div class="exec-detail-logs">
+                                <div class="exec-detail-col-title">
+                                    <span><i class="bi bi-terminal"></i> Logs</span>
                                     @if (_execDetailLogs is { Count: > 0 })
                                     {
                                         <span class="inspector-log-count">@_execDetailLogs.Count</span>
@@ -1437,35 +1471,47 @@ else
     @if (_showSettings)
     {
         <div class="modal-overlay" @onclick="() => _showSettings = false">
-            <div class="settings-modal" @onclick:stopPropagation="true">
+            <div class="settings-modal pipeline-settings-modal" @onclick:stopPropagation="true">
                 <div class="settings-modal-header">
-                    <h3 style="margin: 0;">Configuracion</h3>
-                    <button class="btn-icon" @onclick="() => _showSettings = false">&#x2715;</button>
+                    <div class="settings-modal-title">
+                        <span class="settings-modal-icon"><i class="bi bi-gear"></i></span>
+                        <div>
+                            <h3>Ajustes del pipeline</h3>
+                            <p>@_project.Name · integraciones y automatización</p>
+                        </div>
+                    </div>
+                    <button class="btn-icon" title="Cerrar" @onclick="() => _showSettings = false"><i class="bi bi-x-lg"></i></button>
                 </div>
 
-                <!-- Settings tabs -->
-                <div class="settings-tab-bar">
-                    <button class="settings-tab @(_settingsTab == "messaging" ? "settings-tab-active" : "")"
-                            @onclick='() => _settingsTab = "messaging"'>
-                        Mensajeria
-                    </button>
-                    <button class="settings-tab @(_settingsTab == "social" ? "settings-tab-active" : "")"
-                            @onclick='() => _settingsTab = "social"'>
-                        Redes sociales
-                    </button>
-                    <button class="settings-tab @(_settingsTab == "shopify" ? "settings-tab-active" : "")"
-                            @onclick='() => _settingsTab = "shopify"'>
-                        Shopify
-                    </button>
-                    <button class="settings-tab @(_settingsTab == "schedule" ? "settings-tab-active" : "")"
-                            @onclick='() => _settingsTab = "schedule"'>
-                        Programacion
-                    </button>
-                    <button class="settings-tab @(_settingsTab == "learning" ? "settings-tab-active" : "")"
-                            @onclick="OpenLearningTab">
-                        Aprendizaje
-                    </button>
-                </div>
+                <div class="pipeline-settings-layout">
+                    @* Navegacion lateral, igual que la pagina de Configuracion. *@
+                    <nav class="settings-nav" aria-label="Secciones de ajustes del pipeline">
+                        <button class="settings-nav-item @(_settingsTab == "messaging" ? "is-active" : "")"
+                                @onclick='() => _settingsTab = "messaging"'>
+                            <span class="settings-nav-icon" style="--tone:#22d3ee"><i class="bi bi-telegram"></i></span>
+                            <span class="settings-nav-text"><strong>Mensajeria</strong><small>Bot para aprobaciones</small></span>
+                        </button>
+                        <button class="settings-nav-item @(_settingsTab == "social" ? "is-active" : "")"
+                                @onclick='() => _settingsTab = "social"'>
+                            <span class="settings-nav-icon" style="--tone:#ec4899"><i class="bi bi-share"></i></span>
+                            <span class="settings-nav-text"><strong>Redes sociales</strong><small>Donde se publica</small></span>
+                        </button>
+                        <button class="settings-nav-item @(_settingsTab == "shopify" ? "is-active" : "")"
+                                @onclick='() => _settingsTab = "shopify"'>
+                            <span class="settings-nav-icon" style="--tone:#34d399"><i class="bi bi-shop"></i></span>
+                            <span class="settings-nav-text"><strong>Shopify</strong><small>Tienda conectada</small></span>
+                        </button>
+                        <button class="settings-nav-item @(_settingsTab == "schedule" ? "is-active" : "")"
+                                @onclick='() => _settingsTab = "schedule"'>
+                            <span class="settings-nav-icon" style="--tone:#f59e0b"><i class="bi bi-alarm"></i></span>
+                            <span class="settings-nav-text"><strong>Programacion</strong><small>Ejecuciones automaticas</small></span>
+                        </button>
+                        <button class="settings-nav-item @(_settingsTab == "learning" ? "is-active" : "")"
+                                @onclick="OpenLearningTab">
+                            <span class="settings-nav-icon" style="--tone:#8b83ff"><i class="bi bi-lightbulb"></i></span>
+                            <span class="settings-nav-text"><strong>Aprendizaje</strong><small>Feedback de ejecuciones</small></span>
+                        </button>
+                    </nav>
 
                 <div class="settings-modal-body">
                     <!-- MESSAGING TAB -->
@@ -1940,7 +1986,7 @@ else
                                 {
                                     <div class="hc-feedback-item @(en.Status == "error" ? "hc-feedback-negative" : "")" style="margin-bottom:0.5rem;">
                                         <div class="hc-feedback-head">
-                                            <span class="hc-feedback-icon">@(en.Status == "error" ? "⚠️" : "🧠")</span>
+                                            <span class="hc-feedback-icon"><i class="bi @(en.Status == "error" ? "bi-exclamation-triangle" : "bi-lightbulb")"></i></span>
                                             <span class="hc-feedback-source">@LearningActionLabel(en.DocAction)</span>
                                             <span class="hc-feedback-time">@en.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</span>
                                         </div>
@@ -1960,7 +2006,7 @@ else
                                             }
                                             @if (!string.IsNullOrWhiteSpace(en.ImageCritique))
                                             {
-                                                <div class="text-sm" style="margin-top:0.2rem;">🖼 @en.ImageCritique</div>
+                                                <div class="text-sm" style="margin-top:0.2rem;"><i class="bi bi-image"></i> @en.ImageCritique</div>
                                             }
                                         }
                                     </div>
@@ -1969,6 +2015,7 @@ else
                         }
                     }
                 </div>
+                </div> @* end pipeline-settings-layout *@
             </div>
         </div>
     }
@@ -2249,6 +2296,7 @@ else
         "WaitingForCheckpoint" => "En checkpoint",
         "WaitingForReview"     => "En revisión",
         "WaitingForInput"      => "Esperando",
+        "Skipped"              => "Saltado",
         _                      => status
     };
 
