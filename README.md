@@ -100,6 +100,11 @@ Rutas actuales:
   precios mostrados son orientativos y se editan en el propio componente.
 - `/modules`: catalogo y configuracion de modulos, agrupados por tipo, con
   resumen (incluidos los que no tienen API key), buscador y filtro por proveedor.
+  El alta es un asistente en cuatro pasos: proveedor (tarjetas con logotipo),
+  tipo (texto, imagen y video en grande; el resto debajo), modelo (tarjetas con
+  estadisticas de economia, contexto y versatilidad sacadas de
+  `/api/models/pricing` y del catalogo) y resumen con nombre, descripcion, API key
+  y configuracion.
 - `/biblioteca`: archivos subidos a modulos, en cuadricula (con miniatura de
   las imagenes) o en lista, con resumen, buscador y filtro por tipo.
 - `/projects`: listado de proyectos y pipelines. Cada proyecto es una agrupacion

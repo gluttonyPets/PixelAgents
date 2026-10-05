@@ -10,7 +10,7 @@
         <p>Piezas reutilizables con su proveedor, modelo y configuración. Úsalas en cualquier pipeline.</p>
     </div>
     <div class="page-actions">
-        <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
+        <button class="btn btn-primary" @onclick="OpenCreateWizard">
             <i class="bi bi-plus-lg"></i> Nuevo módulo
         </button>
     </div>
@@ -69,96 +69,214 @@
     </div>
 }
 
-@* Modal de creación: se renderiza solo cuando _showCreateModal es true.
-   El overlay cubre toda la pantalla; hacer clic sobre él cierra el modal (CloseCreateModal).
-   @onclick:stopPropagation evita que el clic dentro del contenido propague al overlay y lo cierre. *@
+@* Asistente de creacion de modulo, en cuatro pasos: proveedor, tipo, modelo y
+   resumen. Clic en el fondo o en la X cierra sin guardar (CloseCreateModal); el
+   clic dentro del contenido no se propaga al fondo. *@
 @if (_showCreateModal)
 {
+    var wizardModel = GetSelectedModel();
     <div class="modal-overlay" @onclick="CloseCreateModal">
-        <div class="modal-content" style="max-width:760px; width:95vw;" @onclick:stopPropagation="true">
-            <div class="modal-header">
-                <h3 style="margin:0; font-size:1.05rem; flex:1;">Nuevo módulo</h3>
-                @* Botón X en la cabecera del modal: cierre explícito sin guardar *@
-                <button class="btn-icon" @onclick="CloseCreateModal">&#x2715;</button>
-            </div>
-            @* modal-body admite scroll interno para formularios largos (ver CSS global .modal-body) *@
-            <div class="modal-body">
-    @if (_error is not null)
-    {
-        <div class="alert alert-error">@_error</div>
-    }
-
-    <!-- Step 1: Provider -->
-    <div class="form-group">
-        <label>Proveedor</label>
-        <select value="@_provider" @onchange="OnProviderChanged">
-            <option value="">-- Seleccionar proveedor --</option>
-            <option value="OpenAI">OpenAI</option>
-            <option value="Anthropic">Anthropic</option>
-            <option value="Google">Google (Gemini)</option>
-            <option value="xAI">xAI (Grok)</option>
-            <option value="LeonardoAI">Leonardo AI</option>
-            <option value="Canva">Canva</option>
-            <option value="SearchConsole">Google Search Console</option>
-        </select>
-    </div>
-
-    @if (!string.IsNullOrEmpty(_provider))
-    {
-        <!-- Step 2: Module Type (filtered by provider) -->
-        <div class="form-group">
-            <label>Tipo de modulo</label>
-            <select value="@_moduleType" @onchange="OnModuleTypeChanged">
-                <option value="">-- Seleccionar tipo --</option>
-                @foreach (var t in GetAvailableTypes())
-                {
-                    <option value="@t.Value">@t.Label</option>
-                }
-            </select>
-        </div>
-    }
-
-    @if (!string.IsNullOrEmpty(_moduleType))
-    {
-        <!-- Step 3: Model (filtered by provider + type) -->
-        <div class="form-group">
-            <label>Modelo</label>
-            <select value="@_model" @onchange="OnModelChanged">
-                <option value="">-- Seleccionar modelo --</option>
-                @foreach (var m in GetAvailableModels())
-                {
-                    <option value="@m.Id">@m.DisplayName</option>
-                }
-            </select>
-            @{ var selectedModel = GetSelectedModel(); }
-            @if (selectedModel is not null)
-            {
-                <div class="model-info">
-                    <span class="text-sm text-muted">@selectedModel.Description</span>
-                    @if (selectedModel.MaxContext is not null)
-                    {
-                        <span class="badge badge-info">@selectedModel.MaxContext tokens</span>
-                    }
-                    @foreach (var cap in selectedModel.Capabilities)
-                    {
-                        <span class="badge badge-success">@cap</span>
-                    }
+        <div class="modal-content module-wizard" @onclick:stopPropagation="true">
+            <div class="wizard-header">
+                <div class="settings-modal-title">
+                    <span class="settings-modal-icon"><i class="bi bi-boxes"></i></span>
+                    <div>
+                        <h3>Nuevo módulo</h3>
+                        <p>@WizardSubtitle()</p>
+                    </div>
                 </div>
-                <ModelLifecycleBadge Info="@GetLifecycle(selectedModel.Id)" />
-            }
-        </div>
+                <button class="btn-icon" title="Cerrar" @onclick="CloseCreateModal"><i class="bi bi-x-lg"></i></button>
+            </div>
 
-        <!-- Name & Description -->
-        <div class="form-row">
-            <div class="form-group">
-                <label>Nombre del modulo</label>
-                <input type="text" @bind="_name" placeholder="Ej: GPT-4o para textos" />
-            </div>
-            <div class="form-group">
-                <label>Descripcion</label>
-                <input type="text" @bind="_desc" placeholder="Descripcion opcional" />
-            </div>
-        </div>
+            <ol class="wizard-steps">
+                @foreach (var (num, label) in WizardSteps)
+                {
+                    var done = num < _wizardStep;
+                    <li class="wizard-step @(num == _wizardStep ? "is-active" : "") @(done ? "is-done" : "")">
+                        <button disabled="@(!done)" @onclick="() => _wizardStep = num">
+                            <span class="wizard-step-num">@if (done) { <i class="bi bi-check-lg"></i> } else { @num }</span>
+                            <span class="wizard-step-label">@label</span>
+                        </button>
+                    </li>
+                }
+            </ol>
+
+            <div class="modal-body wizard-body">
+                @if (_error is not null)
+                {
+                    <div class="alert alert-error">@_error</div>
+                }
+
+                @switch (_wizardStep)
+                {
+                    case 1:
+                        @* ── Paso 1: proveedor ── *@
+                        <div class="wizard-providers">
+                            @foreach (var prov in ProviderOptions)
+                            {
+                                var types = AllModels.Where(m => m.Provider == prov.Id).SelectMany(m => m.Types).Where(t => t != "Publish").Distinct().Count();
+                                var models = AllModels.Count(m => m.Provider == prov.Id);
+                                var keys = _keys.Count(k => k.ProviderType.Equals(prov.Id, StringComparison.OrdinalIgnoreCase));
+                                <button class="wizard-provider @(_provider == prov.Id ? "is-selected" : "")" @onclick="() => SelectProvider(prov.Id)">
+                                    <span class="wizard-provider-logo"><ProviderIcon Provider="@prov.Id" Size="34" /></span>
+                                    <strong>@prov.Label</strong>
+                                    <span class="wizard-provider-tag">@prov.Tagline</span>
+                                    <span class="wizard-provider-meta">
+                                        <span>@models @(models == 1 ? "modelo" : "modelos")</span>
+                                        <span>@types @(types == 1 ? "tipo" : "tipos")</span>
+                                    </span>
+                                    @if (keys > 0)
+                                    {
+                                        <span class="wizard-provider-key is-ok" title="Tienes API key de este proveedor"><i class="bi bi-key-fill"></i></span>
+                                    }
+                                </button>
+                            }
+                        </div>
+                        break;
+
+                    case 2:
+                        @* ── Paso 2: tipo. Los tres principales en grande; el resto debajo. ── *@
+                        var available = GetAvailableTypes().Select(t => t.Value).ToHashSet();
+                        <div class="wizard-main-types">
+                            @foreach (var t in MainTypes)
+                            {
+                                var meta = TypeMetaFor(t);
+                                var enabled = available.Contains(t);
+                                <button class="wizard-type is-@t.ToLowerInvariant() @(enabled ? "" : "is-disabled") @(_moduleType == t ? "is-selected" : "")"
+                                        style="--tone:@meta.Tone" disabled="@(!enabled)"
+                                        title="@(enabled ? meta.Description : $"No disponible con {ProviderLabel(_provider)}")"
+                                        @onclick="() => SelectType(t)">
+                                    <span class="wizard-type-art" aria-hidden="true">
+                                        @if (t == "Text")
+                                        {
+                                            <span class="art-text"><span></span><span></span><span></span><i class="art-caret"></i></span>
+                                        }
+                                        else if (t == "Image")
+                                        {
+                                            <span class="art-image"><i class="art-sun"></i><i class="art-hill art-hill-1"></i><i class="art-hill art-hill-2"></i></span>
+                                        }
+                                        else
+                                        {
+                                            <span class="art-video"><i class="art-ring"></i><i class="art-ring art-ring-2"></i><i class="bi bi-play-fill"></i></span>
+                                        }
+                                    </span>
+                                    <strong>@meta.Label</strong>
+                                    <span class="wizard-type-desc">@meta.Description</span>
+                                    @if (!enabled)
+                                    {
+                                        <span class="wizard-type-off">No disponible con @ProviderLabel(_provider)</span>
+                                    }
+                                </button>
+                            }
+                        </div>
+
+                        var others = GetAvailableTypes().Where(t => !MainTypes.Contains(t.Value)).ToList();
+                        @if (others.Count > 0)
+                        {
+                            <div class="wizard-section-label">Otros tipos</div>
+                            <div class="wizard-other-types">
+                                @foreach (var t in others)
+                                {
+                                    var meta = TypeMetaFor(t.Value);
+                                    <button class="wizard-type-small @(_moduleType == t.Value ? "is-selected" : "")" style="--tone:@meta.Tone"
+                                            title="@meta.Description" @onclick="() => SelectType(t.Value)">
+                                        <span class="wizard-type-small-icon"><i class="bi @meta.Icon"></i></span>
+                                        <span class="wizard-type-small-text">
+                                            <strong>@t.Label</strong>
+                                            <small>@meta.Description</small>
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                        break;
+
+                    case 3:
+                        @* ── Paso 3: modelo, como elegir personaje: cada uno con sus estadisticas. ── *@
+                        var candidates = GetAvailableModels();
+                        var stats = ComputeStats(candidates);
+                        <div class="wizard-models">
+                            @foreach (var m in candidates)
+                            {
+                                var st = stats[m.Id];
+                                var lc = GetLifecycle(m.Id);
+                                <button class="wizard-model @(_model == m.Id ? "is-selected" : "") @(lc?.Status == "retired" ? "is-retired" : "")"
+                                        @onclick="() => SelectModel(m.Id)" @ondblclick="() => { SelectModel(m.Id); GoToSummary(); }">
+                                    @if (m.Description.Contains("Recomendado", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="wizard-model-ribbon"><i class="bi bi-star-fill"></i> Recomendado</span>
+                                    }
+                                    <span class="wizard-model-head">
+                                        <span class="wizard-model-avatar"><ProviderIcon Provider="@m.Provider" Size="22" /></span>
+                                        <span class="wizard-model-name">
+                                            <strong>@m.DisplayName</strong>
+                                            <small>@m.Id</small>
+                                        </span>
+                                        @if (_model == m.Id)
+                                        {
+                                            <span class="wizard-model-check"><i class="bi bi-check-lg"></i></span>
+                                        }
+                                    </span>
+                                    <span class="wizard-model-desc">@m.Description</span>
+                                    <span class="wizard-stats">
+                                        @foreach (var stat in st.Bars)
+                                        {
+                                            <span class="wizard-stat">
+                                                <span class="wizard-stat-label"><i class="bi @stat.Icon"></i> @stat.Label</span>
+                                                <span class="wizard-stat-track"><span class="wizard-stat-fill" style="--w:@(stat.Percent)%; --tone:@stat.Tone"></span></span>
+                                                <span class="wizard-stat-value">@stat.Value</span>
+                                            </span>
+                                        }
+                                    </span>
+                                    <span class="wizard-model-caps">
+                                        @foreach (var cap in m.Capabilities)
+                                        {
+                                            <span class="cap-chip">@CapLabelEs(cap)</span>
+                                        }
+                                        <ModelLifecycleBadge Info="@lc" Compact="true" />
+                                    </span>
+                                </button>
+                            }
+                        </div>
+                        break;
+
+                    default:
+                        @* ── Paso 4: resumen y datos del modulo ── *@
+                        <div class="wizard-summary-layout">
+                            <aside class="wizard-summary-card">
+                                <span class="wizard-summary-logo"><ProviderIcon Provider="@_provider" Size="30" /></span>
+                                <strong class="wizard-summary-model">@(wizardModel?.DisplayName ?? _model)</strong>
+                                <span class="wizard-summary-id">@_model</span>
+                                <dl>
+                                    <dt>Proveedor</dt><dd>@ProviderLabel(_provider)</dd>
+                                    <dt>Tipo</dt><dd>@(GetAvailableTypes().FirstOrDefault(t => t.Value == _moduleType)?.Label ?? _moduleType)</dd>
+                                    @if (wizardModel is not null)
+                                    {
+                                        var sumStats = ComputeStats(GetAvailableModels())[wizardModel.Id];
+                                        @foreach (var stat in sumStats.Bars)
+                                        {
+                                            <dt>@stat.Label</dt><dd>@stat.Value</dd>
+                                        }
+                                    }
+                                </dl>
+                                @if (wizardModel is not null)
+                                {
+                                    <p class="wizard-summary-desc">@wizardModel.Description</p>
+                                }
+                                <ModelLifecycleBadge Info="@GetLifecycle(_model)" />
+                            </aside>
+
+                            <div class="wizard-summary-form">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Nombre del modulo</label>
+                                        <input type="text" @bind="_name" placeholder="Ej: GPT-4o para textos" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Descripcion</label>
+                                        <input type="text" @bind="_desc" placeholder="Descripcion opcional" />
+                                    </div>
+                                </div>
 
         <!-- API Key (filtered by provider) — hidden for System provider -->
         @if (_provider != "System")
@@ -477,8 +595,31 @@
             </div>
         }
 
-        <button class="btn btn-primary mt-1" @onclick="Create" disabled="@_loading">Crear Modulo</button>
-    }
+                            </div>
+                        </div>
+                        break;
+                }
+            </div>
+
+            <div class="wizard-footer">
+                @if (_wizardStep > 1)
+                {
+                    <button class="btn btn-secondary" @onclick="() => _wizardStep--"><i class="bi bi-arrow-left"></i> Atrás</button>
+                }
+                <span class="wizard-footer-spacer"></span>
+                <span class="wizard-footer-step">Paso @_wizardStep de 4</span>
+                @if (_wizardStep == 3)
+                {
+                    <button class="btn btn-primary" disabled="@string.IsNullOrEmpty(_model)" @onclick="GoToSummary">
+                        Continuar <i class="bi bi-arrow-right"></i>
+                    </button>
+                }
+                else if (_wizardStep == 4)
+                {
+                    <button class="btn btn-primary" @onclick="Create" disabled="@_loading">
+                        <i class="bi bi-check2-circle"></i> @(_loading ? "Creando..." : "Crear módulo")
+                    </button>
+                }
             </div>
         </div>
     </div>
@@ -876,7 +1017,7 @@ else
             tamaño de imagen...). Lo creas una vez y lo reutilizas en todos tus pipelines.
         </p>
         <div class="empty-hero-actions">
-            <button class="btn btn-primary" @onclick="() => _showCreateModal = true">
+            <button class="btn btn-primary" @onclick="OpenCreateWizard">
                 <i class="bi bi-plus-lg"></i> Crear primer módulo
             </button>
             <a class="btn btn-secondary" href="/configuracion/apikeys"><i class="bi bi-key"></i> Configurar API keys</a>
@@ -993,6 +1134,7 @@ else
     private void CloseCreateModal()
     {
         _showCreateModal = false;
+        _wizardStep = 1;
         _error = null;
         _provider = "";
         _moduleType = "";
@@ -1245,6 +1387,190 @@ else
 
     ];
 
+    // ── Asistente de creacion ──
+    private int _wizardStep = 1;
+    private Dictionary<string, ModelPriceResponse> _pricing = new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly (int Num, string Label)[] WizardSteps =
+        [(1, "Proveedor"), (2, "Tipo"), (3, "Modelo"), (4, "Resumen")];
+
+    private sealed record ProviderOption(string Id, string Label, string Tagline);
+    private static readonly ProviderOption[] ProviderOptions =
+    [
+        new("OpenAI", "OpenAI", "GPT, imagen, voz y transcripcion"),
+        new("Anthropic", "Anthropic", "Claude: redaccion y razonamiento"),
+        new("Google", "Google Gemini", "Gemini e Imagen, contexto enorme"),
+        new("xAI", "xAI", "Grok: rapido y con imagen"),
+        new("LeonardoAI", "Leonardo AI", "Imagen artistica y video"),
+        new("Canva", "Canva", "Disenos y plantillas de marca"),
+        new("SearchConsole", "Search Console", "Datos SEO de tu web"),
+    ];
+
+    private static string ProviderLabel(string id) =>
+        ProviderOptions.FirstOrDefault(p => p.Id == id)?.Label ?? id;
+
+    private static readonly string[] MainTypes = ["Text", "Image", "Video"];
+
+    private sealed record TypeMeta(string Label, string Icon, string Tone, string Description);
+
+    private static TypeMeta TypeMetaFor(string type) => type switch
+    {
+        "Text"          => new("Texto", "bi-fonts", "#8b83ff", "Redacta copys, articulos, guiones o respuestas a partir de un prompt."),
+        "Image"         => new("Imagen", "bi-image", "#f59e0b", "Genera o edita imagenes a partir de una descripcion."),
+        "Video"         => new("Video", "bi-camera-reels", "#ec4899", "Convierte una imagen en un clip de video animado."),
+        "Audio"         => new("Audio (TTS)", "bi-soundwave", "#f97316", "Convierte texto en voz natural."),
+        "Transcription" => new("Transcripcion", "bi-mic", "#22d3ee", "Pasa audio o video a texto."),
+        "Embeddings"    => new("Embeddings", "bi-bounding-box-circles", "#14b8a6", "Vectoriza texto para buscar por significado."),
+        "Orchestrator"  => new("Orquestador", "bi-diagram-3", "#a78bfa", "Planifica tareas y reparte el trabajo entre modulos."),
+        "Coordinator"   => new("Coordinador", "bi-people", "#60a5fa", "Combina varias entradas en una sola salida."),
+        "Design"        => new("Diseno", "bi-palette", "#06b6d4", "Crea disenos y rellena plantillas de Canva."),
+        "SearchConsole" => new("Search Console", "bi-graph-up", "#4285f4", "Trae clics, impresiones y posicion de tu web."),
+        _               => new(type, "bi-box", "#8b92a8", "Modulo de tipo " + type + "."),
+    };
+
+    private string WizardSubtitle() => _wizardStep switch
+    {
+        1 => "Elige el proveedor de IA",
+        2 => $"{ProviderLabel(_provider)} · ¿que quieres que haga?",
+        3 => $"{ProviderLabel(_provider)} · {TypeMetaFor(_moduleType).Label} · elige el modelo",
+        _ => "Revisa y pon nombre a tu modulo",
+    };
+
+    private async Task OpenCreateWizard()
+    {
+        CloseCreateModal();
+        _showCreateModal = true;
+        // Las tarifas alimentan las estadisticas del paso de modelo. Si fallan, las
+        // tarjetas siguen funcionando con contexto y capacidades.
+        if (_pricing.Count == 0)
+        {
+            try { _pricing = (await Api.GetModelPricingAsync()).ToDictionary(m => m.Id, StringComparer.OrdinalIgnoreCase); }
+            catch { }
+        }
+    }
+
+    private void SelectProvider(string provider)
+    {
+        if (_provider != provider)
+        {
+            _provider = provider;
+            _moduleType = "";
+            _model = "";
+            ResetConfig();
+        }
+        _error = null;
+        _wizardStep = 2;
+    }
+
+    private void SelectType(string type)
+    {
+        if (_moduleType != type)
+        {
+            _moduleType = type;
+            _model = "";
+            ResetConfig();
+        }
+        _error = null;
+        // Con un solo modelo no hay nada que elegir: se marca y se sigue igual al
+        // paso de modelo para que vea sus datos.
+        var models = GetAvailableModels();
+        if (models.Count == 1) SelectModel(models[0].Id);
+        _wizardStep = 3;
+    }
+
+    private void SelectModel(string modelId) => OnModelChanged(new ChangeEventArgs { Value = modelId });
+
+    private void GoToSummary()
+    {
+        if (string.IsNullOrEmpty(_model)) return;
+        if (string.IsNullOrWhiteSpace(_name)) _name = GetSelectedModel()?.DisplayName ?? _model;
+        // Si solo hay una API key del proveedor, se preselecciona.
+        var keys = _keys.Where(k => k.ProviderType.Equals(_provider, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (string.IsNullOrEmpty(_apiKeyId) && keys.Count == 1) _apiKeyId = keys[0].Id.ToString();
+        _wizardStep = 4;
+    }
+
+    private sealed record StatBar(string Label, string Icon, string Tone, int Percent, string Value);
+    private sealed record ModelStats(List<StatBar> Bars);
+
+    /// <summary>
+    /// Estadisticas de cada modelo, relativas al resto de candidatos del mismo tipo
+    /// y proveedor: economia (precio invertido, escala log), contexto (escala log) y
+    /// versatilidad (numero de capacidades). Solo se pinta lo que hay dato.
+    /// </summary>
+    private Dictionary<string, ModelStats> ComputeStats(List<ModelInfo> models)
+    {
+        decimal? Cost(ModelInfo m)
+        {
+            if (!_pricing.TryGetValue(m.Id, out var p)) return null;
+            var c = p.Kind switch
+            {
+                "text"  => p.CostFor(10_000, 2_000),
+                "image" => p.ImageMedium ?? 0m,
+                _       => p.AuxAmount ?? 0m,
+            };
+            return c > 0m ? c : null;
+        }
+        string CostText(ModelInfo m, decimal c) =>
+            _pricing.TryGetValue(m.Id, out var p) && p.Kind == "image" ? $"${c:0.000} / img"
+            : _pricing.TryGetValue(m.Id, out var q) && q.Kind == "text" ? $"${c:0.0000} / ejec."
+            : $"${c:0.000}";
+        long? Ctx(ModelInfo m)
+        {
+            if (_pricing.TryGetValue(m.Id, out var p) && p.ContextTokens is > 0) return p.ContextTokens;
+            if (m.MaxContext is null) return null;
+            var t = m.MaxContext.Trim().ToUpperInvariant();
+            if (t.EndsWith("M") && double.TryParse(t[..^1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var mm)) return (long)(mm * 1_000_000);
+            if (t.EndsWith("K") && double.TryParse(t[..^1], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var kk)) return (long)(kk * 1_000);
+            return null;
+        }
+        static int LogPct(double v, double min, double max) =>
+            max <= min ? 100 : (int)Math.Round(20 + 80 * (Math.Log10(v) - Math.Log10(min)) / (Math.Log10(max) - Math.Log10(min)));
+
+        var costs = models.Select(Cost).Where(c => c is not null).Select(c => (double)c!.Value).ToList();
+        var ctxs = models.Select(Ctx).Where(c => c is not null).Select(c => (double)c!.Value).ToList();
+        var maxCaps = Math.Max(1, models.Max(m => m.Capabilities.Length));
+
+        var result = new Dictionary<string, ModelStats>();
+        foreach (var m in models)
+        {
+            var bars = new List<StatBar>();
+            if (Cost(m) is { } c && costs.Count > 0)
+            {
+                // Mas barato = barra mas llena.
+                var pct = 120 - LogPct((double)c, costs.Min(), costs.Max());
+                bars.Add(new("Economia", "bi-piggy-bank", "#34d399", Math.Clamp(pct, 20, 100), CostText(m, c)));
+            }
+            if (Ctx(m) is { } x && ctxs.Count > 0)
+                bars.Add(new("Contexto", "bi-arrows-angle-expand", "#22d3ee", LogPct(x, ctxs.Min(), ctxs.Max()),
+                    x >= 1_000_000 ? $"{x / 1_000_000d:0.#}M" : $"{x / 1_000d:0}K"));
+            bars.Add(new("Versatilidad", "bi-stars", "#8b83ff", (int)Math.Round(100.0 * m.Capabilities.Length / maxCaps),
+                $"{m.Capabilities.Length} {(m.Capabilities.Length == 1 ? "capacidad" : "capacidades")}"));
+            result[m.Id] = new ModelStats(bars);
+        }
+        return result;
+    }
+
+    private static string CapLabelEs(string cap) => cap switch
+    {
+        "text"             => "Texto",
+        "vision"           => "Vision",
+        "reasoning"        => "Razonamiento",
+        "streaming"        => "Streaming",
+        "image-generation" => "Genera imagen",
+        "image-edit" or "image-editing" => "Edita imagen",
+        "embeddings"       => "Embeddings",
+        "text-to-speech"   => "Voz",
+        "speech-to-text"   => "Transcribe",
+        "design-creation"  => "Diseno",
+        "autofill"         => "Autofill",
+        "export"           => "Exporta",
+        "analytics"        => "Analitica",
+        "seo"              => "SEO",
+        "image-to-video"   => "Imagen a video",
+        _                  => cap,
+    };
+
     // ── Available types per provider ──
     private record TypeOption(string Value, string Label);
 
@@ -1310,21 +1636,6 @@ else
     }
 
     // ── Events ──
-
-    private void OnProviderChanged(ChangeEventArgs e)
-    {
-        _provider = e.Value?.ToString() ?? "";
-        _moduleType = "";
-        _model = "";
-        ResetConfig();
-    }
-
-    private void OnModuleTypeChanged(ChangeEventArgs e)
-    {
-        _moduleType = e.Value?.ToString() ?? "";
-        _model = "";
-        ResetConfig();
-    }
 
     private void OnModelChanged(ChangeEventArgs e)
     {
