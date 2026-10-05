@@ -12,7 +12,7 @@
 
 @if (_loading)
 {
-    <p class="text-muted">Cargando...</p>
+    <PageLoader Variant="table" Rows="3" Label="Cargando conexiones..." />
 }
 else if (_conns.Count > 0)
 {

@@ -43,7 +43,11 @@
 
 @if (_tab == Tab.Propias)
 {
-    @if (_rules.Count > 0)
+    @if (_loading && _rules.Count == 0 && _loadError is null)
+    {
+        <PageLoader Variant="table" Rows="3" Label="Cargando reglas..." />
+    }
+    else if (_rules.Count > 0)
     {
         <div class="table-wrap">
             <table class="data-table">

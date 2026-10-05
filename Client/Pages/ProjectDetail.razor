@@ -1,4 +1,4 @@
-@page "/projects/{ProjectId:guid}"
+﻿@page "/projects/{ProjectId:guid}"
 @using System.Text.Json
 @using System.Text.Encodings.Web
 @using Client.Models
@@ -12,7 +12,7 @@
 
 @if (_project is null)
 {
-    <p class="text-muted">Cargando...</p>
+    <PageLoader Variant="page" Label="Cargando pipeline..." />
 }
 else
 {

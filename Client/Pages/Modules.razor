@@ -16,8 +16,13 @@
     </div>
 </div>
 
+@if (!_loaded)
+{
+    <PageLoader Variant="table" Rows="6" Stats="4" Label="Cargando modulos..." />
+}
+
 @* Resumen y buscador: solo cuando el usuario tiene al menos un módulo propio. *@
-@if (UserModules.Count > 0)
+@if (_loaded && UserModules.Count > 0)
 {
     var withoutKey = UserModules.Count(NeedsKey);
     <div class="stat-row">
@@ -479,7 +484,11 @@
     </div>
 }
 
-@if (UserModules.Count > 0)
+@if (!_loaded)
+{
+    @* El esqueleto ya se pinta arriba; aqui no va nada hasta tener los datos. *@
+}
+else if (UserModules.Count > 0)
 {
     var _groups = GetModuleGroups();
     if (_groups.Count == 0 && (!string.IsNullOrWhiteSpace(_search) || _providerFilter is not null))
@@ -951,6 +960,8 @@ else
     private List<AiModuleResponse> _modules = [];
     private List<ApiKeyResponse> _keys = [];
     private bool _loading;
+    // Primera carga terminada: hasta entonces se muestra el esqueleto y no el estado vacío.
+    private bool _loaded;
     // Término del buscador de módulos (filtra la lista en tiempo real por nombre/proveedor/modelo/tipo).
     private string _search = "";
 
@@ -1483,6 +1494,7 @@ else
         }
         catch { }
         _loading = false;
+        _loaded = true;
 
         // Despues de pintar: consultar el estado de los modelos implica llamar al
         // proveedor, y no merece retrasar la pantalla por unas etiquetas de aviso.

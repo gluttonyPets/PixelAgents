@@ -12,7 +12,7 @@
             Los pipelines borrados se conservan aqui hasta que los elimines definitivamente.
         </p>
     </div>
-    <button class="btn btn-secondary" @onclick="GoToProjects">&#x2190; Volver a proyectos</button>
+    <button class="btn btn-secondary" @onclick="GoToProjects"><i class="bi bi-arrow-left"></i> Volver a proyectos</button>
 </div>
 
 @if (_error is not null)
@@ -77,12 +77,16 @@
         }
     </div>
 }
-else if (!_loading)
+else if (_loading)
 {
-    <div class="empty-hero">
-        <div class="empty-hero-icon">&#x1F5D1;</div>
-        <p>La papelera esta vacia.</p>
-        <p class="text-sm text-muted">Los pipelines que borres desde Proyectos apareceran aqui.</p>
+    <PageLoader Variant="table" Rows="4" Label="Cargando papelera..." />
+}
+else
+{
+    <div class="empty-hero is-compact">
+        <div class="empty-hero-icon"><i class="bi bi-trash3"></i></div>
+        <h3>La papelera está vacía</h3>
+        <p>Los pipelines que borres desde Proyectos aparecerán aquí y podrás restaurarlos.</p>
     </div>
 }
 

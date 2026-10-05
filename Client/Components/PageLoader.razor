@@ -1,0 +1,98 @@
+@* Esqueleto de carga comun a todas las pantallas. Se pinta mientras llegan los
+   datos para que no aparezca el estado vacio ("Crea tu primer...") antes de
+   tiempo. Variant elige la forma del contenido que va a llegar:
+     - "cards": rejilla de tarjetas (proyectos, biblioteca).
+     - "table": filas de una tabla (modulos, ajustes, papelera).
+     - "charts": paneles de graficas (modelos).
+     - "page": spinner centrado para pantallas completas (detalle de proyecto). *@
+
+<div class="page-loader" role="status" aria-live="polite" aria-label="@Label">
+    @if (Variant == "page")
+    {
+        <div class="page-loader-center">
+            <span class="page-loader-spinner"></span>
+            <span>@Label</span>
+        </div>
+    }
+    else
+    {
+        @if (Stats > 0)
+        {
+            <div class="stat-row">
+                @for (var i = 0; i < Stats; i++)
+                {
+                    <div class="stat-tile">
+                        <div class="skeleton skeleton-icon"></div>
+                        <div class="skeleton-stack">
+                            <div class="skeleton skeleton-line" style="width:48px;height:16px"></div>
+                            <div class="skeleton skeleton-line" style="width:96px"></div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @switch (Variant)
+        {
+            case "table":
+                <div class="skeleton-table">
+                    <div class="skeleton-table-head">
+                        <div class="skeleton skeleton-line" style="width:22%"></div>
+                        <div class="skeleton skeleton-line" style="width:14%"></div>
+                        <div class="skeleton skeleton-line" style="width:18%"></div>
+                    </div>
+                    @for (var i = 0; i < Rows; i++)
+                    {
+                        <div class="skeleton-table-row" style="animation-delay:@(i * 60)ms">
+                            <div class="skeleton skeleton-icon"></div>
+                            <div class="skeleton skeleton-line" style="width:@(30 + (i * 17) % 25)%"></div>
+                            <div class="skeleton skeleton-line" style="width:12%"></div>
+                            <div class="skeleton skeleton-line" style="width:16%"></div>
+                        </div>
+                    }
+                </div>
+                break;
+
+            case "charts":
+                <div class="skeleton-charts">
+                    @for (var i = 0; i < Rows; i++)
+                    {
+                        <div class="skeleton-chart">
+                            <div class="skeleton skeleton-line" style="width:40%;height:14px"></div>
+                            @for (var b = 0; b < 6; b++)
+                            {
+                                <div class="skeleton-bar-row">
+                                    <div class="skeleton skeleton-line" style="width:22%"></div>
+                                    <div class="skeleton skeleton-line" style="width:@(85 - b * 12)%"></div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+                break;
+
+            default:
+                <div class="skeleton-cards">
+                    @for (var i = 0; i < Rows; i++)
+                    {
+                        <div class="skeleton-card">
+                            <div class="skeleton skeleton-avatar"></div>
+                            <div class="skeleton skeleton-line w-60"></div>
+                            <div class="skeleton skeleton-line w-90"></div>
+                            <div class="skeleton skeleton-line w-40"></div>
+                        </div>
+                    }
+                </div>
+                break;
+        }
+
+        <span class="page-loader-label"><span class="page-loader-spinner is-small"></span> @Label</span>
+    }
+</div>
+
+@code {
+    [Parameter] public string Variant { get; set; } = "cards";
+    [Parameter] public int Rows { get; set; } = 6;
+    [Parameter] public int Stats { get; set; }
+    [Parameter] public string Label { get; set; } = "Cargando...";
+}

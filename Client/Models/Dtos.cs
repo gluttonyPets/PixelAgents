@@ -62,38 +62,10 @@ public record ModelPriceResponse(
     /// <summary>Capacidades del modelo, nunca null: la lista vacia es "no se sabe".</summary>
     public string[] Caps => Capabilities ?? [];
 
-    /// <summary>
-    /// Precio de referencia con el que se ordena y se escala cualquier grafica,
-    /// sea cual sea la unidad de facturacion del modelo. Comparar entre unidades
-    /// distintas no tiene sentido, asi que cada grafica agrupa por <see cref="Kind"/>
-    /// y usa esto solo dentro del grupo.
-    /// </summary>
-    public decimal ReferenceCost(int inputTokens, int outputTokens) => Kind switch
-    {
-        "text"  => CostFor(inputTokens, outputTokens),
-        "image" => ImageMedium ?? 0m,
-        _       => AuxAmount ?? 0m,
-    };
-
     /// <summary>Coste de una ejecución con los tokens indicados.</summary>
     public decimal CostFor(int inputTokens, int outputTokens) =>
         (InputPerMTok ?? 0m) * inputTokens / 1_000_000m
         + (OutputPerMTok ?? 0m) * outputTokens / 1_000_000m;
-
-    /// <summary>
-    /// Familia a la que pertenece el modelo, para no separar hermanos al ordenar.
-    /// Se queda con los segmentos iniciales del id que no llevan dígitos:
-    /// <c>gpt-image-1-mini</c> y <c>gpt-image-2</c> caen los dos en <c>gpt-image</c>.
-    /// </summary>
-    public string Family
-    {
-        get
-        {
-            var parts = Id.Split('-');
-            var head = parts.TakeWhile(p => !p.Any(char.IsDigit)).ToList();
-            return head.Count > 0 ? string.Join('-', head) : Id;
-        }
-    }
 }
 
 // ── Deteccion de cambios en el catalogo de modelos ──

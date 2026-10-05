@@ -80,18 +80,7 @@
 
 @if (!_loaded)
 {
-    @* Esqueletos mientras llega el listado: evitan el salto de "vacio" a "lleno". *@
-    <div class="project-grid">
-        @for (var i = 0; i < 6; i++)
-        {
-            <div class="project-card is-skeleton">
-                <div class="skeleton skeleton-avatar"></div>
-                <div class="skeleton skeleton-line w-60"></div>
-                <div class="skeleton skeleton-line w-90"></div>
-                <div class="skeleton skeleton-line w-40"></div>
-            </div>
-        }
-    </div>
+    <PageLoader Variant="cards" Stats="4" Label="Cargando proyectos..." />
 }
 
 @foreach (var g in _groups)

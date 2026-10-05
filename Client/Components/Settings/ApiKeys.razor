@@ -7,7 +7,7 @@
 
 @if (_loading)
 {
-    <p class="text-muted">Cargando...</p>
+    <PageLoader Variant="table" Rows="3" Label="Cargando API keys..." />
 }
 else if (_keys.Count > 0)
 {

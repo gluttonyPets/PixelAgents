@@ -32,7 +32,7 @@ viajar por la API, no quedarse en el Razor. Otro test las compara capacidad a ca
 Caracteres que acepta la API en el campo de prompt. Vive **solo en el catálogo del
 servidor**: no lo usa el desplegable de alta de módulos, así que no hace falta
 duplicarlo en el Razor, pero sí viaja por la API (`ModelPriceResponse.PromptChars`)
-y se ve como columna "Prompt máx." en la sección de imagen de la pantalla de modelos.
+y se ve como columna "Prompt máx." en la tabla de imagen de la pantalla de modelos.
 
 Es el número contra el que `InputAdapter.GetMaxPromptLength` recorta el prompt antes
 de llamar al proveedor, y del que sale la lista de modelos que se sugieren en el aviso
@@ -228,32 +228,35 @@ salida y ver la tabla recalcularse. Por defecto asume 10.000 de entrada y 2.000 
 salida —un artículo corto con su prompt de sistema— porque el precio por millón es
 difícil de traducir a dinero real de un vistazo.
 
-La barra de la tabla es **logarítmica**, y está etiquetada como tal: entre el modelo
-más barato y el más caro hay tres órdenes de magnitud, y en escala lineal todo lo que
-no fuese un modelo Pro sería una barra invisible. La escala se calcula sobre los
-modelos visibles, así que al filtrar por proveedor las barras se reajustan a ese
-conjunto.
+Las barras de coste son **logarítmicas**, y están etiquetadas como tal: entre el
+modelo más barato y el más caro hay tres órdenes de magnitud, y en escala lineal todo
+lo que no fuese un modelo Pro sería una barra invisible. La escala se calcula sobre
+los modelos visibles, así que al filtrar por proveedor las barras se reajustan.
 
-Las filas se agrupan **por proveedor y, dentro, por familia**. Ordenar solo por precio
-separaba a los hermanos: `gpt-image-1-mini` acababa seis filas por encima de
-`gpt-image-2`, con Leonardo y DALL-E en medio, y parecía que faltaba del catálogo. La
-familia sale del id (`ModelPriceResponse.Family`: los segmentos iniciales sin dígitos,
-así que `gpt-image-1-mini` y `gpt-image-2` caen los dos en `gpt-image`), y las familias
-se ordenan entre sí por su miembro más barato para no perder la lectura de precio.
+La pantalla enseña **un tipo de generación cada vez** (texto, imagen, embeddings,
+audio, transcripción, diseño), elegido en el primer filtro; por defecto, texto. Cada
+tipo se factura con una unidad distinta, así que mezclarlos solo alargaba las
+gráficas y obligaba a tres tablas apiladas. Encima van **empresa** (proveedor) y
+**capacidades**, que se acumulan —marcar "Visión" y "Razonamiento" busca los que
+tienen las dos— y se agrupan por etiqueta (`image-edit` e `image-editing` son la
+misma pastilla). Los tokens de entrada y salida solo aparecen con texto, que es el
+único tipo cuyo coste depende de ellos.
 
 La pantalla tiene tres pestañas:
 
-- **Comparativa** — gráficas. Coste por ejecución, tarifa de entrada frente a la de
-  salida, coste por imagen y ventana de contexto, más una nube de puntos que cruza
-  precio y contexto para responder a "de los modelos que me valen, cuál sale más
-  barato". Todas se recalculan con los filtros y con los tokens que ponga el usuario.
-- **Tabla** — las tarifas fila a fila, con capacidades y contexto.
+- **Comparativa** — arriba, tarjetas de **destacados** que responden directamente a
+  las preguntas habituales (el más económico, el que da más contexto por dólar, el
+  de mayor contexto, el razonamiento más barato; en imagen, la más barata, la alta
+  calidad más barata y la edición más barata). Pulsar una lleva a la tabla con ese
+  modelo. Debajo, en dos columnas, coste por ejecución y ventana de contexto, y una
+  nube de puntos a todo el ancho que cruza precio y contexto. Las gráficas enseñan
+  los 12 primeros y el resto se despliega con un botón.
+- **Tabla** — una sola tabla con las columnas del tipo elegido y el proveedor como
+  columna; cualquier columna numérica ordena al pulsar su cabecera (por defecto, lo
+  más barato primero; los valores que faltan van siempre al final).
 - **Cambios** — el servicio de detección y su histórico (§7).
 
-Los filtros son tres y se combinan: **empresa** (proveedor), **tipo de generación**
-(el `ModuleType`: texto, imagen, embeddings, audio, transcripción, diseño) y
-**capacidades**, que se acumulan —marcar "visión" y "razonamiento" busca los que
-tienen las dos—. Los componentes de gráfica viven en `Client/Components/Models/`.
+Los componentes de gráfica viven en `Client/Components/Models/`.
 
 Las gráficas se pintan con CSS (barras) y SVG inline (la nube): no hay ninguna
 librería de charting, así que no hay nada que cargar de un CDN ni que actualizar.
