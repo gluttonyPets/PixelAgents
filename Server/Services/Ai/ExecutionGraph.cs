@@ -120,6 +120,10 @@ public class ExecutionGraph
             EnsureStandardOutputPorts(node);
         }
 
+        // 4. Rectangulos de loop: quien esta dentro, quien los controla y la
+        // conexion interna del cuerpo al rectangulo.
+        LoopFrames.Wire(graph);
+
         return graph;
     }
 
@@ -171,6 +175,12 @@ public class ExecutionGraph
 
         foreach (var target in touchedTargets)
             MarkReadyIfSatisfied(target);
+
+        // El orquestador loop desbloquea todo el cuerpo de sus rectangulos, tambien
+        // los modulos que no reciben nada de el directamente.
+        foreach (var frame in Nodes.Values.Select(n => n.OwnedLoopFrame).Where(f => f?.Driver == completedNode))
+        foreach (var member in frame!.Members)
+            MarkReadyIfSatisfied(member);
     }
 
     /// <summary>
@@ -341,6 +351,7 @@ public class ExecutionGraph
             "SubProject" => ("output", "any"),
             "Embeddings" => ("output_embedding", "file"),
             "Checkpoint" => ("output_1", "any"),
+            LoopFrames.ModuleType => (LoopFrames.OutputPort, "any"),
             ConditionalBranching.ModuleType => (ConditionalBranching.TruePort, "any"),
             _ => ("output_data", "any"),
         };

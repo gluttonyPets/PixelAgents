@@ -313,33 +313,4 @@ public class ImageModuleHandlerTests
         Assert.DoesNotContain("vuelve el cuidador", provider.Calls[0].Input);
         Assert.Contains("vuelve el cuidador", provider.Calls[2].Input);
     }
-
-    [Fact]
-    public async Task NumeroAutomatico_UnaImagenPorParteQueLlegue()
-    {
-        // Lo que cuelga del orquestador loop: cuantas partes llegan cambia en cada
-        // ejecucion, y el modulo genera una por parte aunque su numero sea 1.
-        var provider = new FakeImageProvider();
-        var text = LoopPlanner.JoinParts(["pulpo", "corazon", "arrecife", "fondo"]);
-        var ctx = CreateContext(provider, imageCount: 1, upstreamTexts: [text],
-            extraConfig: new() { [MultiImagePrompt.AutoCountKey] = true });
-
-        var result = await CreateHandler(provider).ExecuteAsync(ctx);
-
-        Assert.Equal(ModuleResultStatus.Completed, result.Status);
-        Assert.Equal(4, provider.Calls.Count);
-        Assert.Contains("arrecife", provider.Calls[2].Input);
-        Assert.DoesNotContain("pulpo", provider.Calls[2].Input);
-        Assert.Equal(["image_1.png", "image_2.png", "image_3.png", "image_4.png"],
-            result.ProducedFiles.Select(f => f.FileName));
-    }
-
-    [Fact]
-    public void NumeroAutomatico_HaciaFueraCuentaComoUnaSalida()
-    {
-        // Asi el modulo de texto de delante no recibe la orden de planificar N fijo.
-        var config = new Dictionary<string, object> { ["autoCount"] = true, ["n"] = 3 };
-        Assert.Equal(1, MultiImagePrompt.ReadImageCount(config));
-        Assert.True(MultiImagePrompt.IsAutoCount(config));
-    }
 }

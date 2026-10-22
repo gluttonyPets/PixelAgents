@@ -51,6 +51,11 @@ public static class SystemModuleCatalog
             "VideoAssembly",
             "video-assembly"),
         new(
+            "Bucle",
+            "Rectangulo que marca los modulos que repite el orquestador loop: los de dentro se ejecutan una vez por parte",
+            LoopFrames.ModuleType,
+            "loop-frame"),
+        new(
             "Sub-proyecto",
             "Ejecuta un proyecto completo como un unico modulo dentro de este pipeline",
             "SubProject",

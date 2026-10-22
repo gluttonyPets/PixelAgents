@@ -104,6 +104,36 @@ public class ModuleExecutionContext
     /// <summary>Optional sink for execution-scoped logs (UI feed + DB).</summary>
     public IExecutionLogger? Logger { get; init; }
 
+    /// <summary>
+    /// Copia del contexto con otras entradas: la usa el executor para cada vuelta
+    /// de un modulo dentro de un rectangulo de loop. La configuracion se copia para
+    /// que una vuelta no vea lo que otra haya tocado.
+    /// </summary>
+    public ModuleExecutionContext WithInputs(Dictionary<string, List<PortData>> inputs) => new()
+    {
+        Node = Node,
+        Graph = Graph,
+        Execution = Execution,
+        Project = Project,
+        TenantDbName = TenantDbName,
+        WorkspacePath = WorkspacePath,
+        PreviousSummaryContext = PreviousSummaryContext,
+        MandatoryRules = MandatoryRules,
+        SuppressedRuleKeys = SuppressedRuleKeys,
+        Variables = Variables,
+        VariablesBlock = VariablesBlock,
+        VariableDefinitions = VariableDefinitions,
+        PastExecutionsLearning = PastExecutionsLearning,
+        CancellationToken = CancellationToken,
+        InputsByPort = inputs,
+        Config = new Dictionary<string, object>(Config, StringComparer.OrdinalIgnoreCase),
+        ModuleFiles = ModuleFiles,
+        MediaRoot = MediaRoot,
+        PublicBaseUrl = PublicBaseUrl,
+        ExecutionFilePaths = ExecutionFilePaths,
+        Logger = Logger,
+    };
+
     /// <summary>Emit an info-level execution log tied to this module's step.</summary>
     public Task LogInfoAsync(string message) => LogAsync("info", message);
 

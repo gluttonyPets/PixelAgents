@@ -26,6 +26,13 @@ public class ModuleNode
     /// </summary>
     public HashSet<string> BlockedOutputPorts { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Rectangulo de loop al que pertenece este modulo (es parte de su
+    /// cuerpo y se ejecuta una vez por parte), o null.</summary>
+    public LoopFrames.FrameInfo? LoopFrame { get; set; }
+
+    /// <summary>Si este nodo ES un rectangulo de loop, lo que contiene.</summary>
+    public LoopFrames.FrameInfo? OwnedLoopFrame { get; set; }
+
     public ModuleNode(ProjectModule pm)
     {
         ModuleId = pm.Id;
@@ -40,6 +47,9 @@ public class ModuleNode
             or Handlers.SearchConsoleModuleHandler.Type => true,
         // Scene can be a pure source when it has no template-variable ports wired.
         "Scene" => InputPorts.Count == 0,
+        // Un rectangulo vacio no tiene a quien esperar: arranca y su handler
+        // explica que no tiene modulos dentro, en vez de bloquear el grafo.
+        LoopFrames.ModuleType => InputPorts.Count == 0,
         _ => false,
     };
 
@@ -58,8 +68,17 @@ public class ModuleNode
     }
 
     /// <summary>True when this node can be marked Ready from its current inputs.</summary>
-    public bool CanBecomeReady => CanStartWithoutInputs
-        || (InputPorts.Count > 0 && !IsUnreachable && InputPorts.All(p => p.IsSatisfied));
+    public bool CanBecomeReady => (CanStartWithoutInputs
+        || (InputPorts.Count > 0 && !IsUnreachable && InputPorts.All(p => p.IsSatisfied)))
+        && LoopDriverDone;
+
+    /// <summary>
+    /// Un modulo del cuerpo de un loop no puede empezar hasta que el orquestador
+    /// loop haya decidido cuantas vueltas hay, aunque no reciba nada de el
+    /// directamente (p. ej. el video, que recibe la imagen del modulo de imagen).
+    /// </summary>
+    private bool LoopDriverDone =>
+        LoopFrame?.Driver is not { } driver || driver.Status == NodeStatus.Completed;
 }
 
 /// <summary>An input port on a module node.</summary>

@@ -504,23 +504,49 @@
                         <div class="inspector-section">
                             <div class="inspector-section-title">Salidas</div>
                             <div class="inspector-field">
-                                <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
-                                    <input type="checkbox" checked="@GetModuleConfigBool(sel.Id, "autoCount", false)"
-                                           @onchange="@(e => ToggleImageAutoCount(sel.Id, (bool)(e.Value ?? false)))" />
-                                    Una imagen por cada parte que llegue
-                                </label>
-                                <p class="text-sm text-muted" style="margin-top: 0.15rem;">Para colgar del orquestador loop: el numero de imagenes cambia en cada ejecucion y salen todas por una unica salida.</p>
-                            </div>
-                            @if (!GetModuleConfigBool(sel.Id, "autoCount", false))
-                            {
-                            <div class="inspector-field">
                                 <label>Numero de imagenes</label>
                                 <input type="number" min="1" max="20"
                                        value="@GetSceneCount(sel.Id)"
                                        @onchange="@(e => OnImageCountChange(sel.Id, e))" />
                                 <p class="text-sm text-muted" style="margin-top: 0.15rem;">Cada imagen tendra su propia salida. El resto de ajustes (instrucciones, prompt, tamaño...) estan en "Editar nodo".</p>
                             </div>
-                            }
+                        </div>
+                    }
+
+                    @if (sel.ModuleType == "LoopFrame")
+                    {
+                        var frameMembers = GetFrameMembers(sel);
+                        var frameDriver = GetFrameDriver(sel);
+                        <div class="inspector-section">
+                            <div class="inspector-section-title">Loop</div>
+                            <div class="inspector-field">
+                                <label>Lo controla</label>
+                                @if (frameDriver is not null)
+                                {
+                                    <input type="text" value="@(frameDriver.StepName ?? frameDriver.AiModuleName)" readonly />
+                                }
+                                else
+                                {
+                                    <p class="text-sm" style="margin: 0; color: var(--warning);">Ningun orquestador en modo loop alimenta a los modulos de dentro: se ejecutaran una sola vez.</p>
+                                }
+                            </div>
+                            <div class="inspector-field">
+                                <label>Se repiten (@frameMembers.Count)</label>
+                                @if (frameMembers.Count > 0)
+                                {
+                                    <ol style="margin: 0; padding-left: 1.1rem; font-size: 0.75rem; line-height: 1.5;">
+                                        @foreach (var m in frameMembers)
+                                        {
+                                            <li>@(m.StepName ?? m.AiModuleName) <span style="opacity:0.5;">(@m.ModuleType)</span></li>
+                                        }
+                                    </ol>
+                                }
+                                else
+                                {
+                                    <p class="text-sm text-muted" style="margin: 0;">Vacio. Agrandalo desde la esquina inferior derecha o mueve dentro los modulos que se repiten.</p>
+                                }
+                            </div>
+                            <p class="text-sm text-muted">Cada modulo de dentro se ejecuta una vez por parte y recibe la parte que le toca. La salida del rectangulo entrega, en orden, lo que producen los ultimos modulos de dentro (p. ej. los clips 1..N para el montaje). Cuenta como dentro el modulo cuya esquina superior izquierda cae en el rectangulo.</p>
                         </div>
                     }
 
@@ -1036,12 +1062,31 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                     Repetir las salidas segun la duracion
                                 </label>
                                 <p class="text-sm text-muted" style="margin-top: 0.15rem;">
-                                    Conecta a la entrada un modulo de duracion (audio o video, los marcados en cian): el numero de partes sale de su duracion entre la del clip del modulo de video que cuelga de las salidas (Motion 2.0: 5 s). Cada salida emite una toma por parte.
+                                    Conecta a la entrada un modulo de duracion (audio o video, los marcados en cian): el numero de partes sale de su duracion entre la del clip del modulo de video que se repite (Motion 2.0: 5 s). Los modulos dentro del rectangulo de loop se ejecutan una vez por parte.
                                     Si conectas el texto de la locucion (o una transcripcion con marcas de tiempo) al puerto Locucion, cada parte describe lo que se dice en su tramo.
                                 </p>
                             </div>
                             @if (IsLoopOrchestrator(sel))
                             {
+                                var drivenFrames = VisibleModules.Where(m => m.ModuleType == "LoopFrame" && GetFrameDriver(m)?.Id == sel.Id).ToList();
+                                <div class="inspector-field">
+                                    <label>Rectangulo de loop</label>
+                                    @if (drivenFrames.Count > 0)
+                                    {
+                                        @foreach (var f in drivenFrames)
+                                        {
+                                            <p class="text-sm" style="margin: 0;"><i class="bi bi-arrow-repeat" style="color: #ff9800;"></i> @(f.StepName ?? f.AiModuleName): @GetFrameMembers(f).Count modulo(s) dentro</p>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <p class="text-sm text-muted" style="margin: 0 0 0.3rem;">Marca con un rectangulo los modulos que se repiten y conecta una salida del orquestador a un modulo de dentro.</p>
+                                        @if (AvailableModules.Any(m => m.ModuleType == "LoopFrame"))
+                                        {
+                                            <button class="btn btn-xs btn-primary" style="width: 100%;" @onclick="AddLoopFrame">Crear rectangulo de loop</button>
+                                        }
+                                    }
+                                </div>
                                 <div class="inspector-field">
                                     <label>Segundos por parte (opcional)</label>
                                     <input type="number" min="1" step="0.5" placeholder="Automatico: el del modulo de video"
@@ -1639,7 +1684,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         new("media", "bi-brush", "Generacion", ["Image", "Audio", "Design"]),
         new("search", "bi-search", "Busqueda y Analisis", ["Transcription", "Embeddings", "SearchConsole"]),
         new("resources", "bi-paperclip", "Recursos", ["FileUpload", "StaticText", "FileDirectory"]),
-        new("control", "bi-sliders", "Control y Salida", ["Scene", "Checkpoint", "Conditional", "Publish", "ShopifyBlog", "Coordinator"]),
+        new("control", "bi-sliders", "Control y Salida", ["Scene", "Checkpoint", "Conditional", "LoopFrame", "Publish", "ShopifyBlog", "Coordinator"]),
     ];
 
     private void ToggleModulePanel()
@@ -2033,7 +2078,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
         // Add all nodes using positions from DB
         int idx = 0;
-        foreach (var pm in VisibleModules)
+        // Los rectangulos de loop van primero: se pintan detras de los modulos que contienen.
+        foreach (var pm in VisibleModules.OrderBy(m => m.ModuleType == "LoopFrame" ? 0 : 1))
         {
             var sceneCount = GetSceneCount(pm.Id);
             var ports = PortsOf(pm, sceneCount);
@@ -2077,7 +2123,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                 activeRulesCount,
                 subStepsJson,
                 GetPublishPlatform(pm),
-                ModulePortRegistry.IsDurationModule(pm.ModuleType));
+                ModulePortRegistry.IsDurationModule(pm.ModuleType),
+                pm.ModuleType == "LoopFrame" ? FrameSizeJson(pm.Id) : null);
 
             idx++;
         }
@@ -2187,19 +2234,74 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         await UpdateSceneCount(module.Id, GetSceneCount(module.Id));
     }
 
-    /// <summary>
-    /// Modo automatico del modulo de imagen: tantas imagenes como partes lleguen,
-    /// todas por una unica salida (no se puede tener un puerto por imagen si el
-    /// numero cambia en cada ejecucion).
-    /// </summary>
-    private async Task ToggleImageAutoCount(Guid moduleId, bool enabled)
+    // ── Rectangulo de loop ──
+    // Mismos valores y misma regla que Server/Services/Ai/LoopFrames.cs: un modulo
+    // esta dentro si su esquina superior izquierda cae en el rectangulo.
+    private const double FrameDefaultWidth = 620;
+    private const double FrameDefaultHeight = 260;
+
+    private (double Width, double Height) GetFrameSize(Guid frameId)
     {
-        if (!_moduleConfigs.ContainsKey(moduleId))
-            _moduleConfigs[moduleId] = new();
-        _moduleConfigs[moduleId]["autoCount"] = enabled ? "true" : "false";
-        if (enabled)
-            _moduleConfigs[moduleId]["n"] = "1";
-        await UpdateSceneCount(moduleId, 1);
+        static double Read(string raw, double fallback) =>
+            double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0 ? v : fallback;
+
+        return (Read(GetModuleConfig(frameId, "frameWidth", ""), FrameDefaultWidth),
+                Read(GetModuleConfig(frameId, "frameHeight", ""), FrameDefaultHeight));
+    }
+
+    private string FrameSizeJson(Guid frameId)
+    {
+        var (w, h) = GetFrameSize(frameId);
+        return JsonSerializer.Serialize(new { w, h });
+    }
+
+    private (double X, double Y) PositionOf(ProjectModuleResponse module) =>
+        _positions.TryGetValue(module.Id, out var pos) ? pos : (module.PosX, module.PosY);
+
+    /// <summary>Modulos que caen dentro del rectangulo (el cuerpo del loop).</summary>
+    private List<ProjectModuleResponse> GetFrameMembers(ProjectModuleResponse frame)
+    {
+        var (fx, fy) = PositionOf(frame);
+        var (w, h) = GetFrameSize(frame.Id);
+        return VisibleModules
+            .Where(m => m.Id != frame.Id && m.ModuleType is not "LoopFrame" and not "Start")
+            .Where(m =>
+            {
+                var (x, y) = PositionOf(m);
+                return x >= fx && x <= fx + w && y >= fy && y <= fy + h;
+            })
+            .ToList();
+    }
+
+    /// <summary>Orquestador loop de fuera que alimenta el cuerpo del rectangulo.</summary>
+    private ProjectModuleResponse? GetFrameDriver(ProjectModuleResponse frame)
+    {
+        var members = GetFrameMembers(frame).Select(m => m.Id).ToHashSet();
+        return VisibleModules
+            .Where(m => IsLoopOrchestrator(m) && !members.Contains(m.Id))
+            .FirstOrDefault(m => _connections.Any(c => c.FromModuleId == m.Id && members.Contains(c.ToModuleId)));
+    }
+
+    /// <summary>Anade un rectangulo de loop desde el inspector del orquestador.</summary>
+    private async Task AddLoopFrame()
+    {
+        var frameModule = AvailableModules.FirstOrDefault(m => m.ModuleType == "LoopFrame");
+        if (frameModule is not null)
+            await AddNodeFromPalette(frameModule);
+    }
+
+    [JSInvokable]
+    public async Task OnFrameResized(string moduleId, double width, double height)
+    {
+        if (!Guid.TryParse(moduleId, out var id)) return;
+        var w = ((int)Math.Round(width)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var h = ((int)Math.Round(height)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (!_moduleConfigs.ContainsKey(id))
+            _moduleConfigs[id] = new();
+        _moduleConfigs[id]["frameWidth"] = w;
+        await SetModuleConfig(id, "frameHeight", h);
+        StateHasChanged();
     }
 
     private int GetSceneCount(Guid moduleId)

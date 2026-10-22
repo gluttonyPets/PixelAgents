@@ -169,7 +169,7 @@ public static class PortDataResolver
     /// Content would silently drop the slide-by-slide (or prompt-by-prompt)
     /// detail the model actually produced.
     /// </summary>
-    private static string BuildFullText(StepOutput output)
+    public static string BuildFullText(StepOutput output)
     {
         var hasContent = !string.IsNullOrWhiteSpace(output.Content);
 

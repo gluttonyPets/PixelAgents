@@ -3680,6 +3680,84 @@ a.link:hover { text-decoration: underline; }
     cursor: help;
 }
 
+/* ── Rectangulo de loop ("Bucle") ──
+   Va detras de los modulos (z-index 0, y se anade el primero) y deja pasar los
+   clics salvo en la cabecera, la esquina y la salida: dentro se pueden seguir
+   moviendo nodos y panear el lienzo. */
+.drawflow .drawflow-node.df-loopframe {
+    z-index: 0;
+    padding: 0 !important;
+    background: rgba(255, 152, 0, 0.04) !important;
+    border: 2px solid #ff9800 !important;
+    border-radius: 14px !important;
+    box-shadow: none;
+    pointer-events: none;
+    align-items: center;
+}
+.drawflow .drawflow-node.df-loopframe.selected {
+    border-color: #ffb74d !important;
+    box-shadow: 0 0 0 4px rgba(255, 152, 0, 0.18);
+}
+.drawflow .drawflow-node.df-loopframe .drawflow_content_node {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+/* El contenido va en absoluto, asi que la columna de salidas se coloca a mano
+   en el borde derecho, a media altura. */
+.drawflow .drawflow-node.df-loopframe .outputs {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+.drawflow .drawflow-node.df-loopframe .outputs,
+.drawflow .drawflow-node.df-loopframe .output {
+    pointer-events: auto;
+}
+.drawflow .drawflow-node.df-loopframe .output {
+    border-color: #ff9800 !important;
+}
+.df-frame {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+.df-frame-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.6rem;
+    background: rgba(255, 152, 0, 0.18);
+    color: #ffb74d;
+    border-bottom-right-radius: 10px;
+    border-top-left-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: move;
+    pointer-events: auto;
+}
+.df-frame-hint {
+    font-weight: 400;
+    opacity: 0.7;
+    font-size: 0.65rem;
+}
+.df-frame-resize {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nwse-resize;
+    pointer-events: auto;
+    background: linear-gradient(135deg, transparent 50%, #ff9800 50%);
+    border-bottom-right-radius: 12px;
+}
+
 /* ── Active rules badge on the node header ── */
 .df-node-rules-badge {
     display: inline-flex;

@@ -898,6 +898,58 @@ public class GraphPipelineExecutor : IPipelineExecutor
             Logger = _logger,
         };
 
+        // Cuerpo de un rectangulo de loop: el modulo se ejecuta una vez por parte.
+        if (node.LoopFrame is { Driver: not null } frame)
+            return await ExecuteLoopPartsAsync(handler, ctx, frame, ct);
+
+        return await InvokeHandlerAsync(handler, ctx, previousSummaryContext, ct);
+    }
+
+    /// <summary>
+    /// Ejecuta un modulo del cuerpo de un loop N veces, una por parte, con las
+    /// entradas de cada vuelta cortadas por <see cref="LoopFrames.SliceInputs"/>, y
+    /// junta los resultados. Las vueltas van en paralelo (hasta
+    /// <see cref="LoopFrames.MaxParallelParts"/>) y cada una tiene su propio limite
+    /// de tiempo: ocho clips de video seguidos no caben en el de un modulo.
+    /// </summary>
+    private async Task<ModuleResult> ExecuteLoopPartsAsync(
+        IModuleHandler handler, ModuleExecutionContext ctx, LoopFrames.FrameInfo frame, CancellationToken ct)
+    {
+        var parts = LoopFrames.PartsFor(frame);
+        await ctx.LogInfoAsync(parts == 1
+            ? "[Loop] Una sola parte: se ejecuta una vez"
+            : $"[Loop] Se ejecuta {parts} veces, una por parte");
+
+        var results = new ModuleResult[parts];
+        using var gate = new SemaphoreSlim(LoopFrames.MaxParallelParts);
+
+        var tasks = Enumerable.Range(0, parts).Select(async part =>
+        {
+            await gate.WaitAsync(ct);
+            try
+            {
+                var partCtx = ctx.WithInputs(LoopFrames.SliceInputs(ctx.InputsByPort, part, parts));
+                if (parts > 1) await ctx.LogInfoAsync($"[Loop] Parte {part + 1}/{parts}");
+                results[part] = await InvokeHandlerAsync(handler, partCtx, null, ct);
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }).ToList();
+
+        await Task.WhenAll(tasks);
+        return LoopFrames.MergeResults(results);
+    }
+
+    /// <summary>Llama al handler con el limite de tiempo de un modulo.</summary>
+    private async Task<ModuleResult> InvokeHandlerAsync(
+        IModuleHandler handler, ModuleExecutionContext ctx, string? previousSummaryContext, CancellationToken ct)
+    {
+        var node = ctx.Node;
+        var project = ctx.Project;
+        var execution = ctx.Execution;
+
         if (node.ModuleType == "Publish")
             return await ExecutePublishNodeAsync(ctx);
 

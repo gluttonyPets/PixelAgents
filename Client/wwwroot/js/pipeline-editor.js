@@ -196,14 +196,18 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson, platform, timed) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson, platform, timed, frameSizeJson) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
         var subSteps = [];
         if (subStepsJson) { try { subSteps = JSON.parse(subStepsJson) || []; } catch (e) { subSteps = []; } }
-        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps, platform, !!timed);
+        var isFrame = moduleType === 'LoopFrame';
+        var html = isFrame
+            ? this._buildFrameHtml(name, icon)
+            : this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps, platform, !!timed);
         var cssClass = 'df-type-' + moduleType.toLowerCase();
+        if (isFrame) cssClass += ' df-loopframe';
         if (skipped) cssClass += ' df-state-skipped';
         // Modulo de duracion (audio o video): se marca para que se vea de un vistazo
         // que es lo que el orquestador loop mide.
@@ -228,7 +232,66 @@ window.pipelineEditor = {
             if (el) el.style.minHeight = (maxPorts * 28) + 'px';
         }
 
+        if (isFrame) this._setupFrame(nodeId, moduleId, frameSizeJson);
+
         return nodeId;
+    },
+
+    // ── Rectangulo de loop ──
+    // Es un nodo de Drawflow mas, pero grande, detras del resto y transparente a
+    // los clics salvo en su cabecera (para arrastrarlo), su esquina (para
+    // redimensionarlo) y su salida. Lo que cae dentro se repite en el loop: el
+    // rectangulo no arrastra a los modulos, solo los marca.
+    _frameMinWidth: 240,
+    _frameMinHeight: 140,
+
+    _buildFrameHtml: function (name, icon) {
+        return '<div class="df-frame">'
+            + '<div class="df-frame-header"><i class="bi ' + icon + '"></i> ' + this._escapeHtml(name) + '<span class="df-frame-hint">se repite en cada parte</span></div>'
+            + '<div class="df-frame-resize" title="Arrastra para cambiar el tamano"></div>'
+            + '</div>';
+    },
+
+    _setupFrame: function (nodeId, moduleId, frameSizeJson) {
+        var el = document.getElementById('node-' + nodeId);
+        if (!el) return;
+
+        var size = { w: 620, h: 260 };
+        if (frameSizeJson) { try { size = JSON.parse(frameSizeJson) || size; } catch (e) { } }
+        el.style.width = size.w + 'px';
+        el.style.height = size.h + 'px';
+
+        var handle = el.querySelector('.df-frame-resize');
+        if (!handle) return;
+
+        var self = this;
+        handle.addEventListener('mousedown', function (e) {
+            // Que no lo vea Drawflow: lo tomaria por el inicio de un arrastre del nodo.
+            e.stopPropagation();
+            e.preventDefault();
+
+            var startX = e.clientX, startY = e.clientY;
+            var startW = el.offsetWidth, startH = el.offsetHeight;
+            var zoom = (self._editor && self._editor.zoom) || 1;
+
+            function onMove(ev) {
+                var w = Math.max(self._frameMinWidth, startW + (ev.clientX - startX) / zoom);
+                var h = Math.max(self._frameMinHeight, startH + (ev.clientY - startY) / zoom);
+                el.style.width = w + 'px';
+                el.style.height = h + 'px';
+                if (self._editor) self._editor.updateConnectionNodes('node-' + nodeId);
+            }
+
+            function onUp() {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                if (self._dotNetRef)
+                    self._dotNetRef.invokeMethodAsync('OnFrameResized', moduleId, el.offsetWidth, el.offsetHeight);
+            }
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
     },
 
     addConnection: function (fromModuleId, fromPortId, toModuleId, toPortId) {
