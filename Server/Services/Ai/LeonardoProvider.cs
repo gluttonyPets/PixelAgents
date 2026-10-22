@@ -29,17 +29,6 @@ namespace Server.Services.Ai
             ["leonardo-motion-2"] = "MOTION2",
         };
 
-        /// <summary>
-        /// Duracion del clip que produce cada modelo de video, en segundos. Motion 2.0
-        /// no acepta el parametro `duration`: siempre entrega 5 s. Se declara aqui
-        /// porque el coste se factura por segundo y el modulo de montaje necesita
-        /// saber cuanto dura lo que ha pedido antes de recibirlo.
-        /// </summary>
-        private static readonly Dictionary<string, int> VideoDurationSeconds = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["leonardo-motion-2"] = 5,
-        };
-
         // Models that require the contrast parameter
         private static readonly HashSet<string> ContrastRequiredModels = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -431,7 +420,9 @@ namespace Server.Services.Ai
                 if (videoBytes.Length == 0)
                     return AiResult.Fail("Leonardo AI: el video descargado esta vacio");
 
-                var seconds = VideoDurationSeconds.TryGetValue(context.ModelName, out var d) ? d : 5;
+                // La duracion es fija por modelo y la declara el catalogo: se factura por
+                // segundo y el orquestador loop cuenta con ella para calcular los clips.
+                var seconds = ModelCatalog.GetClipSeconds(context.ModelName) ?? 5;
 
                 var result = AiResult.OkFile(videoBytes, "video/mp4", new Dictionary<string, object>
                 {

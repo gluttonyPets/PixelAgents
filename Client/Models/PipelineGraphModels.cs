@@ -137,7 +137,9 @@ public class PipelineConnection
 // ── Module port registry ──
 public static class ModulePortRegistry
 {
-    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null, string modelName = "")
+    /// <param name="loopMode">Orquestador en modo loop: anade los puertos de
+    /// duracion y locucion (ver Server/Services/Ai/LoopPlanner.cs).</param>
+    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null, string modelName = "", bool loopMode = false)
     {
         var ports = new List<PortDefinition>();
 
@@ -178,6 +180,8 @@ public static class ModulePortRegistry
 
             case "VideoAssembly":
                 ports.Add(new("input_videos", "Clips", PortDataType.Video, isInput: true, isRequired: true));
+                // La voz en off: si llega, es la pista del video y marca su duracion.
+                ports.Add(new("input_audio", "Voz", PortDataType.Audio, isInput: true));
                 ports.Add(new("output_video", "Video", PortDataType.Video, isInput: false));
                 break;
 
@@ -188,6 +192,13 @@ public static class ModulePortRegistry
 
             case "Orchestrator":
                 ports.Add(new("input_prompt", "Instrucciones", PortDataType.Text, isInput: true, isRequired: true));
+                if (loopMode)
+                {
+                    // Lo que tiene duracion (audio o video) decide cuantas partes salen;
+                    // la locucion, que se dice en cada una.
+                    ports.Add(new("input_duration", "Duracion", PortDataType.Any, isInput: true, isRequired: true));
+                    ports.Add(new("input_narration", "Locucion", PortDataType.Text, isInput: true));
+                }
                 if (orchestratorOutputs?.Count > 0)
                 {
                     foreach (var o in orchestratorOutputs)

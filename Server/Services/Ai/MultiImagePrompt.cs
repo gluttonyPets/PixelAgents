@@ -50,6 +50,29 @@ public static class MultiImagePrompt
         RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled);
 
     /// <summary>
+    /// Clave del modo automatico: el modulo genera tantas imagenes como partes le
+    /// lleguen (una por toma del orquestador loop) y las entrega todas por una
+    /// unica salida. Con un numero fijo de puertos no se podria seguir a un loop
+    /// cuyo numero de partes cambia en cada ejecucion.
+    /// </summary>
+    public const string AutoCountKey = "autoCount";
+
+    /// <summary>¿Esta el modulo de imagen en modo automatico?</summary>
+    public static bool IsAutoCount(IReadOnlyDictionary<string, object>? config)
+    {
+        if (config is null || !config.TryGetValue(AutoCountKey, out var raw)) return false;
+        return raw switch
+        {
+            bool b => b,
+            System.Text.Json.JsonElement je => je.ValueKind == System.Text.Json.JsonValueKind.True
+                || (je.ValueKind == System.Text.Json.JsonValueKind.String
+                    && bool.TryParse(je.GetString(), out var parsed) && parsed),
+            string s => bool.TryParse(s, out var parsed) && parsed,
+            _ => false,
+        };
+    }
+
+    /// <summary>
     /// Cuantas imagenes debe producir un modulo de imagen. Se leen las tres claves
     /// que ha ido usando el editor: "n" es la que escribe hoy, "numberOfImages" la
     /// que esperan algunos proveedores y "sceneCount" la que decide cuantos puertos
@@ -59,6 +82,11 @@ public static class MultiImagePrompt
     public static int ReadImageCount(IReadOnlyDictionary<string, object>? config)
     {
         if (config is null) return 1;
+
+        // En automatico el numero lo decide la entrada, no la configuracion: hacia
+        // fuera el modulo cuenta como de una salida, y asi el modulo de texto que
+        // tenga delante no recibe la orden de planificar un numero fijo.
+        if (IsAutoCount(config)) return 1;
 
         foreach (var key in new[] { "n", "numberOfImages", "sceneCount" })
         {

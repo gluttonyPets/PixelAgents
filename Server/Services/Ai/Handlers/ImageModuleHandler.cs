@@ -31,8 +31,14 @@ public class ImageModuleHandler : IModuleHandler
         var configPrompt = ctx.GetConfig("imagePrompt", "");
         var upstreamTexts = ctx.GetAllInputTexts("input_prompt");
 
-        var requested = MultiImagePrompt.ReadImageCount(ctx.Config);
         var split = MultiImagePrompt.Split(upstreamTexts);
+        var requested = MultiImagePrompt.IsAutoCount(ctx.Config)
+            ? Math.Clamp(split.Segments.Count, 1, MultiImagePrompt.MaxImages)
+            : MultiImagePrompt.ReadImageCount(ctx.Config);
+
+        if (MultiImagePrompt.IsAutoCount(ctx.Config))
+            await ctx.LogInfoAsync(
+                $"[Image] Numero automatico: la entrada trae {split.Segments.Count} parte(s), se genera {requested} imagen(es)");
 
         // Contexto comun a todas las imagenes: el prompt propio del nodo y todo
         // lo que llega sin segmentar (p. ej. el indice del modulo Directorio,

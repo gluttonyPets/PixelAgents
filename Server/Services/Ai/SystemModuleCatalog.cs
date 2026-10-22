@@ -47,7 +47,7 @@ public static class SystemModuleCatalog
             "publish"),
         new(
             "Montaje de video",
-            "Une varios clips en un unico video con ffmpeg, en el orden en que llegan",
+            "Une los clips en un unico video con ffmpeg y, si llega la voz en off, la pone de pista y ajusta el video a su duracion",
             "VideoAssembly",
             "video-assembly"),
         new(

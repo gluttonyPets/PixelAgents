@@ -18,6 +18,13 @@ namespace Server.Services.Ai;
 /// el mismo numero de streams en todas las entradas, y mezclar clips con y sin
 /// audio aborta el montaje. Motion 2.0 no genera audio, asi que el caso normal
 /// hoy es video sin pista de sonido.
+///
+/// Si llega una VOZ EN OFF (uno o varios audios, en orden) esa es la pista del
+/// video y manda en la duracion: el video se corta donde acaba la voz y, si los
+/// clips se quedan cortos, se congela el ultimo fotograma hasta que termine. Es
+/// la diferencia entre entregar 39 s de voz sobre 15 s de imagen (con el final
+/// mudo o la voz cortada) y entregar un video que dura lo que dura la locucion.
+/// El audio propio de los clips se descarta: debajo de una locucion solo estorba.
 /// </summary>
 public static class VideoAssembler
 {
@@ -28,7 +35,9 @@ public static class VideoAssembler
     /// <summary>Fps de salida. Fijarlo evita saltos al pegar clips de ritmos distintos.</summary>
     private const int OutputFps = 24;
 
-    public sealed record AssemblyResult(bool Success, string? Error);
+    /// <param name="Note">Lo que el montaje tuvo que hacer para cuadrar el video con
+    /// la voz (recortar, congelar el final), para dejarlo dicho en el log.</param>
+    public sealed record AssemblyResult(bool Success, string? Error, string? Note = null);
 
     /// <summary>
     /// ¿Esta ffmpeg instalado? Se comprueba antes de montar para poder dar un
@@ -52,17 +61,29 @@ public static class VideoAssembler
     /// Pega <paramref name="inputPaths"/> en ese orden y escribe el resultado en
     /// <paramref name="outputPath"/>.
     /// </summary>
+    public static Task<AssemblyResult> ConcatAsync(
+        IReadOnlyList<string> inputPaths,
+        string outputPath,
+        CancellationToken ct = default) =>
+        ConcatAsync(inputPaths, [], outputPath, ct);
+
+    /// <summary>
+    /// Pega <paramref name="inputPaths"/> en ese orden y, si hay
+    /// <paramref name="voicePaths"/>, los usa (tambien en orden) como pista de
+    /// audio y ajusta la duracion del video a la de la voz.
+    /// </summary>
     public static async Task<AssemblyResult> ConcatAsync(
         IReadOnlyList<string> inputPaths,
+        IReadOnlyList<string> voicePaths,
         string outputPath,
         CancellationToken ct = default)
     {
         if (inputPaths.Count == 0)
             return new AssemblyResult(false, "No hay clips que montar");
 
-        var missing = inputPaths.Where(p => !File.Exists(p)).ToList();
+        var missing = inputPaths.Concat(voicePaths).Where(p => !File.Exists(p)).ToList();
         if (missing.Count > 0)
-            return new AssemblyResult(false, $"No se encuentran los clips: {string.Join(", ", missing)}");
+            return new AssemblyResult(false, $"No se encuentran los ficheros: {string.Join(", ", missing)}");
 
         if (!await IsAvailableAsync(ct))
             return new AssemblyResult(false,
@@ -70,9 +91,22 @@ public static class VideoAssembler
                 + "Se instala en la imagen Docker (paquete 'ffmpeg').");
 
         var (width, height) = await ProbeDimensionsAsync(inputPaths[0], ct);
-        var withAudio = await AllHaveAudioAsync(inputPaths, ct);
 
-        var args = BuildFfmpegArgs(inputPaths, outputPath, width, height, withAudio);
+        List<string> args;
+        string? note = null;
+
+        if (voicePaths.Count > 0)
+        {
+            var voiceSeconds = await SumDurationsAsync(voicePaths, ct);
+            var clipSeconds = await SumDurationsAsync(inputPaths, ct);
+            note = DescribeFit(voiceSeconds, clipSeconds);
+            args = BuildFfmpegArgsWithVoice(inputPaths, voicePaths, outputPath, width, height, voiceSeconds);
+        }
+        else
+        {
+            var withAudio = await AllHaveAudioAsync(inputPaths, ct);
+            args = BuildFfmpegArgs(inputPaths, outputPath, width, height, withAudio);
+        }
 
         var (exitCode, _, stderr) = await RunAsync("ffmpeg", args, ct);
 
@@ -82,7 +116,77 @@ public static class VideoAssembler
         if (!File.Exists(outputPath) || new FileInfo(outputPath).Length == 0)
             return new AssemblyResult(false, "ffmpeg termino sin error pero no dejo ningun fichero de salida");
 
-        return new AssemblyResult(true, null);
+        return new AssemblyResult(true, null, note);
+    }
+
+    /// <summary>
+    /// Duracion de un fichero de audio o video en segundos, o null si ffprobe no
+    /// la sabe leer (o no esta instalado). La usan el montaje y el orquestador
+    /// loop, que decide cuantas partes planificar a partir de ella.
+    /// </summary>
+    public static async Task<double?> ProbeDurationAsync(string path, CancellationToken ct = default)
+    {
+        try
+        {
+            var (exitCode, stdout, _) = await RunAsync("ffprobe",
+            [
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                path,
+            ], ct);
+
+            if (exitCode != 0) return null;
+
+            return double.TryParse(stdout.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+                   && seconds > 0
+                ? seconds
+                : null;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Suma de duraciones; null si alguna no se puede leer, porque una suma
+    /// parcial seria peor que ninguna: cortaria la voz antes de tiempo.</summary>
+    private static async Task<double?> SumDurationsAsync(IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        var total = 0d;
+        foreach (var path in paths)
+        {
+            var seconds = await ProbeDurationAsync(path, ct);
+            if (seconds is null) return null;
+            total += seconds.Value;
+        }
+
+        return total;
+    }
+
+    /// <summary>Frase para el log con lo que hubo que hacer para cuadrar video y voz.</summary>
+    public static string? DescribeFit(double? voiceSeconds, double? clipSeconds)
+    {
+        if (voiceSeconds is null)
+            return "No se pudo medir la voz: el video se corta donde acabe la pista mas corta";
+
+        if (clipSeconds is null)
+            return $"La voz dura {voiceSeconds.Value.ToString("0.#", CultureInfo.InvariantCulture)} s y el video se ajusta a ella";
+
+        var diff = clipSeconds.Value - voiceSeconds.Value;
+        var voice = voiceSeconds.Value.ToString("0.#", CultureInfo.InvariantCulture);
+        var clips = clipSeconds.Value.ToString("0.#", CultureInfo.InvariantCulture);
+        var gap = Math.Abs(diff).ToString("0.#", CultureInfo.InvariantCulture);
+
+        return Math.Abs(diff) < 0.05
+            ? $"La voz ({voice} s) y los clips ({clips} s) duran lo mismo"
+            : diff > 0
+                ? $"Los clips duran {clips} s y la voz {voice} s: se recortan {gap} s del final del video"
+                : $"Los clips duran {clips} s y la voz {voice} s: se congela el ultimo fotograma {gap} s para no cortar la voz";
     }
 
     /// <summary>
@@ -145,6 +249,98 @@ public static class VideoAssembler
         args.Add("yuv420p");
         // faststart mueve el indice al principio: sin el, un reproductor web tiene
         // que descargar el fichero entero antes de empezar.
+        args.Add("-movflags");
+        args.Add("+faststart");
+        args.Add(outputPath);
+
+        return args;
+    }
+
+    /// <summary>
+    /// Argumentos del montaje con voz en off. El video se monta igual que sin voz,
+    /// pero despues se alarga congelando el ultimo fotograma (<c>tpad</c>) tanto
+    /// como dure la voz y se corta a esa duracion (<c>-t</c>): las dos cosas a la
+    /// vez cubren los dos casos, clips mas largos y clips mas cortos que la voz,
+    /// sin tener que saber cuanto duran los clips. Las voces se pegan en orden y
+    /// son la unica pista de audio.
+    ///
+    /// Si no se pudo medir la voz no hay a que duracion cortar, y se recurre a
+    /// <c>-shortest</c>, que al menos no deja ni imagen sin voz ni voz sin imagen.
+    /// </summary>
+    public static List<string> BuildFfmpegArgsWithVoice(
+        IReadOnlyList<string> clipPaths, IReadOnlyList<string> voicePaths, string outputPath,
+        int width, int height, double? voiceSeconds)
+    {
+        var args = new List<string> { "-y" };
+
+        foreach (var path in clipPaths.Concat(voicePaths))
+        {
+            args.Add("-i");
+            args.Add(path);
+        }
+
+        var filter = new System.Text.StringBuilder();
+        for (var i = 0; i < clipPaths.Count; i++)
+        {
+            filter.Append(CultureInfo.InvariantCulture, $"[{i}:v]");
+            filter.Append(CultureInfo.InvariantCulture,
+                $"scale={width}:{height}:force_original_aspect_ratio=decrease,");
+            filter.Append(CultureInfo.InvariantCulture,
+                $"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,");
+            filter.Append(CultureInfo.InvariantCulture, $"setsar=1,fps={OutputFps}[v{i}];");
+        }
+
+        for (var i = 0; i < clipPaths.Count; i++)
+            filter.Append(CultureInfo.InvariantCulture, $"[v{i}]");
+
+        if (voiceSeconds is double total)
+        {
+            filter.Append(CultureInfo.InvariantCulture, $"concat=n={clipPaths.Count}:v=1:a=0[cv];");
+            filter.Append(CultureInfo.InvariantCulture,
+                $"[cv]tpad=stop_mode=clone:stop_duration={total.ToString("0.###", CultureInfo.InvariantCulture)}[outv];");
+        }
+        else
+        {
+            filter.Append(CultureInfo.InvariantCulture, $"concat=n={clipPaths.Count}:v=1:a=0[outv];");
+        }
+
+        for (var j = 0; j < voicePaths.Count; j++)
+            filter.Append(CultureInfo.InvariantCulture, $"[{clipPaths.Count + j}:a]aresample=async=1[va{j}];");
+
+        if (voicePaths.Count == 1)
+        {
+            filter.Append("[va0]anull[outa]");
+        }
+        else
+        {
+            for (var j = 0; j < voicePaths.Count; j++)
+                filter.Append(CultureInfo.InvariantCulture, $"[va{j}]");
+            filter.Append(CultureInfo.InvariantCulture, $"concat=n={voicePaths.Count}:v=0:a=1[outa]");
+        }
+
+        args.Add("-filter_complex");
+        args.Add(filter.ToString());
+        args.Add("-map");
+        args.Add("[outv]");
+        args.Add("-map");
+        args.Add("[outa]");
+        args.Add("-c:v");
+        args.Add("libx264");
+        args.Add("-pix_fmt");
+        args.Add("yuv420p");
+        args.Add("-c:a");
+        args.Add("aac");
+
+        if (voiceSeconds is double seconds)
+        {
+            args.Add("-t");
+            args.Add(seconds.ToString("0.###", CultureInfo.InvariantCulture));
+        }
+        else
+        {
+            args.Add("-shortest");
+        }
+
         args.Add("-movflags");
         args.Add("+faststart");
         args.Add(outputPath);

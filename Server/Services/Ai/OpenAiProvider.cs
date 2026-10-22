@@ -16,7 +16,7 @@ namespace Server.Services.Ai
         public OpenAiProvider(ILogger<OpenAiProvider> log) { _log = log; }
 
         public string ProviderType => "OpenAI";
-        public IEnumerable<string> SupportedModuleTypes => new[] { "Text", "Image", "Audio" };
+        public IEnumerable<string> SupportedModuleTypes => new[] { "Text", "Image", "Audio", "Transcription" };
 
         public async Task<AiResult> ExecuteAsync(AiExecutionContext context)
         {
@@ -27,6 +27,7 @@ namespace Server.Services.Ai
                     "Text" => await GenerateTextAsync(context),
                     "Image" => await GenerateImageAsync(context),
                     "Audio" => await GenerateSpeechAsync(context),
+                    "Transcription" => await TranscribeAsync(context),
                     _ => AiResult.Fail($"ModuleType '{context.ModuleType}' no soportado por OpenAI")
                 };
             }
@@ -254,6 +255,86 @@ namespace Server.Services.Ai
             result.EstimatedCost = OpenAiSpeech.EstimateCost(context.ModelName, text.Length);
             result.SentPayload = json;
             return result;
+        }
+
+        private static async Task<AiResult> TranscribeAsync(AiExecutionContext context)
+        {
+            var audio = context.InputFiles?.FirstOrDefault();
+            if (audio is not { Length: > 0 })
+                return AiResult.Fail("Sin audio que transcribir");
+
+            if (audio.Length > OpenAiTranscription.MaxFileBytes)
+                return AiResult.Fail(
+                    $"El audio ocupa {audio.Length / (1024 * 1024)} MB y OpenAI admite 25 MB por transcripcion");
+
+            var meta = context.InputFileMetas?.FirstOrDefault();
+            var timestamps = ReadBool(context.Configuration, OpenAiTranscription.TimestampsKey);
+            var language = context.Configuration.TryGetValue("language", out var lang) ? lang?.ToString() : null;
+
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, timeoutCts.Token);
+            var ct = linkedCts.Token;
+
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
+
+            var timestampsUnsupported = false;
+            string body;
+            while (true)
+            {
+                using var form = OpenAiTranscription.BuildForm(
+                    context.ModelName, audio, meta?.FileName ?? "audio.mp3", meta?.ContentType ?? "audio/mpeg",
+                    timestamps, language);
+                using var response = await http.PostAsync("https://api.openai.com/v1/audio/transcriptions", form, ct);
+                body = await response.Content.ReadAsStringAsync(ct);
+
+                if (response.IsSuccessStatusCode) break;
+
+                if ((int)response.StatusCode >= 500 || (int)response.StatusCode == 429)
+                    throw new HttpRequestException(
+                        $"OpenAI transcripcion {(int)response.StatusCode}: {body}", null,
+                        (int)response.StatusCode == 429 ? null : response.StatusCode);
+
+                // El modelo no da marcas de tiempo: mejor el texto sin ellas que nada.
+                if (timestamps && OpenAiTranscription.IsUnsupportedFormatError(body))
+                {
+                    timestamps = false;
+                    timestampsUnsupported = true;
+                    continue;
+                }
+
+                return AiResult.Fail($"OpenAI transcripcion ({(int)response.StatusCode}): {body}");
+            }
+
+            var text = OpenAiTranscription.ParseResponse(body);
+            var seconds = OpenAiTranscription.ReadDuration(body)
+                ?? (context.Configuration.TryGetValue(OpenAiTranscription.AudioSecondsKey, out var raw)
+                    && double.TryParse(raw?.ToString(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var probed)
+                    ? probed
+                    : null);
+
+            var result = AiResult.Ok(text, new Dictionary<string, object>
+            {
+                ["model"] = context.ModelName,
+                ["timestamps"] = timestamps,
+                ["timestampsUnsupported"] = timestampsUnsupported,
+            });
+            result.EstimatedCost = OpenAiTranscription.EstimateCost(context.ModelName, seconds);
+            return result;
+        }
+
+        private static bool ReadBool(IReadOnlyDictionary<string, object> config, string key)
+        {
+            if (!config.TryGetValue(key, out var raw)) return false;
+            return raw switch
+            {
+                bool b => b,
+                System.Text.Json.JsonElement je => je.ValueKind == System.Text.Json.JsonValueKind.True
+                    || (je.ValueKind == System.Text.Json.JsonValueKind.String
+                        && bool.TryParse(je.GetString(), out var parsed) && parsed),
+                _ => bool.TryParse(raw?.ToString(), out var parsed) && parsed,
+            };
         }
 
         /// <summary>

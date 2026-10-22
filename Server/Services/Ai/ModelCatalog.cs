@@ -35,9 +35,17 @@ public static class ModelCatalog
     /// mensajes contados en tokens. null = sin limite declarado (se usa el fallback
     /// por familia de <see cref="InputAdapter.GetMaxPromptLength"/>).
     /// </param>
+    /// <param name="ClipSeconds">
+    /// Duracion fija, en segundos, del clip que entrega un modelo de video. Vive en
+    /// el catalogo y no en el proveedor porque la necesitan modulos que no llaman a
+    /// la API: el orquestador loop la usa para decidir cuantos clips hacen falta
+    /// para cubrir una locucion, y el proveedor para facturar por segundo. null =
+    /// el modelo no produce clips de duracion fija.
+    /// </param>
     public record CatalogModel(
         string Id, string DisplayName, string Provider, string[] Types,
-        string[]? Capabilities = null, int? ContextTokens = null, int? PromptChars = null);
+        string[]? Capabilities = null, int? ContextTokens = null, int? PromptChars = null,
+        int? ClipSeconds = null);
 
     public static readonly CatalogModel[] AllModels =
     [
@@ -226,8 +234,9 @@ public static class ModelCatalog
             ["image-generation"], null, PromptChars: 1_500),
 
         // ─── Leonardo AI: Video (imagen -> video) ───
+        // Motion 2.0 no acepta el parametro `duration`: siempre entrega 5 s.
         new("leonardo-motion-2",      "Leonardo Motion 2.0",   "LeonardoAI", ["Video"],
-            ["image-to-video"], null, PromptChars: 1_500),
+            ["image-to-video"], null, PromptChars: 1_500, ClipSeconds: 5),
     ];
 
     /// <summary>Datos de catalogo de un modelo por su id, o null si no esta.</summary>
@@ -235,6 +244,9 @@ public static class ModelCatalog
         string.IsNullOrWhiteSpace(modelId)
             ? null
             : AllModels.FirstOrDefault(m => string.Equals(m.Id, modelId, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Segundos del clip que entrega un modelo de video, o null si no es fija.</summary>
+    public static int? GetClipSeconds(string? modelId) => Find(modelId)?.ClipSeconds;
 
     /// <summary>Models matching the given ModuleType ("Image", "Text", ...).</summary>
     public static IEnumerable<CatalogModel> GetByModuleType(string moduleType) =>

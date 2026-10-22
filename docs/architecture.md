@@ -442,11 +442,11 @@ export del pipeline, `pipelineEditor.downloadText` guarda el fichero.
 | Image         | ImageModuleHandler         | Genera imagenes con un proveedor de imagen; con varias salidas hace una llamada por imagen (ver seccion propia) |
 | Audio         | AudioModuleHandler         | Texto a voz (OpenAI); con el texto repartido en tomas genera un audio por toma (ver seccion propia) |
 | Video         | VideoModuleHandler         | Anima imagenes: un clip por imagen de entrada, con las llamadas en paralelo (ver seccion propia) |
-| VideoAssembly | VideoAssemblyModuleHandler | Une varios clips en un unico MP4 con ffmpeg (modulo de sistema, sin coste) |
-| Transcription | TranscriptionModuleHandler | Transcribe audio a texto via proveedor                     |
+| VideoAssembly | VideoAssemblyModuleHandler | Une varios clips en un unico MP4 con ffmpeg; con voz en off la pone de pista y ajusta el video a su duracion (modulo de sistema, sin coste) |
+| Transcription | TranscriptionModuleHandler | Transcribe audio a texto (OpenAI), opcionalmente con marcas de tiempo |
 | Embeddings    | EmbeddingsModuleHandler    | Genera embeddings de texto via proveedor                   |
 | Scene         | SceneModuleHandler         | Agrupa campos estaticos y puertos en un objeto de escena   |
-| Orchestrator  | OrchestratorModuleHandler  | Planifica salidas dinamicas y las enruta a nodos hijo      |
+| Orchestrator  | OrchestratorModuleHandler  | Planifica salidas dinamicas y las enruta a nodos hijo; en modo loop, N partes segun la duracion de la entrada |
 | Coordinator   | CoordinatorModuleHandler   | Combina y resume resultados de ramas anteriores            |
 | Interaction   | InteractionModuleHandler   | Pausa el pipeline y espera respuesta humana (Telegram/WA)  |
 | Checkpoint    | CheckpointModuleHandler    | Pausa para revision humana antes de continuar              |
@@ -547,6 +547,14 @@ El numero de imagenes se lee de `n`, `numberOfImages` o `sceneCount`, en ese
 orden, con un tope de 20. `sceneCount` cuenta porque es la clave que decide
 cuantos puertos de salida se pintan en el editor.
 
+**Numero automatico** (`autoCount`, casilla "Una imagen por cada parte que
+llegue"): el modulo genera tantas imagenes como partes traiga la entrada y las
+entrega todas por la unica salida `output_image`. Es el modo para colgar del
+orquestador loop, cuyo numero de partes cambia en cada ejecucion: con un puerto
+por imagen no se podria cablear. Hacia fuera cuenta como modulo de una imagen
+(`ReadImageCount` devuelve 1), asi que el modulo de texto de delante no recibe
+la orden de planificar un numero fijo.
+
 Cada puerto entrega **su** imagen: `output_image_2` propaga la segunda o no
 propaga nada. No cae en "todas las imagenes", que era lo que hacia que un modulo
 con una sola imagen la mandara por los dos puertos y pareciera haber generado
@@ -624,6 +632,59 @@ unos reproductores abren y otros no, sin dar error al generarlo. El audio solo
 se conserva si TODOS los clips lo traen (el filtro exige el mismo numero de
 streams en cada entrada). **ffmpeg se instala en la imagen Docker**; sin el, el
 modulo de montaje falla con un error que lo dice.
+
+**Montaje con voz en off.** El montaje tiene un segundo puerto, `input_audio`
+("Voz"). Si llega la locucion (un audio, o `voz_1..voz_n` que se pegan en
+orden) es la unica pista del video y manda en su duracion: tras unir los clips
+se congela el ultimo fotograma (`tpad=stop_mode=clone`) tanto como dure la voz y
+se corta a esa duracion (`-t`). Asi cubre los dos casos, clips mas largos y mas
+cortos que la voz, y el log dice cuanto se recorto o congelo. Un solo clip con
+voz tambien pasa por ffmpeg. Si no se puede medir la voz se usa `-shortest`.
+
+### Orquestador loop: partes segun la duracion
+
+Los clips de video tienen duracion fija (Motion 2.0: 5 s, declarada en
+`ModelCatalog` como `ClipSeconds`), asi que una locucion de 39 s sobre tres
+clips deja 24 s de voz sin imagen. El modo loop del orquestador (`loopMode`,
+casilla "Repetir las salidas segun la duracion"; logica en `LoopPlanner`)
+calcula cuantas partes hacen falta en vez de dejarlas fijas:
+
+1. **Duracion.** Mide con ffprobe lo que entra por `input_duration`
+   ("Duracion"): audio o video, varios ficheros se suman (las tomas de voz).
+   Una imagen o un texto no valen y el modulo falla diciendolo.
+2. **Ritmo.** Busca aguas abajo de las salidas (atravesando, p. ej., el modulo
+   de imagen) un modulo Video cuyo modelo tenga `ClipSeconds`; si hay varios,
+   manda el de clip mas corto. `loopClipSeconds` en el nodo lo fuerza a mano.
+3. **Partes.** `N = techo((duracion - 0,25 s) / segundos por clip)`, tope 20. Los
+   0,25 s absorben el relleno de los MP3; lo que quede lo cubre el montaje.
+4. **Tramos y locucion.** Cada parte cubre su tramo de tiempo. Si llega texto
+   por `input_narration` ("Locucion"), cada tramo recibe lo que se dice en el:
+   exacto si trae marcas de tiempo (`[00:04.2 - 00:09.8] texto`, la salida del
+   modulo de transcripcion con la casilla "Marcas de tiempo"), o repartido por
+   proporcion de palabras si es el guion plano (para una voz sintetica se
+   desvia poco).
+5. **Plan.** Las salidas configuradas son los CAMPOS de cada parte. La IA
+   devuelve `{"parts":[{"index":1,"output_1":"...","output_2":"..."}]}`; si no
+   trae exactamente N partes con todos los campos se repite una vez con el
+   error y, si sigue mal, el modulo falla.
+6. **Reparto.** Cada salida emite sus N valores separados con `===TOMA n===`,
+   el contrato de `MultiImagePrompt`. No hace falta que el executor repita
+   nodos: imagen (en numero automatico), video y audio ya iteran por dentro.
+
+Pipeline tipico: guion -> texto de voz -> TTS -> Duracion del orquestador loop
+(y el texto de voz a Locucion); salida "descripcion" -> imagen automatica ->
+video; salida "movimiento" -> prompt del video; video -> Clips del montaje y
+TTS -> Voz del montaje. Con 8 clips el modulo de video tarda varias rondas de
+3 en paralelo: vigilar el corte de 10 minutos por modulo.
+
+### Modulo Transcripcion
+
+`OpenAiProvider` -> `POST /v1/audio/transcriptions` (formulario en
+`OpenAiTranscription`). Con la casilla `timestamps` se pide `verbose_json` con
+frases y la salida es una por linea con su tramo, el formato que lee el
+orquestador loop. Si el modelo rechaza ese formato se repite sin marcas y se
+avisa (whisper-1 las da). Se transcribe el primer audio de la entrada; el coste
+sale de los minutos medidos con la tarifa del catalogo.
 
 ### Modulo Directorio de archivos: indice y URLs publicas
 
