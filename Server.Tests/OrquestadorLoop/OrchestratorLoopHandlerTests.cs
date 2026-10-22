@@ -131,6 +131,21 @@ public class OrchestratorLoopHandlerTests : IDisposable
     }
 
     [Fact]
+    public async Task LaDuracionSeMideLlegueporLaEntradaQueLlegue()
+    {
+        if (!MediaFixtures.HasFfmpeg) return;
+
+        var provider = new FakeTextProvider(PlanJson(2));
+        var ctx = CreateContext(provider, [MediaFixtures.Silence(_workspace, "voz.mp3", 9)],
+            mediaPort: LoopPlanner.NarrationPort);
+
+        var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
+
+        Assert.Equal(ModuleResultStatus.Completed, result.Status);
+        Assert.Equal(2, (int)result.Output!.Metadata["parts"]);
+    }
+
+    [Fact]
     public async Task SinNadaConDuracion_FallaExplicandoQueConectar()
     {
         var provider = new FakeTextProvider(PlanJson(1));
@@ -139,7 +154,7 @@ public class OrchestratorLoopHandlerTests : IDisposable
         var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
 
         Assert.Equal(ModuleResultStatus.Failed, result.Status);
-        Assert.Contains("Duracion", result.Error);
+        Assert.Contains("modulo de duracion (audio o video)", result.Error);
         Assert.Empty(provider.Calls);
     }
 
@@ -154,7 +169,7 @@ public class OrchestratorLoopHandlerTests : IDisposable
         var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
 
         Assert.Equal(ModuleResultStatus.Failed, result.Status);
-        Assert.Contains("una imagen o un texto no tienen duracion", result.Error);
+        Assert.Contains("Una imagen o un texto no tienen duracion", result.Error);
     }
 
     [Fact]
@@ -196,7 +211,7 @@ public class OrchestratorLoopHandlerTests : IDisposable
 
     private ModuleExecutionContext CreateContext(
         IAiProvider provider, string[]? durationFiles = null, string? narration = null,
-        Dictionary<string, object>? extraConfig = null, bool withVideo = true)
+        Dictionary<string, object>? extraConfig = null, bool withVideo = true, string mediaPort = "input_prompt")
     {
         durationFiles ??= [];
         var orchestrator = LoopPlannerTests.Node("Orchestrator", "gpt-5.4", "Orquestador loop");
@@ -214,8 +229,10 @@ public class OrchestratorLoopHandlerTests : IDisposable
             ["input_prompt"] = [new PortData { DataType = "text", TextContent = "Guion: curiosidades de los pulpos." }],
         };
 
+        // La duracion no tiene puerto propio: el audio llega por una entrada
+        // cualquiera (lo normal, el TTS conectado a Instrucciones).
         if (durationFiles.Length > 0)
-            inputs[LoopPlanner.DurationPort] = durationFiles.Select(path => new PortData
+            inputs[mediaPort] = [.. inputs.GetValueOrDefault(mediaPort) ?? [], .. durationFiles.Select(path => new PortData
             {
                 DataType = "audio",
                 Files =
@@ -227,7 +244,7 @@ public class OrchestratorLoopHandlerTests : IDisposable
                         FileSize = new FileInfo(path).Length,
                     },
                 ],
-            }).ToList();
+            })];
 
         if (narration is not null)
             inputs[LoopPlanner.NarrationPort] = [new PortData { DataType = "text", TextContent = narration }];

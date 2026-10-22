@@ -196,15 +196,18 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson, platform) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson, platform, timed) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
         var subSteps = [];
         if (subStepsJson) { try { subSteps = JSON.parse(subStepsJson) || []; } catch (e) { subSteps = []; } }
-        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps, platform);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps, platform, !!timed);
         var cssClass = 'df-type-' + moduleType.toLowerCase();
         if (skipped) cssClass += ' df-state-skipped';
+        // Modulo de duracion (audio o video): se marca para que se vea de un vistazo
+        // que es lo que el orquestador loop mide.
+        if (timed) cssClass += ' df-timed';
         var nodeId = this._editor.addNode(
             moduleId, inputPorts.length, outputPorts.length,
             x, y, cssClass,
@@ -574,12 +577,15 @@ window.pipelineEditor = {
         el.innerHTML = '<i class="bi ' + meta.icon + '"></i><span>' + meta.label + '</span>';
     },
 
-    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount, activeRulesCount, subSteps, platform) {
+    _buildNodeHtml: function (name, type, color, icon, stepLabel, modelName, warning, inputCount, outputCount, activeRulesCount, subSteps, platform, timed) {
         var orderBadge = stepLabel
             ? '<span class="df-order-badge">' + stepLabel + '</span>'
             : '<span class="df-order-badge" style="display:none"></span>';
         var rulesBadge = (activeRulesCount | 0) > 0
             ? '<span class="df-node-rules-badge" title="' + activeRulesCount + ' regla(s) activa(s) en este modulo"><i class="bi bi-shield-check"></i>' + activeRulesCount + '</span>'
+            : '';
+        var timedBadge = timed
+            ? '<span class="df-node-timed-badge" title="Modulo de duracion: su salida es audio o video"><i class="bi bi-stopwatch"></i></span>'
             : '';
         var platformBadge = this._buildPlatformBadge(type, platform);
         // En Publicar el ModelName es siempre la constante "publish": no aporta nada
@@ -613,7 +619,7 @@ window.pipelineEditor = {
         }
         return '<div class="df-node-content" style="border-left: 3px solid ' + color + ';">'
             + '<div class="df-node-overlay-spinner"></div>'
-            + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + name + rulesBadge + '</div>'
+            + '<div class="df-node-title">' + orderBadge + '<i class="bi ' + icon + '"></i> ' + name + timedBadge + rulesBadge + '</div>'
             + '<div class="df-node-type">' + type + '</div>'
             + platformBadge
             + modelLine

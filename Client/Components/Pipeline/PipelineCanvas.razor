@@ -1036,7 +1036,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                     Repetir las salidas segun la duracion
                                 </label>
                                 <p class="text-sm text-muted" style="margin-top: 0.15rem;">
-                                    Conecta un audio o video al puerto Duracion: el numero de partes sale de su duracion entre la del clip del modulo de video que cuelga de las salidas (Motion 2.0: 5 s). Cada salida emite una toma por parte.
+                                    Conecta a la entrada un modulo de duracion (audio o video, los marcados en cian): el numero de partes sale de su duracion entre la del clip del modulo de video que cuelga de las salidas (Motion 2.0: 5 s). Cada salida emite una toma por parte.
                                     Si conectas el texto de la locucion (o una transcripcion con marcas de tiempo) al puerto Locucion, cada parte describe lo que se dice en su tramo.
                                 </p>
                             </div>
@@ -2076,7 +2076,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                 isSkipped,
                 activeRulesCount,
                 subStepsJson,
-                GetPublishPlatform(pm));
+                GetPublishPlatform(pm),
+                ModulePortRegistry.IsDurationModule(pm.ModuleType));
 
             idx++;
         }

@@ -137,8 +137,9 @@ public class PipelineConnection
 // ── Module port registry ──
 public static class ModulePortRegistry
 {
-    /// <param name="loopMode">Orquestador en modo loop: anade los puertos de
-    /// duracion y locucion (ver Server/Services/Ai/LoopPlanner.cs).</param>
+    /// <param name="loopMode">Orquestador en modo loop: la entrada acepta audio o
+    /// video (de ahi saca la duracion) y aparece el puerto de locucion (ver
+    /// Server/Services/Ai/LoopPlanner.cs).</param>
     public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null, string modelName = "", bool loopMode = false)
     {
         var ports = new List<PortDefinition>();
@@ -191,13 +192,17 @@ public static class ModulePortRegistry
                 break;
 
             case "Orchestrator":
-                ports.Add(new("input_prompt", "Instrucciones", PortDataType.Text, isInput: true, isRequired: true));
                 if (loopMode)
                 {
-                    // Lo que tiene duracion (audio o video) decide cuantas partes salen;
-                    // la locucion, que se dice en cada una.
-                    ports.Add(new("input_duration", "Duracion", PortDataType.Any, isInput: true, isRequired: true));
+                    // La duracion no tiene puerto propio: se mide lo que llegue de un
+                    // modulo de duracion (audio o video), por la entrada que sea. La
+                    // locucion dice que se escucha en cada parte.
+                    ports.Add(new("input_prompt", "Instrucciones", PortDataType.Any, isInput: true, isRequired: true));
                     ports.Add(new("input_narration", "Locucion", PortDataType.Text, isInput: true));
+                }
+                else
+                {
+                    ports.Add(new("input_prompt", "Instrucciones", PortDataType.Text, isInput: true, isRequired: true));
                 }
                 if (orchestratorOutputs?.Count > 0)
                 {
@@ -313,6 +318,14 @@ public static class ModulePortRegistry
 
         return ports;
     }
+
+    /// <summary>
+    /// Modulos de duracion: los que producen ficheros con duracion (de momento
+    /// audio y video). El editor los marca con un color propio porque son los que
+    /// el orquestador loop mide y los que marcan su ritmo.
+    /// </summary>
+    public static bool IsDurationModule(string moduleType) =>
+        moduleType is "Audio" or "Video" or "VideoAssembly";
 
     public static string GetModuleIcon(string moduleType) => moduleType switch
     {

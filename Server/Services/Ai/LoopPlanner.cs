@@ -17,6 +17,10 @@ namespace Server.Services.Ai;
 /// video que marca el ritmo, calcula N = techo(duracion / segundos por clip) y
 /// pide a la IA N partes con los campos que el usuario definio como salidas.
 ///
+/// La duracion no entra por un puerto propio: el orquestador mide cualquier
+/// audio o video que le llegue por sus entradas (la salida de un "modulo de
+/// duracion": audio o video, ver <see cref="IsTimedMedia"/>).
+///
 /// No hace falta que el executor repita nodos: cada salida emite sus N partes
 /// separadas con las marcas <c>===TOMA n===</c>, el mismo contrato que ya
 /// entienden los modulos de imagen, video y audio (<see cref="MultiImagePrompt"/>),
@@ -36,11 +40,17 @@ public static class LoopPlanner
     /// <summary>Segundos por parte fijados a mano: mandan sobre los del modulo de video.</summary>
     public const string ClipSecondsKey = "loopClipSeconds";
 
-    /// <summary>Puerto por el que entra lo que tiene duracion (audio o video).</summary>
-    public const string DurationPort = "input_duration";
-
     /// <summary>Puerto opcional por el que entra el texto de la locucion.</summary>
     public const string NarrationPort = "input_narration";
+
+    /// <summary>
+    /// ¿Tiene duracion este fichero? De momento, audio y video: son las salidas
+    /// de los modulos de duracion y lo unico de lo que se pueden sacar partes.
+    /// </summary>
+    public static bool IsTimedMedia(string? contentType) =>
+        contentType is not null
+        && (contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+            || contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Tope de partes: el mismo que admite un modulo de imagen.</summary>
     public const int MaxParts = MultiImagePrompt.MaxImages;

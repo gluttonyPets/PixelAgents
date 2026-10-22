@@ -649,9 +649,12 @@ clips deja 24 s de voz sin imagen. El modo loop del orquestador (`loopMode`,
 casilla "Repetir las salidas segun la duracion"; logica en `LoopPlanner`)
 calcula cuantas partes hacen falta en vez de dejarlas fijas:
 
-1. **Duracion.** Mide con ffprobe lo que entra por `input_duration`
-   ("Duracion"): audio o video, varios ficheros se suman (las tomas de voz).
-   Una imagen o un texto no valen y el modulo falla diciendolo.
+1. **Duracion.** No tiene puerto propio: mide con ffprobe todo audio o video
+   que llegue por cualquier entrada (la salida de un **modulo de duracion**:
+   Audio, Video o Montaje; en modo loop "Instrucciones" acepta cualquier tipo).
+   Varios ficheros se suman (las tomas de voz). Si no llega ninguno el modulo
+   falla diciendolo. En el editor los modulos de duracion van marcados con un
+   contorno discontinuo cian y un cronometro (`IsDurationModule`).
 2. **Ritmo.** Busca aguas abajo de las salidas (atravesando, p. ej., el modulo
    de imagen) un modulo Video cuyo modelo tenga `ClipSeconds`; si hay varios,
    manda el de clip mas corto. `loopClipSeconds` en el nodo lo fuerza a mano.
@@ -671,8 +674,8 @@ calcula cuantas partes hacen falta en vez de dejarlas fijas:
    el contrato de `MultiImagePrompt`. No hace falta que el executor repita
    nodos: imagen (en numero automatico), video y audio ya iteran por dentro.
 
-Pipeline tipico: guion -> texto de voz -> TTS -> Duracion del orquestador loop
-(y el texto de voz a Locucion); salida "descripcion" -> imagen automatica ->
+Pipeline tipico: guion -> texto de voz -> TTS -> Instrucciones del orquestador
+loop (y el texto de voz a Locucion); salida "descripcion" -> imagen automatica ->
 video; salida "movimiento" -> prompt del video; video -> Clips del montaje y
 TTS -> Voz del montaje. Con 8 clips el modulo de video tarda varias rondas de
 3 en paralelo: vigilar el corte de 10 minutos por modulo.

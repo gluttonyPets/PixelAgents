@@ -146,14 +146,20 @@ public class OrchestratorModuleHandler : IModuleHandler
         if (outputs.Count == 0)
             return ModuleResult.Failed("Orquestador sin salidas configuradas: anade al menos una (sus campos son los de cada parte)");
 
-        // 1. Duracion de la entrada.
-        var media = ctx.GetInputFiles(LoopPlanner.DurationPort)
-            .Where(f => IsTimedMedia(f.ContentType))
+        // 1. Duracion de la entrada: todo audio o video que llegue, por el puerto
+        // que sea. Varios ficheros se suman (las tomas de una locucion).
+        var media = ctx.InputsByPort.Values
+            .SelectMany(list => list)
+            .Where(d => d.Files is not null)
+            .SelectMany(d => d.Files!)
+            .Where(f => LoopPlanner.IsTimedMedia(f.ContentType))
+            .GroupBy(f => (f.FileId, f.FileName))
+            .Select(g => g.First())
             .ToList();
         if (media.Count == 0)
             return ModuleResult.Failed(
-                "Modo loop sin nada con duracion: conecta un audio o un video al puerto 'Duracion' "
-                + "(una imagen o un texto no tienen duracion de la que sacar las partes)");
+                "Modo loop sin nada con duracion: conecta a una entrada del orquestador un modulo de duracion "
+                + "(audio o video). Una imagen o un texto no tienen duracion de la que sacar las partes.");
 
         var totalSeconds = 0d;
         foreach (var file in media)
@@ -335,9 +341,4 @@ public class OrchestratorModuleHandler : IModuleHandler
 
         return LoopPlanner.FindPacer(ctx.Node);
     }
-
-    private static bool IsTimedMedia(string? contentType) =>
-        contentType is not null
-        && (contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
-            || contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase));
 }
