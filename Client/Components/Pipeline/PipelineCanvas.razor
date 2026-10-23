@@ -2054,8 +2054,17 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         foreach (var pm in VisibleModules)
         {
             if (GetLoopFrame(pm) is not { } frame) continue;
-            await JS.InvokeVoidAsync("pipelineEditor.addLoopFrame", pm.Id.ToString(),
-                $"Loop de {pm.StepName ?? pm.AiModuleName}", frame.X, frame.Y, frame.W, frame.H);
+            try
+            {
+                await JS.InvokeVoidAsync("pipelineEditor.addLoopFrame", pm.Id.ToString(),
+                    $"Loop de {pm.StepName ?? pm.AiModuleName}", frame.X, frame.Y, frame.W, frame.H);
+            }
+            catch (JSException ex)
+            {
+                // Un pipeline-editor.js viejo en la cache del navegador no tiene
+                // addLoopFrame: sin el rectangulo, pero el resto del pipeline se pinta.
+                Console.WriteLine($"[PipelineCanvas] No se pudo dibujar el rectangulo de loop: {ex.Message}");
+            }
         }
 
         foreach (var pm in VisibleModules)
