@@ -2117,6 +2117,10 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             idx++;
         }
 
+        // Cada rectangulo de loop, pegado al lado derecho de su orquestador.
+        try { await JS.InvokeVoidAsync("pipelineEditor.anchorLoopFrames"); }
+        catch (JSException ex) { Console.WriteLine($"[PipelineCanvas] No se pudo colocar el rectangulo de loop: {ex.Message}"); }
+
         // Add all connections from DB
         Console.WriteLine($"[PipelineCanvas] RebuildDrawflow: adding {_connections.Count} connections");
         foreach (var conn in _connections)
@@ -2224,7 +2228,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
     // ── Rectangulo de loop ──
     // Parte del orquestador loop: se guarda en su config "loopFrame" como
-    // {"x","y","w","h"} y se dibuja de fondo. Mismos valores y misma regla que
+    // {"x","y","w","h"} y se dibuja de fondo, pegado al lado derecho del
+    // orquestador (el editor lo recoloca y guarda la posicion al moverlo). Mismos valores y misma regla que
     // Server/Services/Ai/LoopFrames.cs: un modulo esta dentro si su esquina
     // superior izquierda cae en el rectangulo.
     private const double FrameDefaultWidth = 620;
@@ -2278,8 +2283,9 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     /// <summary>Crea el rectangulo a la derecha del orquestador, del tamano por defecto.</summary>
     private async Task CreateLoopFrame(ProjectModuleResponse orchestrator)
     {
+        // Posicion aproximada: el editor la ajusta al ancho real del nodo al pintarlo.
         var (x, y) = PositionOf(orchestrator);
-        await SaveLoopFrame(orchestrator.Id, new FrameRect(x + 300, y - 40, FrameDefaultWidth, FrameDefaultHeight));
+        await SaveLoopFrame(orchestrator.Id, new FrameRect(x + 240, y, FrameDefaultWidth, FrameDefaultHeight));
         await UpdateSceneCount(orchestrator.Id, GetSceneCount(orchestrator.Id));
     }
 

@@ -99,10 +99,22 @@ window.pipelineEditor = {
             panActive = false;
         });
 
+        // El rectangulo de loop va pegado a su orquestador: lo sigue mientras se
+        // arrastra, y si se intentara mover el rectangulo vuelve a su sitio.
+        this._editor.on('mouseMove', () => {
+            var ed = this._editor;
+            if (!ed.drag || !ed.ele_selected || !ed.ele_selected.id) return;
+            var draggedId = ed.ele_selected.id.replace('node-', '');
+            var owner = this._moduleMap[draggedId];
+            if (owner && this._frameMap[owner] !== undefined) this._anchorFrame(owner, false);
+        });
+
         this._editor.on('nodeMoved', id => {
             if (this._suppressEvents) return;
             var info = this._editor.getNodeFromId(id);
-            if (this._frameOwner[id]) { this._notifyFrameChanged(id); return; }
+            if (this._frameOwner[id]) { this._anchorFrame(this._frameOwner[id], false); return; }
+            var movedOwner = this._moduleMap[id];
+            if (movedOwner && this._frameMap[movedOwner] !== undefined) this._anchorFrame(movedOwner, true);
             var moduleId = this._moduleMap[id];
             if (moduleId && info)
                 this._dotNetRef.invokeMethodAsync('OnNodeMoved', moduleId, info.pos_x, info.pos_y);
@@ -250,11 +262,12 @@ window.pipelineEditor = {
 
     // ── Rectangulo de loop ──
     // Area de fondo de un orquestador loop: lo que cae dentro se repite. Por
-    // debajo es un nodo de Drawflow (asi se arrastra y su salida se conecta como
-    // cualquier otra), pero no es un modulo: pertenece a su orquestador, y su
-    // salida es el puerto "output_loop" de este. Va detras del resto y deja pasar
-    // los clics salvo en la cabecera, la esquina y la salida. No arrastra a los
-    // modulos de dentro: solo los marca.
+    // debajo es un nodo de Drawflow (asi su salida se conecta como cualquier
+    // otra), pero no es un modulo: pertenece a su orquestador, y su salida es el
+    // puerto "output_loop" de este. Va pegado al orquestador por su lado
+    // izquierdo y lo sigue al moverlo; solo se redimensiona, desde la esquina.
+    // Va detras del resto y deja pasar los clics salvo en la cabecera, la esquina
+    // y la salida. No arrastra a los modulos de dentro: solo los marca.
     _frameMinWidth: 240,
     _frameMinHeight: 140,
 
@@ -274,9 +287,56 @@ window.pipelineEditor = {
         if (el) {
             el.style.width = w + 'px';
             el.style.height = h + 'px';
+            this._frameSaved[nodeId] = { x: x, y: y, w: w, h: h };
             this._setupFrameResize(nodeId, el);
+
+            // La cabecera no arrastra: el rectangulo va con su orquestador. Un clic
+            // en ella selecciona el orquestador, que es donde se configura el loop.
+            var header = el.querySelector('.df-frame-header');
+            var self = this;
+            if (header) header.addEventListener('mousedown', function (e) {
+                e.stopPropagation();
+                if (self._dotNetRef) self._dotNetRef.invokeMethodAsync('OnNodeSelected', ownerModuleId);
+            });
         }
         return nodeId;
+    },
+
+    _frameSaved: {},    // drawflowNodeId del rectangulo → ultimo {x,y,w,h} guardado
+
+    // Coloca cada rectangulo pegado a su orquestador. Se llama al terminar de
+    // pintar los nodos (los rectangulos se anaden antes, para quedar detras).
+    anchorLoopFrames: function () {
+        for (var owner in this._frameMap) this._anchorFrame(owner, true);
+    },
+
+    // Borde izquierdo del rectangulo = lado derecho del orquestador; arriba, a
+    // la altura del orquestador. Con notify, si ha cambiado se guarda.
+    _anchorFrame: function (ownerModuleId, notify) {
+        var frameNodeId = this._frameMap[ownerModuleId];
+        var ownerNodeId = this._reverseMap[ownerModuleId];
+        if (frameNodeId === undefined || ownerNodeId === undefined) return;
+
+        var ownerEl = document.getElementById('node-' + ownerNodeId);
+        var frameEl = document.getElementById('node-' + frameNodeId);
+        var ownerInfo = this._editor.getNodeFromId(ownerNodeId);
+        if (!ownerEl || !frameEl || !ownerInfo) return;
+
+        // La posicion pintada y no la de los datos de Drawflow, que mientras se
+        // arrastra va un paso por detras y dejaria un hueco entre los dos.
+        var left = parseFloat(ownerEl.style.left);
+        var top = parseFloat(ownerEl.style.top);
+        var x = (isNaN(left) ? ownerInfo.pos_x : left) + ownerEl.offsetWidth;
+        var y = isNaN(top) ? ownerInfo.pos_y : top;
+        frameEl.style.left = x + 'px';
+        frameEl.style.top = y + 'px';
+        var data = this._editor.drawflow.drawflow[this._editor.module].data[frameNodeId];
+        if (data) { data.pos_x = x; data.pos_y = y; }
+        this._editor.updateConnectionNodes('node-' + frameNodeId);
+
+        var saved = this._frameSaved[frameNodeId];
+        if (notify && (!saved || Math.abs(saved.x - x) > 0.5 || Math.abs(saved.y - y) > 0.5))
+            this._notifyFrameChanged(frameNodeId);
     },
 
     // Nodo de Drawflow del que sale una conexion: la salida del loop sale del
@@ -292,6 +352,7 @@ window.pipelineEditor = {
         var el = document.getElementById('node-' + nodeId);
         var info = this._editor.getNodeFromId(nodeId);
         if (!owner || !el || !info || !this._dotNetRef) return;
+        this._frameSaved[nodeId] = { x: info.pos_x, y: info.pos_y, w: el.offsetWidth, h: el.offsetHeight };
         this._dotNetRef.invokeMethodAsync('OnLoopFrameChanged', owner, info.pos_x, info.pos_y, el.offsetWidth, el.offsetHeight);
     },
 
@@ -438,6 +499,7 @@ window.pipelineEditor = {
         this._reverseMap = {};
         this._frameMap = {};
         this._frameOwner = {};
+        this._frameSaved = {};
         this._removeAllFormatBadges();
     },
 

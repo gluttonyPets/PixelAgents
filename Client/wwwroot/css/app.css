@@ -3738,7 +3738,7 @@ a.link:hover { text-decoration: underline; }
     border-top-left-radius: 12px;
     font-size: 0.75rem;
     font-weight: 600;
-    cursor: move;
+    cursor: pointer;
     pointer-events: auto;
 }
 .df-frame-hint {
