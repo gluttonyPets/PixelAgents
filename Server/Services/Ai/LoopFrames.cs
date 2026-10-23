@@ -31,8 +31,12 @@ public static class LoopFrames
     /// <summary>Salida del loop: puerto del orquestador que el editor pinta en el rectangulo.</summary>
     public const string OutputPort = "output_loop";
 
-    /// <summary>Vueltas en paralelo como maximo: las colas de video no dan para mas.</summary>
-    public const int MaxParallelParts = 3;
+    /// <summary>
+    /// Vueltas a la vez. Una: las vueltas se hacen una a una, en orden, que es
+    /// como se entiende un loop y lo que aguantan las colas de los proveedores de
+    /// video. Cada vuelta tiene su propio limite de tiempo.
+    /// </summary>
+    public const int MaxParallelParts = 1;
 
     /// <summary>Area del rectangulo en el lienzo.</summary>
     public readonly record struct Rect(double X, double Y, double Width, double Height)

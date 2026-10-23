@@ -1025,8 +1025,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                     Repetir las salidas segun la duracion
                                 </label>
                                 <p class="text-sm text-muted" style="margin-top: 0.15rem;">
-                                    Conecta a la entrada un modulo de duracion (audio o video, los marcados en cian): el numero de partes sale de su duracion entre la del clip del modulo de video que se repite (Motion 2.0: 5 s). Los modulos dentro del rectangulo de loop se ejecutan una vez por parte.
-                                    Si conectas el texto de la locucion (o una transcripcion con marcas de tiempo) al puerto Locucion, cada parte describe lo que se dice en su tramo.
+                                    Conecta la voz en off (audio) a la entrada Locucion. Su duracion entre la del modulo de duracion que hay dentro del rectangulo (Motion 2.0: 5 s por clip) da el numero de vueltas: 30 s / 5 s = 6. Los modulos del rectangulo se ejecutan una vez por vuelta, una a una, y al acabar todas la salida del rectangulo entrega todos los resultados.
+                                    Cada vuelta recibe un valor de cada salida del orquestador, que la IA escribe siguiendo el prompt de esa salida. Si a Locucion llega tambien el texto de la voz en off, cada vuelta describe lo que se oye en su tramo.
                                 </p>
                             </div>
                             @if (IsLoopOrchestrator(sel))
@@ -1060,17 +1060,21 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                     }
                                 </div>
                                 <div class="inspector-field">
-                                    <label>Segundos por parte (opcional)</label>
+                                    <label>Segundos por vuelta (opcional)</label>
                                     <input type="number" min="1" step="0.5" placeholder="Automatico: el del modulo de video"
                                            value="@GetModuleConfig(sel.Id, "loopClipSeconds", "")"
                                            @onchange="@(e => SetModuleConfig(sel.Id, "loopClipSeconds", e.Value?.ToString() ?? ""))" />
-                                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">Solo si ningun modulo de video de detras tiene duracion fija conocida, o quieres forzarla.</p>
+                                    <p class="text-sm text-muted" style="margin-top: 0.15rem;">Solo si el modulo de duracion de dentro no tiene una duracion fija conocida, o quieres forzarla.</p>
                                 </div>
                             }
                         </div>
 
                         <div class="inspector-section">
-                            <div class="inspector-section-title">@(IsLoopOrchestrator(sel) ? "Campos de cada parte" : "Salidas del orquestador")</div>
+                            <div class="inspector-section-title">Salidas del orquestador</div>
+                            @if (IsLoopOrchestrator(sel))
+                            {
+                                <p class="text-sm text-muted" style="margin-bottom: 0.3rem;">En cada vuelta la IA saca un valor por cada salida siguiendo su prompt (p. ej. "Descripcion imagen" y "Movimiento"). Conecta cada salida a un modulo de dentro del rectangulo.</p>
+                            }
                             @if (sel.OrchestratorOutputs is { Count: > 0 })
                             {
                                 @foreach (var output in sel.OrchestratorOutputs.OrderBy(o => o.SortOrder))
@@ -1127,11 +1131,11 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                             <div style="margin-top: 0.3rem;">
                                 <div class="inspector-field" style="margin-bottom: 0.2rem;">
                                     <label>Label</label>
-                                    <input @bind="_newOutputLabel" placeholder="Ej: Video perro" />
+                                    <input @bind="_newOutputLabel" placeholder="@(IsLoopOrchestrator(sel) ? "Ej: Descripcion imagen" : "Ej: Video perro")" />
                                 </div>
                                 <div class="inspector-field" style="margin-bottom: 0.2rem;">
                                     <label>Prompt</label>
-                                    <textarea @bind="_newOutputPrompt" rows="2" placeholder="Ej: Busca un video de un perro paseando" style="font-size: 0.75rem;"></textarea>
+                                    <textarea @bind="_newOutputPrompt" rows="2" placeholder="@(IsLoopOrchestrator(sel) ? "Ej: Descripcion visual de la escena de esta vuelta, para una imagen vertical" : "Ej: Busca un video de un perro paseando")" style="font-size: 0.75rem;"></textarea>
                                 </div>
                                 <div class="inspector-field" style="margin-bottom: 0.2rem;">
                                     <label>Tipo de salida</label>
@@ -2082,10 +2086,10 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             var pos = _positions.GetValueOrDefault(pm.Id, (60 + (idx % 4) * 280, 60 + (idx / 4) * 200));
             var stepLabel = "";
 
-            var warning = pm.ModuleType == "Orchestrator"
-                && (pm.OrchestratorOutputs is null || pm.OrchestratorOutputs.Count == 0)
-                ? "Sin salidas configuradas"
-                : null;
+            var warning = pm.ModuleType != "Orchestrator" ? null
+                : pm.OrchestratorOutputs is null || pm.OrchestratorOutputs.Count == 0
+                    ? (IsLoopOrchestrator(pm) ? "Sin salidas: anadelas en su panel" : "Sin salidas configuradas")
+                    : IsLoopOrchestrator(pm) && !HasLoopFrame(pm) ? "Sin rectangulo de loop" : null;
 
             var isSkipped = GetModuleConfigBool(pm.Id, "skipped", false);
             var activeRulesCount = GetActiveRules(pm).Count;

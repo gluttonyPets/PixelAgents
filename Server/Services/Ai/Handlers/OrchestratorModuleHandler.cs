@@ -146,19 +146,24 @@ public class OrchestratorModuleHandler : IModuleHandler
         if (outputs.Count == 0)
             return ModuleResult.Failed("Orquestador sin salidas configuradas: anade al menos una (sus campos son los de cada parte)");
 
-        // 0. El rectangulo de loop marca que modulos se repiten.
+        // 0. El rectangulo de loop marca que modulos se repiten, y dentro tiene que
+        // haber un modulo de duracion: es el que dice cuanto cubre cada vuelta.
         if (ctx.Node.OwnedLoopFrame is not { } frame)
-            await ctx.LogWarningAsync(
-                "El orquestador loop no tiene rectangulo: los modulos siguientes se ejecutaran una sola vez. "
-                + "Crea el rectangulo desde el panel del orquestador y deja dentro los modulos que se repiten.");
-        else if (frame.Members.Count == 0)
+            return ModuleResult.Failed(
+                "El orquestador loop no tiene rectangulo de loop. Crealo desde su panel y deja dentro los modulos que se repiten.");
+        if (frame.Members.Count == 0)
             return ModuleResult.Failed(
                 "El rectangulo de loop esta vacio: agrandalo o mueve dentro los modulos que se repiten.");
 
-        // 1. Duracion de la entrada: todo audio o video que llegue, por el puerto
-        // que sea. Varios ficheros se suman (las tomas de una locucion).
-        var media = ctx.InputsByPort.Values
-            .SelectMany(list => list)
+        var timed = frame.Members.Where(m => LoopPlanner.IsDurationModule(m.ModuleType)).ToList();
+        if (timed.Count == 0)
+            return ModuleResult.Failed(
+                "Dentro del rectangulo de loop no hay ningun modulo de duracion (video o audio): sin el no se sabe "
+                + "cuanto cubre cada vuelta. Mete dentro el modulo de video (p. ej. Leonardo, 5 s por clip).");
+
+        // 1. Duracion de la locucion: el audio o video que llega por la entrada
+        // Locucion. Varios ficheros se suman (las tomas de una voz en off).
+        var media = (ctx.InputsByPort.GetValueOrDefault(LoopPlanner.NarrationPort) ?? [])
             .Where(d => d.Files is not null)
             .SelectMany(d => d.Files!)
             .Where(f => LoopPlanner.IsTimedMedia(f.ContentType))
@@ -167,8 +172,8 @@ public class OrchestratorModuleHandler : IModuleHandler
             .ToList();
         if (media.Count == 0)
             return ModuleResult.Failed(
-                "Modo loop sin nada con duracion: conecta a una entrada del orquestador un modulo de duracion "
-                + "(audio o video). Una imagen o un texto no tienen duracion de la que sacar las partes.");
+                "La entrada Locucion no trae ningun audio ni video: conecta ahi la voz en off (el modulo de voz). "
+                + "Su duracion decide cuantas vueltas da el loop; una imagen o un texto no tienen duracion.");
 
         var totalSeconds = 0d;
         foreach (var file in media)
@@ -179,13 +184,12 @@ public class OrchestratorModuleHandler : IModuleHandler
             totalSeconds += seconds.Value;
         }
 
-        // 2. Quien marca el ritmo: los segundos fijados a mano o el video de detras.
-        var pacer = ResolvePacer(ctx);
+        // 2. El ritmo: los segundos del modulo de duracion de dentro, o los fijados a mano.
+        var pacer = ResolvePacer(ctx, frame);
         if (pacer is null)
             return ModuleResult.Failed(
-                "Modo loop sin modulo que marque el ritmo: ninguna salida llega a un modulo de video con duracion "
-                + "de clip conocida. Conecta una salida (directa o a traves del modulo de imagen) a un modulo de video, "
-                + "o fija los segundos por parte en el nodo.");
+                $"Los modulos de duracion del rectangulo ({string.Join(", ", timed.Select(t => t.ProjectModule.StepName ?? t.AiModule.Name))}) "
+                + "no tienen una duracion de clip fija conocida. Fija los segundos por vuelta en el panel del orquestador.");
 
         var needed = LoopPlanner.CountPartsUncapped(totalSeconds, pacer.ClipSeconds);
         var parts = LoopPlanner.CountParts(totalSeconds, pacer.ClipSeconds);
@@ -198,7 +202,7 @@ public class OrchestratorModuleHandler : IModuleHandler
             $"Modo loop: la entrada dura {totalSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} s "
             + $"y cada parte {pacer.ClipSeconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} s"
             + (pacer.NodeName is null ? " (fijado en el nodo)" : $" (lo marca '{pacer.NodeName}')")
-            + $": {parts} parte(s)");
+            + $": {parts} vuelta(s)");
 
         // 3. Tramos, con el texto de la locucion si llega.
         var narration = ctx.GetInputText(LoopPlanner.NarrationPort);
@@ -340,14 +344,14 @@ public class OrchestratorModuleHandler : IModuleHandler
         return ModuleResult.Completed(stepOutput, totalCost, producedFiles);
     }
 
-    /// <summary>Segundos por parte fijados en el nodo; si no, el video de detras.</summary>
-    private static LoopPlanner.Pacer? ResolvePacer(ModuleExecutionContext ctx)
+    /// <summary>Segundos por vuelta fijados en el nodo; si no, los del modulo de duracion de dentro.</summary>
+    private static LoopPlanner.Pacer? ResolvePacer(ModuleExecutionContext ctx, LoopFrames.FrameInfo frame)
     {
         var manual = ctx.GetConfig(LoopPlanner.ClipSecondsKey, "");
         if (double.TryParse(manual.Replace(',', '.'), System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out var seconds) && seconds > 0)
-            return new LoopPlanner.Pacer(seconds, null, null);
+            return new LoopPlanner.Pacer(seconds, null);
 
-        return LoopPlanner.FindPacer(ctx.Node);
+        return LoopPlanner.FindPacer(frame);
     }
 }

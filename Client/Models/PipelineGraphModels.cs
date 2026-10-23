@@ -140,8 +140,8 @@ public static class ModulePortRegistry
     /// <summary>Salida del loop del orquestador (Server/Services/Ai/LoopFrames.cs).</summary>
     public const string LoopOutputPort = "output_loop";
 
-    /// <param name="loopMode">Orquestador en modo loop: la entrada acepta audio o
-    /// video (de ahi saca la duracion) y aparece el puerto de locucion (ver
+    /// <param name="loopMode">Orquestador en modo loop: aparece la entrada Locucion,
+    /// por la que llega la voz en off cuya duracion decide las vueltas (ver
     /// Server/Services/Ai/LoopPlanner.cs).</param>
     /// <param name="loopFrame">El orquestador loop tiene rectangulo: anade la salida
     /// del loop, que el editor dibuja en el rectangulo y no en el nodo.</param>
@@ -197,17 +197,12 @@ public static class ModulePortRegistry
                 break;
 
             case "Orchestrator":
+                ports.Add(new("input_prompt", "Instrucciones", PortDataType.Text, isInput: true, isRequired: true));
                 if (loopMode)
                 {
-                    // La duracion no tiene puerto propio: se mide lo que llegue de un
-                    // modulo de duracion (audio o video), por la entrada que sea. La
-                    // locucion dice que se escucha en cada parte.
-                    ports.Add(new("input_prompt", "Instrucciones", PortDataType.Any, isInput: true, isRequired: true));
-                    ports.Add(new("input_narration", "Locucion", PortDataType.Text, isInput: true));
-                }
-                else
-                {
-                    ports.Add(new("input_prompt", "Instrucciones", PortDataType.Text, isInput: true, isRequired: true));
+                    // La voz en off (audio o video): su duracion decide cuantas vueltas
+                    // da el loop. Si llega tambien su texto, dice que se oye en cada una.
+                    ports.Add(new("input_narration", "Locucion", PortDataType.Any, isInput: true, isRequired: true));
                 }
                 if (orchestratorOutputs?.Count > 0)
                 {

@@ -178,31 +178,39 @@ public class LoopPlannerTests
     // ── Quien marca el ritmo ──
 
     [Fact]
-    public void ElRitmoLoMarcaElVideoAunqueHayaUnaImagenEnMedio()
+    public void ElRitmoLoMarcaElModuloDeDuracionDeDentroDelLoop()
     {
         var orchestrator = Node("Orchestrator", "gpt-5.4");
-        var image = Node("Image", "gpt-image-2");
-        var video = Node("Video", "leonardo-motion-2", "Leonardo Video");
-        Connect(orchestrator, "output_2", image, "input_prompt");
-        Connect(image, "output_image", video, "input_image");
-        Connect(orchestrator, "output_1", Node("Text", "gpt-5.4"), "input_prompt");
+        var frame = Frame(orchestrator,
+        [
+            Node("Image", "gpt-image-2"),
+            Node("Video", "leonardo-motion-2", "Leonardo Video"),
+        ]);
 
-        var pacer = LoopPlanner.FindPacer(orchestrator);
+        var pacer = LoopPlanner.FindPacer(frame);
 
         Assert.NotNull(pacer);
         Assert.Equal(5, pacer!.ClipSeconds);
-        Assert.Equal("output_2", pacer.OutputKey);
         Assert.Equal("Leonardo Video", pacer.NodeName);
     }
 
     [Fact]
-    public void SinVideoDeDuracionConocida_NoHayRitmo()
+    public void SinModuloDeDuracionFijaDentro_NoHayRitmo()
     {
         var orchestrator = Node("Orchestrator", "gpt-5.4");
-        Connect(orchestrator, "output_1", Node("Image", "gpt-image-2"), "input_prompt");
+        var frame = Frame(orchestrator, [Node("Image", "gpt-image-2"), Node("Audio", "gpt-4o-mini-tts")]);
 
-        Assert.Null(LoopPlanner.FindPacer(orchestrator));
+        Assert.Null(LoopPlanner.FindPacer(frame));
     }
+
+    [Theory]
+    [InlineData("Video", true)]
+    [InlineData("Audio", true)]
+    [InlineData("VideoAssembly", true)]
+    [InlineData("Image", false)]
+    [InlineData("Text", false)]
+    public void ModulosDeDuracion_SonLosDeAudioYVideo(string type, bool expected) =>
+        Assert.Equal(expected, LoopPlanner.IsDurationModule(type));
 
     [Fact]
     public void LaDuracionDelClipVieneDelCatalogo()
@@ -230,6 +238,16 @@ public class LoopPlannerTests
             ModelName = model,
         };
         return new ModuleNode(new ProjectModule { Id = Guid.NewGuid(), IsActive = true, AiModule = ai });
+    }
+
+    /// <summary>Rectangulo de loop del orquestador con estos modulos dentro.</summary>
+    internal static LoopFrames.FrameInfo Frame(ModuleNode orchestrator, List<ModuleNode> members)
+    {
+        var info = new LoopFrames.FrameInfo { Driver = orchestrator, Area = new LoopFrames.Rect(0, 0, 600, 300) };
+        info.Members.AddRange(members);
+        foreach (var m in members) m.LoopFrame = info;
+        orchestrator.OwnedLoopFrame = info;
+        return info;
     }
 
     internal static void Connect(ModuleNode from, string fromPort, ModuleNode to, string toPort)

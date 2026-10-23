@@ -8,9 +8,9 @@ namespace Server.Tests.OrquestadorLoop;
 /// <summary>
 /// El orquestador en modo loop de punta a punta, con un proveedor de mentira y
 /// audio real (hace falta ffprobe para medirlo). Lo que se protege: que el
-/// numero de partes sale de la duracion de la entrada y del clip del video de
-/// detras, y que cada salida emite sus partes de forma que los modulos de
-/// imagen y video las vuelven a separar igual.
+/// numero de vueltas sale de la duracion de la Locucion y del clip del modulo de
+/// duracion que hay dentro del rectangulo, y que cada salida emite sus partes de
+/// forma que los modulos de imagen y video las vuelven a separar igual.
 /// </summary>
 public class OrchestratorLoopHandlerTests : IDisposable
 {
@@ -131,18 +131,16 @@ public class OrchestratorLoopHandlerTests : IDisposable
     }
 
     [Fact]
-    public async Task LaDuracionSeMideLlegueporLaEntradaQueLlegue()
+    public async Task LaDuracionSaleSoloDeLaLocucion()
     {
-        if (!MediaFixtures.HasFfmpeg) return;
-
+        // Un audio que entra por Instrucciones no cuenta: el tiempo lo marca la Locucion.
         var provider = new FakeTextProvider(PlanJson(2));
-        var ctx = CreateContext(provider, [MediaFixtures.Silence(_workspace, "voz.mp3", 9)],
-            mediaPort: LoopPlanner.NarrationPort);
+        var ctx = CreateContext(provider, [Path.Combine(_workspace, "voz.mp3")], mediaPort: "input_prompt");
 
         var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
 
-        Assert.Equal(ModuleResultStatus.Completed, result.Status);
-        Assert.Equal(2, (int)result.Output!.Metadata["parts"]);
+        Assert.Equal(ModuleResultStatus.Failed, result.Status);
+        Assert.Contains("La entrada Locucion no trae ningun audio ni video", result.Error);
     }
 
     [Fact]
@@ -154,8 +152,20 @@ public class OrchestratorLoopHandlerTests : IDisposable
         var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
 
         Assert.Equal(ModuleResultStatus.Failed, result.Status);
-        Assert.Contains("modulo de duracion (audio o video)", result.Error);
+        Assert.Contains("conecta ahi la voz en off", result.Error);
         Assert.Empty(provider.Calls);
+    }
+
+    [Fact]
+    public async Task SinRectangulo_Falla()
+    {
+        var provider = new FakeTextProvider(PlanJson(1));
+        var ctx = CreateContext(provider, withFrame: false);
+
+        var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
+
+        Assert.Equal(ModuleResultStatus.Failed, result.Status);
+        Assert.Contains("no tiene rectangulo de loop", result.Error);
     }
 
     [Fact]
@@ -169,21 +179,37 @@ public class OrchestratorLoopHandlerTests : IDisposable
         var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
 
         Assert.Equal(ModuleResultStatus.Failed, result.Status);
-        Assert.Contains("Una imagen o un texto no tienen duracion", result.Error);
+        Assert.Contains("una imagen o un texto no tienen duracion", result.Error);
     }
 
     [Fact]
-    public async Task SinVideoDetras_PideFijarLosSegundos()
+    public async Task SinModuloDeDuracionDentroDelLoop_Falla()
     {
-        if (!MediaFixtures.HasFfmpeg) return;
-
+        // Solo la imagen dentro del rectangulo: nada dice cuanto cubre cada vuelta.
         var provider = new FakeTextProvider(PlanJson(1));
-        var ctx = CreateContext(provider, [MediaFixtures.Silence(_workspace, "voz.mp3", 4)], withVideo: false);
+        var ctx = CreateContext(provider, [Path.Combine(_workspace, "voz.mp3")], withVideo: false);
 
         var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
 
         Assert.Equal(ModuleResultStatus.Failed, result.Status);
-        Assert.Contains("segundos por parte", result.Error);
+        Assert.Contains("no hay ningun modulo de duracion", result.Error);
+        Assert.Empty(provider.Calls);
+    }
+
+    [Fact]
+    public async Task ModuloDeDuracionSinDuracionFija_PideFijarLosSegundos()
+    {
+        if (!MediaFixtures.HasFfmpeg) return;
+
+        // Un modulo de voz dentro del loop es de duracion, pero no fija.
+        var provider = new FakeTextProvider(PlanJson(1));
+        var ctx = CreateContext(provider, [MediaFixtures.Silence(_workspace, "voz.mp3", 4)],
+            withVideo: false, extraMember: ("Audio", "gpt-4o-mini-tts"));
+
+        var result = await new OrchestratorModuleHandler(new AiProviderRegistry([provider])).ExecuteAsync(ctx);
+
+        Assert.Equal(ModuleResultStatus.Failed, result.Status);
+        Assert.Contains("Fija los segundos por vuelta", result.Error);
         Assert.Empty(provider.Calls);
     }
 
@@ -211,26 +237,37 @@ public class OrchestratorLoopHandlerTests : IDisposable
 
     private ModuleExecutionContext CreateContext(
         IAiProvider provider, string[]? durationFiles = null, string? narration = null,
-        Dictionary<string, object>? extraConfig = null, bool withVideo = true, string mediaPort = "input_prompt")
+        Dictionary<string, object>? extraConfig = null, bool withVideo = true,
+        string mediaPort = LoopPlanner.NarrationPort, bool withFrame = true,
+        (string Type, string Model)? extraMember = null)
     {
         durationFiles ??= [];
         var orchestrator = LoopPlannerTests.Node("Orchestrator", "gpt-5.4", "Orquestador loop");
         orchestrator.AiModule.ApiKey = new ApiKey { Id = Guid.NewGuid(), EncryptedKey = "test-key" };
         orchestrator.ProjectModule.OrchestratorOutputs = LoopPlannerTests.Outputs();
 
-        // Inicio de la cadena que hay detras: descripcion -> imagen -> video.
+        // El rectangulo de loop, con lo que se repite dentro: imagen -> video.
+        var members = new List<ModuleNode>();
         var image = LoopPlannerTests.Node("Image", "gpt-image-2");
         LoopPlannerTests.Connect(orchestrator, "output_2", image, "input_prompt");
+        members.Add(image);
         if (withVideo)
-            LoopPlannerTests.Connect(image, "output_image", LoopPlannerTests.Node("Video", "leonardo-motion-2"), "input_image");
+        {
+            var video = LoopPlannerTests.Node("Video", "leonardo-motion-2", "Leonardo Video");
+            LoopPlannerTests.Connect(image, "output_image", video, "input_image");
+            members.Add(video);
+        }
+        if (extraMember is { } extra)
+            members.Add(LoopPlannerTests.Node(extra.Type, extra.Model));
+        if (withFrame)
+            LoopPlannerTests.Frame(orchestrator, members);
 
         var inputs = new Dictionary<string, List<PortData>>
         {
             ["input_prompt"] = [new PortData { DataType = "text", TextContent = "Guion: curiosidades de los pulpos." }],
         };
 
-        // La duracion no tiene puerto propio: el audio llega por una entrada
-        // cualquiera (lo normal, el TTS conectado a Instrucciones).
+        // La voz en off entra por Locucion: su duracion decide las vueltas.
         if (durationFiles.Length > 0)
             inputs[mediaPort] = [.. inputs.GetValueOrDefault(mediaPort) ?? [], .. durationFiles.Select(path => new PortData
             {
@@ -241,13 +278,14 @@ public class OrchestratorLoopHandlerTests : IDisposable
                     {
                         FileName = path,
                         ContentType = path.EndsWith(".png") ? "image/png" : "audio/mpeg",
-                        FileSize = new FileInfo(path).Length,
+                        FileSize = File.Exists(path) ? new FileInfo(path).Length : 0,
                     },
                 ],
             })];
 
         if (narration is not null)
-            inputs[LoopPlanner.NarrationPort] = [new PortData { DataType = "text", TextContent = narration }];
+            inputs[LoopPlanner.NarrationPort] =
+                [.. inputs.GetValueOrDefault(LoopPlanner.NarrationPort) ?? [], new PortData { DataType = "text", TextContent = narration }];
 
         var config = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
         {

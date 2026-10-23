@@ -641,24 +641,28 @@ clips deja 24 s de voz sin imagen. El modo loop del orquestador (`loopMode`,
 casilla "Repetir las salidas segun la duracion"; logica en `LoopPlanner`)
 calcula cuantas partes hacen falta en vez de dejarlas fijas:
 
-1. **Duracion.** No tiene puerto propio: mide con ffprobe todo audio o video
-   que llegue por cualquier entrada (la salida de un **modulo de duracion**:
-   Audio, Video o Montaje; en modo loop "Instrucciones" acepta cualquier tipo).
-   Varios ficheros se suman (las tomas de voz). Si no llega ninguno el modulo
-   falla diciendolo. En el editor los modulos de duracion van marcados con un
-   contorno discontinuo cian y un cronometro (`IsDurationModule`).
-2. **Ritmo.** Busca aguas abajo de las salidas (atravesando, p. ej., el modulo
-   de imagen) un modulo Video cuyo modelo tenga `ClipSeconds`; si hay varios,
-   manda el de clip mas corto. `loopClipSeconds` en el nodo lo fuerza a mano.
+1. **Duracion.** Mide con ffprobe el audio o video que llega por la entrada
+   `input_narration` ("Locucion"): la voz en off. Varios ficheros se suman (las
+   tomas de voz). Si no llega ninguno el modulo falla diciendolo; un audio que
+   entre por "Instrucciones" no cuenta.
+2. **Ritmo.** Lo marca un **modulo de duracion** (Audio, Video o Montaje;
+   `IsDurationModule`) de dentro de su rectangulo de loop, el que tenga
+   `ClipSeconds` en el catalogo (Motion 2.0: 5 s); si hay varios, el de clip mas
+   corto. Sin rectangulo, con el rectangulo vacio o sin ningun modulo de duracion
+   dentro, el modulo falla. Si el de dentro no tiene duracion fija,
+   `loopClipSeconds` ("Segundos por vuelta") la fija a mano. En el editor los
+   modulos de duracion van marcados con un contorno discontinuo cian y un
+   cronometro.
 3. **Partes.** `N = techo((duracion - 0,25 s) / segundos por clip)`, tope 20. Los
    0,25 s absorben el relleno de los MP3; lo que quede lo cubre el montaje.
-4. **Tramos y locucion.** Cada parte cubre su tramo de tiempo. Si llega texto
-   por `input_narration` ("Locucion"), cada tramo recibe lo que se dice en el:
+4. **Tramos y locucion.** Cada parte cubre su tramo de tiempo. Si a Locucion
+   llega tambien texto (el de la voz en off), cada tramo recibe lo que se dice en el:
    exacto si trae marcas de tiempo (`[00:04.2 - 00:09.8] texto`, la salida del
    modulo de transcripcion con la casilla "Marcas de tiempo"), o repartido por
    proporcion de palabras si es el guion plano (para una voz sintetica se
    desvia poco).
-5. **Plan.** Las salidas configuradas son los CAMPOS de cada parte. La IA
+5. **Plan.** Las salidas del orquestador son los CAMPOS de cada parte: en cada
+   vuelta la IA escribe un valor por salida siguiendo su prompt. La IA
    devuelve `{"parts":[{"index":1,"output_1":"...","output_2":"..."}]}`; si no
    trae exactamente N partes con todos los campos se repite una vez con el
    error y, si sigue mal, el modulo falla.
@@ -683,8 +687,8 @@ borde del rectangulo.
   orquestador termina, aunque no reciban nada de el. El executor ejecuta cada
   miembro una vez por parte (`ExecuteLoopPartsAsync`): en la vuelta i recibe la
   toma i de los textos repartidos en N y el fichero i de las listas de N; lo que
-  no viene repartido llega entero a todas las vueltas. Hay hasta 3 vueltas en
-  paralelo y cada una tiene su limite de 10 minutos.
+  no viene repartido llega entero a todas las vueltas. Las vueltas van una a
+  una, en orden, y cada una tiene su limite de 10 minutos.
 - **Resultado.** Las N vueltas se juntan en el resultado del modulo: ficheros
   renombrados `p01_`, `p02_`... en orden y texto como tomas, para que el
   siguiente miembro lo vuelva a cortar igual. Si falla una vuelta falla el
@@ -693,15 +697,16 @@ borde del rectangulo.
   terminado todo el cuerpo (`ExecutionGraph.DeliverLoopOutput`, una sola vez):
   entrega lo que produjeron los ultimos de dentro, los clips 1..N listos para el
   montaje. Reintentar un modulo del cuerpo reinicia tambien lo que cuelga de
-  ella. Un rectangulo vacio hace fallar al orquestador; sin rectangulo, el
-  orquestador avisa de que lo siguiente se ejecuta una sola vez.
+  ella.
 - El rectangulo fue antes un modulo de sistema ("Bucle", tipo `LoopFrame`):
   `SystemModuleCatalog.RemoveRetiredModulesAsync` lo borra al arrancar.
 
-Pipeline tipico: guion -> texto de voz -> TTS -> Instrucciones del orquestador
-loop (y el texto de voz a Locucion). Dentro de su rectangulo: imagen -> video;
-la salida "descripcion" del orquestador va a la imagen y "movimiento" al prompt
-del video. La salida del loop va a Clips del montaje y el TTS a su Voz.
+Pipeline tipico: guion -> Instrucciones del orquestador loop; guion -> texto de
+voz -> TTS -> Locucion del orquestador (y el texto de voz tambien a Locucion).
+Salidas del orquestador "Descripcion imagen" y "Movimiento", cada una con su
+prompt. Dentro de su rectangulo: imagen -> video, con "Descripcion imagen" a la
+imagen y "Movimiento" al prompt del video. La salida del loop va a Clips del
+montaje y el TTS a su Voz.
 
 ### Modulo Transcripcion
 

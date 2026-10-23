@@ -8,29 +8,22 @@ namespace Server.Services.Ai;
 
 /// <summary>
 /// Orquestador loop: el modo del orquestador en el que el NUMERO de partes no lo
-/// fija el usuario sino la duracion de lo que entra.
+/// fija el usuario sino la duracion de la locucion.
 ///
-/// El problema que resuelve es el de una locucion de 39 s sobre 15 s de video:
+/// El problema que resuelve es el de una voz en off de 39 s sobre 15 s de video:
 /// los clips de video tienen duracion fija (Motion 2.0 siempre entrega 5 s), asi
 /// que para cubrir una voz hay que pedir tantos clips como quepan en ella. El
-/// orquestador mide la entrada (audio o video), busca aguas abajo el modulo de
-/// video que marca el ritmo, calcula N = techo(duracion / segundos por clip) y
-/// pide a la IA N partes con los campos que el usuario definio como salidas.
-///
-/// La duracion no entra por un puerto propio: el orquestador mide cualquier
-/// audio o video que le llegue por sus entradas (la salida de un "modulo de
-/// duracion": audio o video, ver <see cref="IsTimedMedia"/>).
-///
-/// No hace falta que el executor repita nodos: cada salida emite sus N partes
-/// separadas con las marcas <c>===TOMA n===</c>, el mismo contrato que ya
-/// entienden los modulos de imagen, video y audio (<see cref="MultiImagePrompt"/>),
-/// y cada uno itera por dentro. El grafo sigue siendo estatico; lo dinamico es
-/// cuantas partes viajan por el.
+/// orquestador mide lo que le llega por su entrada Locucion (audio o video),
+/// busca dentro de su rectangulo de loop el modulo de duracion que marca el ritmo
+/// (<see cref="FindPacer"/>), calcula N = techo(duracion / segundos por clip) y
+/// pide a la IA N partes con un valor por cada salida que el usuario definio, a
+/// partir del prompt de cada salida. Los modulos del rectangulo se ejecutan N
+/// veces, una por parte (<see cref="LoopFrames"/>).
 ///
 /// Que cuadre el numero no basta: el clip 4 tiene que mostrar lo que se dice en
-/// el segundo 15-20. Por eso cada parte va con su tramo de tiempo y, si llega la
-/// locucion, con el texto que suena en ese tramo (exacto si trae marcas de tiempo
-/// de una transcripcion, repartido por proporcion si es el guion plano).
+/// el segundo 15-20. Por eso cada parte va con su tramo de tiempo y, si a la
+/// Locucion llega tambien el texto, con lo que suena en ese tramo (exacto si trae
+/// marcas de tiempo de una transcripcion, repartido por proporcion si es plano).
 /// </summary>
 public static class LoopPlanner
 {
@@ -40,8 +33,19 @@ public static class LoopPlanner
     /// <summary>Segundos por parte fijados a mano: mandan sobre los del modulo de video.</summary>
     public const string ClipSecondsKey = "loopClipSeconds";
 
-    /// <summary>Puerto opcional por el que entra el texto de la locucion.</summary>
+    /// <summary>
+    /// Entrada Locucion: la voz en off (audio o video) cuya duracion decide cuantas
+    /// vueltas da el loop. Si ademas llega texto (el de la voz en off o una
+    /// transcripcion), se reparte entre los tramos.
+    /// </summary>
     public const string NarrationPort = "input_narration";
+
+    /// <summary>
+    /// Modulos de duracion: los que producen ficheros con duracion (de momento
+    /// audio y video). Uno de ellos, dentro del rectangulo, marca el ritmo del loop.
+    /// </summary>
+    public static bool IsDurationModule(string moduleType) =>
+        moduleType is "Audio" or "Video" or "VideoAssembly";
 
     /// <summary>
     /// ¿Tiene duracion este fichero? De momento, audio y video: son las salidas
@@ -57,10 +61,9 @@ public static class LoopPlanner
 
     /// <summary>Modulo que marca el ritmo del loop.</summary>
     /// <param name="ClipSeconds">Segundos que cubre cada parte.</param>
-    /// <param name="OutputKey">Salida del orquestador de la que cuelga; null si
+    /// <param name="NodeName">Nombre del modulo de duracion, para el log; null si
     /// los segundos se fijaron a mano.</param>
-    /// <param name="NodeName">Nombre del modulo de video, para el log.</param>
-    public sealed record Pacer(double ClipSeconds, string? OutputKey, string? NodeName);
+    public sealed record Pacer(double ClipSeconds, string? NodeName);
 
     /// <summary>Tramo de tiempo que cubre una parte, con lo que se dice en el.</summary>
     public sealed record Window(int Index, double Start, double End, string? Narration);
@@ -95,43 +98,19 @@ public static class LoopPlanner
     }
 
     /// <summary>
-    /// Busca, aguas abajo de cada salida del orquestador, un modulo de video cuyo
-    /// modelo tenga duracion fija declarada en el catalogo. Si hay varios marca el
-    /// ritmo el de clip mas corto: es el que necesita mas partes para cubrir la
-    /// duracion, y con menos partes ese se quedaria corto.
+    /// El modulo de duracion de dentro del rectangulo que marca el ritmo: el que
+    /// tenga duracion de clip fija en el catalogo (Motion 2.0: 5 s). Si hay varios,
+    /// el de clip mas corto, que es el que necesita mas vueltas para cubrir la
+    /// locucion. Null si ninguno tiene duracion fija.
     /// </summary>
-    public static Pacer? FindPacer(ModuleNode orchestrator)
-    {
-        Pacer? best = null;
-
-        foreach (var port in orchestrator.OutputPorts)
-        {
-            var visited = new HashSet<Guid> { orchestrator.ModuleId };
-            var queue = new Queue<ModuleNode>(port.Connections.Select(c => c.TargetNode));
-
-            while (queue.Count > 0)
-            {
-                var node = queue.Dequeue();
-                if (!visited.Add(node.ModuleId)) continue;
-
-                if (node.ModuleType == "Video"
-                    && ModelCatalog.GetClipSeconds(node.AiModule.ModelName) is int seconds and > 0)
-                {
-                    if (best is null || seconds < best.ClipSeconds)
-                        best = new Pacer(seconds, port.PortId,
-                            node.ProjectModule.StepName ?? node.AiModule.Name);
-                    // Lo que cuelga de un video ya no marca el ritmo de este loop
-                    // (el montaje, otro video encadenado...).
-                    continue;
-                }
-
-                foreach (var next in node.OutputPorts.SelectMany(p => p.Connections))
-                    queue.Enqueue(next.TargetNode);
-            }
-        }
-
-        return best;
-    }
+    public static Pacer? FindPacer(LoopFrames.FrameInfo frame) =>
+        frame.Members
+            .Where(m => IsDurationModule(m.ModuleType))
+            .Select(m => (Node: m, Seconds: ModelCatalog.GetClipSeconds(m.AiModule.ModelName)))
+            .Where(x => x.Seconds is > 0)
+            .OrderBy(x => x.Seconds)
+            .Select(x => new Pacer(x.Seconds!.Value, x.Node.ProjectModule.StepName ?? x.Node.AiModule.Name))
+            .FirstOrDefault();
 
     /// <summary>
     /// Tramos de tiempo de cada parte. Todos duran lo que un clip salvo el ultimo,

@@ -908,8 +908,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
     /// <summary>
     /// Ejecuta un modulo del cuerpo de un loop N veces, una por parte, con las
     /// entradas de cada vuelta cortadas por <see cref="LoopFrames.SliceInputs"/>, y
-    /// junta los resultados. Las vueltas van en paralelo (hasta
-    /// <see cref="LoopFrames.MaxParallelParts"/>) y cada una tiene su propio limite
+    /// junta los resultados. Las vueltas van una a una
+    /// (<see cref="LoopFrames.MaxParallelParts"/>) y cada una tiene su propio limite
     /// de tiempo: ocho clips de video seguidos no caben en el de un modulo.
     /// </summary>
     private async Task<ModuleResult> ExecuteLoopPartsAsync(
