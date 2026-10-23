@@ -30,7 +30,7 @@ public class ModuleNode
     /// cuerpo y se ejecuta una vez por parte), o null.</summary>
     public LoopFrames.FrameInfo? LoopFrame { get; set; }
 
-    /// <summary>Si este nodo ES un rectangulo de loop, lo que contiene.</summary>
+    /// <summary>Si este nodo es un orquestador loop con rectangulo, lo que contiene.</summary>
     public LoopFrames.FrameInfo? OwnedLoopFrame { get; set; }
 
     public ModuleNode(ProjectModule pm)
@@ -47,9 +47,6 @@ public class ModuleNode
             or Handlers.SearchConsoleModuleHandler.Type => true,
         // Scene can be a pure source when it has no template-variable ports wired.
         "Scene" => InputPorts.Count == 0,
-        // Un rectangulo vacio no tiene a quien esperar: arranca y su handler
-        // explica que no tiene modulos dentro, en vez de bloquear el grafo.
-        LoopFrames.ModuleType => InputPorts.Count == 0,
         _ => false,
     };
 
@@ -78,7 +75,7 @@ public class ModuleNode
     /// directamente (p. ej. el video, que recibe la imagen del modulo de imagen).
     /// </summary>
     private bool LoopDriverDone =>
-        LoopFrame?.Driver is not { } driver || driver.Status == NodeStatus.Completed;
+        LoopFrame is null || LoopFrame.Driver.Status == NodeStatus.Completed;
 }
 
 /// <summary>An input port on a module node.</summary>

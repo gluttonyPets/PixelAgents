@@ -120,8 +120,7 @@ public class ExecutionGraph
             EnsureStandardOutputPorts(node);
         }
 
-        // 4. Rectangulos de loop: quien esta dentro, quien los controla y la
-        // conexion interna del cuerpo al rectangulo.
+        // 4. Rectangulos de loop: que modulos quedan dentro de cada orquestador loop.
         LoopFrames.Wire(graph);
 
         return graph;
@@ -164,6 +163,11 @@ public class ExecutionGraph
 
             if (outputPort.Data is null) continue;
 
+            // La salida del loop no sale con el orquestador: sale cuando acaba el
+            // cuerpo del rectangulo (ver DeliverLoopOutput).
+            if (completedNode.OwnedLoopFrame is not null && outputPort.PortId == LoopFrames.OutputPort)
+                continue;
+
             foreach (var conn in outputPort.Connections)
             {
                 var targetPort = conn.TargetNode.InputPorts
@@ -176,11 +180,39 @@ public class ExecutionGraph
         foreach (var target in touchedTargets)
             MarkReadyIfSatisfied(target);
 
-        // El orquestador loop desbloquea todo el cuerpo de sus rectangulos, tambien
+        // El orquestador loop desbloquea todo el cuerpo de su rectangulo, tambien
         // los modulos que no reciben nada de el directamente.
-        foreach (var frame in Nodes.Values.Select(n => n.OwnedLoopFrame).Where(f => f?.Driver == completedNode))
-        foreach (var member in frame!.Members)
-            MarkReadyIfSatisfied(member);
+        if (completedNode.OwnedLoopFrame is { } owned)
+            foreach (var member in owned.Members)
+                MarkReadyIfSatisfied(member);
+
+        if (completedNode.LoopFrame is { } frame)
+            DeliverLoopOutput(frame);
+    }
+
+    /// <summary>
+    /// Cuando termina el ultimo modulo del cuerpo de un loop, entrega por la salida
+    /// del loop (puerto del orquestador) lo que produjeron los ultimos de dentro.
+    /// Una sola vez: al reanudar una ejecucion se vuelven a completar nodos.
+    /// </summary>
+    private void DeliverLoopOutput(LoopFrames.FrameInfo frame)
+    {
+        if (frame.Delivered) return;
+
+        var data = LoopFrames.BuildOutput(frame);
+        if (data is null) return;
+        frame.Delivered = true;
+
+        var port = frame.Driver.OutputPorts.FirstOrDefault(p => p.PortId == LoopFrames.OutputPort);
+        if (port is null) return;
+
+        port.Data = data;
+        foreach (var conn in port.Connections)
+        {
+            var targetPort = conn.TargetNode.InputPorts.FirstOrDefault(p => p.PortId == conn.TargetPortId);
+            targetPort?.ReceivedData.Add(data);
+            MarkReadyIfSatisfied(conn.TargetNode);
+        }
     }
 
     /// <summary>
@@ -300,11 +332,19 @@ public class ExecutionGraph
             var current = queue.Dequeue();
             if (!Nodes.TryGetValue(current, out var node)) continue;
 
-            foreach (var outputPort in node.OutputPorts)
-            foreach (var conn in outputPort.Connections)
+            var targets = node.OutputPorts.SelectMany(p => p.Connections).Select(c => c.TargetNode);
+
+            // Lo que cuelga de la salida del loop depende tambien de cada modulo del cuerpo.
+            if (node.LoopFrame is { } frame)
+                targets = targets.Concat(frame.Driver.OutputPorts
+                    .Where(p => p.PortId == LoopFrames.OutputPort)
+                    .SelectMany(p => p.Connections)
+                    .Select(c => c.TargetNode));
+
+            foreach (var target in targets)
             {
-                if (downstream.Add(conn.TargetNode.ModuleId))
-                    queue.Enqueue(conn.TargetNode.ModuleId);
+                if (downstream.Add(target.ModuleId))
+                    queue.Enqueue(target.ModuleId);
             }
         }
 
@@ -351,7 +391,6 @@ public class ExecutionGraph
             "SubProject" => ("output", "any"),
             "Embeddings" => ("output_embedding", "file"),
             "Checkpoint" => ("output_1", "any"),
-            LoopFrames.ModuleType => (LoopFrames.OutputPort, "any"),
             ConditionalBranching.ModuleType => (ConditionalBranching.TruePort, "any"),
             _ => ("output_data", "any"),
         };

@@ -449,10 +449,9 @@ Handlers actuales:
 - `Transcription`: audio a texto (OpenAI), con marcas de tiempo opcionales.
 - `Embeddings`: generacion de embeddings.
 - `Orchestrator`: planificacion y salidas multiples. En modo loop el numero de
-  partes sale de la duracion de un audio/video de entrada (ver
+  partes sale de la duracion de un audio/video de entrada, y un rectangulo de
+  fondo propio marca los modulos que se ejecutan una vez por parte (ver
   `docs/architecture.md`, "Orquestador loop").
-- `LoopFrame` ("Bucle"): rectangulo que marca los modulos que repite el
-  orquestador loop; los de dentro se ejecutan una vez por parte.
 - `Coordinator`: agregacion de multiples entradas y llamada IA.
 - `Scene`: construccion de JSON de escena.
 - `Checkpoint`: pausa para revision humana.

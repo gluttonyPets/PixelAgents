@@ -146,6 +146,15 @@ public class OrchestratorModuleHandler : IModuleHandler
         if (outputs.Count == 0)
             return ModuleResult.Failed("Orquestador sin salidas configuradas: anade al menos una (sus campos son los de cada parte)");
 
+        // 0. El rectangulo de loop marca que modulos se repiten.
+        if (ctx.Node.OwnedLoopFrame is not { } frame)
+            await ctx.LogWarningAsync(
+                "El orquestador loop no tiene rectangulo: los modulos siguientes se ejecutaran una sola vez. "
+                + "Crea el rectangulo desde el panel del orquestador y deja dentro los modulos que se repiten.");
+        else if (frame.Members.Count == 0)
+            return ModuleResult.Failed(
+                "El rectangulo de loop esta vacio: agrandalo o mueve dentro los modulos que se repiten.");
+
         // 1. Duracion de la entrada: todo audio o video que llegue, por el puerto
         // que sea. Varios ficheros se suman (las tomas de una locucion).
         var media = ctx.InputsByPort.Values

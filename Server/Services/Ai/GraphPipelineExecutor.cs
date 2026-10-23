@@ -899,7 +899,7 @@ public class GraphPipelineExecutor : IPipelineExecutor
         };
 
         // Cuerpo de un rectangulo de loop: el modulo se ejecuta una vez por parte.
-        if (node.LoopFrame is { Driver: not null } frame)
+        if (node.LoopFrame is { } frame)
             return await ExecuteLoopPartsAsync(handler, ctx, frame, ct);
 
         return await InvokeHandlerAsync(handler, ctx, previousSummaryContext, ct);

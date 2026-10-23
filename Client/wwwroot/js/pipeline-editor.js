@@ -7,6 +7,10 @@ window.pipelineEditor = {
     _portMap: {},       // drawflowNodeId → { inputs: [portId...], outputs: [portId...] }
     _moduleMap: {},     // drawflowNodeId → moduleId (guid string)
     _reverseMap: {},    // moduleId → drawflowNodeId
+    // Rectangulos de loop: nodos de Drawflow que NO son modulos, sino parte de su
+    // orquestador. Su unica salida es el puerto "output_loop" del orquestador.
+    _frameMap: {},      // moduleId del orquestador → drawflowNodeId del rectangulo
+    _frameOwner: {},    // drawflowNodeId del rectangulo → moduleId del orquestador
     _suppressEvents: false,
     _connectionFormats: [], // [{fromModuleId, fromPort, toModuleId, toPort, hasFormat}]
     _formatBadges: {},  // key(from-to-port-port) → DOM element
@@ -40,6 +44,18 @@ window.pipelineEditor = {
                 e.preventDefault();
                 self._dotNetRef.invokeMethodAsync('OnUndoShortcut');
             });
+        }
+
+        // El rectangulo de loop no se borra con Supr: es parte de su orquestador y
+        // se quita desde el panel de este. Va en captura para llegar antes que Drawflow.
+        if (!this._frameKeyBound) {
+            this._frameKeyBound = true;
+            var me = this;
+            window.addEventListener('keydown', function (e) {
+                if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+                var sel = me._editor && me._editor.node_selected;
+                if (sel && sel.classList && sel.classList.contains('df-loopframe')) e.stopImmediatePropagation();
+            }, true);
         }
 
         // ── Infinite canvas: allow panning even when .drawflow has scrolled out of view ──
@@ -86,6 +102,7 @@ window.pipelineEditor = {
         this._editor.on('nodeMoved', id => {
             if (this._suppressEvents) return;
             var info = this._editor.getNodeFromId(id);
+            if (this._frameOwner[id]) { this._notifyFrameChanged(id); return; }
             var moduleId = this._moduleMap[id];
             if (moduleId && info)
                 this._dotNetRef.invokeMethodAsync('OnNodeMoved', moduleId, info.pos_x, info.pos_y);
@@ -103,7 +120,7 @@ window.pipelineEditor = {
             var toIdx = parseInt(conn.input_class.replace('input_', '')) - 1;
             var fromPortId = fromPorts.outputs[fromIdx];
             var toPortId = toPorts.inputs[toIdx];
-            var fromModuleId = this._moduleMap[conn.output_id];
+            var fromModuleId = this._moduleMap[conn.output_id] || this._frameOwner[conn.output_id];
             var toModuleId = this._moduleMap[conn.input_id];
             if (fromPortId && toPortId)
                 this._dotNetRef.invokeMethodAsync('OnConnectionMade', fromModuleId, fromPortId, toModuleId, toPortId);
@@ -119,14 +136,14 @@ window.pipelineEditor = {
             var toIdx = parseInt(conn.input_class.replace('input_', '')) - 1;
             var fromPortId = fromPorts.outputs[fromIdx];
             var toPortId = toPorts.inputs[toIdx];
-            var fromModuleId = this._moduleMap[conn.output_id];
+            var fromModuleId = this._moduleMap[conn.output_id] || this._frameOwner[conn.output_id];
             var toModuleId = this._moduleMap[conn.input_id];
             if (fromPortId && toPortId)
                 this._dotNetRef.invokeMethodAsync('OnConnectionRemoved', fromModuleId, fromPortId, toModuleId, toPortId);
         });
 
         this._editor.on('nodeSelected', id => {
-            var moduleId = this._moduleMap[id];
+            var moduleId = this._moduleMap[id] || this._frameOwner[id];
             if (moduleId) this._dotNetRef.invokeMethodAsync('OnNodeSelected', moduleId);
         });
 
@@ -196,18 +213,14 @@ window.pipelineEditor = {
         }, true); // capture phase to intercept before Drawflow
     },
 
-    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson, platform, timed, frameSizeJson) {
+    addNode: function (moduleId, name, moduleType, color, icon, inputPortsJson, outputPortsJson, x, y, badgeLabel, modelName, warning, skipped, activeRulesCount, subStepsJson, platform, timed) {
         if (!this._editor) return -1;
         var inputPorts = JSON.parse(inputPortsJson);
         var outputPorts = JSON.parse(outputPortsJson);
         var subSteps = [];
         if (subStepsJson) { try { subSteps = JSON.parse(subStepsJson) || []; } catch (e) { subSteps = []; } }
-        var isFrame = moduleType === 'LoopFrame';
-        var html = isFrame
-            ? this._buildFrameHtml(name, icon)
-            : this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps, platform, !!timed);
+        var html = this._buildNodeHtml(name, moduleType, color, icon, badgeLabel, modelName, warning, inputPorts.length, outputPorts.length, activeRulesCount | 0, subSteps, platform, !!timed);
         var cssClass = 'df-type-' + moduleType.toLowerCase();
-        if (isFrame) cssClass += ' df-loopframe';
         if (skipped) cssClass += ' df-state-skipped';
         // Modulo de duracion (audio o video): se marca para que se vea de un vistazo
         // que es lo que el orquestador loop mide.
@@ -232,35 +245,57 @@ window.pipelineEditor = {
             if (el) el.style.minHeight = (maxPorts * 28) + 'px';
         }
 
-        if (isFrame) this._setupFrame(nodeId, moduleId, frameSizeJson);
-
         return nodeId;
     },
 
     // ── Rectangulo de loop ──
-    // Es un nodo de Drawflow mas, pero grande, detras del resto y transparente a
-    // los clics salvo en su cabecera (para arrastrarlo), su esquina (para
-    // redimensionarlo) y su salida. Lo que cae dentro se repite en el loop: el
-    // rectangulo no arrastra a los modulos, solo los marca.
+    // Area de fondo de un orquestador loop: lo que cae dentro se repite. Por
+    // debajo es un nodo de Drawflow (asi se arrastra y su salida se conecta como
+    // cualquier otra), pero no es un modulo: pertenece a su orquestador, y su
+    // salida es el puerto "output_loop" de este. Va detras del resto y deja pasar
+    // los clics salvo en la cabecera, la esquina y la salida. No arrastra a los
+    // modulos de dentro: solo los marca.
     _frameMinWidth: 240,
     _frameMinHeight: 140,
 
-    _buildFrameHtml: function (name, icon) {
-        return '<div class="df-frame">'
-            + '<div class="df-frame-header"><i class="bi ' + icon + '"></i> ' + this._escapeHtml(name) + '<span class="df-frame-hint">se repite en cada parte</span></div>'
+    addLoopFrame: function (ownerModuleId, title, x, y, w, h) {
+        if (!this._editor) return -1;
+        var html = '<div class="df-frame">'
+            + '<div class="df-frame-header"><i class="bi bi-arrow-repeat"></i> ' + this._escapeHtml(title)
+            + '<span class="df-frame-hint">se repite en cada parte</span></div>'
             + '<div class="df-frame-resize" title="Arrastra para cambiar el tamano"></div>'
             + '</div>';
+        var nodeId = this._editor.addNode('loopframe-' + ownerModuleId, 0, 1, x, y, 'df-loopframe', { loopFrameOf: ownerModuleId }, html);
+        this._portMap[nodeId] = { inputs: [], outputs: ['output_loop'], allowMultiple: [] };
+        this._frameMap[ownerModuleId] = nodeId;
+        this._frameOwner[nodeId] = ownerModuleId;
+
+        var el = document.getElementById('node-' + nodeId);
+        if (el) {
+            el.style.width = w + 'px';
+            el.style.height = h + 'px';
+            this._setupFrameResize(nodeId, el);
+        }
+        return nodeId;
     },
 
-    _setupFrame: function (nodeId, moduleId, frameSizeJson) {
+    // Nodo de Drawflow del que sale una conexion: la salida del loop sale del
+    // rectangulo, no del orquestador.
+    _outNodeId: function (moduleId, portId) {
+        if (portId === 'output_loop' && this._frameMap[moduleId] !== undefined)
+            return this._frameMap[moduleId];
+        return this._reverseMap[moduleId];
+    },
+
+    _notifyFrameChanged: function (nodeId) {
+        var owner = this._frameOwner[nodeId];
         var el = document.getElementById('node-' + nodeId);
-        if (!el) return;
+        var info = this._editor.getNodeFromId(nodeId);
+        if (!owner || !el || !info || !this._dotNetRef) return;
+        this._dotNetRef.invokeMethodAsync('OnLoopFrameChanged', owner, info.pos_x, info.pos_y, el.offsetWidth, el.offsetHeight);
+    },
 
-        var size = { w: 620, h: 260 };
-        if (frameSizeJson) { try { size = JSON.parse(frameSizeJson) || size; } catch (e) { } }
-        el.style.width = size.w + 'px';
-        el.style.height = size.h + 'px';
-
+    _setupFrameResize: function (nodeId, el) {
         var handle = el.querySelector('.df-frame-resize');
         if (!handle) return;
 
@@ -285,8 +320,7 @@ window.pipelineEditor = {
             function onUp() {
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
-                if (self._dotNetRef)
-                    self._dotNetRef.invokeMethodAsync('OnFrameResized', moduleId, el.offsetWidth, el.offsetHeight);
+                self._notifyFrameChanged(nodeId);
             }
 
             document.addEventListener('mousemove', onMove);
@@ -296,7 +330,7 @@ window.pipelineEditor = {
 
     addConnection: function (fromModuleId, fromPortId, toModuleId, toPortId) {
         if (!this._editor) return;
-        var fromNodeId = this._reverseMap[fromModuleId];
+        var fromNodeId = this._outNodeId(fromModuleId, fromPortId);
         var toNodeId = this._reverseMap[toModuleId];
         if (fromNodeId === undefined || toNodeId === undefined) {
             console.warn('[pipelineEditor] addConnection: node not found', fromModuleId, toModuleId);
@@ -366,7 +400,7 @@ window.pipelineEditor = {
 
     removeConnection: function (fromModuleId, fromPortId, toModuleId, toPortId) {
         if (!this._editor) return;
-        var fromNodeId = this._reverseMap[fromModuleId];
+        var fromNodeId = this._outNodeId(fromModuleId, fromPortId);
         var toNodeId = this._reverseMap[toModuleId];
         if (fromNodeId === undefined || toNodeId === undefined) return;
         var fromPorts = this._portMap[fromNodeId];
@@ -402,6 +436,8 @@ window.pipelineEditor = {
         this._portMap = {};
         this._moduleMap = {};
         this._reverseMap = {};
+        this._frameMap = {};
+        this._frameOwner = {};
         this._removeAllFormatBadges();
     },
 
@@ -468,7 +504,7 @@ window.pipelineEditor = {
             var badge = self._formatBadges[key];
             if (!badge) return;
 
-            var fromNodeId = self._reverseMap[entry.fromModuleId];
+            var fromNodeId = self._outNodeId(entry.fromModuleId, entry.fromPort);
             var toNodeId = self._reverseMap[entry.toModuleId];
             if (fromNodeId === undefined || toNodeId === undefined) { badge.style.display = 'none'; return; }
             var fromPorts = self._portMap[fromNodeId];

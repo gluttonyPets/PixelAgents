@@ -665,36 +665,41 @@ calcula cuantas partes hacen falta en vez de dejarlas fijas:
 6. **Reparto.** Cada salida emite sus N valores separados con `===TOMA n===`,
    el contrato de `MultiImagePrompt`.
 
-**Rectangulo de loop ("Bucle", `LoopFrame`; logica en `LoopFrames`).** Marca en
-el editor los modulos que se repiten. Es un nodo de sistema grande y
-redimensionable desde su esquina (`frameWidth`/`frameHeight` en su config), que
-se pinta detras del resto y no arrastra a los modulos al moverlo: solo los
-marca. Tiene una unica salida.
+**Rectangulo de loop (logica en `LoopFrames`).** Area de fondo propia de cada
+orquestador loop que marca en el editor que modulos se repiten. No es un modulo:
+se guarda en la configuracion del orquestador (`loopFrame`:
+`{"x","y","w","h"}` en coordenadas del lienzo) y se crea y quita desde su
+panel. Se mueve por su cabecera y se redimensiona desde la esquina; no arrastra
+a los modulos de dentro, solo los marca. Su unica salida es el puerto
+`output_loop` ("Salida del loop") del orquestador, que el editor dibuja en el
+borde del rectangulo.
 
 - **Cuerpo.** Son los modulos cuya esquina superior izquierda cae dentro del
-  rectangulo (la misma regla en el editor y en el servidor). Lo controla el
-  orquestador en modo loop de fuera que conecta con algun modulo de dentro.
+  rectangulo (la misma regla en el editor y en el servidor).
 - **Ejecucion.** `ExecutionGraph.Build` llama a `LoopFrames.Wire`, que anota
-  los miembros, el controlador y una conexion interna (`input_body`) desde los
-  ultimos modulos del cuerpo hasta el rectangulo. Los miembros no arrancan
-  hasta que el controlador termina, aunque no reciban nada de el. El executor
-  ejecuta cada miembro una vez por parte (`ExecuteLoopPartsAsync`): en la vuelta
-  i recibe la toma i de los textos repartidos en N y el fichero i de las listas
-  de N; lo que no viene repartido llega entero a todas las vueltas. Hay hasta 3
-  vueltas en paralelo y cada una tiene su limite de 10 minutos.
+  los miembros y los ultimos del cuerpo. Los miembros no arrancan hasta que el
+  orquestador termina, aunque no reciban nada de el. El executor ejecuta cada
+  miembro una vez por parte (`ExecuteLoopPartsAsync`): en la vuelta i recibe la
+  toma i de los textos repartidos en N y el fichero i de las listas de N; lo que
+  no viene repartido llega entero a todas las vueltas. Hay hasta 3 vueltas en
+  paralelo y cada una tiene su limite de 10 minutos.
 - **Resultado.** Las N vueltas se juntan en el resultado del modulo: ficheros
   renombrados `p01_`, `p02_`... en orden y texto como tomas, para que el
   siguiente miembro lo vuelva a cortar igual. Si falla una vuelta falla el
   modulo diciendo cual; un modulo que se pausa no puede ir dentro.
-- **Salida.** `LoopFrameModuleHandler` entrega lo que produjeron los ultimos
-  modulos del cuerpo: los clips 1..N, listos para el montaje. Sin orquestador
-  loop el cuerpo se ejecuta una vez y se avisa; un rectangulo vacio falla.
+- **Salida del loop.** No sale cuando termina el orquestador sino cuando ha
+  terminado todo el cuerpo (`ExecutionGraph.DeliverLoopOutput`, una sola vez):
+  entrega lo que produjeron los ultimos de dentro, los clips 1..N listos para el
+  montaje. Reintentar un modulo del cuerpo reinicia tambien lo que cuelga de
+  ella. Un rectangulo vacio hace fallar al orquestador; sin rectangulo, el
+  orquestador avisa de que lo siguiente se ejecuta una sola vez.
+- El rectangulo fue antes un modulo de sistema ("Bucle", tipo `LoopFrame`):
+  `SystemModuleCatalog.RemoveRetiredModulesAsync` lo borra al arrancar.
 
 Pipeline tipico: guion -> texto de voz -> TTS -> Instrucciones del orquestador
-loop (y el texto de voz a Locucion). Dentro de un rectangulo de loop: imagen ->
-video; la salida "descripcion" del orquestador va a la imagen y "movimiento" al
-prompt del video. La salida del rectangulo va a Clips del montaje y el TTS a su
-Voz.
+loop (y el texto de voz a Locucion). Dentro de su rectangulo: imagen -> video;
+la salida "descripcion" del orquestador va a la imagen y "movimiento" al prompt
+del video. La salida del loop va a Clips del montaje y el TTS a su Voz.
 
 ### Modulo Transcripcion
 

@@ -137,10 +137,15 @@ public class PipelineConnection
 // ── Module port registry ──
 public static class ModulePortRegistry
 {
+    /// <summary>Salida del loop del orquestador (Server/Services/Ai/LoopFrames.cs).</summary>
+    public const string LoopOutputPort = "output_loop";
+
     /// <param name="loopMode">Orquestador en modo loop: la entrada acepta audio o
     /// video (de ahi saca la duracion) y aparece el puerto de locucion (ver
     /// Server/Services/Ai/LoopPlanner.cs).</param>
-    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null, string modelName = "", bool loopMode = false)
+    /// <param name="loopFrame">El orquestador loop tiene rectangulo: anade la salida
+    /// del loop, que el editor dibuja en el rectangulo y no en el nodo.</param>
+    public static List<PortDefinition> GetPorts(string moduleType, string providerType = "", int sceneCount = 0, List<OrchestratorOutputResponse>? orchestratorOutputs = null, List<TemplateVariable>? templateVars = null, string modelName = "", bool loopMode = false, bool loopFrame = false)
     {
         var ports = new List<PortDefinition>();
 
@@ -213,6 +218,8 @@ public static class ModulePortRegistry
                 {
                     ports.Add(new("output_plan", "Plan", PortDataType.Text, isInput: false));
                 }
+                if (loopMode && loopFrame)
+                    ports.Add(new(LoopOutputPort, "Salida del loop", PortDataType.Any, isInput: false));
                 break;
 
             case "Design":
@@ -303,13 +310,6 @@ public static class ModulePortRegistry
                 ports.Add(new("output_prompt", "Prompt", PortDataType.Text, isInput: false));
                 break;
 
-            case "LoopFrame":
-                // El rectangulo de loop: sin entradas visibles (lo que hay dentro es
-                // su cuerpo) y una unica salida con lo que produce el cuerpo en todas
-                // las vueltas. Ver Server/Services/Ai/LoopFrames.cs.
-                ports.Add(new("output", "Salida", PortDataType.Any, isInput: false));
-                break;
-
             case "SubProject":
                 // Un unico puerto de entrada (alimenta el Inicio del proyecto insertado)
                 // y un unico puerto de salida (la salida terminal de ese proyecto).
@@ -357,7 +357,6 @@ public static class ModulePortRegistry
         "SearchConsole" => "bi-graph-up",
         "Start" => "bi-play-circle",
         "SubProject" => "bi-diagram-2",
-        "LoopFrame" => "bi-arrow-repeat",
         _ => "bi-gear"
     };
 
@@ -395,7 +394,6 @@ public static class ModulePortRegistry
         "SearchConsole" => "#4285f4",
         "Start" => "#43a047",
         "SubProject" => "#3f51b5",
-        "LoopFrame" => "#ff9800",
         _ => "#888"
     };
 }

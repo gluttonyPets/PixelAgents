@@ -6,64 +6,90 @@ using Server.Services.Ai.Handlers;
 namespace Server.Services.Ai;
 
 /// <summary>
-/// Rectangulo de loop ("Bucle"): el nodo que marca en el editor que modulos
-/// repite el orquestador loop.
+/// Rectangulo de loop: el area de fondo, propia de cada orquestador en modo loop,
+/// que marca en el editor que modulos se repiten.
 ///
-/// El rectangulo no ejecuta nada por si mismo. Los modulos cuya posicion cae
-/// dentro de el forman el CUERPO del loop: el executor ejecuta cada uno N veces,
-/// una por parte, y en la vuelta i le da la parte i de lo que le llega (ver
-/// <see cref="SliceInputs"/>). N lo decide el orquestador loop que alimenta el
-/// cuerpo desde fuera (<see cref="LoopPlanner"/>). La unica salida del
-/// rectangulo junta, en orden, lo que producen los ultimos modulos del cuerpo.
+/// No es un modulo: se guarda en la configuracion del orquestador
+/// (<see cref="FrameKey"/>: posicion y tamano en el lienzo). Los modulos cuya
+/// esquina superior izquierda cae dentro forman el CUERPO del loop: el executor
+/// ejecuta cada uno N veces, una por parte, y en la vuelta i le da la parte i de
+/// lo que le llega (<see cref="SliceInputs"/>). N lo decide el propio orquestador
+/// (<see cref="LoopPlanner"/>).
 ///
-/// Que modulo esta dentro se decide por geometria, con la esquina superior
-/// izquierda del nodo, igual que lo pinta el editor: mover un nodo dentro o fuera
-/// del rectangulo lo mete o lo saca del loop, sin mas configuracion.
+/// La salida del rectangulo es una salida del orquestador
+/// (<see cref="OutputPort"/>), aunque el editor la dibuje en el borde del
+/// rectangulo. No se entrega cuando termina el orquestador sino cuando ha
+/// terminado todo el cuerpo (<see cref="ExecutionGraph"/>): junta, en orden de
+/// parte, lo que producen los ultimos modulos de dentro (los clips 1..N).
 /// </summary>
 public static class LoopFrames
 {
-    public const string ModuleType = "LoopFrame";
+    /// <summary>Clave de la configuracion del orquestador con el rectangulo:
+    /// <c>{"x":..,"y":..,"w":..,"h":..}</c> en coordenadas del lienzo.</summary>
+    public const string FrameKey = "loopFrame";
 
-    /// <summary>Puerto interno por el que el rectangulo recibe la salida del cuerpo.
-    /// No existe en el editor: lo cablea <see cref="Wire"/> al construir el grafo.</summary>
-    public const string BodyPort = "input_body";
-
-    /// <summary>La unica salida del rectangulo.</summary>
-    public const string OutputPort = "output";
-
-    public const string WidthKey = "frameWidth";
-    public const string HeightKey = "frameHeight";
-    public const double DefaultWidth = 620;
-    public const double DefaultHeight = 260;
+    /// <summary>Salida del loop: puerto del orquestador que el editor pinta en el rectangulo.</summary>
+    public const string OutputPort = "output_loop";
 
     /// <summary>Vueltas en paralelo como maximo: las colas de video no dan para mas.</summary>
     public const int MaxParallelParts = 3;
 
+    /// <summary>Area del rectangulo en el lienzo.</summary>
+    public readonly record struct Rect(double X, double Y, double Width, double Height)
+    {
+        /// <summary>¿Cae dentro el modulo? Se mira su esquina superior izquierda, igual que en el editor.</summary>
+        public bool Contains(double x, double y) =>
+            x >= X && x <= X + Width && y >= Y && y <= Y + Height;
+    }
+
     /// <summary>Lo que el grafo sabe de un rectangulo.</summary>
     public sealed class FrameInfo
     {
-        public required ModuleNode Frame { get; init; }
+        /// <summary>Orquestador loop dueno del rectangulo: decide cuantas vueltas hay.</summary>
+        public required ModuleNode Driver { get; init; }
+        public required Rect Area { get; init; }
         public List<ModuleNode> Members { get; } = [];
-        /// <summary>Orquestador loop que decide cuantas vueltas; null si no hay ninguno conectado.</summary>
-        public ModuleNode? Driver { get; set; }
+        /// <summary>Ultimos modulos del cuerpo (no alimentan a otro de dentro), de arriba a abajo.</summary>
+        public List<ModuleNode> Sinks { get; } = [];
+        /// <summary>Ya se entrego la salida del loop (para no repetirla al reanudar).</summary>
+        public bool Delivered { get; set; }
     }
 
-    /// <summary>Tamano del rectangulo guardado en su configuracion.</summary>
-    public static (double Width, double Height) ReadSize(string? configuration)
+    /// <summary>Rectangulo guardado en la configuracion del orquestador, o null si no tiene.</summary>
+    public static Rect? ReadFrame(string? configuration)
     {
-        var width = DefaultWidth;
-        var height = DefaultHeight;
-        if (string.IsNullOrWhiteSpace(configuration)) return (width, height);
+        if (string.IsNullOrWhiteSpace(configuration)) return null;
 
         try
         {
             using var doc = JsonDocument.Parse(configuration);
-            width = ReadNumber(doc.RootElement, WidthKey) ?? width;
-            height = ReadNumber(doc.RootElement, HeightKey) ?? height;
-        }
-        catch (JsonException) { /* config malformada: tamano por defecto */ }
+            if (!doc.RootElement.TryGetProperty(FrameKey, out var frame)) return null;
 
-        return (width, height);
+            // El editor guarda el objeto; por si llega como texto JSON, se acepta tambien.
+            if (frame.ValueKind == JsonValueKind.String)
+            {
+                using var inner = JsonDocument.Parse(frame.GetString() ?? "");
+                return ReadRect(inner.RootElement);
+            }
+
+            return ReadRect(frame);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static Rect? ReadRect(JsonElement e)
+    {
+        if (e.ValueKind != JsonValueKind.Object) return null;
+        var x = ReadNumber(e, "x");
+        var y = ReadNumber(e, "y");
+        var w = ReadNumber(e, "w");
+        var h = ReadNumber(e, "h");
+        return x is null || y is null || w is not > 0 || h is not > 0
+            ? null
+            : new Rect(x.Value, y.Value, w.Value, h.Value);
     }
 
     private static double? ReadNumber(JsonElement root, string key)
@@ -71,85 +97,50 @@ public static class LoopFrames
         if (!root.TryGetProperty(key, out var value)) return null;
         return value.ValueKind switch
         {
-            JsonValueKind.Number when value.TryGetDouble(out var d) && d > 0 => d,
+            JsonValueKind.Number when value.TryGetDouble(out var d) => d,
             JsonValueKind.String when double.TryParse(value.GetString(), NumberStyles.Float,
-                CultureInfo.InvariantCulture, out var s) && s > 0 => s,
+                CultureInfo.InvariantCulture, out var s) => s,
             _ => null,
         };
     }
 
-    /// <summary>¿Cae el modulo dentro del rectangulo? Se mira su esquina superior izquierda.</summary>
-    public static bool Contains(ProjectModule frame, ProjectModule module)
-    {
-        if (module.Id == frame.Id) return false;
-        var (width, height) = ReadSize(frame.Configuration);
-        return module.PosX >= frame.PosX && module.PosX <= frame.PosX + width
-            && module.PosY >= frame.PosY && module.PosY <= frame.PosY + height;
-    }
-
     /// <summary>
-    /// Resuelve los rectangulos del grafo: sus miembros, el orquestador que los
-    /// controla y una conexion interna desde cada ultimo modulo del cuerpo hasta
-    /// el rectangulo, para que este espere a que el cuerpo acabe y reciba lo que
-    /// produce. Se llama al construir el grafo, despues de cablear las conexiones.
+    /// Resuelve los rectangulos del grafo: cada orquestador en modo loop con
+    /// rectangulo, los modulos que quedan dentro y los ultimos del cuerpo. Se
+    /// llama al construir el grafo, despues de cablear las conexiones.
     /// </summary>
     public static void Wire(ExecutionGraph graph)
     {
-        var frames = graph.Nodes.Values.Where(n => n.ModuleType == ModuleType).ToList();
+        var owners = graph.Nodes.Values
+            .Where(n => n.ModuleType == "Orchestrator" && IsLoopMode(n))
+            .Select(n => (Node: n, Area: ReadFrame(n.ProjectModule.Configuration)))
+            .Where(o => o.Area is not null)
+            .ToList();
 
-        foreach (var frameNode in frames)
+        foreach (var (owner, area) in owners)
         {
-            var info = new FrameInfo { Frame = frameNode };
+            var info = new FrameInfo { Driver = owner, Area = area!.Value };
 
             foreach (var node in graph.Nodes.Values)
             {
-                if (node.ModuleType is ModuleType or "Start") continue;
-                // Un modulo pertenece a un solo rectangulo: el primero que lo reclama.
-                if (node.LoopFrame is not null) continue;
-                if (!Contains(frameNode.ProjectModule, node.ProjectModule)) continue;
+                if (node == owner || node.ModuleType == "Start") continue;
+                // Un modulo pertenece a un solo loop, y un orquestador loop no se
+                // repite dentro de otro.
+                if (node.LoopFrame is not null || owners.Any(o => o.Node == node)) continue;
+                if (!info.Area.Contains(node.ProjectModule.PosX, node.ProjectModule.PosY)) continue;
                 info.Members.Add(node);
             }
 
             var members = info.Members.Select(m => m.ModuleId).ToHashSet();
-
-            // El orquestador loop de fuera que alimenta el cuerpo.
-            info.Driver = graph.Nodes.Values
-                .Where(n => n.ModuleType == "Orchestrator" && !members.Contains(n.ModuleId) && IsLoopMode(n))
-                .FirstOrDefault(n => n.OutputPorts.SelectMany(p => p.Connections)
-                    .Any(c => members.Contains(c.TargetNode.ModuleId)));
-
-            foreach (var member in info.Members)
-                member.LoopFrame = info;
-            frameNode.OwnedLoopFrame = info;
-
-            // Los ultimos del cuerpo: no alimentan a otro miembro. En orden de
-            // arriba a abajo, que es como se leen en el rectangulo.
-            var sinks = info.Members
+            info.Sinks.AddRange(info.Members
                 .Where(m => !m.OutputPorts.SelectMany(p => p.Connections)
                     .Any(c => members.Contains(c.TargetNode.ModuleId)))
                 .OrderBy(m => m.ProjectModule.PosY)
-                .ThenBy(m => m.ProjectModule.PosX)
-                .ToList();
+                .ThenBy(m => m.ProjectModule.PosX));
 
-            if (sinks.Count == 0) continue;
-
-            var bodyPort = new InputPort { PortId = BodyPort, DataType = "any", IsRequired = true, AllowMultiple = true };
-            frameNode.InputPorts.Add(bodyPort);
-
-            foreach (var sink in sinks)
-            {
-                var output = sink.OutputPorts.First();
-                var conn = new PortConnection
-                {
-                    ConnectionId = Guid.Empty,
-                    SourceNode = sink,
-                    SourcePortId = output.PortId,
-                    TargetNode = frameNode,
-                    TargetPortId = BodyPort,
-                };
-                output.Connections.Add(conn);
-                bodyPort.Connections.Add(conn);
-            }
+            foreach (var member in info.Members)
+                member.LoopFrame = info;
+            owner.OwnedLoopFrame = info;
         }
     }
 
@@ -180,12 +171,37 @@ public static class LoopFrames
     }
 
     /// <summary>
-    /// Vueltas del loop: las partes que planifico el orquestador. Sin orquestador
-    /// (o sin su dato) el cuerpo se ejecuta una vez, como si no hubiera rectangulo.
+    /// Salida del loop una vez terminado el cuerpo: los ficheros de los ultimos
+    /// modulos de dentro (ya en orden de parte: p01_, p02_...) y su texto. Null
+    /// mientras quede algun modulo de dentro por terminar.
+    /// </summary>
+    public static PortData? BuildOutput(FrameInfo info)
+    {
+        if (info.Members.Any(m => m.Status is not (NodeStatus.Completed or NodeStatus.Skipped)))
+            return null;
+
+        var outputs = info.Sinks.Select(s => s.Output).Where(o => o is not null).Cast<StepOutput>().ToList();
+        var texts = outputs
+            .Select(PortDataResolver.BuildFullText)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .ToList();
+
+        return new PortData
+        {
+            DataType = "any",
+            TextContent = texts.Count == 0 ? null : string.Join("\n\n", texts),
+            Files = outputs.SelectMany(o => o.Files).ToList(),
+            SourcePortId = OutputPort,
+        };
+    }
+
+    /// <summary>
+    /// Vueltas del loop: las partes que planifico el orquestador. Sin ese dato el
+    /// cuerpo se ejecuta una vez, como si no hubiera rectangulo.
     /// </summary>
     public static int PartsFor(FrameInfo info)
     {
-        var metadata = info.Driver?.Output?.Metadata;
+        var metadata = info.Driver.Output?.Metadata;
         if (metadata is null || !metadata.TryGetValue("parts", out var raw)) return 1;
 
         var parts = raw switch

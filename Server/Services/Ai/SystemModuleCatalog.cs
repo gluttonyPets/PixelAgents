@@ -51,11 +51,6 @@ public static class SystemModuleCatalog
             "VideoAssembly",
             "video-assembly"),
         new(
-            "Bucle",
-            "Rectangulo que marca los modulos que repite el orquestador loop: los de dentro se ejecutan una vez por parte",
-            LoopFrames.ModuleType,
-            "loop-frame"),
-        new(
             "Sub-proyecto",
             "Ejecuta un proyecto completo como un unico modulo dentro de este pipeline",
             "SubProject",
@@ -83,6 +78,28 @@ public static class SystemModuleCatalog
             await EnsureModuleAsync(db, definition, ct);
 
         await ConsolidatePublishModulesAsync(db, ct);
+        await RemoveRetiredModulesAsync(db, ct);
+    }
+
+    /// <summary>
+    /// Tipos de sistema que existieron y ya no: el rectangulo de loop fue un
+    /// modulo propio ("Bucle", tipo LoopFrame) antes de pasar a ser parte del
+    /// orquestador loop. Su modulo de catalogo se borra y, con el (FK en
+    /// cascada), los nodos y conexiones que lo usaban: sin handler no podrian
+    /// ejecutarse.
+    /// </summary>
+    private static readonly string[] RetiredModuleTypes = ["LoopFrame"];
+
+    public static async Task RemoveRetiredModulesAsync(UserDbContext db, CancellationToken ct = default)
+    {
+        var retired = await db.AiModules
+            .Where(m => m.ProviderType == "System" && RetiredModuleTypes.Contains(m.ModuleType))
+            .ToListAsync(ct);
+        if (retired.Count == 0)
+            return;
+
+        db.AiModules.RemoveRange(retired);
+        await db.SaveChangesAsync(ct);
     }
 
     /// <summary>

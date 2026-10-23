@@ -1,4 +1,6 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Server.Data;
 using Server.Models;
 using Server.Services.Ai;
 using Server.Services.Ai.Handlers;
@@ -7,68 +9,66 @@ using Xunit;
 namespace Server.Tests.OrquestadorLoop;
 
 /// <summary>
-/// Rectangulo de loop: que modulos quedan dentro, quien lo controla, que el
-/// cuerpo espera al orquestador, como se corta lo que llega a cada vuelta y como
-/// se juntan las N vueltas en el resultado del modulo.
+/// Rectangulo de loop: el area de fondo del orquestador loop que marca que
+/// modulos se repiten. Se prueba que modulos quedan dentro, que el cuerpo espera
+/// al orquestador, que la salida del loop solo sale cuando ha terminado el
+/// cuerpo, como se corta lo que llega a cada vuelta y como se juntan las vueltas.
 /// </summary>
 public class RectanguloDeLoopTests
 {
+    private const string Frame = """{"loopMode":true,"loopFrame":{"x":330,"y":60,"w":540,"h":200}}""";
+
     // ── Quien esta dentro ──
 
     [Fact]
-    public void ElCuerpoSonLosModulosDentroYElControladorElOrquestadorLoop()
+    public void ElCuerpoSonLosModulosDentroDelRectanguloDelOrquestador()
     {
         var p = new Pipeline();
-        var orch = p.Add("Orchestrator", 60, 90, """{"loopMode":true}""");
-        var frame = p.Add(LoopFrames.ModuleType, 330, 60, """{"frameWidth":540,"frameHeight":200}""");
+        var orch = p.Add("Orchestrator", 60, 90, Frame);
         var image = p.Add("Image", 370, 120);
-        var video = p.Add("Video", 610, 120, model: "leonardo-motion-2");
+        var video = p.Add("Video", 610, 120);
         var montage = p.Add("VideoAssembly", 920, 300);
         p.Connect(orch, "output_2", image, "input_prompt");
-        p.Connect(orch, "output_1", video, "input_prompt");
         p.Connect(image, "output_image", video, "input_image");
-        p.Connect(frame, "output", montage, "input_videos");
+        p.Connect(orch, LoopFrames.OutputPort, montage, "input_videos");
 
         var graph = p.Build();
-        var info = graph.Nodes[frame.Id].OwnedLoopFrame!;
+        var info = graph.Nodes[orch.Id].OwnedLoopFrame!;
 
         Assert.Equal(new HashSet<Guid> { image.Id, video.Id }, info.Members.Select(m => m.ModuleId).ToHashSet());
-        Assert.Equal(orch.Id, info.Driver!.ModuleId);
+        Assert.Equal(orch.Id, info.Driver.ModuleId);
+        Assert.Equal(video.Id, Assert.Single(info.Sinks).ModuleId);
         Assert.Same(info, graph.Nodes[video.Id].LoopFrame);
         Assert.Null(graph.Nodes[montage.Id].LoopFrame);
-
-        // El ultimo del cuerpo (el video) alimenta al rectangulo por el puerto interno.
-        var body = Assert.Single(graph.Nodes[frame.Id].InputPorts, ip => ip.PortId == LoopFrames.BodyPort);
-        Assert.Equal(video.Id, Assert.Single(body.Connections).SourceNode.ModuleId);
     }
 
     [Fact]
-    public void UnOrquestadorSinModoLoop_NoControlaElRectangulo()
+    public void SinModoLoop_ElRectanguloGuardadoNoCuenta()
     {
         var p = new Pipeline();
-        var orch = p.Add("Orchestrator", 0, 0);
-        var frame = p.Add(LoopFrames.ModuleType, 300, 0);
-        var image = p.Add("Image", 320, 40);
-        p.Connect(orch, "output_1", image, "input_prompt");
+        var orch = p.Add("Orchestrator", 60, 90, """{"loopMode":false,"loopFrame":{"x":330,"y":60,"w":540,"h":200}}""");
+        var image = p.Add("Image", 370, 120);
 
-        var info = p.Build().Nodes[frame.Id].OwnedLoopFrame!;
+        var graph = p.Build();
 
-        Assert.Null(info.Driver);
-        Assert.Single(info.Members);
+        Assert.Null(graph.Nodes[orch.Id].OwnedLoopFrame);
+        Assert.Null(graph.Nodes[image.Id].LoopFrame);
     }
 
     [Fact]
     public void DentroSeDecidePorLaEsquinaSuperiorIzquierda()
     {
-        var frame = new ProjectModule { Id = Guid.NewGuid(), PosX = 100, PosY = 100, Configuration = """{"frameWidth":200,"frameHeight":100}""" };
+        var area = LoopFrames.ReadFrame("""{"loopFrame":{"x":100,"y":100,"w":200,"h":100}}""")!.Value;
 
-        Assert.True(LoopFrames.Contains(frame, new ProjectModule { Id = Guid.NewGuid(), PosX = 100, PosY = 100 }));
-        Assert.True(LoopFrames.Contains(frame, new ProjectModule { Id = Guid.NewGuid(), PosX = 300, PosY = 200 }));
-        Assert.False(LoopFrames.Contains(frame, new ProjectModule { Id = Guid.NewGuid(), PosX = 301, PosY = 150 }));
-        Assert.False(LoopFrames.Contains(frame, new ProjectModule { Id = Guid.NewGuid(), PosX = 90, PosY = 150 }));
-        // Sin tamano guardado vale el de por defecto.
-        Assert.Equal((LoopFrames.DefaultWidth, LoopFrames.DefaultHeight), LoopFrames.ReadSize(null));
+        Assert.True(area.Contains(100, 100));
+        Assert.True(area.Contains(300, 200));
+        Assert.False(area.Contains(301, 150));
+        Assert.False(area.Contains(90, 150));
+        Assert.Null(LoopFrames.ReadFrame("""{"loopMode":true}"""));
+        Assert.Null(LoopFrames.ReadFrame("""{"loopFrame":{"x":1,"y":1,"w":0,"h":10}}"""));
     }
+
+    // ── Orden de ejecucion ──
 
     [Fact]
     public void ElCuerpoEsperaAlOrquestadorAunqueNoRecibaNadaDeEl()
@@ -76,34 +76,73 @@ public class RectanguloDeLoopTests
         // Imagen dentro del rectangulo alimentada desde fuera por un texto: sin
         // esperar al orquestador no sabria cuantas vueltas dar.
         var p = new Pipeline();
-        var start = p.Add("Start", -400, 0);
         var text = p.Add("Text", -200, 0);
-        var orch = p.Add("Orchestrator", 0, 300, """{"loopMode":true}""");
-        var frame = p.Add(LoopFrames.ModuleType, 300, 0);
-        var image = p.Add("Image", 320, 40);
-        var video = p.Add("Video", 520, 40);
-        p.Connect(start, "output_prompt", text, "input_prompt");
+        var orch = p.Add("Orchestrator", 0, 300, Frame);
+        var image = p.Add("Image", 370, 120);
         p.Connect(text, "output_text", image, "input_prompt");
-        p.Connect(start, "output_prompt", orch, "input_prompt");
-        p.Connect(orch, "output_1", video, "input_prompt");
-        p.Connect(image, "output_image", video, "input_image");
 
         var graph = p.Build();
         var imageNode = graph.Nodes[image.Id];
-        var textNode = graph.Nodes[text.Id];
-        textNode.Status = NodeStatus.Completed;
-        textNode.Output = new StepOutput { Type = "text", Content = "===TOMA 1===\na\n===TOMA 2===\nb" };
-        graph.CompleteNodeAndPrepareDownstream(textNode);
+        Complete(graph, text, new StepOutput { Type = "text", Content = "===TOMA 1===\na\n===TOMA 2===\nb" });
 
         Assert.Equal(NodeStatus.Pending, imageNode.Status);
 
-        var orchNode = graph.Nodes[orch.Id];
-        orchNode.Status = NodeStatus.Completed;
-        orchNode.Output = new StepOutput { Type = "orchestrator", Metadata = { ["parts"] = 2 }, Items = [new OutputItem { Content = "x" }] };
-        graph.CompleteNodeAndPrepareDownstream(orchNode);
+        Complete(graph, orch, new StepOutput { Type = "orchestrator", Metadata = { ["parts"] = 2 } });
 
         Assert.Equal(NodeStatus.Ready, imageNode.Status);
         Assert.Equal(2, LoopFrames.PartsFor(imageNode.LoopFrame!));
+    }
+
+    [Fact]
+    public void LaSalidaDelLoopSaleCuandoAcabaElCuerpoYUnaSolaVez()
+    {
+        var p = new Pipeline();
+        var orch = p.Add("Orchestrator", 60, 90, Frame);
+        var image = p.Add("Image", 370, 120);
+        var video = p.Add("Video", 610, 120);
+        var montage = p.Add("VideoAssembly", 920, 300);
+        p.Connect(orch, "output_2", image, "input_prompt");
+        p.Connect(image, "output_image", video, "input_image");
+        p.Connect(orch, LoopFrames.OutputPort, montage, "input_videos");
+        var graph = p.Build();
+        var clipsPort = graph.Nodes[montage.Id].InputPorts.Single(ip => ip.PortId == "input_videos");
+
+        // Al terminar el orquestador su salida del loop todavia no sale.
+        Complete(graph, orch, new StepOutput
+        {
+            Type = "orchestrator",
+            Metadata = { ["parts"] = 2 },
+            Items = [new OutputItem { Content = "x" }, new OutputItem { Content = "===TOMA 1===\na\n===TOMA 2===\nb" }],
+        });
+        Assert.Empty(clipsPort.ReceivedData);
+
+        Complete(graph, image, new StepOutput { Type = "image", Files = [File("p01_output.png"), File("p02_output.png")] });
+        Assert.Empty(clipsPort.ReceivedData);
+
+        // Termina el ultimo del cuerpo: el montaje recibe los clips en orden.
+        Complete(graph, video, new StepOutput { Type = "video", Files = [File("p01_clip_1.mp4"), File("p02_clip_1.mp4")] });
+        var received = Assert.Single(clipsPort.ReceivedData);
+        Assert.Equal(["p01_clip_1.mp4", "p02_clip_1.mp4"], received.Files!.Select(f => f.FileName));
+        Assert.Equal(NodeStatus.Ready, graph.Nodes[montage.Id].Status);
+
+        // Volver a completar un miembro (al reanudar) no la entrega otra vez.
+        graph.CompleteNodeAndPrepareDownstream(graph.Nodes[video.Id]);
+        Assert.Single(clipsPort.ReceivedData);
+    }
+
+    [Fact]
+    public void ReintentarUnModuloDelCuerpo_ReiniciaLoQueCuelgaDeLaSalidaDelLoop()
+    {
+        var p = new Pipeline();
+        var orch = p.Add("Orchestrator", 60, 90, Frame);
+        var video = p.Add("Video", 610, 120);
+        var montage = p.Add("VideoAssembly", 920, 300);
+        p.Connect(orch, "output_1", video, "input_prompt");
+        p.Connect(orch, LoopFrames.OutputPort, montage, "input_videos");
+
+        var downstream = p.Build().GetDownstreamNodes(video.Id);
+
+        Assert.Contains(montage.Id, downstream);
     }
 
     [Fact]
@@ -114,10 +153,25 @@ public class RectanguloDeLoopTests
         {
             Output = new StepOutput { Type = "orchestrator", Metadata = { ["parts"] = JsonSerializer.SerializeToElement(7) } },
         };
-        var info = new LoopFrames.FrameInfo { Frame = driver, Driver = driver };
 
-        Assert.Equal(7, LoopFrames.PartsFor(info));
-        Assert.Equal(1, LoopFrames.PartsFor(new LoopFrames.FrameInfo { Frame = driver }));
+        Assert.Equal(7, LoopFrames.PartsFor(new LoopFrames.FrameInfo { Driver = driver, Area = default }));
+        driver.Output = null;
+        Assert.Equal(1, LoopFrames.PartsFor(new LoopFrames.FrameInfo { Driver = driver, Area = default }));
+    }
+
+    [Fact]
+    public async Task UnRectanguloVacio_HaceFallarAlOrquestador()
+    {
+        var p = new Pipeline();
+        var orch = p.Add("Orchestrator", 60, 90, Frame);
+        orch.OrchestratorOutputs = LoopPlannerTests.Outputs();
+        var node = p.Build().Nodes[orch.Id];
+
+        var result = await new OrchestratorModuleHandler(new AiProviderRegistry([])).ExecuteAsync(Context(node,
+            new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { [LoopPlanner.ModeKey] = true }));
+
+        Assert.Equal(ModuleResultStatus.Failed, result.Status);
+        Assert.Contains("rectangulo de loop esta vacio", result.Error);
     }
 
     // ── Lo que llega a cada vuelta ──
@@ -203,53 +257,37 @@ public class RectanguloDeLoopTests
         Assert.Contains("no puede ir dentro de un loop", merged.Error);
     }
 
-    // ── El rectangulo ──
+    // ── El modulo "Bucle" de antes ──
 
     [Fact]
-    public async Task LaSalidaDelRectanguloEntregaLoQueProdujoElCuerpo()
+    public async Task ElModuloBucleRetiradoSeBorraAlArrancar()
     {
-        var p = new Pipeline();
-        var orch = p.Add("Orchestrator", 0, 0, """{"loopMode":true}""");
-        var frame = p.Add(LoopFrames.ModuleType, 300, 0);
-        var video = p.Add("Video", 320, 40);
-        p.Connect(orch, "output_1", video, "input_prompt");
-        var graph = p.Build();
-        graph.Nodes[orch.Id].Output = new StepOutput { Type = "orchestrator", Metadata = { ["parts"] = 2 } };
+        await using var db = new UserDbContext(new DbContextOptionsBuilder<UserDbContext>()
+            .UseInMemoryDatabase($"bucle_{Guid.NewGuid():N}").Options);
+        db.AiModules.Add(new AiModule { Id = Guid.NewGuid(), Name = "Bucle", ProviderType = "System", ModuleType = "LoopFrame", ModelName = "loop-frame" });
+        db.AiModules.Add(new AiModule { Id = Guid.NewGuid(), Name = "Montaje de video", ProviderType = "System", ModuleType = "VideoAssembly", ModelName = "video-assembly" });
+        await db.SaveChangesAsync();
 
-        var frameNode = graph.Nodes[frame.Id];
-        var ctx = Context(frameNode, new Dictionary<string, List<PortData>>
-        {
-            [LoopFrames.BodyPort] = [new PortData { Files = [File("p01_clip.mp4", "video/mp4"), File("p02_clip.mp4", "video/mp4")] }],
-        });
+        await SystemModuleCatalog.RemoveRetiredModulesAsync(db);
 
-        var result = await new LoopFrameModuleHandler().ExecuteAsync(ctx);
-
-        Assert.Equal(ModuleResultStatus.Completed, result.Status);
-        Assert.Equal(["p01_clip.mp4", "p02_clip.mp4"], result.Output!.Files.Select(f => f.FileName));
-        Assert.Equal(2, (int)result.Output.Metadata["parts"]);
-    }
-
-    [Fact]
-    public async Task UnRectanguloVacio_FallaExplicandoloSinBloquearElGrafo()
-    {
-        var p = new Pipeline();
-        var frame = p.Add(LoopFrames.ModuleType, 300, 0);
-        var frameNode = p.Build().Nodes[frame.Id];
-
-        Assert.True(frameNode.CanStartWithoutInputs);
-
-        var result = await new LoopFrameModuleHandler().ExecuteAsync(Context(frameNode, []));
-
-        Assert.Equal(ModuleResultStatus.Failed, result.Status);
-        Assert.Contains("no tiene modulos dentro", result.Error);
+        Assert.DoesNotContain(db.AiModules, m => m.ModuleType == "LoopFrame");
+        Assert.Contains(db.AiModules, m => m.ModuleType == "VideoAssembly");
     }
 
     // ── Helpers ──
 
+    private static void Complete(ExecutionGraph graph, ProjectModule module, StepOutput output)
+    {
+        var node = graph.Nodes[module.Id];
+        node.Status = NodeStatus.Completed;
+        node.Output = output;
+        graph.CompleteNodeAndPrepareDownstream(node);
+    }
+
     private static OutputFile File(string name, string type = "image/png") =>
         new() { FileId = Guid.NewGuid(), FileName = name, ContentType = type };
 
-    private static ModuleExecutionContext Context(ModuleNode node, Dictionary<string, List<PortData>> inputs) => new()
+    private static ModuleExecutionContext Context(ModuleNode node, Dictionary<string, object> config) => new()
     {
         Node = node,
         Graph = new ExecutionGraph(),
@@ -258,8 +296,8 @@ public class RectanguloDeLoopTests
         TenantDbName = "tenant_test",
         WorkspacePath = Path.GetTempPath(),
         MediaRoot = Path.GetTempPath(),
-        Config = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-        InputsByPort = inputs,
+        Config = config,
+        InputsByPort = [],
     };
 
     /// <summary>Pipeline de prueba: modulos con posicion y conexiones, como en la BD.</summary>
