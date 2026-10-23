@@ -264,8 +264,9 @@ window.pipelineEditor = {
     // Area de fondo de un orquestador loop: lo que cae dentro se repite. Por
     // debajo es un nodo de Drawflow (asi su salida se conecta como cualquier
     // otra), pero no es un modulo: pertenece a su orquestador, y su salida es el
-    // puerto "output_loop" de este. Va pegado al orquestador por su lado
-    // izquierdo y lo sigue al moverlo; solo se redimensiona, desde la esquina.
+    // puerto "output_loop" de este. Va unido al orquestador por su lado
+    // izquierdo y lo sigue al moverlo; solo se redimensiona, desde las esquinas
+    // de la derecha.
     // Va detras del resto y deja pasar los clics salvo en la cabecera, la esquina
     // y la salida. No arrastra a los modulos de dentro: solo los marca.
     _frameMinWidth: 240,
@@ -276,6 +277,7 @@ window.pipelineEditor = {
         var html = '<div class="df-frame">'
             + '<div class="df-frame-header"><i class="bi bi-arrow-repeat"></i> ' + this._escapeHtml(title)
             + '<span class="df-frame-hint">se repite en cada parte</span></div>'
+            + '<div class="df-frame-resize-top" title="Arrastra para cambiar el tamano"></div>'
             + '<div class="df-frame-resize" title="Arrastra para cambiar el tamano"></div>'
             + '</div>';
         var nodeId = this._editor.addNode('loopframe-' + ownerModuleId, 0, 1, x, y, 'df-loopframe', { loopFrameOf: ownerModuleId }, html);
@@ -310,8 +312,9 @@ window.pipelineEditor = {
         for (var owner in this._frameMap) this._anchorFrame(owner, true);
     },
 
-    // Borde izquierdo del rectangulo = lado derecho del orquestador; arriba, a
-    // la altura del orquestador. Con notify, si ha cambiado se guarda.
+    // El borde izquierdo del rectangulo pasa por la mitad del orquestador (que
+    // queda medio dentro, por encima) y el orquestador queda a media altura del
+    // rectangulo. Con notify, si la posicion ha cambiado se guarda.
     _anchorFrame: function (ownerModuleId, notify) {
         var frameNodeId = this._frameMap[ownerModuleId];
         var ownerNodeId = this._reverseMap[ownerModuleId];
@@ -326,8 +329,8 @@ window.pipelineEditor = {
         // arrastra va un paso por detras y dejaria un hueco entre los dos.
         var left = parseFloat(ownerEl.style.left);
         var top = parseFloat(ownerEl.style.top);
-        var x = (isNaN(left) ? ownerInfo.pos_x : left) + ownerEl.offsetWidth;
-        var y = isNaN(top) ? ownerInfo.pos_y : top;
+        var x = (isNaN(left) ? ownerInfo.pos_x : left) + ownerEl.offsetWidth / 2;
+        var y = (isNaN(top) ? ownerInfo.pos_y : top) + ownerEl.offsetHeight / 2 - frameEl.offsetHeight / 2;
         frameEl.style.left = x + 'px';
         frameEl.style.top = y + 'px';
         var data = this._editor.drawflow.drawflow[this._editor.module].data[frameNodeId];
@@ -356,37 +359,52 @@ window.pipelineEditor = {
         this._dotNetRef.invokeMethodAsync('OnLoopFrameChanged', owner, info.pos_x, info.pos_y, el.offsetWidth, el.offsetHeight);
     },
 
+    // Dos esquinas, arriba y abajo a la derecha. El ancho crece hacia la derecha
+    // y el alto hacia arriba y hacia abajo a la vez (el doble de lo arrastrado),
+    // para que el orquestador siga a media altura y la esquina siga al raton.
     _setupFrameResize: function (nodeId, el) {
-        var handle = el.querySelector('.df-frame-resize');
-        if (!handle) return;
-
         var self = this;
-        handle.addEventListener('mousedown', function (e) {
-            // Que no lo vea Drawflow: lo tomaria por el inicio de un arrastre del nodo.
-            e.stopPropagation();
-            e.preventDefault();
+        [['.df-frame-resize', 1], ['.df-frame-resize-top', -1]].forEach(function (pair) {
+            var handle = el.querySelector(pair[0]);
+            var dir = pair[1];
+            if (!handle) return;
 
-            var startX = e.clientX, startY = e.clientY;
-            var startW = el.offsetWidth, startH = el.offsetHeight;
-            var zoom = (self._editor && self._editor.zoom) || 1;
+            handle.addEventListener('mousedown', function (e) {
+                // Que no lo vea Drawflow: lo tomaria por el inicio de un arrastre del nodo.
+                e.stopPropagation();
+                e.preventDefault();
 
-            function onMove(ev) {
-                var w = Math.max(self._frameMinWidth, startW + (ev.clientX - startX) / zoom);
-                var h = Math.max(self._frameMinHeight, startH + (ev.clientY - startY) / zoom);
-                el.style.width = w + 'px';
-                el.style.height = h + 'px';
-                if (self._editor) self._editor.updateConnectionNodes('node-' + nodeId);
-            }
+                var startX = e.clientX, startY = e.clientY;
+                var startW = el.offsetWidth, startH = el.offsetHeight;
+                var zoom = (self._editor && self._editor.zoom) || 1;
+                var owner = self._frameOwner[nodeId];
 
-            function onUp() {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-                self._notifyFrameChanged(nodeId);
-            }
+                function onMove(ev) {
+                    var w = Math.max(self._frameMinWidth, startW + (ev.clientX - startX) / zoom);
+                    var h = Math.max(self._frameMinHeightFor(owner),
+                        startH + 2 * dir * (ev.clientY - startY) / zoom);
+                    el.style.width = w + 'px';
+                    el.style.height = h + 'px';
+                    self._anchorFrame(owner, false);
+                }
 
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+                function onUp() {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    self._notifyFrameChanged(nodeId);
+                }
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
         });
+    },
+
+    // Alto minimo: que el orquestador quepa entero y quede sitio para la cabecera.
+    _frameMinHeightFor: function (ownerModuleId) {
+        var ownerNodeId = this._reverseMap[ownerModuleId];
+        var ownerEl = ownerNodeId !== undefined ? document.getElementById('node-' + ownerNodeId) : null;
+        return Math.max(this._frameMinHeight, ownerEl ? ownerEl.offsetHeight + 80 : 0);
     },
 
     addConnection: function (fromModuleId, fromPortId, toModuleId, toPortId) {

@@ -669,8 +669,9 @@ calcula cuantas partes hacen falta en vez de dejarlas fijas:
 orquestador loop que marca en el editor que modulos se repiten. No es un modulo:
 se guarda en la configuracion del orquestador (`loopFrame`:
 `{"x","y","w","h"}` en coordenadas del lienzo) y se crea y quita desde su
-panel. Va pegado al orquestador por su lado izquierdo (lo sigue al moverlo) y
-se redimensiona desde la esquina; no arrastra
+panel. Va unido al orquestador por su lado izquierdo, que pasa por la mitad del
+nodo, con el orquestador a media altura; lo sigue al moverlo y se redimensiona
+desde sus esquinas de la derecha (el alto, simetrico); no arrastra
 a los modulos de dentro, solo los marca. Su unica salida es el puerto
 `output_loop` ("Salida del loop") del orquestador, que el editor dibuja en el
 borde del rectangulo.

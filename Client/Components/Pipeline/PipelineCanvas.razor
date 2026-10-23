@@ -1050,7 +1050,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                                         {
                                             <p class="text-sm" style="margin: 0 0 0.3rem; color: var(--warning);">Vacio: agrandalo desde la esquina o mueve dentro los modulos que se repiten.</p>
                                         }
-                                        <p class="text-sm text-muted" style="margin: 0 0 0.3rem;">Cuenta como dentro el modulo cuya esquina superior izquierda cae en el rectangulo. Su salida entrega, en orden, lo que producen los ultimos de dentro (los clips 1..N).</p>
+                                        <p class="text-sm text-muted" style="margin: 0 0 0.3rem;">Va unido al orquestador y se redimensiona desde sus esquinas de la derecha. Cuenta como dentro el modulo cuya esquina superior izquierda cae en el rectangulo. Su salida entrega, en orden, lo que producen los ultimos de dentro (los clips 1..N).</p>
                                         <button class="btn btn-xs" style="width: 100%; border: 1px solid var(--border-color);" @onclick="() => RemoveLoopFrame(sel)">Quitar rectangulo</button>
                                     }
                                     else
@@ -2228,8 +2228,9 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
     // ── Rectangulo de loop ──
     // Parte del orquestador loop: se guarda en su config "loopFrame" como
-    // {"x","y","w","h"} y se dibuja de fondo, pegado al lado derecho del
-    // orquestador (el editor lo recoloca y guarda la posicion al moverlo). Mismos valores y misma regla que
+    // {"x","y","w","h"} y se dibuja de fondo, unido al orquestador: empieza en la
+    // mitad del nodo, con el orquestador a media altura (el editor lo recoloca y
+    // guarda la posicion al moverlo). Mismos valores y misma regla que
     // Server/Services/Ai/LoopFrames.cs: un modulo esta dentro si su esquina
     // superior izquierda cae en el rectangulo.
     private const double FrameDefaultWidth = 620;
@@ -2285,7 +2286,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     {
         // Posicion aproximada: el editor la ajusta al ancho real del nodo al pintarlo.
         var (x, y) = PositionOf(orchestrator);
-        await SaveLoopFrame(orchestrator.Id, new FrameRect(x + 240, y, FrameDefaultWidth, FrameDefaultHeight));
+        await SaveLoopFrame(orchestrator.Id, new FrameRect(x + 120, y + 60 - FrameDefaultHeight / 2, FrameDefaultWidth, FrameDefaultHeight));
         await UpdateSceneCount(orchestrator.Id, GetSceneCount(orchestrator.Id));
     }
 

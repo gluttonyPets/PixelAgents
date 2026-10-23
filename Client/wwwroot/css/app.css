@@ -3746,6 +3746,17 @@ a.link:hover { text-decoration: underline; }
     opacity: 0.7;
     font-size: 0.65rem;
 }
+.df-frame-resize-top {
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 16px;
+    height: 16px;
+    cursor: nesw-resize;
+    pointer-events: auto;
+    background: linear-gradient(45deg, transparent 50%, #ff9800 50%);
+    border-top-right-radius: 12px;
+}
 .df-frame-resize {
     position: absolute;
     right: 0;
