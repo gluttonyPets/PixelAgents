@@ -564,6 +564,11 @@ HTTP directo porque el SDK no expone `instructions`). La peticion la arma
   hay velocidad configurada se traduce a una indicacion de ritmo dentro de las
   instrucciones.
 
+La voz (`voice`, por defecto `alloy`), la velocidad y las instrucciones se
+eligen en la configuracion del modulo: tanto en la pagina Modulos como en el
+popup "Editar nodo" del pipeline (`ModuleConfigEditor`). `ballad` y `verse`
+solo existen en `gpt-4o-mini-tts`.
+
 **Un audio por toma.** Si el texto llega repartido con el mismo contrato que el
 multi-imagen (marcas `===TOMA n===`, `===IMAGEN n===`... o el JSON de la
 conexion), se hace una locucion por toma y se entregan en orden como

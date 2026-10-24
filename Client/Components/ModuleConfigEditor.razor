@@ -250,6 +250,31 @@ else if (m.ModuleType == "Image" && m.ProviderType == "LeonardoAI")
         </select>
     </div>
 }
+else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
+{
+    <div class="form-row">
+        <div class="form-group">
+            <label>Voz</label>
+            <select @bind="_editTtsVoice">
+                @foreach (var (value, label) in AiModuleOptions.TtsVoices)
+                {
+                    <option value="@value">@label</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Velocidad <span class="text-sm text-muted">(0.25 - 4.0)</span></label>
+            <input type="number" step="0.25" min="0.25" max="4.0" @bind="_editTtsSpeed" />
+        </div>
+    </div>
+    @if (AiModuleOptions.SupportsVoiceInstructions(m.ModelName))
+    {
+        <div class="form-group">
+            <label>Instrucciones de voz <span class="text-sm text-muted">(tono, acento, ritmo)</span></label>
+            <textarea rows="2" @bind="_editTtsInstructions" placeholder="Voz en off de anuncio, calida y cercana, acento de Espana."></textarea>
+        </div>
+    }
+}
 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
 {
     <div class="form-group">
@@ -590,8 +615,8 @@ else
             parts.Add($"\"voice\":\"{_editTtsVoice}\"");
             if (_editTtsSpeed != 1.0)
                 parts.Add($"\"speed\":{_editTtsSpeed}");
-            // Este editor no pinta el campo, pero reescribe la configuracion entera:
-            // sin esta linea guardar desde aqui borraria las instrucciones de voz.
+            // Se conservan aunque el modelo no las use (tts-1): si se vuelve a
+            // gpt-4o-mini-tts siguen ahi, y el servidor no las manda a tts-1.
             if (!string.IsNullOrWhiteSpace(_editTtsInstructions))
                 parts.Add($"\"voiceInstructions\":{System.Text.Json.JsonSerializer.Serialize(_editTtsInstructions)}");
         }
