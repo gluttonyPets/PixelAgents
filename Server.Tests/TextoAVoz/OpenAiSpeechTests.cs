@@ -84,6 +84,27 @@ public class OpenAiSpeechTests
         Assert.InRange(cost, 0.014m, 0.017m);
     }
 
+    [Fact]
+    public void Demostracion_SeOyeLaVozDelFormulario()
+    {
+        var json = Parse(OpenAiSpeech.BuildRequestJson("tts-1", OpenAiSpeech.PreviewText,
+            OpenAiSpeech.PreviewConfiguration("onyx", 1.5, "Tono calido")));
+
+        Assert.Equal("onyx", json.GetProperty("voice").GetString());
+        Assert.Equal(1.5, json.GetProperty("speed").GetDouble());
+        Assert.False(json.TryGetProperty("instructions", out _));
+    }
+
+    [Fact]
+    public void Demostracion_SinValoresUsaLaVozPorDefecto()
+    {
+        var json = Parse(OpenAiSpeech.BuildRequestJson("gpt-4o-mini-tts", OpenAiSpeech.PreviewText,
+            OpenAiSpeech.PreviewConfiguration(" ", null, null)));
+
+        Assert.Equal(OpenAiSpeech.DefaultVoice, json.GetProperty("voice").GetString());
+        Assert.False(json.TryGetProperty("instructions", out _));
+    }
+
     private static Dictionary<string, object> Config(params (string Key, object Value)[] values)
     {
         var config = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);

@@ -8460,3 +8460,17 @@ td.cell-actions .icon-btn { margin-left: 0.15rem; }
 .wizard-model-ribbon.is-current { color: #fff; background: var(--gradient); box-shadow: 0 6px 14px -6px rgba(108, 99, 255, 0.8); }
 .module-editor .wizard-models { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .module-editor .module-warning { margin: 0.35rem 0 0; }
+
+/* Demostracion de voz de los modulos de texto a voz */
+.voice-preview {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.voice-preview audio {
+    height: 32px;
+    max-width: 100%;
+}
+.voice-preview-error { color: var(--danger); }

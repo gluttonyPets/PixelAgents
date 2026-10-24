@@ -35,6 +35,8 @@ namespace Server.Models
         string? Configuration, bool IsEnabled, DateTime CreatedAt, DateTime UpdatedAt);
     // Uso de un modulo de catalogo a traves de los proyectos.
     public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
+    // Demostracion de una voz de texto a voz con los valores del formulario.
+    public record VoicePreviewRequest(Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions);
 
     // ── ProjectGroup (el "Proyecto" de alto nivel que agrupa pipelines) ──
     public record CreateProjectGroupRequest(string Name, string? Description);

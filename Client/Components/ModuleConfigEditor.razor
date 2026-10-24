@@ -274,6 +274,8 @@ else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
             <textarea rows="2" @bind="_editTtsInstructions" placeholder="Voz en off de anuncio, calida y cercana, acento de Espana."></textarea>
         </div>
     }
+    <VoicePreview ApiKeyId="@m.ApiKeyId" Model="@m.ModelName"
+                  Voice="@_editTtsVoice" Speed="@_editTtsSpeed" Instructions="@_editTtsInstructions" />
 }
 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
 {

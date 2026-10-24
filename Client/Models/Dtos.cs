@@ -120,6 +120,8 @@ public record AiModuleResponse(
     string? Configuration, bool IsEnabled, DateTime CreatedAt, DateTime UpdatedAt);
 // Uso de un modulo de catalogo a traves de los proyectos (para advertir antes de editar).
 public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
+// Demostracion de una voz de texto a voz con los valores del formulario.
+public record VoicePreviewRequest(Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions);
 public record ReassignProjectModuleRequest(Guid AiModuleId);
 
 // ── ProjectGroup: el "Proyecto" de alto nivel que agrupa pipelines ──

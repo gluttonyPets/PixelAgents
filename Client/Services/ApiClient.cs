@@ -212,6 +212,14 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<AiModuleResponse>>() ?? [];
     }
 
+    /// <summary>Frase de muestra (mp3) con la voz de texto a voz pedida.</summary>
+    public async Task<(byte[]? Audio, string? Error)> PreviewVoiceAsync(VoicePreviewRequest req)
+    {
+        var resp = await SendAsync(HttpMethod.Post, "/api/voice-preview", req);
+        if (!resp.IsSuccessStatusCode) return (null, await ReadErrorAsync(resp));
+        return (await resp.Content.ReadAsByteArrayAsync(), null);
+    }
+
     public async Task<AiModuleResponse?> GetModuleAsync(Guid id)
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/modules/{id}");

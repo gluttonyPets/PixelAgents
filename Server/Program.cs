@@ -1015,6 +1015,54 @@ app.MapDelete("/api/modules/{id}", async (
     return Results.NoContent();
 }).RequireAuthorization();
 
+// Demostracion de una voz de texto a voz: una frase corta con la voz, el modelo y
+// la API key del formulario, para elegir la voz de oido antes de guardar. No es una
+// ejecucion del pipeline (no se guarda ni se anota coste), pero OpenAI la factura:
+// fracciones de centimo por escucha.
+app.MapPost("/api/voice-preview", async (
+    VoicePreviewRequest req, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    IAiProviderRegistry registry, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var model = ModelCatalog.Find(req.ModelName);
+    if (model is null || model.Provider != "OpenAI" || !model.Types.Contains("Audio"))
+        return Results.BadRequest(new { error = "Elige un modelo de texto a voz de OpenAI para escuchar la voz." });
+
+    var key = req.ApiKeyId is Guid keyId ? await db.ApiKeys.FindAsync(new object?[] { keyId }, ct) : null;
+    if (key is null || !key.ProviderType.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
+        || string.IsNullOrEmpty(key.EncryptedKey))
+        return Results.BadRequest(new { error = "Elige una API key de OpenAI para escuchar la voz." });
+
+    var provider = registry.GetProvider("OpenAI");
+    if (provider is null) return Results.BadRequest(new { error = "Proveedor 'OpenAI' no disponible" });
+
+    AiResult result;
+    try
+    {
+        result = await provider.ExecuteAsync(new AiExecutionContext
+        {
+            ModuleType = "Audio",
+            ModelName = model.Id,
+            ApiKey = key.EncryptedKey,
+            Input = OpenAiSpeech.PreviewText,
+            Configuration = OpenAiSpeech.PreviewConfiguration(req.Voice, req.Speed, req.VoiceInstructions),
+            CancellationToken = ct,
+        });
+    }
+    catch (TransientProviderException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+
+    if (!result.Success || result.FileOutput is not { Length: > 0 })
+        return Results.BadRequest(new { error = result.Error ?? "OpenAI no devolvio audio" });
+
+    return Results.File(result.FileOutput, result.ContentType ?? "audio/mpeg");
+}).RequireAuthorization();
+
 // ==================== Module File Endpoints ====================
 
 app.MapPost("/api/project-modules/{projectModuleId}/files", async (

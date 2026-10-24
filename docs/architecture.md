@@ -569,6 +569,12 @@ eligen en la configuracion del modulo: tanto en la pagina Modulos como en el
 popup "Editar nodo" del pipeline (`ModuleConfigEditor`). `ballad` y `verse`
 solo existen en `gpt-4o-mini-tts`.
 
+**Escuchar voz.** Junto a esos campos, el boton "Escuchar voz"
+(`VoicePreview.razor` -> `POST /api/voice-preview`) locuta una frase corta
+(`OpenAiSpeech.PreviewText`) con la voz, velocidad, instrucciones, modelo y API
+key del formulario, aunque no esten guardados. No es una ejecucion: no se guarda
+ni se anota coste, pero OpenAI la factura (fracciones de centimo por escucha).
+
 **Un audio por toma.** Si el texto llega repartido con el mismo contrato que el
 multi-imagen (marcas `===TOMA n===`, `===IMAGEN n===`... o el JSON de la
 conexion), se hace una locucion por toma y se entregan en orden como
