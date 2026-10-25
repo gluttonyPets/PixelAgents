@@ -1,6 +1,7 @@
 @* Demostracion de voz de los modulos de texto a voz: genera una frase corta con
    la voz, el modelo y la API key del formulario (aunque no esten guardados) y la
-   reproduce. OpenAI factura cada escucha, asi que solo se pide al pulsar. *@
+   reproduce. Vale para OpenAI y ElevenLabs (el servidor elige por el modelo). El
+   proveedor factura cada escucha, asi que solo se pide al pulsar. *@
 @inject ApiClient Api
 
 <div class="voice-preview">
@@ -18,7 +19,7 @@
     }
     else if (_audioUrl is null)
     {
-        <span class="text-sm text-muted">Frase corta de prueba; OpenAI la cobra (fracciones de centimo).</span>
+        <span class="text-sm text-muted">Frase corta de prueba; el proveedor la cobra (centimos o menos).</span>
     }
     @if (_audioUrl is not null)
     {
@@ -34,6 +35,12 @@
     [Parameter] public string Voice { get; set; } = "alloy";
     [Parameter] public double Speed { get; set; } = 1.0;
     [Parameter] public string? Instructions { get; set; }
+    /// <summary>Nombre de la voz si <see cref="Voice"/> es un id (ElevenLabs).</summary>
+    [Parameter] public string? VoiceLabel { get; set; }
+    // Ajustes de ElevenLabs; OpenAI no los usa.
+    [Parameter] public double? Stability { get; set; }
+    [Parameter] public double? SimilarityBoost { get; set; }
+    [Parameter] public double? Style { get; set; }
 
     private bool _loading;
     private string? _error;
@@ -48,7 +55,8 @@
 
         var instructions = AiModuleOptions.SupportsVoiceInstructions(Model) ? Instructions : null;
         var (audio, error) = await Api.PreviewVoiceAsync(new VoicePreviewRequest(
-            ApiKeyId, Model, Voice, Speed == 1.0 ? null : Speed, instructions));
+            ApiKeyId, Model, Voice, Speed == 1.0 ? null : Speed, instructions,
+            Stability, SimilarityBoost, Style));
 
         _loading = false;
         if (audio is null)
@@ -58,6 +66,7 @@
         }
 
         _audioUrl = "data:audio/mpeg;base64," + Convert.ToBase64String(audio);
-        _audioLabel = $"Voz {Voice}" + (Speed == 1.0 ? "" : $" a {Speed:0.##}x");
+        var name = string.IsNullOrWhiteSpace(VoiceLabel) ? Voice : VoiceLabel;
+        _audioLabel = $"Voz {name}" + (Speed == 1.0 ? "" : $" a {Speed:0.##}x");
     }
 }

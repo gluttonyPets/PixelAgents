@@ -87,8 +87,8 @@ public class OpenAiSpeechTests
     [Fact]
     public void Demostracion_SeOyeLaVozDelFormulario()
     {
-        var json = Parse(OpenAiSpeech.BuildRequestJson("tts-1", OpenAiSpeech.PreviewText,
-            OpenAiSpeech.PreviewConfiguration("onyx", 1.5, "Tono calido")));
+        var json = Parse(OpenAiSpeech.BuildRequestJson("tts-1", SpeechPreview.Text,
+            SpeechPreview.Configuration("onyx", 1.5, "Tono calido")));
 
         Assert.Equal("onyx", json.GetProperty("voice").GetString());
         Assert.Equal(1.5, json.GetProperty("speed").GetDouble());
@@ -98,8 +98,8 @@ public class OpenAiSpeechTests
     [Fact]
     public void Demostracion_SinValoresUsaLaVozPorDefecto()
     {
-        var json = Parse(OpenAiSpeech.BuildRequestJson("gpt-4o-mini-tts", OpenAiSpeech.PreviewText,
-            OpenAiSpeech.PreviewConfiguration(" ", null, null)));
+        var json = Parse(OpenAiSpeech.BuildRequestJson("gpt-4o-mini-tts", SpeechPreview.Text,
+            SpeechPreview.Configuration(" ", null, null)));
 
         Assert.Equal(OpenAiSpeech.DefaultVoice, json.GetProperty("voice").GetString());
         Assert.False(json.TryGetProperty("instructions", out _));

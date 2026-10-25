@@ -137,6 +137,18 @@ public static class ModelCatalog
         new("tts-1-hd",         "TTS-1 HD",         "OpenAI", ["Audio"],
             ["text-to-speech"], null),
 
+        // ─── ElevenLabs: Audio (TTS) ───
+        new("eleven_v4",              "Eleven v4",              "ElevenLabs", ["Audio"],
+            ["text-to-speech"], null),
+        new("eleven_v4_turbo",        "Eleven v4 Turbo",        "ElevenLabs", ["Audio"],
+            ["text-to-speech"], null),
+        new("eleven_v3",              "Eleven v3",              "ElevenLabs", ["Audio"],
+            ["text-to-speech"], null),
+        new("eleven_multilingual_v2", "Eleven Multilingual v2", "ElevenLabs", ["Audio"],
+            ["text-to-speech"], null),
+        new("eleven_flash_v2_5",      "Eleven Flash v2.5",      "ElevenLabs", ["Audio"],
+            ["text-to-speech"], null),
+
         // ─── OpenAI: Transcripción (STT) ───
         new("gpt-transcribe",         "GPT Transcribe",         "OpenAI", ["Transcription"],
             ["speech-to-text"], null),

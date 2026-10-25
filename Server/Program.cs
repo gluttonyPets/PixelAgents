@@ -69,6 +69,7 @@ builder.Services.AddSingleton<IAiProvider, AnthropicProvider>();
 builder.Services.AddSingleton<IAiProvider, LeonardoProvider>();
 builder.Services.AddSingleton<IAiProvider, GeminiProvider>();
 builder.Services.AddSingleton<IAiProvider, GrokProvider>();
+builder.Services.AddSingleton<IAiProvider, ElevenLabsProvider>();
 builder.Services.AddSingleton<IAiProviderRegistry, AiProviderRegistry>();
 builder.Services.AddTransient<IModuleHandler, StartModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, StaticTextModuleHandler>();
@@ -1016,9 +1017,9 @@ app.MapDelete("/api/modules/{id}", async (
 }).RequireAuthorization();
 
 // Demostracion de una voz de texto a voz: una frase corta con la voz, el modelo y
-// la API key del formulario, para elegir la voz de oido antes de guardar. No es una
-// ejecucion del pipeline (no se guarda ni se anota coste), pero OpenAI la factura:
-// fracciones de centimo por escucha.
+// la API key del formulario, para elegir la voz de oido antes de guardar. Vale para
+// cualquier proveedor de Audio (el del modelo). No es una ejecucion del pipeline (no
+// se guarda ni se anota coste), pero el proveedor la factura: centimos o menos.
 app.MapPost("/api/voice-preview", async (
     VoicePreviewRequest req, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
@@ -1028,16 +1029,16 @@ app.MapPost("/api/voice-preview", async (
     if (db is null) return Results.Unauthorized();
 
     var model = ModelCatalog.Find(req.ModelName);
-    if (model is null || model.Provider != "OpenAI" || !model.Types.Contains("Audio"))
-        return Results.BadRequest(new { error = "Elige un modelo de texto a voz de OpenAI para escuchar la voz." });
+    if (model is null || !model.Types.Contains("Audio"))
+        return Results.BadRequest(new { error = "Elige un modelo de texto a voz para escuchar la voz." });
 
     var key = req.ApiKeyId is Guid keyId ? await db.ApiKeys.FindAsync(new object?[] { keyId }, ct) : null;
-    if (key is null || !key.ProviderType.Equals("OpenAI", StringComparison.OrdinalIgnoreCase)
+    if (key is null || !key.ProviderType.Equals(model.Provider, StringComparison.OrdinalIgnoreCase)
         || string.IsNullOrEmpty(key.EncryptedKey))
-        return Results.BadRequest(new { error = "Elige una API key de OpenAI para escuchar la voz." });
+        return Results.BadRequest(new { error = $"Elige una API key de {model.Provider} para escuchar la voz." });
 
-    var provider = registry.GetProvider("OpenAI");
-    if (provider is null) return Results.BadRequest(new { error = "Proveedor 'OpenAI' no disponible" });
+    var provider = registry.GetProvider(model.Provider);
+    if (provider is null) return Results.BadRequest(new { error = $"Proveedor '{model.Provider}' no disponible" });
 
     AiResult result;
     try
@@ -1047,8 +1048,9 @@ app.MapPost("/api/voice-preview", async (
             ModuleType = "Audio",
             ModelName = model.Id,
             ApiKey = key.EncryptedKey,
-            Input = OpenAiSpeech.PreviewText,
-            Configuration = OpenAiSpeech.PreviewConfiguration(req.Voice, req.Speed, req.VoiceInstructions),
+            Input = SpeechPreview.Text,
+            Configuration = SpeechPreview.Configuration(req.Voice, req.Speed, req.VoiceInstructions,
+                req.Stability, req.SimilarityBoost, req.Style),
             CancellationToken = ct,
         });
     }
@@ -1061,6 +1063,31 @@ app.MapPost("/api/voice-preview", async (
         return Results.BadRequest(new { error = result.Error ?? "OpenAI no devolvio audio" });
 
     return Results.File(result.FileOutput, result.ContentType ?? "audio/mpeg");
+}).RequireAuthorization();
+
+// Voces de ElevenLabs que puede usar la API key (predeterminadas, clonadas y
+// guardadas de la biblioteca), para el selector de voz del modulo.
+app.MapGet("/api/elevenlabs/voices", async (
+    Guid apiKeyId, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory, CancellationToken ct) =>
+{
+    await using var db = await ResolveTenantDb(ctx, um, factory);
+    if (db is null) return Results.Unauthorized();
+
+    var key = await db.ApiKeys.FindAsync(new object?[] { apiKeyId }, ct);
+    if (key is null || !key.ProviderType.Equals("ElevenLabs", StringComparison.OrdinalIgnoreCase)
+        || string.IsNullOrEmpty(key.EncryptedKey))
+        return Results.BadRequest(new { error = "La API key no existe o no es de ElevenLabs." });
+
+    try
+    {
+        var voices = await ElevenLabsProvider.ListVoicesAsync(key.EncryptedKey, ct);
+        return Results.Ok(voices.Select(v => new VoiceOptionResponse(v.Id, v.Label)).ToList());
+    }
+    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 }).RequireAuthorization();
 
 // ==================== Module File Endpoints ====================

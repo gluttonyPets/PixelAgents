@@ -31,6 +31,7 @@ public static class ProviderPalette
         "Google"     => "#4285f4",
         "xAI"        => "#9ca3af",
         "LeonardoAI" => "#a78bfa",
+        "ElevenLabs" => "#e5e7eb",
         "Canva"      => "#00c4cc",
         _            => "#6c63ff",
     };
@@ -43,6 +44,7 @@ public static class ProviderPalette
         "Google"     => "badge-google",
         "xAI"        => "badge-xai",
         "LeonardoAI" => "badge-leonardo",
+        "ElevenLabs" => "badge-elevenlabs",
         _            => "",
     };
 }

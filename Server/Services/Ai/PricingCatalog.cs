@@ -89,6 +89,9 @@ namespace Server.Services.Ai
         /// </summary>
         public record AuxiliaryRate(decimal Amount, string Unit, string? Note = null);
 
+        private const string ElevenLabsPlanNote =
+            "Precio de pago por uso; con plan mensual los caracteres incluidos salen mas baratos.";
+
         private static readonly Dictionary<string, AuxiliaryRate> AuxiliaryPrices =
             new(StringComparer.OrdinalIgnoreCase)
             {
@@ -102,6 +105,16 @@ namespace Server.Services.Ai
                 ["tts-1-hd"] = new(30.00m, "1M caracteres"),
                 ["gpt-4o-mini-tts"] = new(12.00m, "1M tokens de audio",
                     "Mas $0,60 por 1M de tokens de texto de entrada."),
+
+                // ElevenLabs: tarifa de pago por uso de la API (elevenlabs.io/pricing/api,
+                // revisada el 2026-10-25: $0,08 / $0,04 por 1K caracteres). Con un plan
+                // mensual los caracteres incluidos salen mas baratos, asi que el coste
+                // anotado es un techo, no lo que se paga.
+                ["eleven_v4"]              = new(80.00m, "1M caracteres", ElevenLabsPlanNote),
+                ["eleven_v4_turbo"]        = new(40.00m, "1M caracteres", ElevenLabsPlanNote),
+                ["eleven_v3"]              = new(80.00m, "1M caracteres", ElevenLabsPlanNote),
+                ["eleven_multilingual_v2"] = new(80.00m, "1M caracteres", ElevenLabsPlanNote),
+                ["eleven_flash_v2_5"]      = new(40.00m, "1M caracteres", ElevenLabsPlanNote),
 
                 // Transcripcion (STT). OpenAI publica el precio por minuto de audio,
                 // que es la unidad en la que se piensa al transcribir, aunque por

@@ -277,6 +277,10 @@ else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
     <VoicePreview ApiKeyId="@m.ApiKeyId" Model="@m.ModelName"
                   Voice="@_editTtsVoice" Speed="@_editTtsSpeed" Instructions="@_editTtsInstructions" />
 }
+else if (ElevenLabsVoiceConfig.IsElevenLabsAudio(m.ProviderType, m.ModuleType))
+{
+    <ElevenLabsVoiceEditor Config="_editElevenLabs" Model="@m.ModelName" ApiKeyId="@m.ApiKeyId" />
+}
 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
 {
     <div class="form-group">
@@ -461,6 +465,7 @@ else
     private int _editGeminiImageCount = 1;
     private int _editGrokImageCount = 1;
     private SearchConsoleConfig _editSearchConsole = new();
+    private ElevenLabsVoiceConfig _editElevenLabs = new();
     private string _editCanvaAccessToken = "";
     private string _editCanvaExportFormat = "png";
     private string _editCanvaBrandTemplate = "";
@@ -489,6 +494,7 @@ else
     private void LoadFromConfiguration(AiModuleResponse module)
     {
         _editSearchConsole = SearchConsoleConfig.FromJson(module.Configuration);
+        _editElevenLabs = ElevenLabsVoiceConfig.FromJson(module.Configuration);
         _editSystemPrompt = "";
         _editTemperature = 0.7;
         _editMaxTokens = 4096;
@@ -557,6 +563,8 @@ else
         var providerType = Module.ProviderType;
         if (moduleType == SearchConsoleConfig.ModuleType)
             return _editSearchConsole.ToJson();
+        if (ElevenLabsVoiceConfig.IsElevenLabsAudio(providerType, moduleType))
+            return _editElevenLabs.ToJson();
 
         var parts = new List<string>();
 

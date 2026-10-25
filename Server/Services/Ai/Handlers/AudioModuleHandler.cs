@@ -84,7 +84,10 @@ public class AudioModuleHandler : IModuleHandler
             totalChars += takes[i].Length;
         }
 
-        var output = OutputSchemaHelper.BuildAudioOutput(outputFiles, module.ModelName, ctx.GetConfig("voice", OpenAiSpeech.DefaultVoice));
+        // ElevenLabs guarda la voz por id; su nombre va aparte para que se lea.
+        var defaultVoice = module.ProviderType == "ElevenLabs" ? ElevenLabsSpeech.DefaultVoice : OpenAiSpeech.DefaultVoice;
+        var voice = ctx.GetConfig("voiceName", ctx.GetConfig("voice", defaultVoice));
+        var output = OutputSchemaHelper.BuildAudioOutput(outputFiles, module.ModelName, voice);
         output.Metadata["takes"] = takes.Count;
         output.Metadata["characters"] = totalChars;
 

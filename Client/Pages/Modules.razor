@@ -565,6 +565,11 @@
                 <VoicePreview ApiKeyId="@(Guid.TryParse(_apiKeyId, out var ttsKey) ? ttsKey : null)" Model="@_model"
                               Voice="@_ttsVoice" Speed="@_ttsSpeed" Instructions="@_ttsInstructions" />
             }
+            else if (ElevenLabsVoiceConfig.IsElevenLabsAudio(_provider, _moduleType))
+            {
+                <ElevenLabsVoiceEditor Config="_elevenLabs" Model="@_model"
+                                       ApiKeyId="@(Guid.TryParse(_apiKeyId, out var elKey) ? elKey : null)" />
+            }
             else if (_moduleType == "Transcription" && _provider == "OpenAI")
             {
                 <div class="form-row">
@@ -946,6 +951,10 @@
                         <VoicePreview ApiKeyId="@m.ApiKeyId" Model="@m.ModelName"
                                       Voice="@_editTtsVoice" Speed="@_editTtsSpeed" Instructions="@_editTtsInstructions" />
                     }
+                    else if (ElevenLabsVoiceConfig.IsElevenLabsAudio(m.ProviderType, m.ModuleType))
+                    {
+                        <ElevenLabsVoiceEditor Config="_editElevenLabs" Model="@m.ModelName" ApiKeyId="@m.ApiKeyId" />
+                    }
                     else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
                     {
                         <div class="form-group">
@@ -1257,6 +1266,7 @@ else
         "Google"     => "badge-google",
         "LeonardoAI" => "badge-leonardo",
         "xAI"        => "badge-xai",
+        "ElevenLabs" => "badge-elevenlabs",
         "SearchConsole" => "badge-google",
         _            => "badge-info"
     };
@@ -1399,6 +1409,8 @@ else
     // ── Search Console (Search Analytics) ──
     private SearchConsoleConfig _searchConsole = new();
     private SearchConsoleConfig _editSearchConsole = new();
+    private ElevenLabsVoiceConfig _elevenLabs = new();
+    private ElevenLabsVoiceConfig _editElevenLabs = new();
 
     // ── Edit: Canva config ──
     private string _editCanvaAccessToken = "";
@@ -1487,6 +1499,13 @@ else
         new("gpt-4o-mini-transcribe","GPT-4o Mini Transcribe","OpenAI",["Transcription"],["speech-to-text"],           "Transcripcion rapida y economica."),
         new("whisper-1",        "Whisper",           "OpenAI", ["Transcription"],["speech-to-text"],                   "Transcripcion multilingue clasica."),
 
+        // ─── ElevenLabs: Audio ───
+        new("eleven_v4",              "Eleven v4",              "ElevenLabs", ["Audio"], ["text-to-speech"], "La voz mas natural y expresiva de ElevenLabs. Ultima generacion."),
+        new("eleven_v4_turbo",        "Eleven v4 Turbo",        "ElevenLabs", ["Audio"], ["text-to-speech"], "Version rapida de v4, a mitad de precio."),
+        new("eleven_v3",              "Eleven v3",              "ElevenLabs", ["Audio"], ["text-to-speech"], "Generacion anterior, muy expresiva. Sin control de velocidad."),
+        new("eleven_multilingual_v2", "Eleven Multilingual v2", "ElevenLabs", ["Audio"], ["text-to-speech"], "Estable en locuciones largas y lee bien numeros y fechas."),
+        new("eleven_flash_v2_5",      "Eleven Flash v2.5",      "ElevenLabs", ["Audio"], ["text-to-speech"], "Rapida y economica, a mitad de precio."),
+
         // ─── Anthropic: Chat / Text (Claude 4.6) ───
         new("claude-opus-4-6",             "Claude Opus 4.6",     "Anthropic", ["Text"], ["text","vision","streaming"], "El mas capaz. Razonamiento adaptativo.", "200K"),
         new("claude-sonnet-4-6",           "Claude Sonnet 4.6",   "Anthropic", ["Text","Orchestrator","Coordinator"], ["text","vision","streaming"], "Equilibrio rendimiento/velocidad. Razonamiento adaptativo.", "200K"),
@@ -1570,6 +1589,7 @@ else
         new("Google", "Google Gemini", "Gemini e Imagen, contexto enorme"),
         new("xAI", "xAI", "Grok: rapido y con imagen"),
         new("LeonardoAI", "Leonardo AI", "Imagen artistica y video"),
+        new("ElevenLabs", "ElevenLabs", "Voces naturales y clonadas"),
         new("Canva", "Canva", "Disenos y plantillas de marca"),
         new("SearchConsole", "Search Console", "Datos SEO de tu web"),
     ];
@@ -1847,6 +1867,7 @@ else
         _canvaDesignType = "doc";
         _staticTextContent = "";
         _searchConsole = new();
+        _elevenLabs = new();
     }
 
     // ── Build config JSON ──
@@ -1854,6 +1875,8 @@ else
     {
         if (_moduleType == SearchConsoleConfig.ModuleType)
             return _searchConsole.ToJson();
+        if (ElevenLabsVoiceConfig.IsElevenLabsAudio(_provider, _moduleType))
+            return _elevenLabs.ToJson();
 
         var parts = new List<string>();
 
@@ -2105,6 +2128,7 @@ else
         _editCanvaDesignType = "doc";
         _editGrokImageCount = 1;
         _editSearchConsole = SearchConsoleConfig.FromJson(module.Configuration);
+        _editElevenLabs = ElevenLabsVoiceConfig.FromJson(module.Configuration);
 
         if (!string.IsNullOrWhiteSpace(module.Configuration))
         {
@@ -2303,6 +2327,8 @@ else
     {
         if (moduleType == SearchConsoleConfig.ModuleType)
             return _editSearchConsole.ToJson();
+        if (ElevenLabsVoiceConfig.IsElevenLabsAudio(providerType, moduleType))
+            return _editElevenLabs.ToJson();
 
         var parts = new List<string>();
 

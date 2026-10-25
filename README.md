@@ -159,7 +159,7 @@ Servicios registrados relevantes:
 
 - `IAccountService -> AccountService`.
 - `ITenantDbContextFactory -> TenantDbContextFactory`.
-- `IAiProvider` para OpenAI, Anthropic, Leonardo, Gemini y Grok.
+- `IAiProvider` para OpenAI, Anthropic, Leonardo, Gemini, Grok y ElevenLabs.
 - `IAiProviderRegistry -> AiProviderRegistry`.
 - `IModuleHandler` para cada tipo de modulo soportado.
 - `IPipelineExecutor -> GraphPipelineExecutor`.
@@ -496,6 +496,7 @@ Providers registrados:
 - `GeminiProvider`.
 - `GrokProvider`.
 - `LeonardoProvider`.
+- `ElevenLabsProvider`.
 
 `IAiProviderRegistry` resuelve proveedores por `ProviderType` y expone la lista
 de proveedores disponibles.
@@ -904,6 +905,11 @@ en `/modules`.
 
 Proveedor de imagen. Puede producir archivos persistidos como `ExecutionFile`
 en el workspace de la ejecucion.
+
+### ElevenLabs
+
+Proveedor de texto a voz (modulo Audio). La voz se elige de las de la cuenta de
+la API key, incluidas las clonadas. Ver "Modulo Audio" en `docs/architecture.md`.
 
 ### Canva
 

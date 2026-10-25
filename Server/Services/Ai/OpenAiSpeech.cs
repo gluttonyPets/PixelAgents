@@ -36,25 +36,6 @@ public static class OpenAiSpeech
     /// <summary>Tokens de audio por minuto de gpt-4o-mini-tts (OpenAI lo publica como ~$0.015/min a $12/1M).</summary>
     private const double AudioTokensPerMinute = 1250d;
 
-    /// <summary>
-    /// Frase de la demostracion de voz que se escucha al configurar el modulo.
-    /// Corta a proposito: cada escucha se factura (fracciones de centimo).
-    /// </summary>
-    public const string PreviewText = "Hola, esta es mi voz. Asi sonara la voz en off de tus videos.";
-
-    /// <summary>
-    /// Configuracion de la demostracion con los valores del formulario, aun sin
-    /// guardar: se oye lo que se va a guardar, no lo que habia.
-    /// </summary>
-    public static Dictionary<string, object> PreviewConfiguration(string? voice, double? speed, string? instructions)
-    {
-        var config = new Dictionary<string, object>();
-        if (!string.IsNullOrWhiteSpace(voice)) config["voice"] = voice.Trim();
-        if (speed is double s) config["speed"] = s;
-        if (!string.IsNullOrWhiteSpace(instructions)) config[InstructionsKey] = instructions.Trim();
-        return config;
-    }
-
     public static bool AcceptsInstructions(string model) =>
         model.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase);
 

@@ -28,8 +28,8 @@ ASP.NET Core Minimal API (:5000)
   |-- TenantDbContextFactory    (DB: una por usuario/cuenta)
   |-- GraphPipelineExecutor     (motor de ejecucion de grafos)
   |-- IModuleHandler x21        (handlers por tipo de modulo)
-  |-- IAiProvider x5            (OpenAI, Anthropic, Google, xAI,
-  |                               LeonardoAI)
+  |-- IAiProvider x6            (OpenAI, Anthropic, Google, xAI,
+  |                               LeonardoAI, ElevenLabs)
   |-- ExecutionHub (SignalR)
   |-- TelegramPollingService    (hosted service)
   |-- SchedulerBackgroundService (hosted service, cron via Cronos)
@@ -554,9 +554,12 @@ dos.
 
 ### Modulo Audio: texto a voz
 
-Solo OpenAI lo implementa (`OpenAiProvider` -> `POST /v1/audio/speech`, por
-HTTP directo porque el SDK no expone `instructions`). La peticion la arma
-`OpenAiSpeech`, porque los dos TTS no aceptan lo mismo:
+Lo implementan OpenAI y ElevenLabs. El handler (`AudioModuleHandler`) no
+distingue proveedor: reparte en tomas y pide una locucion por toma.
+
+**OpenAI** (`OpenAiProvider` -> `POST /v1/audio/speech`, por HTTP directo porque
+el SDK no expone `instructions`). La peticion la arma `OpenAiSpeech`, porque los
+dos TTS no aceptan lo mismo:
 
 - `tts-1` / `tts-1-hd`: se manda `speed` (0.25-4.0) y nunca `instructions`.
 - `gpt-4o-mini-tts`: se manda `instructions` (campo "Instrucciones de voz",
@@ -569,11 +572,32 @@ eligen en la configuracion del modulo: tanto en la pagina Modulos como en el
 popup "Editar nodo" del pipeline (`ModuleConfigEditor`). `ballad` y `verse`
 solo existen en `gpt-4o-mini-tts`.
 
+**ElevenLabs** (`ElevenLabsProvider` -> `POST /v1/text-to-speech/{voice_id}`,
+cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
+
+- `voice` guarda el **id** de la voz (va en la ruta) y `voiceName` su nombre,
+  solo para mostrarlo. El selector se llena con `GET /api/elevenlabs/voices`,
+  que lista las voces de la API key: predeterminadas, clonadas y las guardadas
+  de la biblioteca (una voz de la biblioteca hay que anadirla antes a "My Voices"
+  en ElevenLabs). Sin voz se usa la predeterminada `ElevenLabsSpeech.DefaultVoice`.
+- `speed` (0.7-1.2, se acota), `stability`, `similarityBoost` y `style` (0-1)
+  van en `voice_settings`. `eleven_v3` no admite velocidad y no se le manda.
+- Limite por locucion segun el modelo (`ElevenLabsSpeech.MaxInputChars`: 10.000
+  en v4 y Multilingual v2, 5.000 en v3, 40.000 en Flash v2.5). Pasado el limite
+  la toma falla con el motivo, igual que en OpenAI: no se recorta.
+- Coste por caracter con la tarifa de pago por uso de `PricingCatalog`; con un
+  plan mensual el coste real es menor.
+
+El formulario de ElevenLabs es `ElevenLabsVoiceEditor.razor` (con
+`ElevenLabsVoiceConfig` para leer y escribir el JSON), el mismo en la pagina
+Modulos y en el popup "Editar nodo".
+
 **Escuchar voz.** Junto a esos campos, el boton "Escuchar voz"
 (`VoicePreview.razor` -> `POST /api/voice-preview`) locuta una frase corta
-(`OpenAiSpeech.PreviewText`) con la voz, velocidad, instrucciones, modelo y API
-key del formulario, aunque no esten guardados. No es una ejecucion: no se guarda
-ni se anota coste, pero OpenAI la factura (fracciones de centimo por escucha).
+(`SpeechPreview.Text`) con la voz, los ajustes, el modelo y la API key del
+formulario, aunque no esten guardados. El proveedor sale del modelo. No es una
+ejecucion: no se guarda ni se anota coste, pero el proveedor la factura
+(centimos o menos por escucha).
 
 **Un audio por toma.** Si el texto llega repartido con el mismo contrato que el
 multi-imagen (marcas `===TOMA n===`, `===IMAGEN n===`... o el JSON de la
@@ -955,6 +979,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Google      | `Google`     | Text (Gemini), Image                           |
 | xAI         | `xAI`        | Text (Grok), Image                             |
 | LeonardoAI  | `LeonardoAI` | Image, Video (Motion 2.0)                      |
+| ElevenLabs  | `ElevenLabs` | Audio (texto a voz)                            |
 
 ---
 

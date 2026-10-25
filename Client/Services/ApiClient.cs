@@ -220,6 +220,15 @@ public class ApiClient
         return (await resp.Content.ReadAsByteArrayAsync(), null);
     }
 
+    /// <summary>Voces de ElevenLabs que puede usar la API key.</summary>
+    public async Task<(List<VoiceOptionResponse>? Voices, string? Error)> GetElevenLabsVoicesAsync(Guid apiKeyId)
+    {
+        var resp = await SendAsync(HttpMethod.Get, $"/api/elevenlabs/voices?apiKeyId={apiKeyId}");
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<List<VoiceOptionResponse>>(), null);
+        return (null, await ReadErrorAsync(resp));
+    }
+
     public async Task<AiModuleResponse?> GetModuleAsync(Guid id)
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/modules/{id}");

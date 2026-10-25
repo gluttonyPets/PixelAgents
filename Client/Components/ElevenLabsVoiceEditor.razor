@@ -1,0 +1,132 @@
+@inject ApiClient Api
+
+@* Formulario del modulo de voz de ElevenLabs. Se usa igual al crear el modulo,
+   al editarlo en la pagina Modulos y en el popup "Editar nodo" del pipeline.
+   Las voces se piden a ElevenLabs con la API key elegida: incluyen las
+   predeterminadas, las clonadas y las guardadas de la biblioteca. *@
+
+<div class="form-group">
+    <label>Voz</label>
+    @if (_voices is { Count: > 0 })
+    {
+        <select value="@Config.Voice" @onchange="OnVoiceSelected">
+            @if (string.IsNullOrEmpty(Config.Voice))
+            {
+                <option value="">-- Elige una voz --</option>
+            }
+            else if (!_voices.Any(v => v.Id == Config.Voice))
+            {
+                @* La voz guardada ya no esta en la cuenta (borrada o de otra key): se
+                   muestra igual para no cambiarla sin que el usuario lo vea. *@
+                <option value="@Config.Voice">@(string.IsNullOrEmpty(Config.VoiceName) ? Config.Voice : Config.VoiceName) (no esta en esta cuenta)</option>
+            }
+            @foreach (var v in _voices)
+            {
+                <option value="@v.Id">@v.Label</option>
+            }
+        </select>
+    }
+    else
+    {
+        <input type="text" @bind="Config.Voice" @bind:after="ClearVoiceName" placeholder="Id de la voz (p. ej. JBFqnCBsd6RMkjVDRZzb)" />
+    }
+    @if (ApiKeyId is null)
+    {
+        <span class="text-sm text-muted">Elige una API key de ElevenLabs para ver tus voces.</span>
+    }
+    else if (_loading)
+    {
+        <span class="text-sm text-muted">Cargando voces de ElevenLabs...</span>
+    }
+    else if (_error is not null)
+    {
+        <span class="text-sm voice-preview-error">@_error</span>
+    }
+    else
+    {
+        <span class="text-sm text-muted">
+            Para usar voces de la biblioteca de ElevenLabs, guardalas antes en "My Voices" de tu cuenta.
+        </span>
+    }
+</div>
+
+<div class="form-row">
+    @if (ElevenLabsVoiceConfig.SupportsSpeed(Model))
+    {
+        <div class="form-group">
+            <label>Velocidad <span class="text-sm text-muted">(@ElevenLabsVoiceConfig.MinSpeed - @ElevenLabsVoiceConfig.MaxSpeed)</span></label>
+            <input type="number" step="0.05" min="@ElevenLabsVoiceConfig.MinSpeed" max="@ElevenLabsVoiceConfig.MaxSpeed" @bind="Config.Speed" />
+        </div>
+    }
+    <div class="form-group">
+        <label>Estabilidad <span class="text-sm text-muted">(@Config.Stability.ToString("0.00"))</span></label>
+        <input type="range" min="0" max="1" step="0.05" @bind="Config.Stability" @bind:event="oninput" />
+        <span class="text-sm text-muted">Baja = mas expresiva; alta = mas monotona y constante.</span>
+    </div>
+</div>
+<div class="form-row">
+    <div class="form-group">
+        <label>Parecido a la voz <span class="text-sm text-muted">(@Config.SimilarityBoost.ToString("0.00"))</span></label>
+        <input type="range" min="0" max="1" step="0.05" @bind="Config.SimilarityBoost" @bind:event="oninput" />
+    </div>
+    <div class="form-group">
+        <label>Exageracion de estilo <span class="text-sm text-muted">(@Config.Style.ToString("0.00"))</span></label>
+        <input type="range" min="0" max="1" step="0.05" @bind="Config.Style" @bind:event="oninput" />
+        <span class="text-sm text-muted">0 recomendado; subirlo da mas caracter pero tarda mas.</span>
+    </div>
+</div>
+
+<VoicePreview ApiKeyId="ApiKeyId" Model="@Model" Voice="@Config.Voice" VoiceLabel="@Config.VoiceName"
+              Speed="@(ElevenLabsVoiceConfig.SupportsSpeed(Model) ? Config.Speed : 1.0)"
+              Stability="Config.Stability" SimilarityBoost="Config.SimilarityBoost" Style="Config.Style" />
+
+@code {
+    [Parameter, EditorRequired] public ElevenLabsVoiceConfig Config { get; set; } = new();
+    [Parameter] public Guid? ApiKeyId { get; set; }
+    [Parameter] public string Model { get; set; } = "";
+
+    private List<VoiceOptionResponse>? _voices;
+    private bool _loading;
+    private string? _error;
+    private Guid? _loadedKey;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Solo se piden las voces al cambiar de API key.
+        if (ApiKeyId == _loadedKey) return;
+        _loadedKey = ApiKeyId;
+        _voices = null;
+        _error = null;
+        if (ApiKeyId is not Guid key) return;
+
+        _loading = true;
+        var (voices, error) = await Api.GetElevenLabsVoicesAsync(key);
+        _loading = false;
+        if (ApiKeyId != key) return; // Cambio de key mientras cargaba.
+
+        _voices = voices;
+        _error = voices is null ? error ?? "No se pudieron cargar las voces" : null;
+        if (voices is { Count: 0 }) _error = "Esta cuenta de ElevenLabs no tiene voces.";
+
+        // Sin voz elegida se propone la primera: el selector no puede quedar vacio.
+        if (string.IsNullOrEmpty(Config.Voice) && voices is { Count: > 0 })
+            Select(voices[0]);
+    }
+
+    private void OnVoiceSelected(ChangeEventArgs e)
+    {
+        var id = e.Value?.ToString() ?? "";
+        var voice = _voices?.FirstOrDefault(v => v.Id == id);
+        if (voice is not null) Select(voice);
+    }
+
+    // Un id escrito a mano ya no es la voz cuyo nombre estaba guardado.
+    private void ClearVoiceName() => Config.VoiceName = "";
+
+    private void Select(VoiceOptionResponse voice)
+    {
+        Config.Voice = voice.Id;
+        // La etiqueta es "Nombre · detalles": se guarda solo el nombre.
+        Config.VoiceName = voice.Label.Split(" · ")[0];
+    }
+}

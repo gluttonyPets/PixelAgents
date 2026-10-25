@@ -101,7 +101,9 @@ public class ModelPricingEndpointTests
         var razor = File.ReadAllText(RutaDelCatalogoDelCliente());
 
         var enElCliente = Regex
-            .Matches(razor, @"new\(""(?<id>[^""]+)"",\s*""[^""]+"",\s*""(?<provider>[^""]+)""")
+            // Exige la lista de tipos detras del proveedor: sin ella tambien casaban
+            // las listas de proveedores y de tipos del asistente (new("OpenAI", "OpenAI", "...")).
+            .Matches(razor, @"new\(""(?<id>[^""]+)"",\s*""[^""]+"",\s*""(?<provider>[^""]+)"",\s*\[")
             .Select(m => m.Groups["id"].Value)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 

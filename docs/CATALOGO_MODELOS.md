@@ -333,6 +333,7 @@ listado; cada uno con su forma de autenticar, que es lo único que cambia:
 | xAI | `/v1/models` | `Authorization: Bearer` | `data[].id` |
 | Google | `/v1beta/models` | parámetro `key` | `models[].name`, con prefijo `models/` |
 
-Leonardo y Canva no tienen listado: sus modelos solo salen del catálogo local. El
+Leonardo, Canva y ElevenLabs no están en el escaneo: sus modelos solo salen del
+catálogo local. El
 resultado se cachea 6 h, así que lanzar el escaneo dos veces seguidas no repite las
 llamadas.
