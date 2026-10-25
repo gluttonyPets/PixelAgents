@@ -55,9 +55,9 @@ public class ElevenLabsVoiceConfig
     {
         var map = new Dictionary<string, object>
         {
-            ["stability"] = Round(Stability),
-            ["similarityBoost"] = Round(SimilarityBoost),
-            ["style"] = Round(Style),
+            ["stability"] = Unit(Stability),
+            ["similarityBoost"] = Unit(SimilarityBoost),
+            ["style"] = Unit(Style),
         };
         if (!string.IsNullOrWhiteSpace(Voice)) map["voice"] = Voice.Trim();
         if (!string.IsNullOrWhiteSpace(VoiceName)) map["voiceName"] = VoiceName.Trim();
@@ -81,9 +81,11 @@ public class ElevenLabsVoiceConfig
             cfg.VoiceOwner = ReadString(root, "voiceOwner") ?? "";
             cfg.Language = ReadString(root, "voiceLanguage") ?? cfg.Language;
             cfg.Speed = ReadDouble(root, "speed") ?? cfg.Speed;
-            cfg.Stability = ReadDouble(root, "stability") ?? cfg.Stability;
-            cfg.SimilarityBoost = ReadDouble(root, "similarityBoost") ?? cfg.SimilarityBoost;
-            cfg.Style = ReadDouble(root, "style") ?? cfg.Style;
+            // Acotados al leer: una version anterior del formulario podia guardar
+            // 45 en vez de 0.45 (ver los sliders de ElevenLabsVoiceEditor).
+            cfg.Stability = Unit(ReadDouble(root, "stability") ?? cfg.Stability);
+            cfg.SimilarityBoost = Unit(ReadDouble(root, "similarityBoost") ?? cfg.SimilarityBoost);
+            cfg.Style = Unit(ReadDouble(root, "style") ?? cfg.Style);
         }
         catch (JsonException) { }
 
@@ -91,6 +93,9 @@ public class ElevenLabsVoiceConfig
     }
 
     private static double Round(double value) => Math.Round(value, 2);
+
+    /// <summary>Ajustes de voz: entre 0 y 1, como los acepta la API.</summary>
+    private static double Unit(double value) => Round(Math.Clamp(value, 0, 1));
 
     private static string? ReadString(JsonElement root, string key) =>
         root.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;

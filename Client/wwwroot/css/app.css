@@ -8476,3 +8476,21 @@ td.cell-actions .icon-btn { margin-left: 0.15rem; }
     max-width: 100%;
 }
 .voice-preview-error { color: var(--danger); }
+
+/* Sliders de ajustes de voz (ElevenLabs) */
+.voice-slider input[type="range"] {
+    display: block;
+    width: 100%;
+    margin: 0.35rem 0 0.2rem;
+    accent-color: var(--accent);
+}
+.voice-slider-value {
+    float: right;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+.voice-slider-hint {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}

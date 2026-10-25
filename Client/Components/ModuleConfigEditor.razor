@@ -573,7 +573,7 @@ else
             if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
             if (_editTemperature != 0.7)
-                parts.Add($"\"temperature\":{_editTemperature}");
+                parts.Add($"\"temperature\":{_editTemperature.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             if (_editMaxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_editMaxTokens}");
             if (AiModuleOptions.SupportsReasoningEffort(providerType, Module.ModelName)
@@ -624,7 +624,7 @@ else
         {
             parts.Add($"\"voice\":\"{_editTtsVoice}\"");
             if (_editTtsSpeed != 1.0)
-                parts.Add($"\"speed\":{_editTtsSpeed}");
+                parts.Add($"\"speed\":{_editTtsSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             // Se conservan aunque el modelo no las use (tts-1): si se vuelve a
             // gpt-4o-mini-tts siguen ahi, y el servidor no las manda a tts-1.
             if (!string.IsNullOrWhiteSpace(_editTtsInstructions))

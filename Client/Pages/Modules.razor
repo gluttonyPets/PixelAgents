@@ -1885,7 +1885,7 @@ else
             if (!string.IsNullOrWhiteSpace(_systemPrompt))
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_systemPrompt)}");
             if (_temperature != 0.7)
-                parts.Add($"\"temperature\":{_temperature}");
+                parts.Add($"\"temperature\":{_temperature.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             if (_maxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_maxTokens}");
             if (AiModuleOptions.SupportsReasoningEffort(_provider, _model)
@@ -1959,7 +1959,7 @@ else
         {
             parts.Add($"\"voice\":\"{_ttsVoice}\"");
             if (_ttsSpeed != 1.0)
-                parts.Add($"\"speed\":{_ttsSpeed}");
+                parts.Add($"\"speed\":{_ttsSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             if (!string.IsNullOrWhiteSpace(_ttsInstructions))
                 parts.Add($"\"voiceInstructions\":{System.Text.Json.JsonSerializer.Serialize(_ttsInstructions)}");
         }
@@ -2337,7 +2337,7 @@ else
             if (!string.IsNullOrWhiteSpace(_editSystemPrompt))
                 parts.Add($"\"systemPrompt\":{System.Text.Json.JsonSerializer.Serialize(_editSystemPrompt)}");
             if (_editTemperature != 0.7)
-                parts.Add($"\"temperature\":{_editTemperature}");
+                parts.Add($"\"temperature\":{_editTemperature.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             if (_editMaxTokens != 4096)
                 parts.Add($"\"maxTokens\":{_editMaxTokens}");
             if (AiModuleOptions.SupportsReasoningEffort(providerType, modelName)
@@ -2397,7 +2397,7 @@ else
         {
             parts.Add($"\"voice\":\"{_editTtsVoice}\"");
             if (_editTtsSpeed != 1.0)
-                parts.Add($"\"speed\":{_editTtsSpeed}");
+                parts.Add($"\"speed\":{_editTtsSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
             if (!string.IsNullOrWhiteSpace(_editTtsInstructions))
                 parts.Add($"\"voiceInstructions\":{System.Text.Json.JsonSerializer.Serialize(_editTtsInstructions)}");
         }
