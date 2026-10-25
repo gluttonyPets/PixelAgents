@@ -122,8 +122,10 @@ public class ElevenLabsSpeechTests
 
         Assert.Equal("tok", next);
         Assert.Equal(2, voices.Count);
-        Assert.Equal(("v1", "Lucia · female, castilian, es"), voices[0]);
-        Assert.Equal(("v2", "Mi voz · clonada"), voices[1]);
+        Assert.Equal("v1", voices[0].Id);
+        Assert.Equal("Lucia · female, castilian, es", voices[0].Label);
+        Assert.Null(voices[0].OwnerId);
+        Assert.Equal("Mi voz · clonada", voices[1].Label);
     }
 
     [Fact]
@@ -136,6 +138,63 @@ public class ElevenLabsSpeechTests
         Assert.Contains("/abc123?", ElevenLabsSpeech.BuildRequestUrl(config));
         Assert.Equal(0.3, json.GetProperty("voice_settings").GetProperty("stability").GetDouble());
         Assert.Equal(0.9, json.GetProperty("voice_settings").GetProperty("similarity_boost").GetDouble());
+    }
+
+    [Fact]
+    public void LasVocesDeLaBibliotecaLlevanSuDueno()
+    {
+        const string json = """
+            {
+              "voices": [
+                { "voice_id": "lib1", "public_owner_id": "own1", "name": "Carmen",
+                  "gender": "female", "age": "middle_aged", "accent": "peninsular",
+                  "descriptive": "calm", "language": "es",
+                  "preview_url": "https://example.com/carmen.mp3" },
+                { "voice_id": "lib2", "name": "Sin dueno" }
+              ],
+              "has_more": false
+            }
+            """;
+
+        var voices = ElevenLabsSpeech.ParseSharedVoices(json);
+
+        var carmen = Assert.Single(voices);
+        Assert.Equal("lib1", carmen.Id);
+        Assert.Equal("own1", carmen.OwnerId);
+        Assert.Equal("Carmen · female, middle_aged, peninsular, calm", carmen.Label);
+        Assert.Equal("https://example.com/carmen.mp3", carmen.PreviewUrl);
+    }
+
+    [Fact]
+    public void LaBibliotecaSeBuscaPorIdiomaYLasMasUsadasPrimero()
+    {
+        var url = ElevenLabsSpeech.BuildSharedVoicesUrl("es");
+
+        Assert.StartsWith("https://api.elevenlabs.io/v1/shared-voices?", url);
+        Assert.Contains("language=es", url);
+        Assert.Contains("sort=usage_character_count_1y", url);
+    }
+
+    [Fact]
+    public void SeDetectaLaVozQueNoEstaEnLaCuenta()
+    {
+        const string body = """{"detail":{"status":"voice_not_found","message":"A voice with voice_id x was not found."}}""";
+
+        Assert.True(ElevenLabsSpeech.IsVoiceNotFound(400, body));
+        Assert.True(ElevenLabsSpeech.IsVoiceNotFound(404, body));
+        Assert.False(ElevenLabsSpeech.IsVoiceNotFound(401, body));
+        Assert.False(ElevenLabsSpeech.IsVoiceNotFound(400, """{"detail":{"status":"invalid_api_key"}}"""));
+    }
+
+    [Fact]
+    public void LaDemostracionLlevaElDuenoDeLaVozDeBiblioteca()
+    {
+        var config = SpeechPreview.Configuration("lib1", null, null, voiceOwner: "own1", voiceName: "Carmen");
+
+        Assert.Equal("own1", ElevenLabsSpeech.VoiceOwner(config));
+        Assert.Equal("Carmen", ElevenLabsSpeech.VoiceName(config));
+        Assert.Equal("https://api.elevenlabs.io/v1/voices/add/own1/lib1",
+            ElevenLabsSpeech.BuildAddSharedVoiceUrl("own1", "lib1"));
     }
 
     private static Dictionary<string, object> Config(params (string Key, object Value)[] values) =>

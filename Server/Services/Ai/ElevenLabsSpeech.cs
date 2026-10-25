@@ -23,6 +23,13 @@ public static class ElevenLabsSpeech
     /// </summary>
     public const string DefaultVoice = "JBFqnCBsd6RMkjVDRZzb";
 
+    /// <summary>
+    /// Dueno publico de una voz de la biblioteca de ElevenLabs. Solo lo tienen las
+    /// voces elegidas de la biblioteca: con el, si la voz aun no esta en la cuenta,
+    /// el proveedor la anade antes de locutar (la API no locuta con voces ajenas).
+    /// </summary>
+    public const string VoiceOwnerKey = "voiceOwner";
+
     public const string StabilityKey = "stability";
     public const string SimilarityKey = "similarityBoost";
     public const string StyleKey = "style";
@@ -55,9 +62,36 @@ public static class ElevenLabsSpeech
     public static string VoiceId(IReadOnlyDictionary<string, object> config) =>
         ReadString(config, "voice") ?? DefaultVoice;
 
+    public static string? VoiceOwner(IReadOnlyDictionary<string, object> config) =>
+        ReadString(config, VoiceOwnerKey);
+
+    public static string? VoiceName(IReadOnlyDictionary<string, object> config) =>
+        ReadString(config, "voiceName");
+
     /// <summary>URL de la peticion para la voz configurada, con salida mp3.</summary>
     public static string BuildRequestUrl(IReadOnlyDictionary<string, object> config) =>
-        $"{BaseUrl}/v1/text-to-speech/{Uri.EscapeDataString(VoiceId(config))}?output_format=mp3_44100_128";
+        BuildRequestUrl(VoiceId(config));
+
+    public static string BuildRequestUrl(string voiceId) =>
+        $"{BaseUrl}/v1/text-to-speech/{Uri.EscapeDataString(voiceId)}?output_format=mp3_44100_128";
+
+    /// <summary>URL para anadir a la cuenta una voz de la biblioteca.</summary>
+    public static string BuildAddSharedVoiceUrl(string ownerId, string voiceId) =>
+        $"{BaseUrl}/v1/voices/add/{Uri.EscapeDataString(ownerId)}/{Uri.EscapeDataString(voiceId)}";
+
+    /// <summary>
+    /// La API respondio que la voz no existe para esta cuenta: es lo que pasa con
+    /// una voz de la biblioteca que todavia no se ha anadido.
+    /// </summary>
+    public static bool IsVoiceNotFound(int statusCode, string body) =>
+        statusCode is 400 or 404 && body.Contains("voice_not_found", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Busqueda de la biblioteca de voces por idioma (codigo ISO 639-1), las mas
+    /// usadas primero: son las que mejor suenan de media.
+    /// </summary>
+    public static string BuildSharedVoicesUrl(string language) =>
+        $"{BaseUrl}/v1/shared-voices?page_size=100&sort=usage_character_count_1y&language={Uri.EscapeDataString(language)}";
 
     /// <summary>Cuerpo JSON de la peticion para <paramref name="text"/>.</summary>
     public static string BuildRequestJson(string model, string text, IReadOnlyDictionary<string, object> config)
@@ -90,11 +124,14 @@ public static class ElevenLabsSpeech
         return rate.Amount * characters / 1_000_000m;
     }
 
+    /// <summary>Voz elegible: de la cuenta (sin dueno) o de la biblioteca (con dueno).</summary>
+    public record Voice(string Id, string Label, string? PreviewUrl, string? OwnerId = null);
+
     /// <summary>
     /// Voces de la cuenta (respuesta de <c>GET /v2/voices</c>), con una etiqueta
     /// legible: "Nombre · genero, acento, idioma".
     /// </summary>
-    public static List<(string Id, string Label)> ParseVoices(string json, out string? nextPageToken)
+    public static List<Voice> ParseVoices(string json, out string? nextPageToken)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -104,33 +141,63 @@ public static class ElevenLabsSpeech
                 ? token.GetString()
                 : null;
 
-        var voices = new List<(string, string)>();
+        var voices = new List<Voice>();
         if (!root.TryGetProperty("voices", out var list) || list.ValueKind != JsonValueKind.Array) return voices;
 
         foreach (var v in list.EnumerateArray())
         {
-            var id = v.TryGetProperty("voice_id", out var vid) ? vid.GetString() : null;
-            if (string.IsNullOrWhiteSpace(id)) continue;
-            var name = v.TryGetProperty("name", out var n) ? n.GetString() : null;
+            var id = Str(v, "voice_id");
+            if (id is null) continue;
 
             var details = new List<string>();
             if (v.TryGetProperty("labels", out var labels) && labels.ValueKind == JsonValueKind.Object)
             {
                 foreach (var key in new[] { "gender", "accent", "language" })
-                    if (labels.TryGetProperty(key, out var l) && l.ValueKind == JsonValueKind.String
-                        && !string.IsNullOrWhiteSpace(l.GetString()))
-                        details.Add(l.GetString()!);
+                    if (Str(labels, key) is { } label) details.Add(label);
             }
-            if (v.TryGetProperty("category", out var cat) && cat.GetString() is "cloned" or "professional")
+            if (Str(v, "category") is "cloned" or "professional")
                 details.Add("clonada");
 
-            var label = string.IsNullOrWhiteSpace(name) ? id : name!;
-            if (details.Count > 0) label += " · " + string.Join(", ", details);
-            voices.Add((id!, label));
+            voices.Add(new Voice(id, Label(Str(v, "name") ?? id, details), Str(v, "preview_url")));
         }
 
         return voices;
     }
+
+    /// <summary>
+    /// Voces de la biblioteca (respuesta de <c>GET /v1/shared-voices</c>). Llevan
+    /// el dueno publico, que hace falta para anadirlas a la cuenta.
+    /// </summary>
+    public static List<Voice> ParseSharedVoices(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var voices = new List<Voice>();
+        if (!doc.RootElement.TryGetProperty("voices", out var list) || list.ValueKind != JsonValueKind.Array)
+            return voices;
+
+        foreach (var v in list.EnumerateArray())
+        {
+            var id = Str(v, "voice_id");
+            var owner = Str(v, "public_owner_id");
+            if (id is null || owner is null) continue;
+
+            var details = new List<string>();
+            foreach (var key in new[] { "gender", "age", "accent", "descriptive" })
+                if (Str(v, key) is { } value) details.Add(value);
+
+            voices.Add(new Voice(id, Label(Str(v, "name") ?? id, details), Str(v, "preview_url"), owner));
+        }
+
+        return voices;
+    }
+
+    private static string Label(string name, List<string> details) =>
+        details.Count > 0 ? name + " · " + string.Join(", ", details) : name;
+
+    private static string? Str(JsonElement e, string key) =>
+        e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(v.GetString())
+            ? v.GetString()!.Trim()
+            : null;
 
     private static double? ReadDouble(IReadOnlyDictionary<string, object> config, string key)
     {

@@ -2,37 +2,68 @@
 
 @* Formulario del modulo de voz de ElevenLabs. Se usa igual al crear el modulo,
    al editarlo en la pagina Modulos y en el popup "Editar nodo" del pipeline.
-   Las voces se piden a ElevenLabs con la API key elegida: incluyen las
-   predeterminadas, las clonadas y las guardadas de la biblioteca. *@
+   Las voces de la cuenta (predeterminadas, clonadas y guardadas) son casi todas
+   en ingles; las nativas de otros idiomas estan en la biblioteca publica de
+   ElevenLabs, que se busca por el idioma elegido. Una voz de la biblioteca se
+   anade a la cuenta la primera vez que se locuta con ella (lo hace el servidor). *@
 
-<div class="form-group">
-    <label>Voz</label>
-    @if (_voices is { Count: > 0 })
-    {
-        <select value="@Config.Voice" @onchange="OnVoiceSelected">
-            @if (string.IsNullOrEmpty(Config.Voice))
+<div class="form-row">
+    <div class="form-group">
+        <label>Idioma de la voz</label>
+        <select value="@Config.Language" @onchange="OnLanguageChanged">
+            @foreach (var (value, label) in ElevenLabsVoiceConfig.LanguageOptions)
             {
-                <option value="">-- Elige una voz --</option>
-            }
-            else if (!_voices.Any(v => v.Id == Config.Voice))
-            {
-                @* La voz guardada ya no esta en la cuenta (borrada o de otra key): se
-                   muestra igual para no cambiarla sin que el usuario lo vea. *@
-                <option value="@Config.Voice">@(string.IsNullOrEmpty(Config.VoiceName) ? Config.Voice : Config.VoiceName) (no esta en esta cuenta)</option>
-            }
-            @foreach (var v in _voices)
-            {
-                <option value="@v.Id">@v.Label</option>
+                <option value="@value">@label</option>
             }
         </select>
-    }
-    else
-    {
-        <input type="text" @bind="Config.Voice" @bind:after="ClearVoiceName" placeholder="Id de la voz (p. ej. JBFqnCBsd6RMkjVDRZzb)" />
-    }
+    </div>
+    <div class="form-group">
+        <label>Voz</label>
+        @if (_voices is { Count: > 0 })
+        {
+            var own = _voices.Where(v => !v.IsLibrary).ToList();
+            var library = _voices.Where(v => v.IsLibrary).ToList();
+            <select value="@Config.Voice" @onchange="OnVoiceSelected">
+                @if (string.IsNullOrEmpty(Config.Voice))
+                {
+                    <option value="">-- Elige una voz --</option>
+                }
+                else if (!_voices.Any(v => v.Id == Config.Voice))
+                {
+                    @* La voz guardada no esta en la lista (otro idioma, borrada o de otra
+                       key): se muestra igual para no cambiarla sin que el usuario lo vea. *@
+                    <option value="@Config.Voice">@(string.IsNullOrEmpty(Config.VoiceName) ? Config.Voice : Config.VoiceName) (guardada)</option>
+                }
+                @if (library.Count > 0)
+                {
+                    <optgroup label="Biblioteca de ElevenLabs · @LanguageLabel(Config.Language)">
+                        @foreach (var v in library)
+                        {
+                            <option value="@v.Id">@v.Label</option>
+                        }
+                    </optgroup>
+                }
+                @if (own.Count > 0)
+                {
+                    <optgroup label="Mis voces">
+                        @foreach (var v in own)
+                        {
+                            <option value="@v.Id">@v.Label</option>
+                        }
+                    </optgroup>
+                }
+            </select>
+        }
+        else
+        {
+            <input type="text" @bind="Config.Voice" @bind:after="ClearVoiceName" placeholder="Id de la voz (p. ej. JBFqnCBsd6RMkjVDRZzb)" />
+        }
+    </div>
+</div>
+<div class="form-group">
     @if (ApiKeyId is null)
     {
-        <span class="text-sm text-muted">Elige una API key de ElevenLabs para ver tus voces.</span>
+        <span class="text-sm text-muted">Elige una API key de ElevenLabs para ver las voces.</span>
     }
     else if (_loading)
     {
@@ -42,11 +73,19 @@
     {
         <span class="text-sm voice-preview-error">@_error</span>
     }
-    else
+    else if (!string.IsNullOrEmpty(Config.VoiceOwner))
     {
         <span class="text-sm text-muted">
-            Para usar voces de la biblioteca de ElevenLabs, guardalas antes en "My Voices" de tu cuenta.
+            Voz de la biblioteca: la primera vez que se use se anadira a "My Voices" de tu cuenta
+            de ElevenLabs (ocupa uno de sus huecos de voz).
         </span>
+    }
+    @if (SelectedSample is { } sample)
+    {
+        <div class="voice-preview">
+            <span class="text-sm text-muted">Muestra de la voz (gratis):</span>
+            <audio @key="sample" controls preload="none" src="@sample"></audio>
+        </div>
     }
 </div>
 
@@ -76,7 +115,7 @@
     </div>
 </div>
 
-<VoicePreview ApiKeyId="ApiKeyId" Model="@Model" Voice="@Config.Voice" VoiceLabel="@Config.VoiceName"
+<VoicePreview ApiKeyId="ApiKeyId" Model="@Model" Voice="@Config.Voice" VoiceLabel="@Config.VoiceName" VoiceOwner="@Config.VoiceOwner"
               Speed="@(ElevenLabsVoiceConfig.SupportsSpeed(Model) ? Config.Speed : 1.0)"
               Stability="Config.Stability" SimilarityBoost="Config.SimilarityBoost" Style="Config.Style" />
 
@@ -88,29 +127,42 @@
     private List<VoiceOptionResponse>? _voices;
     private bool _loading;
     private string? _error;
-    private Guid? _loadedKey;
+    private (Guid? Key, string Language)? _loaded;
 
-    protected override async Task OnParametersSetAsync()
+    /// <summary>Audio de ejemplo de la voz elegida, alojado en ElevenLabs: oirlo no gasta caracteres.</summary>
+    private string? SelectedSample => _voices?.FirstOrDefault(v => v.Id == Config.Voice)?.PreviewUrl;
+
+    protected override Task OnParametersSetAsync() => LoadVoicesAsync();
+
+    private async Task OnLanguageChanged(ChangeEventArgs e)
     {
-        // Solo se piden las voces al cambiar de API key.
-        if (ApiKeyId == _loadedKey) return;
-        _loadedKey = ApiKeyId;
+        Config.Language = e.Value?.ToString() ?? "";
+        await LoadVoicesAsync();
+    }
+
+    private async Task LoadVoicesAsync()
+    {
+        // Solo se piden las voces al cambiar de API key o de idioma.
+        var wanted = (ApiKeyId, Config.Language);
+        if (_loaded == wanted) return;
+        _loaded = wanted;
         _voices = null;
         _error = null;
         if (ApiKeyId is not Guid key) return;
 
         _loading = true;
-        var (voices, error) = await Api.GetElevenLabsVoicesAsync(key);
+        var (voices, error) = await Api.GetElevenLabsVoicesAsync(key, Config.Language);
         _loading = false;
-        if (ApiKeyId != key) return; // Cambio de key mientras cargaba.
+        if (_loaded != wanted) return; // Cambio de key o idioma mientras cargaba.
 
         _voices = voices;
         _error = voices is null ? error ?? "No se pudieron cargar las voces" : null;
-        if (voices is { Count: 0 }) _error = "Esta cuenta de ElevenLabs no tiene voces.";
+        if (voices is { Count: 0 }) _error = "No hay voces para este idioma.";
 
-        // Sin voz elegida se propone la primera: el selector no puede quedar vacio.
+        // Sin voz elegida se propone la primera (la mas usada del idioma): el
+        // selector no puede quedar vacio.
         if (string.IsNullOrEmpty(Config.Voice) && voices is { Count: > 0 })
-            Select(voices[0]);
+            Select(voices.FirstOrDefault(v => v.IsLibrary) ?? voices[0]);
     }
 
     private void OnVoiceSelected(ChangeEventArgs e)
@@ -120,13 +172,21 @@
         if (voice is not null) Select(voice);
     }
 
-    // Un id escrito a mano ya no es la voz cuyo nombre estaba guardado.
-    private void ClearVoiceName() => Config.VoiceName = "";
+    // Un id escrito a mano ya no es la voz cuyo nombre y dueno estaban guardados.
+    private void ClearVoiceName()
+    {
+        Config.VoiceName = "";
+        Config.VoiceOwner = "";
+    }
 
     private void Select(VoiceOptionResponse voice)
     {
         Config.Voice = voice.Id;
         // La etiqueta es "Nombre · detalles": se guarda solo el nombre.
         Config.VoiceName = voice.Label.Split(" · ")[0];
+        Config.VoiceOwner = voice.OwnerId ?? "";
     }
+
+    private static string LanguageLabel(string code) =>
+        ElevenLabsVoiceConfig.LanguageOptions.FirstOrDefault(l => l.Value == code).Label ?? code;
 }

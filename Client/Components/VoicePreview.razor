@@ -41,6 +41,8 @@
     [Parameter] public double? Stability { get; set; }
     [Parameter] public double? SimilarityBoost { get; set; }
     [Parameter] public double? Style { get; set; }
+    /// <summary>Dueno de una voz de la biblioteca de ElevenLabs: se anade a la cuenta al generar.</summary>
+    [Parameter] public string? VoiceOwner { get; set; }
 
     private bool _loading;
     private string? _error;
@@ -56,7 +58,8 @@
         var instructions = AiModuleOptions.SupportsVoiceInstructions(Model) ? Instructions : null;
         var (audio, error) = await Api.PreviewVoiceAsync(new VoicePreviewRequest(
             ApiKeyId, Model, Voice, Speed == 1.0 ? null : Speed, instructions,
-            Stability, SimilarityBoost, Style));
+            Stability, SimilarityBoost, Style,
+            string.IsNullOrWhiteSpace(VoiceOwner) ? null : VoiceOwner, VoiceLabel));
 
         _loading = false;
         if (audio is null)

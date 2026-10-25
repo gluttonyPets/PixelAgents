@@ -1050,7 +1050,7 @@ app.MapPost("/api/voice-preview", async (
             ApiKey = key.EncryptedKey,
             Input = SpeechPreview.Text,
             Configuration = SpeechPreview.Configuration(req.Voice, req.Speed, req.VoiceInstructions,
-                req.Stability, req.SimilarityBoost, req.Style),
+                req.Stability, req.SimilarityBoost, req.Style, req.VoiceOwner, req.VoiceName),
             CancellationToken = ct,
         });
     }
@@ -1065,10 +1065,12 @@ app.MapPost("/api/voice-preview", async (
     return Results.File(result.FileOutput, result.ContentType ?? "audio/mpeg");
 }).RequireAuthorization();
 
-// Voces de ElevenLabs que puede usar la API key (predeterminadas, clonadas y
-// guardadas de la biblioteca), para el selector de voz del modulo.
+// Voces de ElevenLabs para el selector del modulo: las de la cuenta de la API key
+// (predeterminadas, clonadas y guardadas) y, con idioma, las de la biblioteca
+// publica en ese idioma. Las predeterminadas son casi todas en ingles: las voces
+// nativas de otros idiomas estan en la biblioteca.
 app.MapGet("/api/elevenlabs/voices", async (
-    Guid apiKeyId, HttpContext ctx,
+    Guid apiKeyId, string? language, HttpContext ctx,
     UserManager<ApplicationUser> um, ITenantDbContextFactory factory, CancellationToken ct) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
@@ -1081,8 +1083,22 @@ app.MapGet("/api/elevenlabs/voices", async (
 
     try
     {
-        var voices = await ElevenLabsProvider.ListVoicesAsync(key.EncryptedKey, ct);
-        return Results.Ok(voices.Select(v => new VoiceOptionResponse(v.Id, v.Label)).ToList());
+        var account = await ElevenLabsProvider.ListVoicesAsync(key.EncryptedKey, ct);
+        var result = account
+            .Select(v => new VoiceOptionResponse(v.Id, v.Label, "account", v.PreviewUrl, null))
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(language))
+        {
+            // Las de la biblioteca que ya estan en la cuenta salen solo como propias.
+            var own = account.Select(v => v.Id).ToHashSet();
+            var library = await ElevenLabsProvider.ListSharedVoicesAsync(key.EncryptedKey, language.Trim(), ct);
+            result.AddRange(library
+                .Where(v => !own.Contains(v.Id))
+                .Select(v => new VoiceOptionResponse(v.Id, v.Label, "library", v.PreviewUrl, v.OwnerId)));
+        }
+
+        return Results.Ok(result);
     }
     catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
     {

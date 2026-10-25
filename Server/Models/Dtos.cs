@@ -38,8 +38,10 @@ namespace Server.Models
     // Demostracion de una voz de texto a voz con los valores del formulario.
     public record VoicePreviewRequest(
         Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions,
-        double? Stability = null, double? SimilarityBoost = null, double? Style = null);
-    public record VoiceOptionResponse(string Id, string Label);
+        double? Stability = null, double? SimilarityBoost = null, double? Style = null,
+        string? VoiceOwner = null, string? VoiceName = null);
+    // Group: "account" (voces de la cuenta) o "library" (biblioteca publica, con OwnerId).
+    public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId);
 
     // ── ProjectGroup (el "Proyecto" de alto nivel que agrupa pipelines) ──
     public record CreateProjectGroupRequest(string Name, string? Description);

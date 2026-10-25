@@ -123,9 +123,14 @@ public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
 // Demostracion de una voz de texto a voz con los valores del formulario.
 public record VoicePreviewRequest(
     Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions,
-    double? Stability = null, double? SimilarityBoost = null, double? Style = null);
-// Voz elegible de un proveedor de texto a voz (ElevenLabs): id y etiqueta legible.
-public record VoiceOptionResponse(string Id, string Label);
+    double? Stability = null, double? SimilarityBoost = null, double? Style = null,
+    string? VoiceOwner = null, string? VoiceName = null);
+// Voz elegible de ElevenLabs. Group: "account" (de la cuenta) o "library"
+// (biblioteca publica; OwnerId hace falta para anadirla a la cuenta al usarla).
+public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId)
+{
+    public bool IsLibrary => Group == "library";
+}
 public record ReassignProjectModuleRequest(Guid AiModuleId);
 
 // ── ProjectGroup: el "Proyecto" de alto nivel que agrupa pipelines ──

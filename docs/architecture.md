@@ -576,10 +576,20 @@ solo existen en `gpt-4o-mini-tts`.
 cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
 
 - `voice` guarda el **id** de la voz (va en la ruta) y `voiceName` su nombre,
-  solo para mostrarlo. El selector se llena con `GET /api/elevenlabs/voices`,
-  que lista las voces de la API key: predeterminadas, clonadas y las guardadas
-  de la biblioteca (una voz de la biblioteca hay que anadirla antes a "My Voices"
-  en ElevenLabs). Sin voz se usa la predeterminada `ElevenLabsSpeech.DefaultVoice`.
+  solo para mostrarlo. Sin voz se usa la predeterminada `ElevenLabsSpeech.DefaultVoice`.
+- **Idioma y biblioteca.** Las voces de la cuenta (predeterminadas, clonadas y
+  guardadas) son casi todas en ingles; las nativas de otros idiomas estan en la
+  biblioteca publica. El formulario tiene un select de idioma (`voiceLanguage`,
+  por defecto `es`) y `GET /api/elevenlabs/voices?apiKeyId&language` devuelve las
+  de la cuenta mas las 100 mas usadas de la biblioteca en ese idioma
+  (`GET /v1/shared-voices`). La muestra de cada voz se oye desde su `preview_url`,
+  sin gastar caracteres.
+- **Voces de la biblioteca.** La API no locuta con una voz que no este en la
+  cuenta, asi que al elegir una se guarda tambien su dueno (`voiceOwner`). Si
+  ElevenLabs responde `voice_not_found`, el proveedor la anade a la cuenta
+  (`POST /v1/voices/add/{owner}/{voice}`, ocupa un hueco de voz del plan) y
+  repite. Se hace al locutar y no al elegirla para que curiosear voces no llene
+  la cuenta.
 - `speed` (0.7-1.2, se acota), `stability`, `similarityBoost` y `style` (0-1)
   van en `voice_settings`. `eleven_v3` no admite velocidad y no se le manda.
 - Limite por locucion segun el modelo (`ElevenLabsSpeech.MaxInputChars`: 10.000

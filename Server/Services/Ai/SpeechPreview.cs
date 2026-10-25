@@ -16,7 +16,8 @@ public static class SpeechPreview
     /// </summary>
     public static Dictionary<string, object> Configuration(
         string? voice, double? speed, string? instructions,
-        double? stability = null, double? similarityBoost = null, double? style = null)
+        double? stability = null, double? similarityBoost = null, double? style = null,
+        string? voiceOwner = null, string? voiceName = null)
     {
         var config = new Dictionary<string, object>();
         if (!string.IsNullOrWhiteSpace(voice)) config["voice"] = voice.Trim();
@@ -25,6 +26,8 @@ public static class SpeechPreview
         if (stability is double st) config[ElevenLabsSpeech.StabilityKey] = st;
         if (similarityBoost is double sb) config[ElevenLabsSpeech.SimilarityKey] = sb;
         if (style is double sy) config[ElevenLabsSpeech.StyleKey] = sy;
+        if (!string.IsNullOrWhiteSpace(voiceOwner)) config[ElevenLabsSpeech.VoiceOwnerKey] = voiceOwner.Trim();
+        if (!string.IsNullOrWhiteSpace(voiceName)) config["voiceName"] = voiceName.Trim();
         return config;
     }
 }

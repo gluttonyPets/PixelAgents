@@ -54,21 +54,33 @@ namespace Server.Services.Ai
             var ct = linkedCts.Token;
 
             var json = ElevenLabsSpeech.BuildRequestJson(context.ModelName, text, context.Configuration);
+            var voiceId = ElevenLabsSpeech.VoiceId(context.Configuration);
 
             using var http = CreateClient(context.ApiKey);
-            using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-            using var response = await http.PostAsync(ElevenLabsSpeech.BuildRequestUrl(context.Configuration), content, ct);
+            var (audio, status, error) = await SpeakAsync(http, voiceId, json, ct);
 
-            if (!response.IsSuccessStatusCode)
+            // Voz de la biblioteca que aun no esta en la cuenta: se anade (ocupa un
+            // hueco de voz en ElevenLabs) y se repite. Se hace aqui y no al elegirla
+            // para que curiosear voces en el formulario no llene la cuenta.
+            var owner = ElevenLabsSpeech.VoiceOwner(context.Configuration);
+            if (audio is null && owner is not null && ElevenLabsSpeech.IsVoiceNotFound(status, error))
             {
-                var error = await response.Content.ReadAsStringAsync(ct);
-                // 5xx y 429 se relanzan como transitorios para que el executor reintente.
-                if ((int)response.StatusCode >= 500 || (int)response.StatusCode == 429)
-                    throw new HttpRequestException($"ElevenLabs {(int)response.StatusCode}: {error}");
-                return AiResult.Fail($"ElevenLabs ({(int)response.StatusCode}): {error}");
+                var (addedId, addError) = await AddSharedVoiceAsync(
+                    http, owner, voiceId, ElevenLabsSpeech.VoiceName(context.Configuration), ct);
+                if (addedId is null)
+                    return AiResult.Fail("No se pudo anadir la voz de la biblioteca a tu cuenta de ElevenLabs "
+                        + $"(quiza no te quedan huecos de voz): {addError}");
+                (audio, status, error) = await SpeakAsync(http, addedId, json, ct);
             }
 
-            var audio = await response.Content.ReadAsByteArrayAsync(ct);
+            if (audio is null)
+            {
+                // 5xx y 429 se relanzan como transitorios para que el executor reintente.
+                if (status >= 500 || status == 429)
+                    throw new HttpRequestException($"ElevenLabs {status}: {error}");
+                return AiResult.Fail($"ElevenLabs ({status}): {error}");
+            }
+
             if (audio.Length == 0)
                 return AiResult.Fail("ElevenLabs devolvio un audio vacio");
 
@@ -82,15 +94,60 @@ namespace Server.Services.Ai
             return result;
         }
 
+        private static async Task<(byte[]? Audio, int Status, string Error)> SpeakAsync(
+            HttpClient http, string voiceId, string json, CancellationToken ct)
+        {
+            using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(ElevenLabsSpeech.BuildRequestUrl(voiceId), content, ct);
+            if (!response.IsSuccessStatusCode)
+                return (null, (int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
+            return (await response.Content.ReadAsByteArrayAsync(ct), (int)response.StatusCode, "");
+        }
+
+        /// <summary>Anade a la cuenta una voz de la biblioteca y devuelve su id en la cuenta.</summary>
+        private static async Task<(string? VoiceId, string? Error)> AddSharedVoiceAsync(
+            HttpClient http, string ownerId, string voiceId, string? name, CancellationToken ct)
+        {
+            var body = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+            {
+                ["new_name"] = string.IsNullOrWhiteSpace(name) ? voiceId : name,
+            });
+            using var content = new StringContent(body, System.Text.Encoding.UTF8, "application/json");
+            using var response = await http.PostAsync(ElevenLabsSpeech.BuildAddSharedVoiceUrl(ownerId, voiceId), content, ct);
+            var text = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode) return (null, $"HTTP {(int)response.StatusCode}: {text}");
+
+            using var doc = System.Text.Json.JsonDocument.Parse(text);
+            return doc.RootElement.TryGetProperty("voice_id", out var id) && id.GetString() is { Length: > 0 } added
+                ? (added, null)
+                : (voiceId, null);
+        }
+
+        /// <summary>
+        /// Voces de la biblioteca de ElevenLabs en un idioma (codigo ISO 639-1),
+        /// las mas usadas primero. Se piden 100: suficiente para elegir sin
+        /// paginar en un desplegable.
+        /// </summary>
+        public static async Task<List<ElevenLabsSpeech.Voice>> ListSharedVoicesAsync(
+            string apiKey, string language, CancellationToken ct)
+        {
+            using var http = CreateClient(apiKey);
+            using var response = await http.GetAsync(ElevenLabsSpeech.BuildSharedVoicesUrl(language), ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"ElevenLabs ({(int)response.StatusCode}) al buscar en la biblioteca: {body}");
+            return ElevenLabsSpeech.ParseSharedVoices(body);
+        }
+
         /// <summary>
         /// Voces que puede usar la cuenta: las predeterminadas, las clonadas y las
         /// guardadas de la biblioteca. Se pagina hasta 500 para no colgar la UI con
         /// una cuenta enorme.
         /// </summary>
-        public static async Task<List<(string Id, string Label)>> ListVoicesAsync(string apiKey, CancellationToken ct)
+        public static async Task<List<ElevenLabsSpeech.Voice>> ListVoicesAsync(string apiKey, CancellationToken ct)
         {
             using var http = CreateClient(apiKey);
-            var voices = new List<(string Id, string Label)>();
+            var voices = new List<ElevenLabsSpeech.Voice>();
             string? page = null;
 
             do

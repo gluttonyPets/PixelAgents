@@ -20,6 +20,25 @@ public class ElevenLabsVoiceConfig
     public string Voice { get; set; } = "";
     /// <summary>Nombre legible de la voz, para mostrarlo sin llamar a ElevenLabs.</summary>
     public string VoiceName { get; set; } = "";
+    /// <summary>
+    /// Dueno publico si la voz es de la biblioteca de ElevenLabs: el servidor la
+    /// anade a la cuenta la primera vez que locuta con ella. Vacio = voz de la cuenta.
+    /// </summary>
+    public string VoiceOwner { get; set; } = "";
+    /// <summary>Idioma en el que se buscan voces de la biblioteca (ISO 639-1). Vacio = solo las de la cuenta.</summary>
+    public string Language { get; set; } = "es";
+
+    /// <summary>
+    /// Idiomas para buscar voces nativas en la biblioteca. Las voces predeterminadas
+    /// de ElevenLabs son casi todas en ingles.
+    /// </summary>
+    public static readonly (string Value, string Label)[] LanguageOptions =
+    [
+        ("es", "Espanol"), ("en", "Ingles"), ("ca", "Catalan"), ("pt", "Portugues"),
+        ("fr", "Frances"), ("it", "Italiano"), ("de", "Aleman"), ("nl", "Neerlandes"),
+        ("pl", "Polaco"), ("ar", "Arabe"), ("zh", "Chino"), ("ja", "Japones"),
+        ("", "Solo mis voces"),
+    ];
     public double Speed { get; set; } = 1.0;
     // Valores por defecto de la API de ElevenLabs.
     public double Stability { get; set; } = 0.5;
@@ -42,6 +61,8 @@ public class ElevenLabsVoiceConfig
         };
         if (!string.IsNullOrWhiteSpace(Voice)) map["voice"] = Voice.Trim();
         if (!string.IsNullOrWhiteSpace(VoiceName)) map["voiceName"] = VoiceName.Trim();
+        if (!string.IsNullOrWhiteSpace(VoiceOwner)) map["voiceOwner"] = VoiceOwner.Trim();
+        map["voiceLanguage"] = Language;
         if (Math.Abs(Speed - 1.0) >= 0.001) map["speed"] = Round(Math.Clamp(Speed, MinSpeed, MaxSpeed));
         return JsonSerializer.Serialize(map);
     }
@@ -57,6 +78,8 @@ public class ElevenLabsVoiceConfig
             var root = doc.RootElement;
             cfg.Voice = ReadString(root, "voice") ?? "";
             cfg.VoiceName = ReadString(root, "voiceName") ?? "";
+            cfg.VoiceOwner = ReadString(root, "voiceOwner") ?? "";
+            cfg.Language = ReadString(root, "voiceLanguage") ?? cfg.Language;
             cfg.Speed = ReadDouble(root, "speed") ?? cfg.Speed;
             cfg.Stability = ReadDouble(root, "stability") ?? cfg.Stability;
             cfg.SimilarityBoost = ReadDouble(root, "similarityBoost") ?? cfg.SimilarityBoost;
