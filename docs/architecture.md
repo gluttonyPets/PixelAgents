@@ -611,12 +611,12 @@ El formulario de ElevenLabs es `ElevenLabsVoiceEditor.razor` (con
 `ElevenLabsVoiceConfig` para leer y escribir el JSON), el mismo en la pagina
 Modulos y en el popup "Editar nodo".
 
-**Escuchar voz.** Junto a esos campos, el boton "Escuchar voz"
+**Escuchar voz.** En los modulos de OpenAI, el boton "Escuchar voz"
 (`VoicePreview.razor` -> `POST /api/voice-preview`) locuta una frase corta
-(`SpeechPreview.Text`) con la voz, los ajustes, el modelo y la API key del
-formulario, aunque no esten guardados. El proveedor sale del modelo. No es una
-ejecucion: no se guarda ni se anota coste, pero el proveedor la factura
-(centimos o menos por escucha).
+(`SpeechPreview.Text`) con la voz, la velocidad, las instrucciones, el modelo y
+la API key del formulario, aunque no esten guardados. No es una ejecucion: no se
+guarda ni se anota coste, pero OpenAI la factura (fracciones de centimo). En
+ElevenLabs no hay boton: cada voz trae su muestra gratis (`preview_url`).
 
 **Un audio por toma.** Si el texto llega repartido con el mismo contrato que el
 multi-imagen (marcas `===TOMA n===`, `===IMAGEN n===`... o el JSON de la

@@ -1,8 +1,9 @@
 namespace Server.Services.Ai;
 
 /// <summary>
-/// Demostracion de voz que se escucha al configurar un modulo de texto a voz,
-/// sea del proveedor que sea (<c>POST /api/voice-preview</c>).
+/// Demostracion de voz que se escucha al configurar un modulo de texto a voz
+/// (<c>POST /api/voice-preview</c>). La usa OpenAI; ElevenLabs no la necesita
+/// porque cada voz de su biblioteca trae una muestra gratis.
 /// </summary>
 public static class SpeechPreview
 {
@@ -14,20 +15,12 @@ public static class SpeechPreview
     /// guardar: se oye lo que se va a guardar, no lo que habia. Las claves son las
     /// mismas que guarda el modulo, asi que la peticion sale igual que al ejecutarlo.
     /// </summary>
-    public static Dictionary<string, object> Configuration(
-        string? voice, double? speed, string? instructions,
-        double? stability = null, double? similarityBoost = null, double? style = null,
-        string? voiceOwner = null, string? voiceName = null)
+    public static Dictionary<string, object> Configuration(string? voice, double? speed, string? instructions)
     {
         var config = new Dictionary<string, object>();
         if (!string.IsNullOrWhiteSpace(voice)) config["voice"] = voice.Trim();
         if (speed is double s) config["speed"] = s;
         if (!string.IsNullOrWhiteSpace(instructions)) config[OpenAiSpeech.InstructionsKey] = instructions.Trim();
-        if (stability is double st) config[ElevenLabsSpeech.StabilityKey] = st;
-        if (similarityBoost is double sb) config[ElevenLabsSpeech.SimilarityKey] = sb;
-        if (style is double sy) config[ElevenLabsSpeech.StyleKey] = sy;
-        if (!string.IsNullOrWhiteSpace(voiceOwner)) config[ElevenLabsSpeech.VoiceOwnerKey] = voiceOwner.Trim();
-        if (!string.IsNullOrWhiteSpace(voiceName)) config["voiceName"] = voiceName.Trim();
         return config;
     }
 }

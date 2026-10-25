@@ -1049,8 +1049,7 @@ app.MapPost("/api/voice-preview", async (
             ModelName = model.Id,
             ApiKey = key.EncryptedKey,
             Input = SpeechPreview.Text,
-            Configuration = SpeechPreview.Configuration(req.Voice, req.Speed, req.VoiceInstructions,
-                req.Stability, req.SimilarityBoost, req.Style, req.VoiceOwner, req.VoiceName),
+            Configuration = SpeechPreview.Configuration(req.Voice, req.Speed, req.VoiceInstructions),
             CancellationToken = ct,
         });
     }

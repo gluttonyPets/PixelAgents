@@ -129,18 +129,6 @@ public class ElevenLabsSpeechTests
     }
 
     [Fact]
-    public void LaDemostracionMandaLosAjustesDelFormulario()
-    {
-        var config = SpeechPreview.Configuration("abc123", 1.1, null, stability: 0.3, similarityBoost: 0.9, style: 0.1);
-
-        var json = Parse(ElevenLabsSpeech.BuildRequestJson("eleven_v4", SpeechPreview.Text, config));
-
-        Assert.Contains("/abc123?", ElevenLabsSpeech.BuildRequestUrl(config));
-        Assert.Equal(0.3, json.GetProperty("voice_settings").GetProperty("stability").GetDouble());
-        Assert.Equal(0.9, json.GetProperty("voice_settings").GetProperty("similarity_boost").GetDouble());
-    }
-
-    [Fact]
     public void LasVocesDeLaBibliotecaLlevanSuDueno()
     {
         const string json = """
@@ -187,9 +175,9 @@ public class ElevenLabsSpeechTests
     }
 
     [Fact]
-    public void LaDemostracionLlevaElDuenoDeLaVozDeBiblioteca()
+    public void LaVozDeBibliotecaGuardadaLlevaSuDueno()
     {
-        var config = SpeechPreview.Configuration("lib1", null, null, voiceOwner: "own1", voiceName: "Carmen");
+        var config = Config(("voice", "lib1"), (ElevenLabsSpeech.VoiceOwnerKey, "own1"), ("voiceName", "Carmen"));
 
         Assert.Equal("own1", ElevenLabsSpeech.VoiceOwner(config));
         Assert.Equal("Carmen", ElevenLabsSpeech.VoiceName(config));

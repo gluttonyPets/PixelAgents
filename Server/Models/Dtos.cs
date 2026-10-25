@@ -36,10 +36,7 @@ namespace Server.Models
     // Uso de un modulo de catalogo a traves de los proyectos.
     public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
     // Demostracion de una voz de texto a voz con los valores del formulario.
-    public record VoicePreviewRequest(
-        Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions,
-        double? Stability = null, double? SimilarityBoost = null, double? Style = null,
-        string? VoiceOwner = null, string? VoiceName = null);
+    public record VoicePreviewRequest(Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions);
     // Group: "account" (voces de la cuenta) o "library" (biblioteca publica, con OwnerId).
     public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId);
     // Valor de un filtro de la biblioteca (acento o uso) y cuantas voces lo tienen.

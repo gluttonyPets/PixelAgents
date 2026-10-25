@@ -1,7 +1,7 @@
 @* Demostracion de voz de los modulos de texto a voz: genera una frase corta con
    la voz, el modelo y la API key del formulario (aunque no esten guardados) y la
-   reproduce. Vale para OpenAI y ElevenLabs (el servidor elige por el modelo). El
-   proveedor factura cada escucha, asi que solo se pide al pulsar. *@
+   reproduce. Solo lo usa OpenAI: ElevenLabs ya trae una muestra gratis de cada
+   voz. El proveedor factura cada escucha, asi que solo se pide al pulsar. *@
 @inject ApiClient Api
 
 <div class="voice-preview">
@@ -35,14 +35,6 @@
     [Parameter] public string Voice { get; set; } = "alloy";
     [Parameter] public double Speed { get; set; } = 1.0;
     [Parameter] public string? Instructions { get; set; }
-    /// <summary>Nombre de la voz si <see cref="Voice"/> es un id (ElevenLabs).</summary>
-    [Parameter] public string? VoiceLabel { get; set; }
-    // Ajustes de ElevenLabs; OpenAI no los usa.
-    [Parameter] public double? Stability { get; set; }
-    [Parameter] public double? SimilarityBoost { get; set; }
-    [Parameter] public double? Style { get; set; }
-    /// <summary>Dueno de una voz de la biblioteca de ElevenLabs: se anade a la cuenta al generar.</summary>
-    [Parameter] public string? VoiceOwner { get; set; }
 
     private bool _loading;
     private string? _error;
@@ -57,9 +49,7 @@
 
         var instructions = AiModuleOptions.SupportsVoiceInstructions(Model) ? Instructions : null;
         var (audio, error) = await Api.PreviewVoiceAsync(new VoicePreviewRequest(
-            ApiKeyId, Model, Voice, Speed == 1.0 ? null : Speed, instructions,
-            Stability, SimilarityBoost, Style,
-            string.IsNullOrWhiteSpace(VoiceOwner) ? null : VoiceOwner, VoiceLabel));
+            ApiKeyId, Model, Voice, Speed == 1.0 ? null : Speed, instructions));
 
         _loading = false;
         if (audio is null)
@@ -69,7 +59,6 @@
         }
 
         _audioUrl = "data:audio/mpeg;base64," + Convert.ToBase64String(audio);
-        var name = string.IsNullOrWhiteSpace(VoiceLabel) ? Voice : VoiceLabel;
-        _audioLabel = $"Voz {name}" + (Speed == 1.0 ? "" : $" a {Speed:0.##}x");
+        _audioLabel = $"Voz {Voice}" + (Speed == 1.0 ? "" : $" a {Speed:0.##}x");
     }
 }

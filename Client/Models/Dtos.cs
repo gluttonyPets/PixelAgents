@@ -121,10 +121,7 @@ public record AiModuleResponse(
 // Uso de un modulo de catalogo a traves de los proyectos (para advertir antes de editar).
 public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
 // Demostracion de una voz de texto a voz con los valores del formulario.
-public record VoicePreviewRequest(
-    Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions,
-    double? Stability = null, double? SimilarityBoost = null, double? Style = null,
-    string? VoiceOwner = null, string? VoiceName = null);
+public record VoicePreviewRequest(Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions);
 // Voz elegible de ElevenLabs. Group: "account" (de la cuenta) o "library"
 // (biblioteca publica; OwnerId hace falta para anadirla a la cuenta al usarla).
 public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId)

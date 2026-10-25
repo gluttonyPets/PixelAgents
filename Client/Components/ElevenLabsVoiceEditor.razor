@@ -160,9 +160,6 @@
     </div>
 </div>
 
-<VoicePreview ApiKeyId="ApiKeyId" Model="@Model" Voice="@Config.Voice" VoiceLabel="@Config.VoiceName" VoiceOwner="@Config.VoiceOwner"
-              Speed="@(ElevenLabsVoiceConfig.SupportsSpeed(Model) ? Config.Speed : 1.0)"
-              Stability="Config.Stability" SimilarityBoost="Config.SimilarityBoost" Style="Config.Style" />
 
 @code {
     [Parameter, EditorRequired] public ElevenLabsVoiceConfig Config { get; set; } = new();
