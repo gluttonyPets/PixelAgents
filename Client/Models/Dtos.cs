@@ -131,6 +131,10 @@ public record VoiceOptionResponse(string Id, string Label, string Group, string?
 {
     public bool IsLibrary => Group == "library";
 }
+// Valor de un filtro de la biblioteca de ElevenLabs (acento o uso) y cuantas voces lo tienen.
+public record VoiceFacetResponse(string Value, int Count);
+public record VoiceListResponse(
+    List<VoiceOptionResponse> Voices, List<VoiceFacetResponse> Accents, List<VoiceFacetResponse> UseCases);
 public record ReassignProjectModuleRequest(Guid AiModuleId);
 
 // ── ProjectGroup: el "Proyecto" de alto nivel que agrupa pipelines ──

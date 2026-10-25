@@ -1068,10 +1068,13 @@ app.MapPost("/api/voice-preview", async (
 // Voces de ElevenLabs para el selector del modulo: las de la cuenta de la API key
 // (predeterminadas, clonadas y guardadas) y, con idioma, las de la biblioteca
 // publica en ese idioma. Las predeterminadas son casi todas en ingles: las voces
-// nativas de otros idiomas estan en la biblioteca.
+// nativas de otros idiomas estan en la biblioteca. Con idioma devuelve tambien los
+// acentos (argentino, peninsular, mexicano...) y usos (narracion, anuncios...) que
+// hay, para filtrar por ellos.
 app.MapGet("/api/elevenlabs/voices", async (
-    Guid apiKeyId, string? language, HttpContext ctx,
-    UserManager<ApplicationUser> um, ITenantDbContextFactory factory, CancellationToken ct) =>
+    Guid apiKeyId, string? language, string? accent, string? useCase, HttpContext ctx,
+    UserManager<ApplicationUser> um, ITenantDbContextFactory factory,
+    Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
 {
     await using var db = await ResolveTenantDb(ctx, um, factory);
     if (db is null) return Results.Unauthorized();
@@ -1088,17 +1091,46 @@ app.MapGet("/api/elevenlabs/voices", async (
             .Select(v => new VoiceOptionResponse(v.Id, v.Label, "account", v.PreviewUrl, null))
             .ToList();
 
+        var accents = new List<VoiceFacetResponse>();
+        var useCases = new List<VoiceFacetResponse>();
+
         if (!string.IsNullOrWhiteSpace(language))
         {
+            var lang = language.Trim().ToLowerInvariant();
+
+            // Las 300 mas usadas del idioma dan los acentos y usos que existen. La
+            // biblioteca es comun a todas las cuentas, asi que se cachea por idioma.
+            var top = await Microsoft.Extensions.Caching.Memory.CacheExtensions.GetOrCreateAsync(
+                cache, $"elevenlabs-shared-voices:{lang}", async entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(6);
+                var voices = new List<ElevenLabsSpeech.Voice>();
+                for (var page = 0; page < 3; page++)
+                {
+                    var batch = await ElevenLabsProvider.ListSharedVoicesAsync(key.EncryptedKey, lang, ct, page: page);
+                    voices.AddRange(batch);
+                    if (batch.Count < 100) break;
+                }
+                return voices;
+            }) ?? [];
+
+            accents = ElevenLabsSpeech.CountFacet(top, v => v.Accent).Select(f => new VoiceFacetResponse(f.Value, f.Count)).ToList();
+            useCases = ElevenLabsSpeech.CountFacet(top, v => v.UseCase).Select(f => new VoiceFacetResponse(f.Value, f.Count)).ToList();
+
+            // Sin filtros valen las 100 primeras; con filtros se pregunta a
+            // ElevenLabs para no quedarse solo con las que caben en esas 300.
+            var library = string.IsNullOrWhiteSpace(accent) && string.IsNullOrWhiteSpace(useCase)
+                ? top.Take(100).ToList()
+                : await ElevenLabsProvider.ListSharedVoicesAsync(key.EncryptedKey, lang, ct, accent, useCase);
+
             // Las de la biblioteca que ya estan en la cuenta salen solo como propias.
             var own = account.Select(v => v.Id).ToHashSet();
-            var library = await ElevenLabsProvider.ListSharedVoicesAsync(key.EncryptedKey, language.Trim(), ct);
             result.AddRange(library
                 .Where(v => !own.Contains(v.Id))
                 .Select(v => new VoiceOptionResponse(v.Id, v.Label, "library", v.PreviewUrl, v.OwnerId)));
         }
 
-        return Results.Ok(result);
+        return Results.Ok(new VoiceListResponse(result, accents, useCases));
     }
     catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
     {

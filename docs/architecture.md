@@ -584,6 +584,15 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   de la cuenta mas las 100 mas usadas de la biblioteca en ese idioma
   (`GET /v1/shared-voices`). La muestra de cada voz se oye desde su `preview_url`,
   sin gastar caracteres.
+- **Acento y estilo.** Dos selects mas filtran la biblioteca por acento
+  (`voiceAccent`: argentino, peninsular, latino neutro, mexicano...) y por uso
+  (`voiceUseCase`: narracion, anuncios, conversacional...). ElevenLabs no publica
+  la lista de valores y los de su web no son los de la API, asi que el endpoint
+  los saca de las 300 voces mas usadas del idioma (cacheadas 6 h por idioma, la
+  biblioteca es comun a todas las cuentas) y los devuelve con su recuento; al
+  elegir uno se vuelve a preguntar a ElevenLabs con ese valor exacto. Los nombres
+  en castellano estan en `ElevenLabsVoiceConfig`; un valor sin traduccion se
+  muestra tal cual.
 - **Voces de la biblioteca.** La API no locuta con una voz que no este en la
   cuenta, asi que al elegir una se guarda tambien su dueno (`voiceOwner`). Si
   ElevenLabs responde `voice_not_found`, el proveedor la anade a la cuenta

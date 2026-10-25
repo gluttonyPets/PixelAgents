@@ -124,15 +124,17 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// Voces de la biblioteca de ElevenLabs en un idioma (codigo ISO 639-1),
-        /// las mas usadas primero. Se piden 100: suficiente para elegir sin
-        /// paginar en un desplegable.
+        /// Una pagina (100) de voces de la biblioteca de ElevenLabs en un idioma
+        /// (codigo ISO 639-1), las mas usadas primero, opcionalmente filtradas por
+        /// acento y uso.
         /// </summary>
         public static async Task<List<ElevenLabsSpeech.Voice>> ListSharedVoicesAsync(
-            string apiKey, string language, CancellationToken ct)
+            string apiKey, string language, CancellationToken ct,
+            string? accent = null, string? useCase = null, int page = 0)
         {
             using var http = CreateClient(apiKey);
-            using var response = await http.GetAsync(ElevenLabsSpeech.BuildSharedVoicesUrl(language), ct);
+            using var response = await http.GetAsync(
+                ElevenLabsSpeech.BuildSharedVoicesUrl(language, accent, useCase, page), ct);
             var body = await response.Content.ReadAsStringAsync(ct);
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"ElevenLabs ({(int)response.StatusCode}) al buscar en la biblioteca: {body}");

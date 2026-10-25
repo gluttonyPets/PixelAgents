@@ -222,16 +222,19 @@ public class ApiClient
 
     /// <summary>
     /// Voces de ElevenLabs de la API key y, con <paramref name="language"/>, las de
-    /// la biblioteca publica en ese idioma.
+    /// la biblioteca publica en ese idioma (filtradas por acento y uso si vienen),
+    /// junto con los acentos y usos que hay para ese idioma.
     /// </summary>
-    public async Task<(List<VoiceOptionResponse>? Voices, string? Error)> GetElevenLabsVoicesAsync(
-        Guid apiKeyId, string? language)
+    public async Task<(VoiceListResponse? Voices, string? Error)> GetElevenLabsVoicesAsync(
+        Guid apiKeyId, string? language, string? accent = null, string? useCase = null)
     {
         var url = $"/api/elevenlabs/voices?apiKeyId={apiKeyId}";
         if (!string.IsNullOrWhiteSpace(language)) url += "&language=" + Uri.EscapeDataString(language);
+        if (!string.IsNullOrWhiteSpace(accent)) url += "&accent=" + Uri.EscapeDataString(accent);
+        if (!string.IsNullOrWhiteSpace(useCase)) url += "&useCase=" + Uri.EscapeDataString(useCase);
         var resp = await SendAsync(HttpMethod.Get, url);
         if (resp.IsSuccessStatusCode)
-            return (await resp.Content.ReadFromJsonAsync<List<VoiceOptionResponse>>(), null);
+            return (await resp.Content.ReadFromJsonAsync<VoiceListResponse>(), null);
         return (null, await ReadErrorAsync(resp));
     }
 

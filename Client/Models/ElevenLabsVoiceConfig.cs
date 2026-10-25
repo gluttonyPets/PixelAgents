@@ -27,6 +27,72 @@ public class ElevenLabsVoiceConfig
     public string VoiceOwner { get; set; } = "";
     /// <summary>Idioma en el que se buscan voces de la biblioteca (ISO 639-1). Vacio = solo las de la cuenta.</summary>
     public string Language { get; set; } = "es";
+    /// <summary>Acento por el que se filtra la biblioteca, tal cual lo da ElevenLabs. Vacio = todos.</summary>
+    public string Accent { get; set; } = "";
+    /// <summary>Uso (estilo) por el que se filtra la biblioteca, tal cual lo da ElevenLabs. Vacio = todos.</summary>
+    public string UseCase { get; set; } = "";
+
+    /// <summary>
+    /// Nombre en castellano de los acentos de la biblioteca. ElevenLabs no publica
+    /// la lista: los valores salen de sus voces y los que no esten aqui se muestran
+    /// tal cual.
+    /// </summary>
+    private static readonly Dictionary<string, string> AccentLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["peninsular"] = "Castellano (Espana)",
+        ["castilian"] = "Castellano (Espana)",
+        ["spanish castilian"] = "Castellano (Espana)",
+        ["spain"] = "Castellano (Espana)",
+        ["andalusian"] = "Andaluz",
+        ["canarian"] = "Canario",
+        ["latin american"] = "Latino neutro",
+        ["latin"] = "Latino neutro",
+        ["neutral"] = "Neutro",
+        ["standard"] = "Estandar",
+        ["argentine"] = "Argentino",
+        ["argentinian"] = "Argentino",
+        ["rioplatense"] = "Rioplatense",
+        ["mexican"] = "Mexicano",
+        ["colombian"] = "Colombiano",
+        ["chilean"] = "Chileno",
+        ["venezuelan"] = "Venezolano",
+        ["peruvian"] = "Peruano",
+        ["cuban"] = "Cubano",
+        ["puerto rican"] = "Puertorriqueno",
+        ["dominican"] = "Dominicano",
+        ["caribbean"] = "Caribeno",
+        ["uruguayan"] = "Uruguayo",
+        ["ecuadorian"] = "Ecuatoriano",
+        ["american"] = "Estadounidense",
+        ["british"] = "Britanico",
+        ["brazilian"] = "Brasileno",
+        ["portuguese"] = "Portugues (Portugal)",
+    };
+
+    /// <summary>Nombre en castellano de los usos (estilos) de la biblioteca.</summary>
+    private static readonly Dictionary<string, string> UseCaseLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["narrative_story"] = "Narracion e historias",
+        ["conversational"] = "Conversacional",
+        ["characters_animation"] = "Personajes y animacion",
+        ["social_media"] = "Redes sociales",
+        ["entertainment_tv"] = "Entretenimiento y TV",
+        ["advertisement"] = "Anuncios",
+        ["informative_educational"] = "Informativo y educativo",
+        ["news"] = "Noticias",
+        ["meditation"] = "Meditacion",
+        ["audiobook"] = "Audiolibros",
+    };
+
+    public static string AccentLabel(string value) => Humanize(value, AccentLabels);
+    public static string UseCaseLabel(string value) => Humanize(value, UseCaseLabels);
+
+    private static string Humanize(string value, Dictionary<string, string> labels)
+    {
+        if (labels.TryGetValue(value, out var label)) return label;
+        var text = value.Replace('_', ' ').Trim();
+        return text.Length == 0 ? value : char.ToUpperInvariant(text[0]) + text[1..];
+    }
 
     /// <summary>
     /// Idiomas para buscar voces nativas en la biblioteca. Las voces predeterminadas
@@ -63,6 +129,8 @@ public class ElevenLabsVoiceConfig
         if (!string.IsNullOrWhiteSpace(VoiceName)) map["voiceName"] = VoiceName.Trim();
         if (!string.IsNullOrWhiteSpace(VoiceOwner)) map["voiceOwner"] = VoiceOwner.Trim();
         map["voiceLanguage"] = Language;
+        if (!string.IsNullOrWhiteSpace(Accent)) map["voiceAccent"] = Accent;
+        if (!string.IsNullOrWhiteSpace(UseCase)) map["voiceUseCase"] = UseCase;
         if (Math.Abs(Speed - 1.0) >= 0.001) map["speed"] = Round(Math.Clamp(Speed, MinSpeed, MaxSpeed));
         return JsonSerializer.Serialize(map);
     }
@@ -80,6 +148,8 @@ public class ElevenLabsVoiceConfig
             cfg.VoiceName = ReadString(root, "voiceName") ?? "";
             cfg.VoiceOwner = ReadString(root, "voiceOwner") ?? "";
             cfg.Language = ReadString(root, "voiceLanguage") ?? cfg.Language;
+            cfg.Accent = ReadString(root, "voiceAccent") ?? "";
+            cfg.UseCase = ReadString(root, "voiceUseCase") ?? "";
             cfg.Speed = ReadDouble(root, "speed") ?? cfg.Speed;
             // Acotados al leer: una version anterior del formulario podia guardar
             // 45 en vez de 0.45 (ver los sliders de ElevenLabsVoiceEditor).

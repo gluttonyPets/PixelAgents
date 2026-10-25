@@ -42,6 +42,11 @@ namespace Server.Models
         string? VoiceOwner = null, string? VoiceName = null);
     // Group: "account" (voces de la cuenta) o "library" (biblioteca publica, con OwnerId).
     public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId);
+    // Valor de un filtro de la biblioteca (acento o uso) y cuantas voces lo tienen.
+    public record VoiceFacetResponse(string Value, int Count);
+    // Voces para el selector y los acentos y usos que hay en la biblioteca para el idioma.
+    public record VoiceListResponse(
+        List<VoiceOptionResponse> Voices, List<VoiceFacetResponse> Accents, List<VoiceFacetResponse> UseCases);
 
     // ── ProjectGroup (el "Proyecto" de alto nivel que agrupa pipelines) ──
     public record CreateProjectGroupRequest(string Name, string? Description);

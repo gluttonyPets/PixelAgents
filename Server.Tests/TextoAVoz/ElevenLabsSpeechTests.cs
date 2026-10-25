@@ -197,6 +197,47 @@ public class ElevenLabsSpeechTests
             ElevenLabsSpeech.BuildAddSharedVoiceUrl("own1", "lib1"));
     }
 
+    [Fact]
+    public void LaBibliotecaSeFiltraPorAcentoYUso()
+    {
+        var url = ElevenLabsSpeech.BuildSharedVoicesUrl("es", "latin american", "narrative_story", page: 2);
+
+        Assert.Contains("accent=latin%20american", url);
+        Assert.Contains("use_cases=narrative_story", url);
+        Assert.Contains("page=2", url);
+        Assert.DoesNotContain("accent=", ElevenLabsSpeech.BuildSharedVoicesUrl("es", " "));
+    }
+
+    [Fact]
+    public void LosAcentosSeSacanDeLasVocesConSuFrecuencia()
+    {
+        var voices = new[]
+        {
+            new ElevenLabsSpeech.Voice("1", "A", null, "o", Accent: "argentine"),
+            new ElevenLabsSpeech.Voice("2", "B", null, "o", Accent: "Peninsular"),
+            new ElevenLabsSpeech.Voice("3", "C", null, "o", Accent: "peninsular"),
+            new ElevenLabsSpeech.Voice("4", "D", null, "o"),
+        };
+
+        var accents = ElevenLabsSpeech.CountFacet(voices, v => v.Accent);
+
+        Assert.Equal([("peninsular", 2), ("argentine", 1)], accents);
+    }
+
+    [Fact]
+    public void LasVocesDeLaBibliotecaTraenAcentoYUso()
+    {
+        const string json = """
+            {"voices":[{"voice_id":"v","public_owner_id":"o","name":"Beto",
+              "accent":"argentine","use_case":"narrative_story"}]}
+            """;
+
+        var voice = Assert.Single(ElevenLabsSpeech.ParseSharedVoices(json));
+
+        Assert.Equal("argentine", voice.Accent);
+        Assert.Equal("narrative_story", voice.UseCase);
+    }
+
     private static Dictionary<string, object> Config(params (string Key, object Value)[] values) =>
         values.ToDictionary(v => v.Key, v => v.Value);
 

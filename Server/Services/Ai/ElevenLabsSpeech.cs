@@ -88,10 +88,34 @@ public static class ElevenLabsSpeech
 
     /// <summary>
     /// Busqueda de la biblioteca de voces por idioma (codigo ISO 639-1), las mas
-    /// usadas primero: son las que mejor suenan de media.
+    /// usadas primero: son las que mejor suenan de media. Acento y uso filtran por
+    /// el valor exacto que trae la propia biblioteca (ver <see cref="CountFacet"/>).
     /// </summary>
-    public static string BuildSharedVoicesUrl(string language) =>
-        $"{BaseUrl}/v1/shared-voices?page_size=100&sort=usage_character_count_1y&language={Uri.EscapeDataString(language)}";
+    public static string BuildSharedVoicesUrl(string language, string? accent = null, string? useCase = null, int page = 0)
+    {
+        var url = $"{BaseUrl}/v1/shared-voices?page_size=100&sort=usage_character_count_1y"
+            + $"&language={Uri.EscapeDataString(language)}";
+        if (!string.IsNullOrWhiteSpace(accent)) url += "&accent=" + Uri.EscapeDataString(accent.Trim());
+        if (!string.IsNullOrWhiteSpace(useCase)) url += "&use_cases=" + Uri.EscapeDataString(useCase.Trim());
+        if (page > 0) url += "&page=" + page;
+        return url;
+    }
+
+    /// <summary>
+    /// Valores distintos de un campo (acento, uso) entre las voces, los mas
+    /// frecuentes primero. ElevenLabs no publica la lista de valores validos y los
+    /// de su web no coinciden con los de la API ("Spanish Castilian" frente a
+    /// "peninsular"), asi que se sacan de las voces reales del idioma.
+    /// </summary>
+    public static List<(string Value, int Count)> CountFacet(IEnumerable<Voice> voices, Func<Voice, string?> field) =>
+        voices
+            .Select(field)
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .GroupBy(v => v!.Trim().ToLowerInvariant())
+            .Select(g => (g.Key, g.Count()))
+            .OrderByDescending(f => f.Item2)
+            .ThenBy(f => f.Key)
+            .ToList();
 
     /// <summary>Cuerpo JSON de la peticion para <paramref name="text"/>.</summary>
     public static string BuildRequestJson(string model, string text, IReadOnlyDictionary<string, object> config)
@@ -125,7 +149,8 @@ public static class ElevenLabsSpeech
     }
 
     /// <summary>Voz elegible: de la cuenta (sin dueno) o de la biblioteca (con dueno).</summary>
-    public record Voice(string Id, string Label, string? PreviewUrl, string? OwnerId = null);
+    public record Voice(string Id, string Label, string? PreviewUrl, string? OwnerId = null,
+        string? Accent = null, string? UseCase = null);
 
     /// <summary>
     /// Voces de la cuenta (respuesta de <c>GET /v2/voices</c>), con una etiqueta
@@ -185,7 +210,8 @@ public static class ElevenLabsSpeech
             foreach (var key in new[] { "gender", "age", "accent", "descriptive" })
                 if (Str(v, key) is { } value) details.Add(value);
 
-            voices.Add(new Voice(id, Label(Str(v, "name") ?? id, details), Str(v, "preview_url"), owner));
+            voices.Add(new Voice(id, Label(Str(v, "name") ?? id, details), Str(v, "preview_url"), owner,
+                Str(v, "accent"), Str(v, "use_case")));
         }
 
         return voices;

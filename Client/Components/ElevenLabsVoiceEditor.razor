@@ -6,7 +6,9 @@
    Las voces de la cuenta (predeterminadas, clonadas y guardadas) son casi todas
    en ingles; las nativas de otros idiomas estan en la biblioteca publica de
    ElevenLabs, que se busca por el idioma elegido. Una voz de la biblioteca se
-   anade a la cuenta la primera vez que se locuta con ella (lo hace el servidor). *@
+   anade a la cuenta la primera vez que se locuta con ella (lo hace el servidor).
+   Acento y estilo filtran la biblioteca; sus opciones son las que tienen de
+   verdad las voces del idioma (ElevenLabs no publica la lista). *@
 
 <div class="form-row">
     <div class="form-group">
@@ -18,6 +20,42 @@
             }
         </select>
     </div>
+    @if (!string.IsNullOrEmpty(Config.Language))
+    {
+        <div class="form-group">
+            <label>Acento</label>
+            <select value="@Config.Accent" @onchange="OnAccentChanged">
+                <option value="">Todos los acentos</option>
+                @if (!string.IsNullOrEmpty(Config.Accent) && !_accents.Any(a => a.Value == Config.Accent))
+                {
+                    <option value="@Config.Accent">@ElevenLabsVoiceConfig.AccentLabel(Config.Accent)</option>
+                }
+                @foreach (var a in _accents)
+                {
+                    <option value="@a.Value">@ElevenLabsVoiceConfig.AccentLabel(a.Value) (@a.Count)</option>
+                }
+            </select>
+        </div>
+    }
+</div>
+<div class="form-row">
+    @if (!string.IsNullOrEmpty(Config.Language))
+    {
+        <div class="form-group">
+            <label>Estilo</label>
+            <select value="@Config.UseCase" @onchange="OnUseCaseChanged">
+                <option value="">Todos los estilos</option>
+                @if (!string.IsNullOrEmpty(Config.UseCase) && !_useCases.Any(u => u.Value == Config.UseCase))
+                {
+                    <option value="@Config.UseCase">@ElevenLabsVoiceConfig.UseCaseLabel(Config.UseCase)</option>
+                }
+                @foreach (var u in _useCases)
+                {
+                    <option value="@u.Value">@ElevenLabsVoiceConfig.UseCaseLabel(u.Value) (@u.Count)</option>
+                }
+            </select>
+        </div>
+    }
     <div class="form-group">
         <label>Voz</label>
         @if (_voices is { Count: > 0 })
@@ -37,7 +75,7 @@
                 }
                 @if (library.Count > 0)
                 {
-                    <optgroup label="Biblioteca de ElevenLabs · @LanguageLabel(Config.Language)">
+                    <optgroup label="Biblioteca de ElevenLabs · @LibraryLabel()">
                         @foreach (var v in library)
                         {
                             <option value="@v.Id">@v.Label</option>
@@ -132,9 +170,11 @@
     [Parameter] public string Model { get; set; } = "";
 
     private List<VoiceOptionResponse>? _voices;
+    private List<VoiceFacetResponse> _accents = [];
+    private List<VoiceFacetResponse> _useCases = [];
     private bool _loading;
     private string? _error;
-    private (Guid? Key, string Language)? _loaded;
+    private (Guid? Key, string Language, string Accent, string UseCase)? _loaded;
 
     /// <summary>Audio de ejemplo de la voz elegida, alojado en ElevenLabs: oirlo no gasta caracteres.</summary>
     private string? SelectedSample => _voices?.FirstOrDefault(v => v.Id == Config.Voice)?.PreviewUrl;
@@ -144,13 +184,28 @@
     private async Task OnLanguageChanged(ChangeEventArgs e)
     {
         Config.Language = e.Value?.ToString() ?? "";
+        // Acentos y estilos son de cada idioma.
+        Config.Accent = "";
+        Config.UseCase = "";
+        await LoadVoicesAsync();
+    }
+
+    private async Task OnAccentChanged(ChangeEventArgs e)
+    {
+        Config.Accent = e.Value?.ToString() ?? "";
+        await LoadVoicesAsync();
+    }
+
+    private async Task OnUseCaseChanged(ChangeEventArgs e)
+    {
+        Config.UseCase = e.Value?.ToString() ?? "";
         await LoadVoicesAsync();
     }
 
     private async Task LoadVoicesAsync()
     {
-        // Solo se piden las voces al cambiar de API key o de idioma.
-        var wanted = (ApiKeyId, Config.Language);
+        // Solo se piden las voces al cambiar de API key, idioma o filtros.
+        var wanted = (ApiKeyId, Config.Language, Config.Accent, Config.UseCase);
         if (_loaded == wanted) return;
         _loaded = wanted;
         _voices = null;
@@ -158,13 +213,18 @@
         if (ApiKeyId is not Guid key) return;
 
         _loading = true;
-        var (voices, error) = await Api.GetElevenLabsVoicesAsync(key, Config.Language);
+        var (list, error) = await Api.GetElevenLabsVoicesAsync(key, Config.Language, Config.Accent, Config.UseCase);
         _loading = false;
-        if (_loaded != wanted) return; // Cambio de key o idioma mientras cargaba.
+        if (_loaded != wanted) return; // Cambio de key, idioma o filtro mientras cargaba.
 
+        var voices = list?.Voices;
         _voices = voices;
+        _accents = list?.Accents ?? [];
+        _useCases = list?.UseCases ?? [];
         _error = voices is null ? error ?? "No se pudieron cargar las voces" : null;
-        if (voices is { Count: 0 }) _error = "No hay voces para este idioma.";
+        if (voices is { Count: 0 }) _error = "No hay voces con estos filtros.";
+        else if (voices is not null && !string.IsNullOrEmpty(Config.Language) && !voices.Any(v => v.IsLibrary))
+            _error = "La biblioteca no tiene voces con estos filtros; prueba con otro acento o estilo.";
 
         // Sin voz elegida se propone la primera (la mas usada del idioma): el
         // selector no puede quedar vacio.
@@ -192,6 +252,14 @@
         // La etiqueta es "Nombre · detalles": se guarda solo el nombre.
         Config.VoiceName = voice.Label.Split(" · ")[0];
         Config.VoiceOwner = voice.OwnerId ?? "";
+    }
+
+    private string LibraryLabel()
+    {
+        var parts = new List<string> { LanguageLabel(Config.Language) };
+        if (!string.IsNullOrEmpty(Config.Accent)) parts.Add(ElevenLabsVoiceConfig.AccentLabel(Config.Accent));
+        if (!string.IsNullOrEmpty(Config.UseCase)) parts.Add(ElevenLabsVoiceConfig.UseCaseLabel(Config.UseCase));
+        return string.Join(" · ", parts);
     }
 
     private static string Percent(double value) => $"{Math.Round(value * 100):0} %";
