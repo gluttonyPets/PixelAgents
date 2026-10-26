@@ -189,7 +189,7 @@ public class OrchestratorModuleHandler : IModuleHandler
         if (pacer is null)
             return ModuleResult.Failed(
                 $"Los modulos de duracion del rectangulo ({string.Join(", ", timed.Select(t => t.ProjectModule.StepName ?? t.AiModule.Name))}) "
-                + "no tienen una duracion de clip fija conocida. Fija los segundos por vuelta en el panel del orquestador.");
+                + "no tienen una duracion de clip conocida. Fija los segundos por vuelta en el panel del orquestador.");
 
         var needed = LoopPlanner.CountPartsUncapped(totalSeconds, pacer.ClipSeconds);
         var parts = LoopPlanner.CountParts(totalSeconds, pacer.ClipSeconds);

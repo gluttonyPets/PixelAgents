@@ -195,6 +195,34 @@ public class LoopPlannerTests
     }
 
     [Fact]
+    public void ElRitmoSigueLaDuracionConfiguradaDelModuloDeVideo()
+    {
+        // Kling admite de 3 a 15 s: el loop tiene que pedir las vueltas con los
+        // segundos que de verdad tendra cada clip, no con los de por defecto.
+        var orchestrator = Node("Orchestrator", "gpt-5.4");
+        var video = Node("Video", "leonardo-kling-3");
+        video.AiModule.Configuration = """{"duration":8}""";
+        var frame = Frame(orchestrator, [video]);
+
+        Assert.Equal(8, LoopPlanner.FindPacer(frame)!.ClipSeconds);
+
+        // La configuracion del paso manda sobre la del modulo, como al ejecutar.
+        video.ProjectModule.Configuration = """{"duration":12}""";
+        Assert.Equal(12, LoopPlanner.FindPacer(frame)!.ClipSeconds);
+    }
+
+    [Fact]
+    public void UnaDuracionQueElModeloNoAdmite_MarcaElRitmoYaEncajada()
+    {
+        var orchestrator = Node("Orchestrator", "gpt-5.4");
+        var video = Node("Video", "leonardo-veo-3.1");
+        video.AiModule.Configuration = """{"duration":7}""";
+
+        // Veo solo hace 4, 6 u 8 s: 7 se queda en 6 (a igual distancia, la corta).
+        Assert.Equal(6, LoopPlanner.FindPacer(Frame(orchestrator, [video]))!.ClipSeconds);
+    }
+
+    [Fact]
     public void SinModuloDeDuracionFijaDentro_NoHayRitmo()
     {
         var orchestrator = Node("Orchestrator", "gpt-5.4");
@@ -213,10 +241,10 @@ public class LoopPlannerTests
         Assert.Equal(expected, LoopPlanner.IsDurationModule(type));
 
     [Fact]
-    public void LaDuracionDelClipVieneDelCatalogo()
+    public void LaDuracionDelClipVieneDeLasOpcionesDeVideo()
     {
-        Assert.Equal(5, ModelCatalog.GetClipSeconds("leonardo-motion-2"));
-        Assert.Null(ModelCatalog.GetClipSeconds("gpt-image-2"));
+        Assert.Equal(5, VideoModelOptions.ResolveDuration("leonardo-motion-2", null));
+        Assert.Null(VideoModelOptions.ResolveDuration("gpt-image-2", null));
     }
 
     // ── Helpers ──

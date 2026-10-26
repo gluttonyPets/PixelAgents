@@ -223,6 +223,33 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         int? ContextTokens = null,
         int? PromptChars = null);
 
+    // ── Opciones de los modelos de video ──
+
+    /// <summary>
+    /// Lo que se puede configurar de un modelo de video, para que la pantalla de
+    /// modulos ofrezca solo lo que el modelo admite. Sale de <c>VideoModelOptions</c>.
+    /// </summary>
+    /// <param name="Audio">"none", "optional" o "always".</param>
+    /// <param name="NegativePromptChars">Tope del prompt negativo; 0 = no lo admite.</param>
+    public record VideoModelOptionsResponse(
+        string ModelId,
+        int[] Durations,
+        int DefaultDuration,
+        VideoResolutionResponse[] Resolutions,
+        string DefaultResolution,
+        string Audio,
+        int NegativePromptChars,
+        bool Seed,
+        bool PromptEnhance,
+        bool FrameInterpolation,
+        VideoChoiceResponse[] Qualities,
+        string? DefaultQuality);
+
+    /// <param name="Durations">Duraciones a esta resolucion, si son menos que las del modelo.</param>
+    public record VideoResolutionResponse(string Id, string Label, string[] Aspects, int[]? Durations);
+
+    public record VideoChoiceResponse(string Value, string Label);
+
     // ── Deteccion de cambios en el catalogo de modelos ──
 
     /// <summary>

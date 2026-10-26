@@ -92,6 +92,13 @@ namespace Server.Services.Ai
         private const string ElevenLabsPlanNote =
             "Precio de pago por uso; con plan mensual los caracteres incluidos salen mas baratos.";
 
+        private const string LeonardoVideoNote =
+            "El coste real de cada ejecucion es el que devuelve la API de Leonardo.";
+
+        private const string LeonardoVideoEstimate =
+            "Estimacion orientativa: Leonardo no publica el precio por modelo y cobra en creditos "
+            + "segun resolucion, duracion y audio. " + LeonardoVideoNote;
+
         private static readonly Dictionary<string, AuxiliaryRate> AuxiliaryPrices =
             new(StringComparer.OrdinalIgnoreCase)
             {
@@ -126,16 +133,31 @@ namespace Server.Services.Ai
 
                 // Video (imagen -> video). La unidad es el SEGUNDO de video generado:
                 // es como factura todo el sector y la unica forma de comparar un clip
-                // de 5 s con uno de 8 s. Leonardo cobra en creditos, no en dolares, asi
-                // que esta cifra es la conversion a ~$0,003/credito, la misma referencia
-                // que ya se usa para sus imagenes. El coste que se apunta en la
-                // ejecucion NO sale de aqui: la API devuelve el gasto real en
-                // `apiCreditCost` y el provider lo convierte con
-                // <see cref="LeonardoCreditUsd"/>. Esta tarifa es la estimacion a priori
-                // que necesita la pantalla de modelos, donde todavia no hay llamada.
-                ["leonardo-motion-2"] = new(0.015m, "segundo",
-                    "Leonardo factura en creditos (~25 por clip de 5 s a 480p). El coste "
-                    + "real de cada ejecucion sale del apiCreditCost que devuelve la API."),
+                // de 5 s con uno de 8 s. Leonardo cobra en creditos, no en dolares, y no
+                // publica cuantos gasta cada modelo: su precio depende de la resolucion,
+                // la duracion y el audio, y solo lo da la calculadora de su web. Estas
+                // cifras son la estimacion a priori que necesita la pantalla de modelos
+                // (Motion 2.0 a ~$0,003/credito, el resto por la tarifa de cada
+                // proveedor en su propia API, revisada el 2026-10-26). El coste que se
+                // apunta en la ejecucion NO sale de aqui: la API devuelve el gasto real
+                // y el provider lo convierte con <see cref="LeonardoCreditUsd"/>.
+                ["leonardo-motion-2"]         = new(0.015m, "segundo",
+                    "Leonardo factura en creditos (~25 por clip de 5 s a 480p). " + LeonardoVideoNote),
+                ["leonardo-motion-2-fast"]    = new(0.010m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-veo-3.1"]          = new(0.40m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-veo-3.1-fast"]     = new(0.15m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-veo-3.1-lite"]     = new(0.05m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-kling-3"]          = new(0.11m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-kling-3-turbo"]    = new(0.07m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-kling-o3"]         = new(0.11m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-seedance-2"]       = new(0.25m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-seedance-2-fast"]  = new(0.10m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-hailuo-03"]        = new(0.10m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-hailuo-2.3-fast"]  = new(0.03m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-wan-3"]            = new(0.05m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-ltx-2.3-pro"]      = new(0.08m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-ltx-2.3-fast"]     = new(0.04m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-grok-imagine-1.5"] = new(0.05m,  "segundo", LeonardoVideoEstimate),
             };
 
         /// <summary>

@@ -21,13 +21,43 @@ namespace Server.Services.Ai
             ["leonardo-flux-schnell"] = "1dd50843-d653-4516-a8e3-f0238ee453ff",   // Flux Schnell
         };
 
-        // Mapping: id del catalogo -> valor del campo "model" del endpoint de video.
-        // Ojo: el endpoint de video NO usa los UUID de ModelIdMap, sino nombres
-        // simbolicos propios. Son dos espacios de nombres distintos en la misma API.
+        // El video va por la API v2 (POST /v2/generations): la v1 solo conoce un
+        // puñado de modelos, varios ya retirados, y todo lo nuevo sale en la v2. El
+        // resultado se sigue recogiendo con GET /v1/generations/{id}, que es lo que
+        // documenta Leonardo para ambas.
+        private const string BaseUrlV2 = "https://cloud.leonardo.ai/api/rest/v2";
+
+        // Mapping: id del catalogo -> valor del campo "model" de la v2. Ojo: no son
+        // los UUID de ModelIdMap, sino nombres propios de cada modelo de video.
         private static readonly Dictionary<string, string> VideoModelMap = new(StringComparer.OrdinalIgnoreCase)
         {
-            ["leonardo-motion-2"] = "MOTION2",
+            ["leonardo-motion-2"]         = "motion_2.0",
+            ["leonardo-motion-2-fast"]    = "motion_2.0-fast",
+            ["leonardo-veo-3.1"]          = "veo-3.1-generate-001",
+            ["leonardo-veo-3.1-fast"]     = "veo-3.1-fast-generate-001",
+            ["leonardo-veo-3.1-lite"]     = "veo-3.1-lite",
+            ["leonardo-kling-3"]          = "kling-3.0",
+            ["leonardo-kling-3-turbo"]    = "kling-3.0-turbo",
+            ["leonardo-kling-o3"]         = "kling-video-o-3",
+            ["leonardo-seedance-2"]       = "seedance-2.0",
+            ["leonardo-seedance-2-fast"]  = "seedance-2.0-fast",
+            ["leonardo-hailuo-03"]        = "hailuo-03",
+            ["leonardo-hailuo-2.3-fast"]  = "hailuo-2_3-fast",
+            ["leonardo-wan-3"]            = "alibaba/wan-3.0",
+            ["leonardo-ltx-2.3-pro"]      = "ltxv-2.3-pro",
+            ["leonardo-ltx-2.3-fast"]     = "ltxv-2.3-fast",
+            ["leonardo-grok-imagine-1.5"] = "grok-imagine-1.5",
         };
+
+        /// <summary>
+        /// Prompt cuando el modulo no trae ninguno. La v2 lo exige en todos los
+        /// modelos de video, y un clip sin indicaciones es un caso normal: el usuario
+        /// solo quiere que la imagen cobre vida.
+        /// </summary>
+        public const string DefaultVideoPrompt = "Animate this image with natural, subtle motion.";
+
+        /// <summary>Modelos de video que sabe llamar este provider.</summary>
+        public static IReadOnlyCollection<string> VideoModelIds => VideoModelMap.Keys;
 
         // Models that require the contrast parameter
         private static readonly HashSet<string> ContrastRequiredModels = new(StringComparer.OrdinalIgnoreCase)
@@ -281,18 +311,20 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// Imagen -> video (Motion 2.0).
+        /// Imagen -> video.
         ///
         /// Tres pasos, como la generacion de imagen pero con dos diferencias que
         /// importan: la imagen de partida SIEMPRE se sube (llega de cualquier
         /// modulo del pipeline, no tiene por que haberla generado Leonardo, asi que
-        /// se manda como `imageType: "UPLOADED"` y no como "GENERATED"), y la espera
-        /// es mucho mas larga que en imagen, asi que el polling tiene su propio
-        /// presupuesto de tiempo.
+        /// va como `UPLOADED` y no como "GENERATED"), y la espera es mucho mas larga
+        /// que en imagen, asi que el polling tiene su propio presupuesto de tiempo.
+        /// Lo que se manda (duracion, tamano, audio...) sale de
+        /// <see cref="VideoModelOptions"/>, ya encajado en lo que admite el modelo.
         /// </summary>
         private async Task<AiResult> GenerateVideoAsync(AiExecutionContext context)
         {
-            if (!VideoModelMap.TryGetValue(context.ModelName, out var videoModel))
+            if (!VideoModelMap.TryGetValue(context.ModelName, out var videoModel)
+                || VideoModelOptions.Find(context.ModelName) is not { } spec)
                 return AiResult.Fail($"Modelo de video '{context.ModelName}' no reconocido en Leonardo AI");
 
             if (context.InputFiles is not { Count: > 0 })
@@ -300,18 +332,13 @@ namespace Server.Services.Ai
                     "El modulo de video necesita una imagen de entrada. Conecta un modulo de "
                     + "imagen (o de archivos) a su puerto 'Imagen'.");
 
-            // Resolucion. Motion 2.0 admite 480 y 720; cualquier otra cosa la
-            // rechaza la API, asi que se normaliza aqui en vez de dejar pasar
-            // un valor invalido que solo se veria como un HTTP 400 sin contexto.
-            var resolution = NormalizeVideoResolution(
-                context.Configuration.TryGetValue("resolution", out var r) ? r?.ToString() : null);
-
             var baseInput = context.Input;
             if (context.Configuration.TryGetValue("systemPrompt", out var sysPrompt)
                 && sysPrompt is string sp && !string.IsNullOrWhiteSpace(sp))
                 baseInput = string.IsNullOrWhiteSpace(baseInput) ? sp : $"{sp}\n\n{baseInput}";
 
             var prompt = baseInput?.Trim() ?? "";
+            if (prompt.Length == 0) prompt = DefaultVideoPrompt;
             var maxLen = InputAdapter.GetMaxPromptLength(context.ModelName);
             string? truncationWarning = null;
             if (prompt.Length > maxLen)
@@ -321,35 +348,25 @@ namespace Server.Services.Ai
                 truncationWarning = InputAdapter.BuildTruncationWarning(context.ModelName, originalLength, maxLen);
             }
 
+            var image = context.InputFiles[0];
+            var (imageWidth, imageHeight) = ImageHeader.ReadDimensions(image);
+            var options = VideoModelOptions.Resolve(spec, context.Configuration, (imageWidth, imageHeight));
+
             using var http = new HttpClient();
             http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", context.ApiKey);
 
-            var imageId = await UploadInitImageAsync(http, context.InputFiles[0]);
+            var imageId = await UploadInitImageAsync(http, image);
             if (imageId is null)
                 return AiResult.Fail("Leonardo AI: no se pudo subir la imagen de partida del video");
 
-            var body = new Dictionary<string, object>
-            {
-                ["imageId"] = imageId,
-                ["imageType"] = "UPLOADED",
-                ["model"] = videoModel,
-                ["resolution"] = resolution,
-                ["isPublic"] = false,
-                ["frameInterpolation"] = ReadBool(context.Configuration, "frameInterpolation", true),
-                ["promptEnhance"] = ReadBool(context.Configuration, "promptEnhance", false),
-            };
-
-            if (!string.IsNullOrWhiteSpace(prompt))
-                body["prompt"] = prompt;
-
+            var body = BuildVideoRequest(videoModel, spec, options, prompt, imageId);
             var sentPayload = JsonSerializer.Serialize(body);
             var content = new StringContent(sentPayload, Encoding.UTF8, "application/json");
 
             HttpResponseMessage submitResp;
             try
             {
-                submitResp = await http.PostAsync(
-                    $"{BaseUrl}/generations-image-to-video", content, context.CancellationToken);
+                submitResp = await http.PostAsync($"{BaseUrlV2}/generations", content, context.CancellationToken);
             }
             catch (HttpRequestException ex)
             {
@@ -366,19 +383,20 @@ namespace Server.Services.Ai
             var submitJson = await submitResp.Content.ReadAsStringAsync(context.CancellationToken);
             using var submitDoc = JsonDocument.Parse(submitJson);
 
-            // El nombre del objeto que envuelve el trabajo ha cambiado entre versiones
-            // de la API (sdGenerationJob, motionSvdGenerationJob...). Buscar la
-            // propiedad por nombre a cualquier profundidad evita atarse a una forma
-            // concreta que solo se descubre cuando deja de funcionar en produccion.
+            // La v2 devuelve el id en la raiz y la v1 lo envolvia (sdGenerationJob,
+            // motionVideoGenerationJob...). Buscar la propiedad por nombre a cualquier
+            // profundidad evita atarse a una forma concreta que solo se descubre
+            // cuando deja de funcionar en produccion.
             var generationId = FindStringProperty(submitDoc.RootElement, "generationId");
             if (string.IsNullOrWhiteSpace(generationId))
                 return AiResult.Fail($"Respuesta inesperada de Leonardo AI: no se encontro generationId. {submitJson}");
 
-            var creditCost = FindIntProperty(submitDoc.RootElement, "apiCreditCost");
+            var realCost = ReadSubmitCost(submitDoc.RootElement);
 
-            // Un clip tarda bastante mas que una imagen. 5 min de presupuesto cabe de
-            // sobra en el timeout de 10 min por modulo del executor.
-            const int maxAttempts = 60;
+            // Un clip tarda bastante mas que una imagen, y un Veo a 4K o un Seedance de
+            // 15 s, mas que un Motion de 5 s. 8 min de presupuesto caben en el timeout
+            // de 10 min por modulo del executor con margen para subir y bajar ficheros.
+            const int maxAttempts = 96;
             const int pollIntervalMs = 5000;
 
             for (var attempt = 0; attempt < maxAttempts; attempt++)
@@ -420,28 +438,29 @@ namespace Server.Services.Ai
                 if (videoBytes.Length == 0)
                     return AiResult.Fail("Leonardo AI: el video descargado esta vacio");
 
-                // La duracion es fija por modelo y la declara el catalogo: se factura por
-                // segundo y el orquestador loop cuenta con ella para calcular los clips.
-                var seconds = ModelCatalog.GetClipSeconds(context.ModelName) ?? 5;
-
+                // La duracion es la que se pidio, ya encajada en las del modelo: se factura
+                // por segundo y el orquestador loop cuenta con ella para calcular los clips.
                 var result = AiResult.OkFile(videoBytes, "video/mp4", new Dictionary<string, object>
                 {
                     ["model"] = context.ModelName,
                     ["generationId"] = generationId,
-                    ["resolution"] = resolution,
-                    ["durationSeconds"] = seconds,
+                    ["resolution"] = options.Resolution.Id,
+                    ["width"] = options.Size.Width,
+                    ["height"] = options.Size.Height,
+                    ["durationSeconds"] = options.Duration,
+                    ["audio"] = options.Audio ?? false,
                 });
 
-                // Si la API dijo cuantos creditos costo, ese es el gasto REAL y manda
-                // sobre la tarifa estimada del catalogo.
-                if (creditCost > 0)
+                // Si la API dijo cuanto costo, ese es el gasto REAL y manda sobre la
+                // tarifa estimada del catalogo.
+                if (realCost is { } cost)
                 {
-                    result.Metadata["apiCreditCost"] = creditCost;
-                    result.EstimatedCost = PricingCatalog.EstimateCostFromLeonardoCredits(creditCost);
+                    result.Metadata["apiCostUsd"] = cost;
+                    result.EstimatedCost = cost;
                 }
                 else
                 {
-                    result.EstimatedCost = PricingCatalog.EstimateVideoCost(context.ModelName, seconds);
+                    result.EstimatedCost = PricingCatalog.EstimateVideoCost(context.ModelName, options.Duration);
                 }
 
                 result.SentPayload = sentPayload;
@@ -453,30 +472,102 @@ namespace Server.Services.Ai
                 $"Timeout esperando el video de Leonardo AI (>{maxAttempts * pollIntervalMs / 1000}s)");
         }
 
-        /// <summary>Normaliza la resolucion a uno de los dos valores que acepta la API.</summary>
-        private static string NormalizeVideoResolution(string? raw)
+        /// <summary>
+        /// Cuerpo de POST /v2/generations. Solo lleva los campos que el modelo admite:
+        /// la v2 valida cada modelo contra su propio esquema y un campo de mas (la
+        /// duracion en Motion, el audio en Hailuo 2.3) es un 400.
+        /// </summary>
+        public static Dictionary<string, object> BuildVideoRequest(
+            string apiModel, VideoModelOptions.Spec spec, VideoModelOptions.Resolved options,
+            string prompt, string imageId)
         {
-            if (string.IsNullOrWhiteSpace(raw)) return "RESOLUTION_480";
-            var value = raw.Trim();
-            if (value.Contains("720")) return "RESOLUTION_720";
-            return "RESOLUTION_480";
+            var parameters = new Dictionary<string, object>
+            {
+                ["prompt"] = prompt,
+                ["quantity"] = 1,
+                ["width"] = options.Size.Width,
+                ["height"] = options.Size.Height,
+                ["guidances"] = new Dictionary<string, object>
+                {
+                    ["start_frame"] = new object[]
+                    {
+                        new Dictionary<string, object>
+                        {
+                            ["image"] = new Dictionary<string, object> { ["id"] = imageId, ["type"] = "UPLOADED" },
+                        },
+                    },
+                },
+            };
+
+            if (spec.SendDuration) parameters["duration"] = options.Duration;
+            if (options.Audio is { } audio) parameters["motion_has_audio"] = audio;
+            if (options.NegativePrompt is { } negative) parameters["negative_prompt"] = negative;
+            if (options.Seed is { } seed) parameters["seed"] = seed;
+            if (options.PromptEnhance is { } enhance) parameters["prompt_enhance"] = enhance ? "ON" : "OFF";
+            if (options.FrameInterpolation is { } interpolation) parameters["frame_interpolation"] = interpolation;
+            if (options.Quality is { } quality) parameters["quality"] = quality;
+
+            return new Dictionary<string, object>
+            {
+                ["model"] = apiModel,
+                ["public"] = false,
+                ["parameters"] = parameters,
+            };
         }
 
-        private static bool ReadBool(IDictionary<string, object> config, string key, bool fallback)
+        /// <summary>
+        /// Coste real en USD que declara la respuesta, o null si no dice nada. La v1
+        /// lo manda en `cost` con su unidad (CREDITS, o DOLLARS en el plan de pago por
+        /// uso) y la v2 en `apiCreditCost`, que llega vacio en pago por uso.
+        /// </summary>
+        public static decimal? ReadSubmitCost(JsonElement root)
         {
-            if (!config.TryGetValue(key, out var val)) return fallback;
-            return val switch
+            if (FindObjectProperty(root, "cost") is { } cost
+                && cost.TryGetProperty("amount", out var amountEl)
+                && decimal.TryParse(
+                    amountEl.ValueKind == JsonValueKind.Number ? amountEl.GetRawText() : amountEl.GetString(),
+                    System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var amount)
+                && amount > 0)
             {
-                bool b => b,
-                JsonElement je => je.ValueKind switch
-                {
-                    JsonValueKind.True => true,
-                    JsonValueKind.False => false,
-                    JsonValueKind.String => bool.TryParse(je.GetString(), out var fromString) ? fromString : fallback,
-                    _ => fallback,
-                },
-                _ => bool.TryParse(val?.ToString(), out var parsed) ? parsed : fallback,
-            };
+                var unit = cost.TryGetProperty("unit", out var unitEl) ? unitEl.GetString() : null;
+                if (string.Equals(unit, "DOLLARS", StringComparison.OrdinalIgnoreCase))
+                    return amount;
+                if (string.Equals(unit, "CREDITS", StringComparison.OrdinalIgnoreCase))
+                    return amount * PricingCatalog.LeonardoCreditUsd;
+            }
+
+            var credits = FindIntProperty(root, "apiCreditCost");
+            return credits > 0 ? PricingCatalog.EstimateCostFromLeonardoCredits(credits) : null;
+        }
+
+        /// <summary>Primer objeto con ese nombre, a cualquier profundidad.</summary>
+        private static JsonElement? FindObjectProperty(JsonElement element, string name)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var prop in element.EnumerateObject())
+                    {
+                        if (prop.NameEquals(name) && prop.Value.ValueKind == JsonValueKind.Object)
+                            return prop.Value;
+
+                        var nested = FindObjectProperty(prop.Value, name);
+                        if (nested is not null) return nested;
+                    }
+                    break;
+
+                case JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        var nested = FindObjectProperty(item, name);
+                        if (nested is not null) return nested;
+                    }
+                    break;
+            }
+
+            return null;
         }
 
         /// <summary>

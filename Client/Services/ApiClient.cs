@@ -66,6 +66,17 @@ public class ApiClient
         return await resp.Content.ReadFromJsonAsync<List<ModelPriceResponse>>() ?? [];
     }
 
+    /// <summary>
+    /// Lo que admite cada modelo de video (duraciones, resoluciones y formatos, audio).
+    /// Lista vacia si falla: el formulario dice que no hay opciones en vez de romperse.
+    /// </summary>
+    public async Task<List<VideoModelOptionsResponse>> GetVideoModelOptionsAsync()
+    {
+        var resp = await SendAsync(HttpMethod.Get, "/api/models/video-options");
+        if (!resp.IsSuccessStatusCode) return [];
+        return await resp.Content.ReadFromJsonAsync<List<VideoModelOptionsResponse>>() ?? [];
+    }
+
     // ── Deteccion de cambios en el catalogo ──
 
     /// <summary>

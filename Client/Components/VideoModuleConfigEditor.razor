@@ -1,0 +1,156 @@
+@* Formulario del modulo de video. Ofrece solo lo que admite el modelo elegido
+   (duraciones, resoluciones con sus formatos, audio y extras): las opciones
+   las sirve el servidor, que es donde viven los limites de cada API. Se usa
+   igual al crear el modulo y al editarlo en la pagina Modulos. *@
+
+<div class="form-group">
+    <label>Movimiento por defecto <span class="text-sm text-muted">(se antepone a lo que llegue por el puerto)</span></label>
+    <textarea @bind="Config.Prompt" @bind:after="Changed" rows="3"
+              placeholder="Ej: Camara con un lento zoom de acercamiento, movimiento suave, sin cortes..."></textarea>
+</div>
+
+@if (Options is null)
+{
+    <span class="text-sm text-muted">Cargando las opciones del modelo...</span>
+}
+else
+{
+    var resolution = Options.FindResolution(Config.Resolution);
+    var durations = Options.DurationsFor(Config.Resolution);
+
+    <div class="form-row">
+        <div class="form-group">
+            <label>Resolucion</label>
+            <select @bind="Config.Resolution" @bind:after="ResolutionChanged">
+                @foreach (var r in Options.Resolutions)
+                {
+                    <option value="@r.Id">@r.Label</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Formato</label>
+            <select @bind="Config.AspectRatio" @bind:after="Changed">
+                <option value="@VideoModuleConfig.AutoAspect">@VideoModuleConfig.AspectLabel(VideoModuleConfig.AutoAspect)</option>
+                @foreach (var a in resolution?.Aspects ?? [])
+                {
+                    <option value="@a">@VideoModuleConfig.AspectLabel(a)</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Duracion</label>
+            @if (durations.Length <= 1)
+            {
+                <input type="text" disabled value="@($"{Config.Duration} s (fija)")" />
+            }
+            else
+            {
+                <select @bind="Config.Duration" @bind:after="Changed">
+                    @foreach (var d in durations)
+                    {
+                        <option value="@d">@d s</option>
+                    }
+                </select>
+            }
+        </div>
+    </div>
+
+    @if (resolution?.Durations is { Length: > 0 } capped && capped.Length < Options.Durations.Length)
+    {
+        <span class="text-sm text-muted">A @resolution.Label este modelo solo admite @string.Join(", ", capped) s.</span>
+    }
+
+    @if (Options.Qualities.Length > 0)
+    {
+        <div class="form-group">
+            <label>Calidad de generacion</label>
+            <select @bind="Config.Quality" @bind:after="Changed">
+                @foreach (var q in Options.Qualities)
+                {
+                    <option value="@q.Value">@q.Label</option>
+                }
+            </select>
+        </div>
+    }
+
+    @switch (Options.Audio)
+    {
+        case "optional":
+            <div class="form-group">
+                <label class="form-check">
+                    <input type="checkbox" @bind="Config.Audio" @bind:after="Changed" />
+                    Generar audio
+                    <span class="text-sm text-muted">(sonido y efectos del propio clip; dejalo apagado si el video va con locucion o musica)</span>
+                </label>
+            </div>
+            break;
+        case "always":
+            <span class="text-sm text-muted">Este modelo genera siempre el clip con audio; no se puede apagar.</span>
+            break;
+    }
+
+    @if (Options.PromptEnhance)
+    {
+        <div class="form-group">
+            <label class="form-check">
+                <input type="checkbox" @bind="Config.PromptEnhance" @bind:after="Changed" />
+                Mejorar el prompt
+                <span class="text-sm text-muted">(Leonardo reescribe la descripcion del movimiento antes de generar)</span>
+            </label>
+        </div>
+    }
+
+    @if (Options.FrameInterpolation)
+    {
+        <div class="form-group">
+            <label class="form-check">
+                <input type="checkbox" @bind="Config.FrameInterpolation" @bind:after="Changed" />
+                Interpolacion de fotogramas
+                <span class="text-sm text-muted">(movimiento mas fluido)</span>
+            </label>
+        </div>
+    }
+
+    @if (Options.NegativePromptChars > 0)
+    {
+        <div class="form-group">
+            <label>Evitar <span class="text-sm text-muted">(prompt negativo, hasta @Options.NegativePromptChars caracteres)</span></label>
+            <textarea @bind="Config.NegativePrompt" @bind:after="Changed" rows="2" maxlength="@Options.NegativePromptChars"
+                      placeholder="Ej: cortes bruscos, texto, marcas de agua..."></textarea>
+        </div>
+    }
+
+    @if (Options.Seed)
+    {
+        <div class="form-group">
+            <label>Semilla <span class="text-sm text-muted">(vacia = aleatoria; fijala para repetir un resultado)</span></label>
+            <input type="text" inputmode="numeric" @bind="Config.Seed" @bind:after="Changed" placeholder="Aleatoria" />
+        </div>
+    }
+
+    <span class="text-sm text-muted">
+        Se genera un clip de @Config.Duration s por imagen conectada.
+    </span>
+}
+
+@code {
+    [Parameter, EditorRequired] public VideoModuleConfig Config { get; set; } = new();
+
+    /// <summary>Lo que admite el modelo elegido; null mientras no han llegado del servidor.</summary>
+    [Parameter] public VideoModelOptionsResponse? Options { get; set; }
+
+    /// <summary>Avisa al formulario padre para que recalcule si hay cambios sin guardar.</summary>
+    [Parameter] public EventCallback OnChange { get; set; }
+
+    protected override void OnParametersSet() => Config.Normalize(Options);
+
+    private Task Changed() => OnChange.InvokeAsync();
+
+    private Task ResolutionChanged()
+    {
+        // Cada resolucion tiene sus formatos y, en algunos modelos, sus duraciones.
+        Config.Normalize(Options);
+        return OnChange.InvokeAsync();
+    }
+}

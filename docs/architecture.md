@@ -657,18 +657,47 @@ ritmo) y se antepone a todos los clips; cada segmento `===IMAGEN n===` describe
 el movimiento de SU imagen. Sin marcas, todos los clips comparten el mismo
 prompt de movimiento.
 
+**Modelos y opciones.** El modulo trabaja con 16 modelos de Leonardo (Motion,
+Veo, Kling, Seedance, Hailuo, Wan, LTX y Grok Imagine) por su API v2
+(`POST /v2/generations`, con el resultado en `GET /v1/generations/{id}`). Cada
+uno admite cosas distintas, y su API rechaza con un 400 cualquier combinacion
+que no este en su lista, asi que lo que se puede configurar vive en un solo
+sitio, `VideoModelOptions`: duraciones (Kling de 3 a 15 s, Veo 4/6/8, Motion
+fija en 5), resoluciones con sus formatos en pixeles (algunas con menos
+duraciones: Veo hace 1080p y 4K solo a 8 s, Hailuo 2.3 Fast 1080p solo a 6 s),
+audio (no tiene / opcional / siempre) y los extras que no todos aceptan
+(prompt negativo, semilla, mejora de prompt, interpolacion, calidad). De ahi
+sale todo:
+
+- `LeonardoProvider.BuildVideoRequest` manda solo los campos que el modelo
+  tiene (la duracion en Motion o el audio en Hailuo 2.3 serian un 400).
+- La pantalla de modulos pide las opciones a `/api/models/video-options` y el
+  formulario (`VideoModuleConfigEditor`) ofrece solo esas.
+- El orquestador loop lee de ahi los segundos de cada clip.
+
+Lo guardado en el modulo (`duration`, `resolution`, `aspectRatio`, `audio`,
+`negativePrompt`, `seed`, `promptEnhance`, `frameInterpolation`,
+`videoQuality`) se encaja siempre en el valor permitido mas cercano antes de
+llamar (`VideoModelOptions.Resolve`; a igual distancia, la duracion corta), y
+los modulos antiguos de Motion con `"RESOLUTION_480"` siguen valiendo. El
+formato "auto" elige el de proporcion mas parecida a la imagen de entrada. El
+audio va **apagado por defecto**: el clip suele ir bajo una locucion o una
+musica, y el montaje solo conserva audio si todos los clips lo traen. Sin
+prompt de movimiento se manda uno neutro, porque la v2 lo exige.
+
 **Un clip fallido no tira los demas.** Si fallan algunos, se entregan los que
 salieron y el hueco queda anotado en el log y en `metadata.failed`: el gasto de
 los que si salieron ya esta hecho, y el montaje posterior saldria mas corto sin
 que nada lo dijese. Solo si fallan todos falla el modulo.
 
 **Coste.** El video cambia el orden de magnitud del gasto de un pipeline: se
-factura por SEGUNDO generado, no por pieza. Motion 2.0 entrega clips de 5 s sin
-audio; cinco clips son 25 s. Leonardo cobra en creditos y devuelve el gasto real
-de cada generacion en `apiCreditCost`, asi que el coste que se apunta en la
-ejecucion es ese, convertido a dolares con `PricingCatalog.LeonardoCreditUsd`;
-la tarifa por segundo del catalogo es solo la estimacion a priori que necesita
-la pantalla de modelos. Un modulo Checkpoint antes del nodo de video permite
+factura por SEGUNDO generado, no por pieza; cinco clips de 8 s son 40 s, y entre
+el modelo mas barato y el mas caro hay mas de un orden de magnitud. Leonardo
+cobra en creditos y devuelve el gasto real de cada generacion (`apiCreditCost`,
+o `cost` en dolares en el plan de pago por uso), asi que el coste que se apunta
+en la ejecucion es ese (`LeonardoProvider.ReadSubmitCost`); la tarifa por
+segundo del catalogo es solo la estimacion a priori, orientativa porque
+Leonardo no publica el precio por modelo. Un modulo Checkpoint antes del nodo de video permite
 aprobar el gasto antes de incurrirlo.
 
 **Montaje.** `VideoAssembler` llama a ffmpeg con el FILTRO `concat`, no con el
@@ -689,9 +718,9 @@ voz tambien pasa por ffmpeg. Si no se puede medir la voz se usa `-shortest`.
 
 ### Orquestador loop: partes segun la duracion
 
-Los clips de video tienen duracion fija (Motion 2.0: 5 s, declarada en
-`ModelCatalog` como `ClipSeconds`), asi que una locucion de 39 s sobre tres
-clips deja 24 s de voz sin imagen. El modo loop del orquestador (`loopMode`,
+Cada clip de video dura lo que diga su modulo (Motion 2.0 siempre 5 s; el resto,
+la duracion configurada, encajada por `VideoModelOptions.ResolveDuration`), asi
+que una locucion de 39 s sobre tres clips de 5 s deja 24 s de voz sin imagen. El modo loop del orquestador (`loopMode`,
 casilla "Repetir las salidas segun la duracion"; logica en `LoopPlanner`)
 calcula cuantas partes hacen falta en vez de dejarlas fijas:
 
@@ -700,10 +729,11 @@ calcula cuantas partes hacen falta en vez de dejarlas fijas:
    tomas de voz). Si no llega ninguno el modulo falla diciendolo; un audio que
    entre por "Instrucciones" no cuenta.
 2. **Ritmo.** Lo marca un **modulo de duracion** (Audio, Video o Montaje;
-   `IsDurationModule`) de dentro de su rectangulo de loop, el que tenga
-   `ClipSeconds` en el catalogo (Motion 2.0: 5 s); si hay varios, el de clip mas
-   corto. Sin rectangulo, con el rectangulo vacio o sin ningun modulo de duracion
-   dentro, el modulo falla. Si el de dentro no tiene duracion fija,
+   `IsDurationModule`) de dentro de su rectangulo de loop, el de video, con la
+   duracion de clip que tenga configurada (la del paso manda sobre la del
+   modulo, igual que al ejecutar); si hay varios, el de clip mas corto. Sin
+   rectangulo, con el rectangulo vacio o sin ningun modulo de duracion dentro,
+   el modulo falla. Si el de dentro no tiene duracion de clip (audio, montaje),
    `loopClipSeconds` ("Segundos por vuelta") la fija a mano. En el editor los
    modulos de duracion van marcados con un contorno discontinuo cian y un
    cronometro.
@@ -997,7 +1027,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Anthropic   | `Anthropic`  | Text (Claude)                                  |
 | Google      | `Google`     | Text (Gemini), Image                           |
 | xAI         | `xAI`        | Text (Grok), Image                             |
-| LeonardoAI  | `LeonardoAI` | Image, Video (Motion 2.0)                      |
+| LeonardoAI  | `LeonardoAI` | Image, Video (16 modelos por la API v2)        |
 | ElevenLabs  | `ElevenLabs` | Audio (texto a voz)                            |
 
 ---

@@ -2996,6 +2996,12 @@ app.MapGet("/api/models/pricing", async (
     return Results.Ok(await catalogSvc.GetPricingAsync(db, ct));
 }).RequireAuthorization();
 
+// Lo que admite cada modelo de video (duraciones, resoluciones y formatos, audio...).
+// No depende del tenant: son los limites de cada API, y viven en el servidor para
+// que el formulario y el provider no puedan discrepar.
+app.MapGet("/api/models/video-options", () => Results.Ok(VideoModelOptions.Describe()))
+    .RequireAuthorization();
+
 // ── Deteccion de cambios en el catalogo de modelos ──
 
 // Lanza el escaneo desde la pantalla de modelos: pregunta a los proveedores que

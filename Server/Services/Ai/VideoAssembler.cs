@@ -16,8 +16,8 @@ namespace Server.Services.Ai;
 ///
 /// El audio solo se conserva si TODOS los clips lo traen: el filtro concat exige
 /// el mismo numero de streams en todas las entradas, y mezclar clips con y sin
-/// audio aborta el montaje. Motion 2.0 no genera audio, asi que el caso normal
-/// hoy es video sin pista de sonido.
+/// audio aborta el montaje. El modulo de video genera los clips sin audio salvo
+/// que se pida, asi que el caso normal es video sin pista de sonido.
 ///
 /// Si llega una VOZ EN OFF (uno o varios audios, en orden) esa es la pista del
 /// video y manda en la duracion: el video se corta donde acaba la voz y, si los

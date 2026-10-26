@@ -2057,7 +2057,8 @@ public class GraphPipelineExecutor : IPipelineExecutor
         return (config, ResolveWorkspacePath(exec.WorkspacePath), filePaths);
     }
 
-    private static Dictionary<string, object> MergeConfiguration(string? moduleConfig, string? stepConfig)
+    /// <summary>Configuracion efectiva de un paso: la del modulo con la del paso por encima.</summary>
+    internal static Dictionary<string, object> MergeConfiguration(string? moduleConfig, string? stepConfig)
     {
         var merged = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         MergeJson(moduleConfig, merged);

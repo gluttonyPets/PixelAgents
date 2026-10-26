@@ -68,6 +68,43 @@ public record ModelPriceResponse(
         + (OutputPerMTok ?? 0m) * outputTokens / 1_000_000m;
 }
 
+// ── Opciones de los modelos de video ──
+
+/// <summary>
+/// Lo que se puede configurar de un modelo de video (duraciones, resoluciones con
+/// sus formatos, audio y extras). Lo sirve el servidor, que es donde viven los
+/// limites de cada API: asi el formulario no puede ofrecer una combinacion que el
+/// proveedor rechace.
+/// </summary>
+/// <param name="Audio">"none", "optional" o "always".</param>
+/// <param name="NegativePromptChars">Tope del prompt negativo; 0 = no lo admite.</param>
+public record VideoModelOptionsResponse(
+    string ModelId,
+    int[] Durations,
+    int DefaultDuration,
+    VideoResolutionResponse[] Resolutions,
+    string DefaultResolution,
+    string Audio,
+    int NegativePromptChars,
+    bool Seed,
+    bool PromptEnhance,
+    bool FrameInterpolation,
+    VideoChoiceResponse[] Qualities,
+    string? DefaultQuality)
+{
+    public VideoResolutionResponse? FindResolution(string? id) =>
+        Resolutions.FirstOrDefault(r => r.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Duraciones que admite el modelo a esa resolucion.</summary>
+    public int[] DurationsFor(string? resolutionId) =>
+        FindResolution(resolutionId)?.Durations ?? Durations;
+}
+
+/// <param name="Durations">Duraciones a esta resolucion, si son menos que las del modelo.</param>
+public record VideoResolutionResponse(string Id, string Label, string[] Aspects, int[]? Durations);
+
+public record VideoChoiceResponse(string Value, string Label);
+
 // ── Deteccion de cambios en el catalogo de modelos ──
 
 /// <summary>

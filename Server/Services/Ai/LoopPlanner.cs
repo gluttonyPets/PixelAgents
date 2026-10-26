@@ -11,11 +11,12 @@ namespace Server.Services.Ai;
 /// fija el usuario sino la duracion de la locucion.
 ///
 /// El problema que resuelve es el de una voz en off de 39 s sobre 15 s de video:
-/// los clips de video tienen duracion fija (Motion 2.0 siempre entrega 5 s), asi
-/// que para cubrir una voz hay que pedir tantos clips como quepan en ella. El
-/// orquestador mide lo que le llega por su entrada Locucion (audio o video),
-/// busca dentro de su rectangulo de loop el modulo de duracion que marca el ritmo
-/// (<see cref="FindPacer"/>), calcula N = techo(duracion / segundos por clip) y
+/// cada clip de video dura lo que diga su modulo (Motion 2.0 siempre 5 s, Kling lo
+/// que se configure entre 3 y 15), asi que para cubrir una voz hay que pedir
+/// tantos clips como quepan en ella. El orquestador mide lo que le llega por su
+/// entrada Locucion (audio o video), busca dentro de su rectangulo de loop el
+/// modulo de duracion que marca el ritmo (<see cref="FindPacer"/>), calcula
+/// N = techo(duracion / segundos por clip) y
 /// pide a la IA N partes con un valor por cada salida que el usuario definio, a
 /// partir del prompt de cada salida. Los modulos del rectangulo se ejecutan N
 /// veces, una por parte (<see cref="LoopFrames"/>).
@@ -98,19 +99,31 @@ public static class LoopPlanner
     }
 
     /// <summary>
-    /// El modulo de duracion de dentro del rectangulo que marca el ritmo: el que
-    /// tenga duracion de clip fija en el catalogo (Motion 2.0: 5 s). Si hay varios,
-    /// el de clip mas corto, que es el que necesita mas vueltas para cubrir la
-    /// locucion. Null si ninguno tiene duracion fija.
+    /// El modulo de duracion de dentro del rectangulo que marca el ritmo: el de
+    /// video, con los segundos de clip que tenga configurados (Motion 2.0 siempre
+    /// 5; Kling, de 3 a 15). Si hay varios, el de clip mas corto, que es el que
+    /// necesita mas vueltas para cubrir la locucion. Null si ninguno tiene
+    /// duracion de clip.
     /// </summary>
     public static Pacer? FindPacer(LoopFrames.FrameInfo frame) =>
         frame.Members
             .Where(m => IsDurationModule(m.ModuleType))
-            .Select(m => (Node: m, Seconds: ModelCatalog.GetClipSeconds(m.AiModule.ModelName)))
+            .Select(m => (Node: m, Seconds: ClipSecondsOf(m)))
             .Where(x => x.Seconds is > 0)
             .OrderBy(x => x.Seconds)
             .Select(x => new Pacer(x.Seconds!.Value, x.Node.ProjectModule.StepName ?? x.Node.AiModule.Name))
             .FirstOrDefault();
+
+    /// <summary>
+    /// Segundos del clip que entregara el modulo: los que pida su configuracion (la
+    /// del paso manda sobre la del modulo), encajados en los que admite su modelo.
+    /// Es el mismo calculo que hace el provider al llamar, asi que el loop pide
+    /// exactamente las vueltas que luego se generan.
+    /// </summary>
+    private static int? ClipSecondsOf(ModuleNode node) =>
+        VideoModelOptions.ResolveDuration(
+            node.AiModule.ModelName,
+            GraphPipelineExecutor.MergeConfiguration(node.AiModule.Configuration, node.ProjectModule.Configuration));
 
     /// <summary>
     /// Tramos de tiempo de cada parte. Todos duran lo que un clip salvo el ultimo,
