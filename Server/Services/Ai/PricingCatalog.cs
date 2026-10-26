@@ -137,8 +137,9 @@ namespace Server.Services.Ai
                 // publica cuantos gasta cada modelo: su precio depende de la resolucion,
                 // la duracion y el audio, y solo lo da la calculadora de su web. Estas
                 // cifras son la estimacion a priori que necesita la pantalla de modelos
-                // (Motion 2.0 a ~$0,003/credito, el resto por la tarifa de cada
-                // proveedor en su propia API, revisada el 2026-10-26). El coste que se
+                // (Motion 2.0 a ~$0,003/credito; el resto, por la tarifa de cada
+                // proveedor en su propia API cuando la publica y, si no, por la de su
+                // gama, revisadas el 2026-10-26). El coste que se
                 // apunta en la ejecucion NO sale de aqui: la API devuelve el gasto real
                 // y el provider lo convierte con <see cref="LeonardoCreditUsd"/>.
                 ["leonardo-motion-2"]         = new(0.015m, "segundo",
@@ -158,6 +159,22 @@ namespace Server.Services.Ai
                 ["leonardo-ltx-2.3-pro"]      = new(0.08m,  "segundo", LeonardoVideoEstimate),
                 ["leonardo-ltx-2.3-fast"]     = new(0.04m,  "segundo", LeonardoVideoEstimate),
                 ["leonardo-grok-imagine-1.5"] = new(0.05m,  "segundo", LeonardoVideoEstimate),
+                ["leonardo-kling-2.6"]            = new(0.10m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-kling-2.5-turbo-pro"]  = new(0.07m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-kling-2.5-turbo-std"]  = new(0.04m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-kling-o1"]             = new(0.11m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-seedance-2-mini"]      = new(0.06m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-seedance-2.5"]         = new(0.30m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-seedance-1-pro"]       = new(0.12m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-seedance-1-pro-fast"]  = new(0.05m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-hailuo-2.3"]           = new(0.05m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-wan-2.7"]              = new(0.10m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-wan-2.6"]              = new(0.08m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-flux-3-video"]         = new(0.08m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-happy-horse-1.1"]      = new(0.10m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-happy-horse"]          = new(0.08m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-gemini-omni-1.1-flash"]= new(0.15m, "segundo", LeonardoVideoEstimate),
+                ["leonardo-gemini-omni-flash"]    = new(0.10m, "segundo", LeonardoVideoEstimate),
             };
 
         /// <summary>

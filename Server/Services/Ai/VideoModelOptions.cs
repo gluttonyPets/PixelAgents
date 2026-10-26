@@ -66,6 +66,10 @@ public static class VideoModelOptions
     /// </param>
     /// <param name="NegativePromptChars">Tope del prompt negativo; 0 = no lo admite.</param>
     /// <param name="SeedMax">Semilla maxima; 0 = no admite semilla.</param>
+    /// <param name="ImageAsReference">
+    /// true en los modelos sin fotograma inicial (Gemini Omni Flash): la imagen de
+    /// entrada va como imagen de referencia, que es lo unico que aceptan.
+    /// </param>
     public sealed record Spec(
         string ModelId,
         int[] Durations,
@@ -79,7 +83,8 @@ public static class VideoModelOptions
         bool PromptEnhance = false,
         bool FrameInterpolation = false,
         ChoiceOption[]? Qualities = null,
-        string? DefaultQuality = null);
+        string? DefaultQuality = null,
+        bool ImageAsReference = false);
 
     /// <summary>Lo que se le manda al proveedor, ya encajado en lo que admite el modelo.</summary>
     public sealed record Resolved(
@@ -132,6 +137,23 @@ public static class VideoModelOptions
         new("1080p", "1080p", [S("16:9", 1920, 1080), S("1:1", 1440, 1440), S("9:16", 1080, 1920)]),
     ];
 
+    private static readonly ResolutionOption[] Seedance1Resolutions =
+    [
+        new("480p", "480p", [S("16:9", 864, 480), S("4:3", 736, 544), S("1:1", 640, 640),
+            S("3:4", 544, 736), S("9:16", 480, 864), S("21:9", 960, 416)]),
+        new("720p", "720p", [S("16:9", 1248, 704), S("4:3", 1120, 832), S("1:1", 960, 960),
+            S("3:4", 832, 1120), S("9:16", 704, 1248), S("21:9", 1504, 640)]),
+        new("1080p", "1080p", [S("16:9", 1920, 1088), S("4:3", 1664, 1248), S("1:1", 1440, 1440),
+            S("3:4", 1248, 1664), S("9:16", 1088, 1920), S("21:9", 2176, 928)]),
+    ];
+
+    // Hailuo 2.3 (y su Fast) hace 10 s solo a 768p; a 1080p, unicamente 6 s.
+    private static readonly ResolutionOption[] Hailuo23Resolutions =
+    [
+        new("768p", "768p", [S("16:9", 1376, 768), S("1:1", 768, 768), S("9:16", 768, 1376)]),
+        new("1080p", "1080p", [S("16:9", 1920, 1080), S("1:1", 1080, 1080), S("9:16", 1080, 1920)], [6]),
+    ];
+
     private static ResolutionOption[] LtxResolutions(bool fast) =>
     [
         new("1080p", "1080p", [S("16:9", 1920, 1080), S("9:16", 1080, 1920)]),
@@ -182,13 +204,8 @@ public static class VideoModelOptions
             "768p", AudioSupport.Always,
             Qualities: [new("STANDARD", "Standard"), new("ACCELERATED", "Accelerated"), new("TURBO", "Turbo")],
             DefaultQuality: "TURBO"),
-        // Hailuo 2.3 Fast hace 10 s solo a 768p; a 1080p, unicamente 6 s.
-        new("leonardo-hailuo-2.3-fast", [6, 10], 6,
-            [
-                new("768p", "768p", [S("16:9", 1376, 768), S("1:1", 768, 768), S("9:16", 768, 1376)]),
-                new("1080p", "1080p", [S("16:9", 1920, 1080), S("1:1", 1080, 1080), S("9:16", 1080, 1920)], [6]),
-            ],
-            "768p", AudioSupport.None),
+        new("leonardo-hailuo-2.3-fast", [6, 10], 6, Hailuo23Resolutions, "768p", AudioSupport.None),
+        new("leonardo-hailuo-2.3", [6, 10], 6, Hailuo23Resolutions, "768p", AudioSupport.None),
 
         new("leonardo-wan-3", Range(2, 30), 5,
             [
@@ -215,6 +232,72 @@ public static class VideoModelOptions
                 new("1080p", "1080p", [S("16:9", 1888, 1072), S("1:1", 1424, 1424), S("9:16", 1072, 1888)]),
             ],
             "480p", AudioSupport.Optional),
+
+        new("leonardo-kling-2.6", [5, 10], 5, [KlingPro], "1080p", AudioSupport.Optional),
+        new("leonardo-kling-2.5-turbo-pro", [5, 10], 5, [KlingStandard, KlingPro], "1080p", AudioSupport.None,
+            PromptEnhance: true),
+        new("leonardo-kling-2.5-turbo-std", [5, 10], 5, [KlingStandard], "720p", AudioSupport.None,
+            PromptEnhance: true),
+        new("leonardo-kling-o1", Range(3, 10), 5, [KlingPro], "1080p", AudioSupport.None),
+
+        new("leonardo-seedance-2-mini", Range(4, 15), 8, SeedanceResolutions[..2], "720p", AudioSupport.Optional,
+            SeedMax: 4_294_967_295),
+        new("leonardo-seedance-2.5", Range(4, 30), 8, SeedanceResolutions, "720p", AudioSupport.Optional,
+            SeedMax: 4_294_967_295),
+        new("leonardo-seedance-1-pro", [4, 6, 8, 10], 8, Seedance1Resolutions, "720p", AudioSupport.None,
+            SeedMax: 4_294_967_295, PromptEnhance: true),
+        new("leonardo-seedance-1-pro-fast", [4, 6, 8, 10], 8, Seedance1Resolutions, "720p", AudioSupport.None,
+            SeedMax: 4_294_967_295, PromptEnhance: true),
+
+        new("leonardo-wan-2.7", Range(2, 10), 5, [KlingStandard, KlingPro], "720p", AudioSupport.None),
+        new("leonardo-wan-2.6", [5, 10, 15], 5,
+            [
+                new("720p", "720p", [S("16:9", 1280, 720), S("4:3", 960, 720), S("1:1", 960, 960),
+                    S("3:4", 720, 960), S("9:16", 720, 1280)]),
+                new("1080p", "1080p", [S("16:9", 1920, 1080), S("4:3", 1440, 1080), S("1:1", 1440, 1440),
+                    S("3:4", 1080, 1440), S("9:16", 1080, 1920)]),
+            ],
+            "720p", AudioSupport.None, NegativePromptChars: 500, SeedMax: 2_147_483_647),
+
+        new("leonardo-flux-3-video", Range(5, 20), 8,
+            [
+                new("720p", "720p", [S("16:9", 1280, 720), S("4:3", 1112, 834), S("1:1", 960, 960),
+                    S("3:4", 834, 1112), S("9:16", 720, 1280), S("2:1", 1360, 680), S("21:9", 1470, 630)]),
+                new("1080p", "1080p", [S("16:9", 1920, 1080), S("4:3", 1440, 1080), S("1:1", 1440, 1440),
+                    S("3:4", 1080, 1440), S("9:16", 1080, 1920), S("2:1", 2160, 1080), S("21:9", 2520, 1080)]),
+            ],
+            "720p", AudioSupport.Optional),
+
+        new("leonardo-happy-horse-1.1", Range(3, 15), 5,
+            [
+                new("720p", "720p", [S("16:9", 1280, 720), S("4:3", 1108, 832), S("1:1", 960, 960),
+                    S("3:4", 832, 1108), S("9:16", 720, 1280)]),
+                new("1080p", "1080p", [S("16:9", 1920, 1080), S("4:3", 1662, 1248), S("1:1", 1440, 1440),
+                    S("3:4", 1248, 1662), S("9:16", 1080, 1920)]),
+            ],
+            "1080p", AudioSupport.Optional, SeedMax: 2_147_483_647, PromptEnhance: true),
+        // Happy Horse 1.0 no tiene motion_has_audio (su audio_setting es para editar
+        // un video existente), asi que aqui no se le pide audio.
+        new("leonardo-happy-horse", Range(3, 15), 5,
+            [
+                new("720p", "720p", [S("16:9", 1280, 720), S("4:3", 960, 720), S("1:1", 720, 720),
+                    S("3:4", 720, 960), S("9:16", 720, 1280)]),
+                new("1080p", "1080p", [S("16:9", 1920, 1080), S("4:3", 1440, 1080), S("1:1", 1080, 1080),
+                    S("3:4", 1080, 1440), S("9:16", 1080, 1920)]),
+            ],
+            "1080p", AudioSupport.None, SeedMax: 2_147_483_647, PromptEnhance: true),
+
+        new("leonardo-gemini-omni-1.1-flash", Range(3, 10), 5,
+            [
+                new("360p", "360p", [S("16:9", 640, 360), S("9:16", 360, 640)]),
+                new("720p", "720p", [S("16:9", 1280, 720), S("9:16", 720, 1280)]),
+                new("1080p", "1080p", [S("16:9", 1920, 1080), S("9:16", 1080, 1920)]),
+                new("4k", "4K", [S("16:9", 3840, 2160), S("9:16", 2160, 3840)]),
+            ],
+            "720p", AudioSupport.Optional),
+        new("leonardo-gemini-omni-flash", Range(3, 10), 5,
+            [new("720p", "720p", [S("16:9", 1280, 720), S("9:16", 720, 1280)])],
+            "720p", AudioSupport.None, ImageAsReference: true),
     ];
 
     private static readonly Dictionary<string, Spec> ById =

@@ -150,12 +150,15 @@ multiplica por la duración cuando la unidad es esa: si un modelo futuro se
 facturase por clip, multiplicar por los segundos daría un número sin significado
 que nadie detectaría mirando la cifra.
 
-Todos los modelos de vídeo van por Leonardo (16: Motion 2.0 y Motion 2.0 Fast,
-Veo 3.1 / Fast / Lite, Kling 3.0 / 3.0 Turbo / O3, Seedance 2.0 / 2.0 Fast,
-Hailuo 03 y 2.3 Fast, Wan 3.0, LTX 2.3 Pro / Fast y Grok Imagine 1.5), elegidos
-alternando gama alta y económica. Lo que admite cada uno (duraciones,
-resoluciones y formatos, audio, extras) no está en el catálogo sino en
-`VideoModelOptions`; ver "Modulo Video" en `architecture.md`.
+Todos los modelos de vídeo van por Leonardo, y están los 32 de su API v2:
+Motion 2.0 y Fast; Veo 3.1 / Fast / Lite; Kling 3.0 / 3.0 Turbo / O3 / 2.6 /
+2.5 Turbo Pro y Standard / O1; Seedance 2.5 / 2.0 / 2.0 Fast / 2.0 Mini /
+1.0 Pro / 1.0 Pro Fast; Hailuo 03 / 2.3 / 2.3 Fast; Wan 3.0 / 2.7 / 2.6;
+LTX 2.3 Pro / Fast; FLUX 3 Video; Grok Imagine 1.5; Happy Horse 1.1 / 1.0, y
+Gemini Omni 1.1 Flash / Flash. Faltan solo los ya retirados (Kling 2.1 Pro,
+Veo 3, Sora 2). Lo que admite cada uno (duraciones, resoluciones y formatos,
+audio, extras) no está en el catálogo sino en `VideoModelOptions`; ver "Modulo
+Video" en `architecture.md`.
 
 Leonardo es un caso aparte: **no cobra en dólares sino en créditos**, y no
 publica cuántos gasta cada modelo (depende de resolución, duración y audio; solo

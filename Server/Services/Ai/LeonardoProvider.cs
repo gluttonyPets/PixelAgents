@@ -47,6 +47,22 @@ namespace Server.Services.Ai
             ["leonardo-ltx-2.3-pro"]      = "ltxv-2.3-pro",
             ["leonardo-ltx-2.3-fast"]     = "ltxv-2.3-fast",
             ["leonardo-grok-imagine-1.5"] = "grok-imagine-1.5",
+            ["leonardo-kling-2.6"]           = "kling-2.6",
+            ["leonardo-kling-2.5-turbo-pro"] = "kling-2.5",
+            ["leonardo-kling-2.5-turbo-std"] = "kling-2.5-turbo-standard",
+            ["leonardo-kling-o1"]            = "kling-video-o-1",
+            ["leonardo-seedance-2-mini"]     = "seedance-2.0-mini",
+            ["leonardo-seedance-2.5"]        = "bytedance/seedance-2.5",
+            ["leonardo-seedance-1-pro"]      = "seedance-1.0-pro",
+            ["leonardo-seedance-1-pro-fast"] = "seedance-1.0-pro-fast",
+            ["leonardo-hailuo-2.3"]          = "hailuo-2_3",
+            ["leonardo-wan-2.7"]             = "wan-2.7",
+            ["leonardo-wan-2.6"]             = "wan-2.6",
+            ["leonardo-flux-3-video"]        = "bfl/flux-3-video",
+            ["leonardo-happy-horse-1.1"]     = "happy-horse-1.1",
+            ["leonardo-happy-horse"]         = "happy-horse",
+            ["leonardo-gemini-omni-1.1-flash"] = "google/gemini-omni-1.1-flash-preview",
+            ["leonardo-gemini-omni-flash"]   = "gemini-omni-flash",
         };
 
         /// <summary>
@@ -481,6 +497,12 @@ namespace Server.Services.Ai
             string apiModel, VideoModelOptions.Spec spec, VideoModelOptions.Resolved options,
             string prompt, string imageId)
         {
+            // La imagen de entrada es el primer fotograma, salvo en los modelos que no
+            // lo tienen (Gemini Omni Flash), que solo aceptan imagenes de referencia.
+            var image = new Dictionary<string, object>
+            {
+                ["image"] = new Dictionary<string, object> { ["id"] = imageId, ["type"] = "UPLOADED" },
+            };
             var parameters = new Dictionary<string, object>
             {
                 ["prompt"] = prompt,
@@ -489,13 +511,7 @@ namespace Server.Services.Ai
                 ["height"] = options.Size.Height,
                 ["guidances"] = new Dictionary<string, object>
                 {
-                    ["start_frame"] = new object[]
-                    {
-                        new Dictionary<string, object>
-                        {
-                            ["image"] = new Dictionary<string, object> { ["id"] = imageId, ["type"] = "UPLOADED" },
-                        },
-                    },
+                    [spec.ImageAsReference ? "image_reference" : "start_frame"] = new object[] { image },
                 },
             };
 

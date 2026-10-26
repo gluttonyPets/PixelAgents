@@ -77,6 +77,33 @@ public class PeticionVideoLeonardoTests
     }
 
     [Fact]
+    public void GeminiOmniFlash_MandaLaImagenComoReferencia_PorqueNoTieneFotogramaInicial()
+    {
+        var guidances = Body("leonardo-gemini-omni-flash", "gemini-omni-flash")
+            .GetProperty("parameters").GetProperty("guidances");
+
+        Assert.False(guidances.TryGetProperty("start_frame", out _));
+        var reference = guidances.GetProperty("image_reference")[0].GetProperty("image");
+        Assert.Equal("img-123", reference.GetProperty("id").GetString());
+        Assert.Equal("UPLOADED", reference.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public void Wan26_LlevaPromptNegativoYSemilla_PeroNoAudio()
+    {
+        var p = Body("leonardo-wan-2.6", "wan-2.6", new()
+        {
+            ["negativePrompt"] = "texto",
+            ["seed"] = 7L,
+            ["audio"] = true,
+        }).GetProperty("parameters");
+
+        Assert.Equal("texto", p.GetProperty("negative_prompt").GetString());
+        Assert.Equal(7, p.GetProperty("seed").GetInt64());
+        Assert.False(p.TryGetProperty("motion_has_audio", out _));
+    }
+
+    [Fact]
     public void Hailuo23Fast_NoLlevaAudio()
     {
         var p = Body("leonardo-hailuo-2.3-fast", "hailuo-2_3-fast", new() { ["audio"] = true })

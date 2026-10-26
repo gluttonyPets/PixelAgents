@@ -680,9 +680,10 @@ ritmo) y se antepone a todos los clips; cada segmento `===IMAGEN n===` describe
 el movimiento de SU imagen. Sin marcas, todos los clips comparten el mismo
 prompt de movimiento.
 
-**Modelos y opciones.** El modulo trabaja con 16 modelos de Leonardo (Motion,
-Veo, Kling, Seedance, Hailuo, Wan, LTX y Grok Imagine) por su API v2
-(`POST /v2/generations`, con el resultado en `GET /v1/generations/{id}`). Cada
+**Modelos y opciones.** El modulo trabaja con los 32 modelos de video de la API
+v2 de Leonardo (Motion, Veo, Kling, Seedance, Hailuo, Wan, LTX, FLUX 3 Video,
+Grok Imagine, Happy Horse y Gemini Omni; `POST /v2/generations`, con el
+resultado en `GET /v1/generations/{id}`). Cada
 uno admite cosas distintas, y su API rechaza con un 400 cualquier combinacion
 que no este en su lista, asi que lo que se puede configurar vive en un solo
 sitio, `VideoModelOptions`: duraciones (Kling de 3 a 15 s, Veo 4/6/8, Motion
@@ -693,7 +694,9 @@ audio (no tiene / opcional / siempre) y los extras que no todos aceptan
 sale todo:
 
 - `LeonardoProvider.BuildVideoRequest` manda solo los campos que el modelo
-  tiene (la duracion en Motion o el audio en Hailuo 2.3 serian un 400).
+  tiene (la duracion en Motion o el audio en Hailuo 2.3 serian un 400). La
+  imagen de entrada va como fotograma inicial, salvo en Gemini Omni Flash, que no
+  lo tiene y la recibe como imagen de referencia (`ImageAsReference`).
 - La pantalla de modulos y el popup "Editar nodo" piden las opciones a
   `/api/models/video-options` y el formulario (`VideoModuleConfigEditor`) ofrece
   solo esas.
@@ -1051,7 +1054,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 | Anthropic   | `Anthropic`  | Text (Claude)                                  |
 | Google      | `Google`     | Text (Gemini), Image                           |
 | xAI         | `xAI`        | Text (Grok), Image                             |
-| LeonardoAI  | `LeonardoAI` | Image, Video (16 modelos por la API v2)        |
+| LeonardoAI  | `LeonardoAI` | Image, Video (32 modelos por la API v2)        |
 | ElevenLabs  | `ElevenLabs` | Audio (texto a voz)                            |
 
 ---

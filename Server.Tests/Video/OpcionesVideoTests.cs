@@ -33,7 +33,8 @@ public class OpcionesVideoTests
         var opciones = VideoModelOptions.Specs.Select(s => s.ModelId).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var provider = LeonardoProvider.VideoModelIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        Assert.Equal(16, catalogo.Count);
+        // Todos los modelos de video de la API v2 de Leonardo.
+        Assert.Equal(32, catalogo.Count);
         Assert.True(catalogo.SetEquals(opciones), "catalogo y VideoModelOptions no tienen los mismos modelos");
         Assert.True(catalogo.SetEquals(provider), "catalogo y LeonardoProvider no tienen los mismos modelos");
     }
@@ -90,9 +91,10 @@ public class OpcionesVideoTests
     [Fact]
     public void AlgunasResolucionesSoloAdmitenAlgunasDuraciones()
     {
-        // Hailuo 2.3 Fast hace 10 s a 768p pero solo 6 s a 1080p; Veo, 1080p solo a 8 s.
+        // Hailuo 2.3 (y su Fast) hace 10 s a 768p pero solo 6 s a 1080p; Veo, 1080p solo a 8 s.
         Assert.Equal(10, Resolve("leonardo-hailuo-2.3-fast", new() { ["resolution"] = "768p", ["duration"] = 10L }).Duration);
         Assert.Equal(6, Resolve("leonardo-hailuo-2.3-fast", new() { ["resolution"] = "1080p", ["duration"] = 10L }).Duration);
+        Assert.Equal(6, Resolve("leonardo-hailuo-2.3", new() { ["resolution"] = "1080p", ["duration"] = 10L }).Duration);
         Assert.Equal(8, Resolve("leonardo-veo-3.1", new() { ["resolution"] = "1080p", ["duration"] = 4L }).Duration);
     }
 
