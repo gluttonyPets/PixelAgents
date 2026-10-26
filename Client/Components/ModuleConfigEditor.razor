@@ -1,7 +1,9 @@
-@* Editor de configuracion reutilizable de un AiModule.
-   Se usa tanto en la pagina Modulos (boton "Configurar") como en el popup
-   "Editar nodo" del editor de pipeline. Recibe un AiModuleResponse, parsea su
-   Configuration en campos editables y expone BuildConfig() para reconstruir el JSON. *@
+@inject ApiClient Api
+
+@* Editor de configuracion de un AiModule en el popup "Editar nodo" del editor de
+   pipeline. Recibe un AiModuleResponse, parsea su Configuration en campos
+   editables y expone BuildConfig() para reconstruir el JSON. Lo que no muestra se
+   conserva al guardar (ver BuildConfig). *@
 
 @{ var m = Module; }
 
@@ -93,7 +95,7 @@ else if (m.ModuleType == "Image" && m.ProviderType == "OpenAI")
         <div class="form-group">
             <label>Tamano</label>
             <select @bind="_editImageSize">
-                @foreach (var s in GetImageSizesForModel(m.ModelName))
+                @foreach (var s in AiModuleOptions.ImageSizesForModel(m.ModelName))
                 {
                     <option value="@s">@s</option>
                 }
@@ -327,6 +329,10 @@ else if (m.ModuleType == SearchConsoleConfig.ModuleType)
 {
     <SearchConsoleConfigEditor Config="_editSearchConsole" ApiKeyId="m.ApiKeyId" />
 }
+else if (m.ModuleType == VideoModuleConfig.ModuleType)
+{
+    <VideoModuleConfigEditor Config="_editVideo" Options="_videoOptions" />
+}
 else if (m.ModuleType == "FileDirectory")
 {
     @* El contenido del directorio es del nodo, no de este modulo de catalogo,
@@ -470,15 +476,35 @@ else
     private string _editCanvaExportFormat = "png";
     private string _editCanvaBrandTemplate = "";
     private string _editCanvaDesignType = "doc";
+    private VideoModuleConfig _editVideo = new();
+    private VideoModelOptionsResponse? _videoOptions;
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         // Reparsear solo cuando cambia el modulo objetivo, para no pisar la edicion en curso.
         if (Module is not null && Module.Id != _loadedModuleId)
         {
             _loadedModuleId = Module.Id;
             LoadFromConfiguration(Module);
+            await LoadVideoOptionsAsync(Module);
         }
+    }
+
+    /// <summary>
+    /// Lo que admite el modelo de video del modulo. Sin ellas el formulario dice que
+    /// estan cargando y, al guardar, la configuracion de video se conserva tal cual.
+    /// </summary>
+    private async Task LoadVideoOptionsAsync(AiModuleResponse module)
+    {
+        _videoOptions = null;
+        if (module.ModuleType != VideoModuleConfig.ModuleType) return;
+        try
+        {
+            _videoOptions = (await Api.GetVideoModelOptionsAsync())
+                .FirstOrDefault(o => o.ModelId.Equals(module.ModelName, StringComparison.OrdinalIgnoreCase));
+            _editVideo.Normalize(_videoOptions);
+        }
+        catch { }
     }
 
     /// <summary>Vuelve a cargar los campos desde el modulo actual (util tras un cambio externo).</summary>
@@ -493,6 +519,7 @@ else
 
     private void LoadFromConfiguration(AiModuleResponse module)
     {
+        _editVideo = VideoModuleConfig.FromJson(module.Configuration);
         _editSearchConsole = SearchConsoleConfig.FromJson(module.Configuration);
         _editElevenLabs = ElevenLabsVoiceConfig.FromJson(module.Configuration);
         _editSystemPrompt = "";
@@ -555,12 +582,53 @@ else
         catch { }
     }
 
-    /// <summary>Reconstruye el JSON de configuracion a partir de los campos editados.</summary>
+    /// <summary>
+    /// JSON de configuracion con los campos editados. Lo que este editor no muestra se
+    /// conserva: antes se reconstruia todo desde cero y guardar un nodo de video,
+    /// transcripcion o embeddings le borraba la configuracion entera.
+    /// </summary>
     public string? BuildConfig()
     {
         if (Module is null) return null;
-        var moduleType = Module.ModuleType;
+        var managed = ManagedKeys(Module.ModuleType, Module.ProviderType);
+        if (managed is null) return Module.Configuration;
+
+        var built = BuildEditedKeys();
+        return managed.Count == 0 ? built : ModuleConfigDraft.MergeInto(Module.Configuration, built, managed);
+    }
+
+    /// <summary>
+    /// Claves que escribe <see cref="BuildEditedKeys"/> para ese tipo y proveedor;
+    /// vacio = las escribe todas (Search Console, ElevenLabs) y null = este editor no
+    /// edita ese tipo.
+    /// </summary>
+    private static IReadOnlyCollection<string>? ManagedKeys(string moduleType, string providerType)
+    {
+        if (moduleType == SearchConsoleConfig.ModuleType || ElevenLabsVoiceConfig.IsElevenLabsAudio(providerType, moduleType))
+            return [];
+
+        string[] image = ["systemPrompt", "imagePrompt", "maxReferenceImages"];
+        return moduleType switch
+        {
+            "Text" or "Coordinator" => ["systemPrompt", "temperature", "maxTokens", "reasoningEffort", "webSearch"],
+            "Image" when providerType == "Google" => [.. image, "aspectRatio", "numberOfImages"],
+            "Image" when providerType == "xAI" => [.. image, "n"],
+            "Image" when providerType == "LeonardoAI" => [.. image, "width", "height", "presetStyle"],
+            "Image" => [.. image, "size", "quality"],
+            VideoModuleConfig.ModuleType => VideoModuleConfig.Keys,
+            "Audio" => ["voice", "speed", "voiceInstructions"],
+            "Design" when providerType == "Canva" => ["accessToken", "exportFormat", "brandTemplateId", "designType"],
+            "StaticText" => ["content"],
+            _ => null,
+        };
+    }
+
+    private string? BuildEditedKeys()
+    {
+        var moduleType = Module!.ModuleType;
         var providerType = Module.ProviderType;
+        if (moduleType == VideoModuleConfig.ModuleType)
+            return _videoOptions is null ? Module.Configuration : _editVideo.ToJson(_videoOptions);
         if (moduleType == SearchConsoleConfig.ModuleType)
             return _editSearchConsole.ToJson();
         if (ElevenLabsVoiceConfig.IsElevenLabsAudio(providerType, moduleType))
@@ -663,16 +731,4 @@ else
         Module is not null &&
         Module.ModuleType is "Text" or "Image" or "Audio" or "Design"
             or "Coordinator" or "StaticText";
-
-    private static string[] GetImageSizesForModel(string model)
-    {
-        return model switch
-        {
-            _ when model.StartsWith("gpt-image", StringComparison.OrdinalIgnoreCase)
-                => ["auto", "1024x1024", "1536x1024", "1024x1536"],
-            "dall-e-3" => ["1024x1024", "1024x1792", "1792x1024"],
-            "dall-e-2" => ["256x256", "512x512", "1024x1024"],
-            _ => ["1024x1024"]
-        };
-    }
 }

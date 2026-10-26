@@ -13,6 +13,13 @@ public class VideoModuleConfig
     public const string ModuleType = "Video";
     public const string AutoAspect = "auto";
 
+    /// <summary>Todas las claves que puede escribir <see cref="ToJson"/>.</summary>
+    public static readonly string[] Keys =
+    [
+        "videoPrompt", "resolution", "aspectRatio", "duration", "audio",
+        "negativePrompt", "seed", "promptEnhance", "frameInterpolation", "videoQuality",
+    ];
+
     public string Prompt { get; set; } = "";
     public int Duration { get; set; }
     public string Resolution { get; set; } = "";

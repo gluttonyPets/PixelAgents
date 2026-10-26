@@ -1,0 +1,292 @@
+@* Configuracion propia del tipo, proveedor y modelo de un modulo. Es el mismo
+   formulario al crear el modulo y al editarlo en la pagina Modulos: antes eran
+   dos copias y lo que se anadia a una faltaba en la otra. Los valores viven en un
+   ModuleConfigDraft, que es quien sabe convertirlos en JSON. *@
+
+@if (ModuleType is "Text" or "Orchestrator" or "Coordinator")
+{
+    <div class="form-group">
+        <label>System Prompt @(ModuleType == "Orchestrator" ? "(se combina con instrucciones del orquestador)" : ModuleType == "Coordinator" ? "(instrucciones para coordinar las entradas)" : "")</label>
+        <textarea @bind="Draft.SystemPrompt" @bind:after="Changed" rows="3" placeholder="@(ModuleType == "Coordinator" ? "Ej: Recibiras datos de varias entradas (imagenes, textos). Genera un JSON array de recursos..." : ModuleType == "Orchestrator" ? "Ej: Prioriza videos de stock sobre generacion. Maximo 5 tareas por plan." : "Ej: Eres un asistente experto en...")"></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Temperatura <span class="text-sm text-muted">(0.0 - 2.0)</span></label>
+            <input type="number" step="0.1" min="0" max="2" @bind="Draft.Temperature" @bind:after="Changed" />
+        </div>
+        <div class="form-group">
+            <label>Max Tokens</label>
+            <input type="number" min="1" max="200000" @bind="Draft.MaxTokens" @bind:after="Changed" />
+        </div>
+    </div>
+    @if (AiModuleOptions.SupportsWebSearch(Provider, ModuleType))
+    {
+        <div class="form-group">
+            <label class="form-check">
+                <input type="checkbox" @bind="Draft.WebSearch" @bind:after="Changed" />
+                Busqueda en internet
+                <span class="text-sm text-muted">(puede buscar y leer paginas web; cada busqueda tiene coste)</span>
+            </label>
+        </div>
+    }
+    @if (AiModuleOptions.SupportsReasoningEffort(Provider, Model))
+    {
+        <div class="form-group">
+            <label>
+                Esfuerzo de razonamiento
+                <span class="text-sm text-muted">(los tokens de razonamiento se facturan como salida)</span>
+            </label>
+            <select @bind="Draft.ReasoningEffort" @bind:after="Changed">
+                @foreach (var (value, label) in AiModuleOptions.ReasoningEffortOptions)
+                {
+                    <option value="@value">@label</option>
+                }
+            </select>
+        </div>
+    }
+}
+else if (ModuleType == "Image" && Provider == "OpenAI")
+{
+    <div class="form-group">
+        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+        <textarea @bind="Draft.SystemPrompt" @bind:after="Changed" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Tamano</label>
+            <select @bind="Draft.ImageSize" @bind:after="Changed">
+                @foreach (var s in AiModuleOptions.ImageSizesForModel(Model))
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </div>
+        @if (AiModuleOptions.SupportsQuality(Model))
+        {
+            <div class="form-group">
+                <label>Calidad</label>
+                <select @bind="Draft.ImageQuality" @bind:after="Changed">
+                    @foreach (var (value, label) in AiModuleOptions.GetImageQualitiesForModel(Model))
+                    {
+                        <option value="@value">@label</option>
+                    }
+                </select>
+            </div>
+        }
+    </div>
+    @if (AiModuleOptions.IsGptImageModel(Model))
+    {
+        <div class="form-group">
+            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+            <input type="number" min="1" max="4" @bind="Draft.ImageCount" @bind:after="Changed" />
+        </div>
+    }
+}
+else if (ModuleType == VideoModuleConfig.ModuleType)
+{
+    <VideoModuleConfigEditor Config="Draft.Video" Options="@VideoOptions" OnChange="Changed" />
+}
+else if (ModuleType == "Image" && Provider == "LeonardoAI")
+{
+    <div class="form-group">
+        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+        <textarea @bind="Draft.SystemPrompt" @bind:after="Changed" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Ancho</label>
+            <select @bind="Draft.LeoWidth" @bind:after="Changed">
+                <option value="512">512</option>
+                <option value="768">768</option>
+                <option value="1024">1024</option>
+                <option value="1360">1360</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Alto</label>
+            <select @bind="Draft.LeoHeight" @bind:after="Changed">
+                <option value="512">512</option>
+                <option value="768">768</option>
+                <option value="1024">1024</option>
+                <option value="1360">1360</option>
+            </select>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Estilo</label>
+        <select @bind="Draft.LeoPresetStyle" @bind:after="Changed">
+            <option value="DYNAMIC">Dynamic</option>
+            <option value="NONE">Ninguno</option>
+            <option value="ANIME">Anime</option>
+            <option value="CINEMATIC">Cinematico</option>
+            <option value="PHOTOGRAPHY">Fotografia</option>
+            <option value="ILLUSTRATION">Ilustracion</option>
+            <option value="RAYTRACED">Raytraced</option>
+        </select>
+    </div>
+}
+else if (ModuleType == "Image" && Provider == "Google")
+{
+    <div class="form-group">
+        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+        <textarea @bind="Draft.SystemPrompt" @bind:after="Changed" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Relacion de aspecto</label>
+            <select @bind="Draft.GeminiAspectRatio" @bind:after="Changed">
+                <option value="1:1">1:1 (Cuadrado)</option>
+                <option value="16:9">16:9 (Paisaje)</option>
+                <option value="9:16">9:16 (Retrato)</option>
+                <option value="4:3">4:3 (Clasico)</option>
+                <option value="3:4">3:4 (Retrato clasico)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+            <input type="number" min="1" max="4" @bind="Draft.GeminiImageCount" @bind:after="Changed" />
+        </div>
+    </div>
+}
+else if (ModuleType == "Image" && Provider == "xAI")
+{
+    <div class="form-group">
+        <label>Instrucciones <span class="text-sm text-muted">(se añaden al inicio del prompt)</span></label>
+        <textarea @bind="Draft.SystemPrompt" @bind:after="Changed" rows="3" placeholder="Ej: Siempre usa un estilo fotorrealista, colores vibrantes y fondo neutro..."></textarea>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Numero de imagenes <span class="text-sm text-muted">(1-4)</span></label>
+            <input type="number" min="1" max="4" @bind="Draft.ImageCount" @bind:after="Changed" />
+        </div>
+    </div>
+}
+else if (ModuleType == "Design" && Provider == "Canva")
+{
+    <div class="form-group">
+        <label>Access Token <span class="text-sm text-muted">(OAuth token de Canva Connect API)</span></label>
+        <input type="password" @bind="Draft.CanvaAccessToken" @bind:after="Changed" placeholder="Token OAuth de Canva" />
+    </div>
+    <div class="form-group">
+        <label>Formato de exportacion</label>
+        <select @bind="Draft.CanvaExportFormat" @bind:after="Changed">
+            <option value="png">PNG (imagen)</option>
+            <option value="jpg">JPG (imagen)</option>
+            <option value="pdf">PDF (documento)</option>
+            <option value="pptx">PPTX (presentacion)</option>
+        </select>
+    </div>
+    @if (Model == "canva-autofill")
+    {
+        <div class="form-group">
+            <label>Brand Template ID <span class="text-sm text-muted">(opcional, se puede sobreescribir desde el paso del pipeline)</span></label>
+            <input type="text" @bind="Draft.CanvaBrandTemplate" @bind:after="Changed" placeholder="Ej: DAVZr1z5464..." />
+        </div>
+    }
+    else
+    {
+        <div class="form-group">
+            <label>Tipo de diseno</label>
+            <select @bind="Draft.CanvaDesignType" @bind:after="Changed">
+                <option value="doc">Documento</option>
+                <option value="presentation">Presentacion</option>
+                <option value="whiteboard">Pizarra</option>
+            </select>
+        </div>
+    }
+}
+else if (ModuleType == SearchConsoleConfig.ModuleType)
+{
+    <div @onchange="Changed" @oninput="Changed">
+        <SearchConsoleConfigEditor Config="Draft.SearchConsole" ApiKeyId="@ApiKeyId" />
+    </div>
+}
+else if (ModuleType == "StaticText")
+{
+    <div class="form-group">
+        <label>Contenido de texto</label>
+        <textarea @bind="Draft.StaticTextContent" @bind:after="Changed" rows="5" placeholder="Escribe aqui el texto que este modulo emitira como salida..."></textarea>
+        <p class="text-sm text-muted" style="margin-top: 0.15rem;">Este texto se usara tal cual como salida del modulo en cada ejecucion.</p>
+    </div>
+}
+else if (ModuleType == "Embeddings")
+{
+    <div class="form-group">
+        <label>Dimensiones <span class="text-sm text-muted">(opcional, por defecto la maxima del modelo)</span></label>
+        <input type="number" min="1" @bind="Draft.EmbeddingDimensions" @bind:after="Changed" />
+    </div>
+}
+else if (ModuleType == "Audio" && Provider == "OpenAI")
+{
+    <div class="form-row">
+        <div class="form-group">
+            <label>Voz</label>
+            <select @bind="Draft.TtsVoice" @bind:after="Changed">
+                @foreach (var (value, label) in AiModuleOptions.TtsVoices)
+                {
+                    <option value="@value">@label</option>
+                }
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Velocidad <span class="text-sm text-muted">(0.25 - 4.0)</span></label>
+            <input type="number" step="0.25" min="0.25" max="4.0" @bind="Draft.TtsSpeed" @bind:after="Changed" />
+        </div>
+    </div>
+    @if (AiModuleOptions.SupportsVoiceInstructions(Model))
+    {
+        <div class="form-group">
+            <label>Instrucciones de voz <span class="text-sm text-muted">(tono, acento, ritmo)</span></label>
+            <textarea rows="2" @bind="Draft.TtsInstructions" @bind:after="Changed" placeholder="Voz en off de anuncio, calida y cercana, acento de Espana."></textarea>
+        </div>
+    }
+    <VoicePreview ApiKeyId="@ApiKeyId" Model="@Model"
+                  Voice="@Draft.TtsVoice" Speed="@Draft.TtsSpeed" Instructions="@Draft.TtsInstructions" />
+}
+else if (ElevenLabsVoiceConfig.IsElevenLabsAudio(Provider, ModuleType))
+{
+    <div @onchange="Changed" @oninput="Changed" @onclick="Changed">
+        <ElevenLabsVoiceEditor Config="Draft.ElevenLabs" Model="@Model" ApiKeyId="@ApiKeyId" />
+    </div>
+}
+else if (ModuleType == "Transcription" && Provider == "OpenAI")
+{
+    <div class="form-row">
+        <div class="form-group">
+            <label>Idioma <span class="text-sm text-muted">(codigo ISO 639-1, opcional)</span></label>
+            <input type="text" @bind="Draft.TranscriptionLang" @bind:after="Changed" placeholder="es, en, fr..." />
+        </div>
+        <div class="form-group">
+            <label>Formato de respuesta</label>
+            <select @bind="Draft.TranscriptionFormat" @bind:after="Changed">
+                <option value="json">JSON</option>
+                <option value="text">Texto plano</option>
+                <option value="srt">SRT</option>
+                <option value="vtt">VTT</option>
+                <option value="verbose_json">JSON detallado</option>
+            </select>
+        </div>
+    </div>
+}
+else if (!ModuleConfigDraft.Handles(Provider, ModuleType))
+{
+    <p class="text-muted">Este tipo de modulo no tiene configuracion editable.</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public ModuleConfigDraft Draft { get; set; } = new();
+    [Parameter] public string Provider { get; set; } = "";
+    [Parameter] public string ModuleType { get; set; } = "";
+    [Parameter] public string Model { get; set; } = "";
+
+    /// <summary>API key elegida: la usan la escucha de voces y Search Console.</summary>
+    [Parameter] public Guid? ApiKeyId { get; set; }
+
+    /// <summary>Lo que admite el modelo si es de video; null en el resto.</summary>
+    [Parameter] public VideoModelOptionsResponse? VideoOptions { get; set; }
+
+    /// <summary>Avisa al formulario padre de cada cambio (el editor lo usa para saber si hay cambios sin guardar).</summary>
+    [Parameter] public EventCallback OnChange { get; set; }
+
+    private Task Changed() => OnChange.InvokeAsync();
+}

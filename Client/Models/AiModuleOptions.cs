@@ -26,6 +26,18 @@ public static class AiModuleOptions
         !string.IsNullOrWhiteSpace(model)
         && !model!.Equals("dall-e-2", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Tamanos de imagen que acepta cada modelo de OpenAI. gpt-image empieza por
+    /// "auto", que conserva las proporciones de la imagen de entrada al editar.
+    /// </summary>
+    public static string[] ImageSizesForModel(string? model) => model switch
+    {
+        _ when IsGptImageModel(model) => ["auto", "1024x1024", "1536x1024", "1024x1536"],
+        "dall-e-3" => ["1024x1024", "1024x1792", "1792x1024"],
+        "dall-e-2" => ["256x256", "512x512", "1024x1024"],
+        _ => ["1024x1024"],
+    };
+
     public static string DefaultQualityForModel(string? model) =>
         IsGptImageModel(model) ? DefaultImageQuality : DefaultDallEQuality;
 

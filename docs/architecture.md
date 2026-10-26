@@ -456,6 +456,29 @@ export del pipeline, `pipelineEditor.downloadText` guarda el fichero.
 | ShopifyBlog   | ShopifyBlogModuleHandler   | Publica un articulo de blog en Shopify (titulo, cuerpo, extracto, slug, SEO e imagen destacada via `input_image`, que se sube a Shopify con `stagedUploadsCreate` y requiere el scope `write_files`). El cuerpo acepta HTML con CSS (inline o `<style>`): si el contenido contiene cualquier etiqueta HTML se envia intacto sin escapar; el texto plano se convierte en parrafos. Publica **visible** por defecto (desmarcar "Publicar" en el nodo lo deja como borrador). Devuelve en la salida y en `metadata` la URL del articulo en el admin (`adminUrl`, sirve para borradores) y la URL publica de la tienda (`publicUrl`). Con `mode=update` modifica un articulo existente: la conexion de entrada debe tener un formato con el campo `url` (`ShopifyUpdateFormat`) y el articulo sale de ese campo del JSON de entrada; solo los campos con valor, conserva handle y estado de publicacion, y guarda la version anterior como archivo de la ejecucion |
 | SearchConsole | SearchConsoleModuleHandler | Descarga datos de Search Analytics de Google Search Console (clics, impresiones, CTR, posicion) con los parametros del modulo (ver seccion propia) |
 
+### Configuracion de un modulo: crear y editar
+
+Crear un modulo y editarlo en la pagina Modulos ofrecen lo mismo. La
+configuracion vive en `ModuleConfigDraft` (lee el JSON guardado y lo vuelve a
+escribir) y se edita con un unico formulario, `ModuleConfigForm`, que usan el paso
+de resumen del alta y la pestana Configuracion del editor. Antes eran dos copias
+y se habian separado: al editar faltaban campos del alta y al guardar se perdia
+el numero de imagenes de gpt-image.
+
+En el editor se cambian tambien el proveedor, el tipo y el modelo (pestana
+Modelo). El tipo solo si el modulo no se usa en ningun pipeline: cambia sus
+entradas y salidas y dejaria colgadas las conexiones. Al cambiar de proveedor se
+preselecciona su API key si solo hay una, y se conserva lo que siga teniendo
+sentido (el system prompt de un texto que pasa de OpenAI a Anthropic).
+
+**Al guardar no se pierde lo que el formulario no muestra.** Cada tipo declara las
+claves que gestiona (`ModuleConfigDraft.ManagedKeys`); esas se reescriben y el
+resto de las que tuviera el modulo se conservan. Si cambian el proveedor o el
+tipo, las claves anteriores se descartan, porque ya no significan nada. El popup
+"Editar nodo" del pipeline (`ModuleConfigEditor`) sigue la misma regla: antes
+reconstruia el JSON desde cero y guardar un nodo de video, transcripcion o
+embeddings le borraba la configuracion entera.
+
 ### Modulo Search Console (Search Analytics)
 
 Fuente de datos de la web: no tiene entradas y emite por `output_text` el
@@ -671,8 +694,9 @@ sale todo:
 
 - `LeonardoProvider.BuildVideoRequest` manda solo los campos que el modelo
   tiene (la duracion en Motion o el audio en Hailuo 2.3 serian un 400).
-- La pantalla de modulos pide las opciones a `/api/models/video-options` y el
-  formulario (`VideoModuleConfigEditor`) ofrece solo esas.
+- La pantalla de modulos y el popup "Editar nodo" piden las opciones a
+  `/api/models/video-options` y el formulario (`VideoModuleConfigEditor`) ofrece
+  solo esas.
 - El orquestador loop lee de ahi los segundos de cada clip.
 
 Lo guardado en el modulo (`duration`, `resolution`, `aspectRatio`, `audio`,
