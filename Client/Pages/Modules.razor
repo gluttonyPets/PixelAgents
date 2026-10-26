@@ -195,47 +195,57 @@
                         @* ── Paso 3: modelo, como elegir personaje: cada uno con sus estadisticas. ── *@
                         var candidates = GetAvailableModels();
                         var stats = ComputeStats(candidates);
-                        <div class="wizard-models">
-                            @foreach (var m in candidates)
-                            {
-                                var st = stats[m.Id];
-                                var lc = GetLifecycle(m.Id);
-                                <button class="wizard-model @(_model == m.Id ? "is-selected" : "") @(lc?.Status == "retired" ? "is-retired" : "")"
-                                        @onclick="() => SelectModel(m.Id)" @ondblclick="() => { SelectModel(m.Id); GoToSummary(); }">
-                                    @if (m.Description.Contains("Recomendado", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        <span class="wizard-model-ribbon"><i class="bi bi-star-fill"></i> Recomendado</span>
-                                    }
-                                    <span class="wizard-model-head">
-                                        <span class="wizard-model-avatar"><ProviderIcon Provider="@m.Provider" Size="22" /></span>
-                                        <span class="wizard-model-name">
-                                            <strong>@m.DisplayName</strong>
-                                            <small>@m.Id</small>
-                                        </span>
-                                        @if (_model == m.Id)
+                        // En video, a la derecha, el simulador de coste del modelo elegido.
+                        var withSimulator = _moduleType == VideoModuleConfig.ModuleType;
+                        <div class="@(withSimulator ? "wizard-models-with-sim" : null)">
+                            <div class="wizard-models">
+                                @foreach (var m in candidates)
+                                {
+                                    var st = stats[m.Id];
+                                    var lc = GetLifecycle(m.Id);
+                                    <button class="wizard-model @(_model == m.Id ? "is-selected" : "") @(lc?.Status == "retired" ? "is-retired" : "")"
+                                            @onclick="() => SelectModel(m.Id)" @ondblclick="() => { SelectModel(m.Id); GoToSummary(); }">
+                                        @if (m.Description.Contains("Recomendado", StringComparison.OrdinalIgnoreCase))
                                         {
-                                            <span class="wizard-model-check"><i class="bi bi-check-lg"></i></span>
+                                            <span class="wizard-model-ribbon"><i class="bi bi-star-fill"></i> Recomendado</span>
                                         }
-                                    </span>
-                                    <span class="wizard-model-desc">@m.Description</span>
-                                    <span class="wizard-stats">
-                                        @foreach (var stat in st.Bars)
-                                        {
-                                            <span class="wizard-stat">
-                                                <span class="wizard-stat-label"><i class="bi @stat.Icon"></i> @stat.Label</span>
-                                                <span class="wizard-stat-track"><span class="wizard-stat-fill" style="--w:@(stat.Percent)%; --tone:@stat.Tone"></span></span>
-                                                <span class="wizard-stat-value">@stat.Value</span>
+                                        <span class="wizard-model-head">
+                                            <span class="wizard-model-avatar"><ProviderIcon Provider="@m.Provider" Size="22" /></span>
+                                            <span class="wizard-model-name">
+                                                <strong>@m.DisplayName</strong>
+                                                <small>@m.Id</small>
                                             </span>
-                                        }
-                                    </span>
-                                    <span class="wizard-model-caps">
-                                        @foreach (var cap in m.Capabilities)
-                                        {
-                                            <span class="cap-chip">@CapLabelEs(cap)</span>
-                                        }
-                                        <ModelLifecycleBadge Info="@lc" Compact="true" />
-                                    </span>
-                                </button>
+                                            @if (_model == m.Id)
+                                            {
+                                                <span class="wizard-model-check"><i class="bi bi-check-lg"></i></span>
+                                            }
+                                        </span>
+                                        <span class="wizard-model-desc">@m.Description</span>
+                                        <span class="wizard-stats">
+                                            @foreach (var stat in st.Bars)
+                                            {
+                                                <span class="wizard-stat">
+                                                    <span class="wizard-stat-label"><i class="bi @stat.Icon"></i> @stat.Label</span>
+                                                    <span class="wizard-stat-track"><span class="wizard-stat-fill" style="--w:@(stat.Percent)%; --tone:@stat.Tone"></span></span>
+                                                    <span class="wizard-stat-value">@stat.Value</span>
+                                                </span>
+                                            }
+                                        </span>
+                                        <span class="wizard-model-caps">
+                                            @foreach (var cap in m.Capabilities)
+                                            {
+                                                <span class="cap-chip">@CapLabelEs(cap)</span>
+                                            }
+                                            <ModelLifecycleBadge Info="@lc" Compact="true" />
+                                        </span>
+                                    </button>
+                                }
+                            </div>
+                            @if (withSimulator)
+                            {
+                                <VideoCostSimulator Options="@VideoOptionsFor(_model)" Config="_draft.Video"
+                                                    ModelName="@(GetSelectedModel()?.DisplayName ?? _model)"
+                                                    @bind-Clips="_simClips" />
                             }
                         </div>
                         break;
@@ -877,6 +887,9 @@ else
     private ModuleConfigDraft _draft = ModuleConfigDraft.ForNew(null);
     private ModuleConfigDraft _editDraft = new();
 
+    /// <summary>Clips por ejecucion en el simulador de coste del alta (solo informativo).</summary>
+    private int _simClips = 1;
+
     /// <summary>Lo que admite cada modelo de video, servido por el servidor.</summary>
     private Dictionary<string, VideoModelOptionsResponse> _videoOptions = new(StringComparer.OrdinalIgnoreCase);
 
@@ -1199,6 +1212,7 @@ else
         string CostText(ModelInfo m, decimal c) =>
             _pricing.TryGetValue(m.Id, out var p) && p.Kind == "image" ? $"${c:0.000} / img"
             : _pricing.TryGetValue(m.Id, out var q) && q.Kind == "text" ? $"${c:0.0000} / ejec."
+            : _pricing.TryGetValue(m.Id, out var v) && v.AuxUnit == "segundo" ? $"${c:0.000} / s"
             : $"${c:0.000}";
         long? Ctx(ModelInfo m)
         {

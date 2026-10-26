@@ -8345,6 +8345,53 @@ td.cell-actions .icon-btn { margin-left: 0.15rem; }
 
 /* Paso 3: seleccion de modelo con estadisticas */
 .wizard-models { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.9rem; }
+
+/* Paso 3 en video: tarjetas a la izquierda y simulador de coste a la derecha */
+.wizard-models-with-sim { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 1rem; align-items: start; }
+.wizard-models-with-sim .wizard-models { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); }
+.video-sim {
+    position: sticky; top: 0;
+    display: flex; flex-direction: column; gap: 0.75rem;
+    padding: 1rem;
+    border-radius: 16px;
+    border: 1px solid rgba(108, 99, 255, 0.35);
+    background: radial-gradient(100% 50% at 50% 0%, rgba(108, 99, 255, 0.16), transparent 70%), var(--bg-card);
+    font-size: 0.8rem;
+    /* Pegado arriba mientras se recorren las tarjetas: si fuese mas alto que el
+       hueco del asistente, su final quedaria oculto, asi que se desplaza solo. */
+    max-height: calc(min(88vh, 820px) - 260px);
+    overflow-y: auto;
+}
+.video-sim-head { display: flex; align-items: center; gap: 0.6rem; }
+.video-sim-head div { display: flex; flex-direction: column; min-width: 0; }
+.video-sim-head small { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-sim-icon {
+    width: 32px; height: 32px; flex-shrink: 0; border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #a5a0ff; background: var(--accent-soft);
+}
+.video-sim-empty { color: var(--text-muted); line-height: 1.45; margin: 0; }
+.video-sim-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.video-sim-controls label { display: flex; flex-direction: column; gap: 0.25rem; color: var(--text-muted); font-size: 0.72rem; }
+.video-sim-controls select, .video-sim-controls input:not([type=checkbox]) { padding: 0.35rem 0.5rem; font-size: 0.8rem; }
+.video-sim-controls .video-sim-check { flex-direction: row; align-items: center; gap: 0.4rem; align-self: end; padding-bottom: 0.4rem; color: var(--text); }
+.video-sim-total {
+    display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
+    padding: 0.7rem; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--border);
+}
+.video-sim-total span { color: var(--text-muted); font-size: 0.72rem; }
+.video-sim-total strong { font-size: 1.5rem; letter-spacing: -0.01em; }
+.video-sim-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.video-sim-steps li { display: flex; justify-content: space-between; gap: 0.6rem; }
+.video-sim-steps span { color: var(--text-muted); }
+.video-sim-steps b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.video-sim-rates { width: 100%; border-collapse: collapse; font-size: 0.74rem; }
+.video-sim-rates caption { caption-side: top; text-align: left; color: var(--text-muted); font-size: 0.72rem; padding-bottom: 0.3rem; }
+.video-sim-rates th { text-align: right; color: var(--text-muted); font-weight: 600; padding: 0.25rem 0.3rem; border-bottom: 1px solid var(--border); white-space: nowrap; text-transform: none; letter-spacing: 0; font-size: 0.72rem; }
+.video-sim-rates th:first-child, .video-sim-rates td:first-child { text-align: left; }
+.video-sim-rates td { text-align: right; padding: 0.25rem 0.3rem; font-variant-numeric: tabular-nums; }
+.video-sim-rates tr.is-current td { color: #fff; background: var(--accent-soft); }
+.video-sim-note { margin: 0; color: var(--text-muted); font-size: 0.7rem; line-height: 1.45; }
 .wizard-model {
     position: relative;
     display: flex; flex-direction: column; gap: 0.6rem;
@@ -8421,6 +8468,8 @@ td.cell-actions .icon-btn { margin-left: 0.15rem; }
     .wizard-type-desc { max-height: none; opacity: 1; }
     .wizard-summary-layout { grid-template-columns: 1fr; }
     .wizard-summary-card { position: static; }
+    .wizard-models-with-sim { grid-template-columns: 1fr; }
+    .video-sim { position: static; order: -1; max-height: none; }
     .wizard-step-label { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {

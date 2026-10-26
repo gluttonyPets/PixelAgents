@@ -103,8 +103,9 @@ Rutas actuales:
   El alta es un asistente en cuatro pasos: proveedor (tarjetas con logotipo),
   tipo (texto, imagen y video en grande; el resto debajo), modelo (tarjetas con
   estadisticas de economia, contexto y versatilidad sacadas de
-  `/api/models/pricing` y del catalogo) y resumen con nombre, descripcion, API key
-  y configuracion.
+  `/api/models/pricing` y del catalogo; en video, con un simulador de coste a la
+  derecha segun resolucion, duracion, audio y clips) y resumen con nombre,
+  descripcion, API key y configuracion.
   "Configurar" abre el editor del modulo, que permite cambiar lo mismo que el
   alta: General (nombre, descripcion, API key), Modelo (proveedor, tipo y modelo
   con las mismas tarjetas; el tipo solo si el modulo no se usa en ningun

@@ -476,7 +476,8 @@ namespace Server.Services.Ai
                 }
                 else
                 {
-                    result.EstimatedCost = PricingCatalog.EstimateVideoCost(context.ModelName, options.Duration);
+                    result.EstimatedCost = PricingCatalog.EstimateVideoCost(
+                        context.ModelName, options.Duration, options.Resolution.Id, options.Audio ?? false);
                 }
 
                 result.SentPayload = sentPayload;

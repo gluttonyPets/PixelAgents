@@ -1,0 +1,170 @@
+@* Simulador de coste del paso "Modelo" del alta de modulos de video. Explica de
+   donde sale el precio de un clip: tarifa por segundo (segun modelo, resolucion
+   y audio) x duracion x numero de clips. Edita la misma configuracion que el
+   modulo, asi que lo que se simula es lo que luego aparece configurado. *@
+
+<aside class="video-sim">
+    <div class="video-sim-head">
+        <span class="video-sim-icon"><i class="bi bi-calculator"></i></span>
+        <div>
+            <strong>Simulador de coste</strong>
+            <small>@(Options is null ? "Elige un modelo" : ModelName)</small>
+        </div>
+    </div>
+
+    @if (Options is null)
+    {
+        <p class="video-sim-empty">
+            Elige un modelo para ver cuanto cuesta cada clip segun la resolucion, la duracion y el audio.
+        </p>
+    }
+    else
+    {
+        var resolution = Options.FindResolution(Config.Resolution);
+        var durations = Options.DurationsFor(Config.Resolution);
+        var audio = Options.Audio == "always" || (Options.Audio == "optional" && Config.Audio);
+        var rate = resolution?.RateFor(audio);
+        var perClip = rate * Config.Duration;
+        var total = perClip * Clips;
+
+        <div class="video-sim-controls">
+            <label>
+                <span>Resolucion</span>
+                <select @bind="Config.Resolution" @bind:after="ResolutionChanged">
+                    @foreach (var r in Options.Resolutions)
+                    {
+                        <option value="@r.Id">@r.Label</option>
+                    }
+                </select>
+            </label>
+            <label>
+                <span>Duracion</span>
+                @if (durations.Length <= 1)
+                {
+                    <input type="text" disabled value="@($"{Config.Duration} s (fija)")" />
+                }
+                else
+                {
+                    <select @bind="Config.Duration" @bind:after="Changed">
+                        @foreach (var d in durations)
+                        {
+                            <option value="@d">@d s</option>
+                        }
+                    </select>
+                }
+            </label>
+            <label>
+                <span>Clips por ejecucion</span>
+                <input type="number" min="1" max="@MaxClips" @bind="ClipsInput" />
+            </label>
+            @if (Options.Audio == "optional")
+            {
+                <label class="video-sim-check">
+                    <input type="checkbox" @bind="Config.Audio" @bind:after="Changed" />
+                    <span>Con audio</span>
+                </label>
+            }
+        </div>
+
+        <div class="video-sim-total">
+            <span>Coste estimado por ejecucion</span>
+            <strong>@Usd(total)</strong>
+        </div>
+
+        <ul class="video-sim-steps">
+            <li>
+                <span>Tarifa a @(resolution?.Label ?? Config.Resolution)@(audio ? ", con audio" : ", sin audio")</span>
+                <b>@Usd(rate) / s</b>
+            </li>
+            <li><span>&times; @Config.Duration s = un clip</span><b>@Usd(perClip)</b></li>
+            <li><span>&times; @Clips @(Clips == 1 ? "clip" : "clips")</span><b>@Usd(total)</b></li>
+        </ul>
+
+        <table class="video-sim-rates">
+            <caption>Tarifa por segundo de @ModelName</caption>
+            <thead>
+                <tr>
+                    <th>Resolucion</th>
+                    @if (Options.Audio == "optional")
+                    {
+                        <th>Sin audio</th>
+                        <th>Con audio</th>
+                    }
+                    else
+                    {
+                        <th>@(Options.Audio == "always" ? "Con audio" : "Sin audio")</th>
+                    }
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in Options.Resolutions)
+                {
+                    <tr class="@(r.Id == Config.Resolution ? "is-current" : "")">
+                        <td>@r.Label</td>
+                        <td>@Usd(r.PerSecondUsd)</td>
+                        @if (Options.Audio == "optional")
+                        {
+                            <td>@Usd(r.RateFor(true))</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <p class="video-sim-note">
+            Un clip por cada imagen que entra al modulo. Es una estimacion: Leonardo cobra en
+            creditos y no publica el precio de cada modelo; el coste real de cada ejecucion queda
+            apuntado en el historial.
+        </p>
+    }
+</aside>
+
+@code {
+    /// <summary>Tope de clips: el mismo que el de partes del orquestador loop.</summary>
+    private const int MaxClips = 20;
+
+    /// <summary>Lo que admite el modelo elegido, con sus tarifas; null si aun no hay modelo.</summary>
+    [Parameter] public VideoModelOptionsResponse? Options { get; set; }
+
+    [Parameter] public string ModelName { get; set; } = "";
+
+    /// <summary>Configuracion de video del modulo que se esta creando.</summary>
+    [Parameter, EditorRequired] public VideoModuleConfig Config { get; set; } = new();
+
+    [Parameter] public EventCallback OnChange { get; set; }
+
+    /// <summary>
+    /// Clips por ejecucion. Solo es del simulador (el numero real lo decide cuantas
+    /// imagenes lleguen al modulo); lo guarda el padre para que no se pierda al ir y
+    /// volver entre pasos del asistente.
+    /// </summary>
+    [Parameter] public int Clips { get; set; } = 1;
+    [Parameter] public EventCallback<int> ClipsChanged { get; set; }
+
+    private int ClipsInput
+    {
+        get => Clips;
+        set
+        {
+            Clips = Math.Clamp(value, 1, MaxClips);
+            ClipsChanged.InvokeAsync(Clips);
+        }
+    }
+
+    protected override void OnParametersSet() => Config.Normalize(Options);
+
+    private Task Changed() => OnChange.InvokeAsync();
+
+    private Task ResolutionChanged()
+    {
+        // Cada resolucion tiene sus formatos y, en algunos modelos, sus duraciones.
+        Config.Normalize(Options);
+        return OnChange.InvokeAsync();
+    }
+
+    /// <summary>Por debajo de un dolar, tres decimales: un clip de Motion cuesta $0.075.</summary>
+    private static string Usd(decimal? value) =>
+        value is { } v
+            ? "$" + v.ToString(v < 1m ? "0.000" : "0.00", System.Globalization.CultureInfo.InvariantCulture)
+            : "sin tarifa";
+}

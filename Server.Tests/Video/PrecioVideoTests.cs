@@ -49,6 +49,52 @@ public class PrecioVideoTests
     }
 
     [Fact]
+    public void CadaResolucionDeCadaModeloDeVideoTieneSuTarifa()
+    {
+        // El simulador del alta y la estimacion de la ejecucion leen la tarifa de la
+        // resolucion elegida: una que faltase saldria a $0 sin avisar.
+        foreach (var spec in VideoModelOptions.Specs)
+        foreach (var resolution in spec.Resolutions)
+        {
+            var rate = PricingCatalog.GetVideoRate(spec.ModelId, resolution.Id);
+
+            Assert.True(rate is { PerSecond: > 0 }, $"{spec.ModelId} {resolution.Id} sin tarifa");
+            Assert.True(rate!.For(audio: true) >= rate.PerSecond, $"{spec.ModelId} {resolution.Id}: el audio abarata");
+        }
+    }
+
+    [Fact]
+    public void LaResolucionYElAudioCambianElCoste()
+    {
+        var kling720 = PricingCatalog.EstimateVideoCost("leonardo-kling-3", 5, "720p");
+        var kling1080 = PricingCatalog.EstimateVideoCost("leonardo-kling-3", 5, "1080p");
+        Assert.True(kling1080 > kling720);
+
+        // Veo dobla el precio con audio.
+        Assert.Equal(8 * 0.20m, PricingCatalog.EstimateVideoCost("leonardo-veo-3.1", 8, "720p", audio: false));
+        Assert.Equal(8 * 0.40m, PricingCatalog.EstimateVideoCost("leonardo-veo-3.1", 8, "720p", audio: true));
+    }
+
+    [Fact]
+    public void SinResolucion_SeUsaLaDelModeloPorDefecto()
+    {
+        // Motion 2.0 arranca a 480p, y es la tarifa que ve la pantalla de modelos.
+        Assert.Equal(PricingCatalog.GetVideoRate("leonardo-motion-2", "480p")!.PerSecond,
+            PricingCatalog.GetAuxiliaryRate("leonardo-motion-2")!.Amount);
+        Assert.Equal(5 * 0.015m, PricingCatalog.EstimateVideoCost("leonardo-motion-2", 5));
+    }
+
+    [Fact]
+    public void LasTarifasViajanALaPantallaConLasOpciones()
+    {
+        var veo = VideoModelOptions.Describe().Single(o => o.ModelId == "leonardo-veo-3.1");
+        var hd = veo.Resolutions.Single(r => r.Id == "720p");
+
+        Assert.Equal(0.20m, hd.PerSecondUsd);
+        Assert.Equal(0.40m, hd.PerSecondWithAudioUsd);
+    }
+
+    [Fact]
     public void UnModeloQueNoSeFacturaPorSegundo_NoSeMultiplicaPorLaDuracion()
     {
         // whisper-1 cobra por minuto. Si EstimateVideoCost aceptase cualquier

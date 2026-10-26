@@ -101,7 +101,14 @@ public record VideoModelOptionsResponse(
 }
 
 /// <param name="Durations">Duraciones a esta resolucion, si son menos que las del modelo.</param>
-public record VideoResolutionResponse(string Id, string Label, string[] Aspects, int[]? Durations);
+/// <param name="PerSecondUsd">Tarifa estimada por segundo a esta resolucion, sin audio.</param>
+/// <param name="PerSecondWithAudioUsd">Con audio, si cuesta distinto; null = igual.</param>
+public record VideoResolutionResponse(string Id, string Label, string[] Aspects, int[]? Durations,
+    decimal? PerSecondUsd = null, decimal? PerSecondWithAudioUsd = null)
+{
+    /// <summary>Tarifa por segundo con o sin audio; null si no hay tarifa.</summary>
+    public decimal? RateFor(bool audio) => audio && PerSecondWithAudioUsd is { } withAudio ? withAudio : PerSecondUsd;
+}
 
 public record VideoChoiceResponse(string Value, string Label);
 

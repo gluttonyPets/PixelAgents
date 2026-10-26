@@ -246,7 +246,10 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
         string? DefaultQuality);
 
     /// <param name="Durations">Duraciones a esta resolucion, si son menos que las del modelo.</param>
-    public record VideoResolutionResponse(string Id, string Label, string[] Aspects, int[]? Durations);
+    /// <param name="PerSecondUsd">Tarifa estimada por segundo a esta resolucion, sin audio.</param>
+    /// <param name="PerSecondWithAudioUsd">Con audio, si cuesta distinto; null = igual.</param>
+    public record VideoResolutionResponse(string Id, string Label, string[] Aspects, int[]? Durations,
+        decimal? PerSecondUsd = null, decimal? PerSecondWithAudioUsd = null);
 
     public record VideoChoiceResponse(string Value, string Label);
 

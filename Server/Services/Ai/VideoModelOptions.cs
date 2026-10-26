@@ -316,7 +316,12 @@ public static class VideoModelOptions
                 spec.Durations,
                 spec.DefaultDuration,
                 spec.Resolutions
-                    .Select(r => new VideoResolutionResponse(r.Id, r.Label, r.Sizes.Select(x => x.Aspect).ToArray(), r.Durations))
+                    .Select(r =>
+                    {
+                        var rate = PricingCatalog.GetVideoRate(spec.ModelId, r.Id);
+                        return new VideoResolutionResponse(r.Id, r.Label, r.Sizes.Select(x => x.Aspect).ToArray(), r.Durations,
+                            rate?.PerSecond, rate?.PerSecondWithAudio);
+                    })
                     .ToArray(),
                 spec.DefaultResolution,
                 spec.Audio.ToString().ToLowerInvariant(),

@@ -145,10 +145,25 @@ hasta que haya cifras con las que estimar el coste.
 
 Se factura por **segundo de vídeo generado**, que es la unidad en la que publican
 todos los proveedores y la única que permite comparar un clip de 5 s con uno de
-8 s. Va en `AuxiliaryPrices` con unidad `"segundo"`, y `EstimateVideoCost` solo
-multiplica por la duración cuando la unidad es esa: si un modelo futuro se
-facturase por clip, multiplicar por los segundos daría un número sin significado
+8 s. Y el precio de ese segundo depende de la **resolución** y, en algunos
+modelos, del **audio** (Veo lo dobla), así que la tarifa no es una por modelo sino
+una por modelo y resolución, con y sin audio: `PricingCatalog.VideoRates`.
+
+    coste de una ejecución = tarifa por segundo × duración del clip × número de clips
+
+(un clip por cada imagen que entra al módulo). `EstimateVideoCost(modelo,
+segundos, resolución, audio)` hace esa cuenta, y la pantalla de modelos muestra
+la tarifa de la resolución por defecto sin audio (`GetAuxiliaryRate`, unidad
+`"segundo"`). Solo se multiplica por la duración si la unidad es el segundo: si un
+modelo futuro se facturase por clip, multiplicar daría un número sin significado
 que nadie detectaría mirando la cifra.
+
+En el alta de un módulo de vídeo, el paso de modelo tiene a la derecha un
+**simulador de coste** (`VideoCostSimulator`): resolución, duración, audio y
+clips por ejecución, con el desglose de la cuenta y la tabla de tarifas del
+modelo. Edita la misma configuración que el módulo, así que lo simulado es lo que
+queda configurado. Las tarifas le llegan con las opciones de cada modelo
+(`/api/models/video-options`).
 
 Todos los modelos de vídeo van por Leonardo, y están los 32 de su API v2:
 Motion 2.0 y Fast; Veo 3.1 / Fast / Lite; Kling 3.0 / 3.0 Turbo / O3 / 2.6 /
@@ -165,10 +180,13 @@ publica cuántos gasta cada modelo (depende de resolución, duración y audio; s
 lo da la calculadora de su web). La respuesta de cada generación sí dice lo que
 costó: `apiCreditCost` en créditos, o `cost` con su unidad (`DOLLARS` en el plan
 de pago por uso). Ese es el coste real que se apunta en la ejecución, convertido
-con `PricingCatalog.LeonardoCreditUsd` cuando viene en créditos. La tarifa por
-segundo del catálogo es solo la estimación a priori que necesita la pantalla de
-modelos: la de Motion 2.0 sale de sus créditos y la del resto de la tarifa de
-cada proveedor en su propia API, así que es orientativa.
+con `PricingCatalog.LeonardoCreditUsd` cuando viene en créditos. Las tarifas por
+segundo del catálogo son solo la estimación a priori para comparar y simular: la
+de Motion 2.0 sale de sus créditos y la del resto de la tarifa de cada proveedor
+en su propia API cuando la publica y, si no, de la de su gama, así que son
+orientativas. La calculadora de precios de la API de Leonardo
+(`POST /v1/pricing-calculator`) no sirve para afinarlas: solo cubre Motion 2.0 y
+Veo 3 a 720p.
 
 OpenAI no tiene modelo de vídeo disponible: `sora-2` y `sora-2-pro` (y la Videos
 API) se apagaron el 2026-09-24, así que no están en el catálogo.

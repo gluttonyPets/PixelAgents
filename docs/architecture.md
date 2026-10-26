@@ -722,10 +722,12 @@ factura por SEGUNDO generado, no por pieza; cinco clips de 8 s son 40 s, y entre
 el modelo mas barato y el mas caro hay mas de un orden de magnitud. Leonardo
 cobra en creditos y devuelve el gasto real de cada generacion (`apiCreditCost`,
 o `cost` en dolares en el plan de pago por uso), asi que el coste que se apunta
-en la ejecucion es ese (`LeonardoProvider.ReadSubmitCost`); la tarifa por
-segundo del catalogo es solo la estimacion a priori, orientativa porque
-Leonardo no publica el precio por modelo. Un modulo Checkpoint antes del nodo de video permite
-aprobar el gasto antes de incurrirlo.
+en la ejecucion es ese (`LeonardoProvider.ReadSubmitCost`). La estimacion a
+priori sale de `PricingCatalog.VideoRates`: tarifa por segundo por modelo y
+resolucion, con y sin audio, orientativa porque Leonardo no publica el precio
+por modelo. Con ella el alta de modulos ofrece un simulador de coste en el paso
+de modelo (ver `CATALOGO_MODELOS.md`). Un modulo Checkpoint antes del nodo de
+video permite aprobar el gasto antes de incurrirlo.
 
 **Montaje.** `VideoAssembler` llama a ffmpeg con el FILTRO `concat`, no con el
 demuxer: el demuxer es mas barato pero exige que todos los clips compartan

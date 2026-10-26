@@ -131,50 +131,8 @@ namespace Server.Services.Ai
                 ["gpt-4o-transcribe"]      = new(0.006m, "minuto"),
                 ["gpt-4o-mini-transcribe"] = new(0.003m, "minuto"),
 
-                // Video (imagen -> video). La unidad es el SEGUNDO de video generado:
-                // es como factura todo el sector y la unica forma de comparar un clip
-                // de 5 s con uno de 8 s. Leonardo cobra en creditos, no en dolares, y no
-                // publica cuantos gasta cada modelo: su precio depende de la resolucion,
-                // la duracion y el audio, y solo lo da la calculadora de su web. Estas
-                // cifras son la estimacion a priori que necesita la pantalla de modelos
-                // (Motion 2.0 a ~$0,003/credito; el resto, por la tarifa de cada
-                // proveedor en su propia API cuando la publica y, si no, por la de su
-                // gama, revisadas el 2026-10-26). El coste que se
-                // apunta en la ejecucion NO sale de aqui: la API devuelve el gasto real
-                // y el provider lo convierte con <see cref="LeonardoCreditUsd"/>.
-                ["leonardo-motion-2"]         = new(0.015m, "segundo",
-                    "Leonardo factura en creditos (~25 por clip de 5 s a 480p). " + LeonardoVideoNote),
-                ["leonardo-motion-2-fast"]    = new(0.010m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-veo-3.1"]          = new(0.40m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-veo-3.1-fast"]     = new(0.15m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-veo-3.1-lite"]     = new(0.05m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-kling-3"]          = new(0.11m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-kling-3-turbo"]    = new(0.07m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-kling-o3"]         = new(0.11m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-seedance-2"]       = new(0.25m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-seedance-2-fast"]  = new(0.10m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-hailuo-03"]        = new(0.10m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-hailuo-2.3-fast"]  = new(0.03m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-wan-3"]            = new(0.05m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-ltx-2.3-pro"]      = new(0.08m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-ltx-2.3-fast"]     = new(0.04m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-grok-imagine-1.5"] = new(0.05m,  "segundo", LeonardoVideoEstimate),
-                ["leonardo-kling-2.6"]            = new(0.10m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-kling-2.5-turbo-pro"]  = new(0.07m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-kling-2.5-turbo-std"]  = new(0.04m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-kling-o1"]             = new(0.11m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-seedance-2-mini"]      = new(0.06m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-seedance-2.5"]         = new(0.30m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-seedance-1-pro"]       = new(0.12m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-seedance-1-pro-fast"]  = new(0.05m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-hailuo-2.3"]           = new(0.05m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-wan-2.7"]              = new(0.10m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-wan-2.6"]              = new(0.08m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-flux-3-video"]         = new(0.08m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-happy-horse-1.1"]      = new(0.10m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-happy-horse"]          = new(0.08m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-gemini-omni-1.1-flash"]= new(0.15m, "segundo", LeonardoVideoEstimate),
-                ["leonardo-gemini-omni-flash"]    = new(0.10m, "segundo", LeonardoVideoEstimate),
+                // Video: no va aqui sino en VideoRates, porque su tarifa depende de la
+                // resolucion y del audio. GetAuxiliaryRate la deriva de alli.
             };
 
         /// <summary>
@@ -186,7 +144,99 @@ namespace Server.Services.Ai
         public static AuxiliaryRate? GetAuxiliaryRate(string modelName)
         {
             if (string.IsNullOrWhiteSpace(modelName)) return null;
+
+            // Un modelo de video tiene una tarifa por resolucion; la pantalla de modelos
+            // muestra la de su resolucion por defecto y sin audio, que es lo que se
+            // genera si no se toca nada.
+            if (GetVideoRate(modelName, null) is { } video)
+                return new AuxiliaryRate(video.PerSecond, "segundo",
+                    modelName.StartsWith("leonardo-motion-2", StringComparison.OrdinalIgnoreCase)
+                        ? "Leonardo factura en creditos (~25 por clip de 5 s a 480p). " + LeonardoVideoNote
+                        : LeonardoVideoEstimate);
+
             return AuxiliaryPrices.TryGetValue(modelName, out var rate) ? rate : null;
+        }
+
+        // ── Video: precio por segundo segun resolucion y audio ──
+
+        /// <summary>
+        /// Tarifa por segundo de un modelo de video a una resolucion. Con audio puede
+        /// costar mas (Veo lo dobla); <paramref name="PerSecondWithAudio"/> null = el
+        /// audio no cambia el precio (o el modelo no lo genera).
+        /// </summary>
+        public record VideoRate(decimal PerSecond, decimal? PerSecondWithAudio = null)
+        {
+            public decimal For(bool audio) => audio && PerSecondWithAudio is { } withAudio ? withAudio : PerSecond;
+        }
+
+        private static VideoRate R(decimal perSecond, decimal? withAudio = null) => new(perSecond, withAudio);
+
+        /// <summary>
+        /// Tarifa por segundo de cada modelo de video en cada una de sus resoluciones
+        /// (las de <see cref="VideoModelOptions"/>). Leonardo cobra en creditos y no
+        /// publica cuantos gasta cada modelo: solo los da la calculadora de su web, y
+        /// la de su API cubre Motion 2.0 y poco mas. Estas cifras son una ESTIMACION en
+        /// dolares: Motion 2.0 a ~$0,003/credito; el resto, por la tarifa de cada
+        /// proveedor en su propia API cuando la publica y, si no, por la de su gama
+        /// (revisadas el 2026-10-26). Sirven para comparar modelos y para el simulador
+        /// del alta de modulos; el coste que se apunta en cada ejecucion es el real,
+        /// el que devuelve la API.
+        /// </summary>
+        private static readonly Dictionary<string, Dictionary<string, VideoRate>> VideoRates =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["leonardo-motion-2"]         = new() { ["480p"] = R(0.015m), ["720p"] = R(0.025m) },
+                ["leonardo-motion-2-fast"]    = new() { ["480p"] = R(0.010m), ["720p"] = R(0.017m) },
+
+                ["leonardo-veo-3.1"]          = new() { ["720p"] = R(0.20m, 0.40m), ["1080p"] = R(0.20m, 0.40m), ["4k"] = R(0.40m, 0.60m) },
+                ["leonardo-veo-3.1-fast"]     = new() { ["720p"] = R(0.10m, 0.15m), ["1080p"] = R(0.10m, 0.15m), ["4k"] = R(0.30m, 0.35m) },
+                ["leonardo-veo-3.1-lite"]     = new() { ["720p"] = R(0.05m), ["1080p"] = R(0.08m) },
+
+                ["leonardo-kling-3"]          = new() { ["720p"] = R(0.084m, 0.126m), ["1080p"] = R(0.112m, 0.168m), ["4k"] = R(0.224m, 0.336m) },
+                ["leonardo-kling-3-turbo"]    = new() { ["720p"] = R(0.056m, 0.084m), ["1080p"] = R(0.07m, 0.105m) },
+                ["leonardo-kling-o3"]         = new() { ["720p"] = R(0.084m, 0.126m), ["1080p"] = R(0.112m, 0.168m) },
+                ["leonardo-kling-2.6"]        = new() { ["1080p"] = R(0.07m, 0.14m) },
+                ["leonardo-kling-2.5-turbo-pro"] = new() { ["720p"] = R(0.05m), ["1080p"] = R(0.07m) },
+                ["leonardo-kling-2.5-turbo-std"] = new() { ["720p"] = R(0.042m) },
+                ["leonardo-kling-o1"]         = new() { ["1080p"] = R(0.112m) },
+
+                ["leonardo-seedance-2.5"]     = new() { ["480p"] = R(0.15m), ["720p"] = R(0.30m), ["1080p"] = R(0.65m) },
+                ["leonardo-seedance-2"]       = new() { ["480p"] = R(0.12m), ["720p"] = R(0.25m), ["1080p"] = R(0.55m) },
+                ["leonardo-seedance-2-fast"]  = new() { ["480p"] = R(0.05m), ["720p"] = R(0.10m) },
+                ["leonardo-seedance-2-mini"]  = new() { ["480p"] = R(0.03m), ["720p"] = R(0.06m) },
+                ["leonardo-seedance-1-pro"]   = new() { ["480p"] = R(0.025m), ["720p"] = R(0.055m), ["1080p"] = R(0.124m) },
+                ["leonardo-seedance-1-pro-fast"] = new() { ["480p"] = R(0.01m), ["720p"] = R(0.022m), ["1080p"] = R(0.05m) },
+
+                ["leonardo-hailuo-03"]        = new() { ["480p"] = R(0.04m), ["768p"] = R(0.08m), ["2k"] = R(0.13m), ["4k"] = R(0.26m) },
+                ["leonardo-hailuo-2.3"]       = new() { ["768p"] = R(0.045m), ["1080p"] = R(0.08m) },
+                ["leonardo-hailuo-2.3-fast"]  = new() { ["768p"] = R(0.032m), ["1080p"] = R(0.055m) },
+
+                ["leonardo-wan-3"]            = new() { ["480p"] = R(0.05m), ["720p"] = R(0.10m), ["1080p"] = R(0.15m) },
+                ["leonardo-wan-2.7"]          = new() { ["720p"] = R(0.10m), ["1080p"] = R(0.15m) },
+                ["leonardo-wan-2.6"]          = new() { ["720p"] = R(0.10m), ["1080p"] = R(0.15m) },
+
+                ["leonardo-ltx-2.3-pro"]      = new() { ["1080p"] = R(0.06m), ["1440p"] = R(0.12m), ["4k"] = R(0.24m) },
+                ["leonardo-ltx-2.3-fast"]     = new() { ["1080p"] = R(0.04m), ["1440p"] = R(0.08m), ["4k"] = R(0.16m) },
+
+                ["leonardo-flux-3-video"]     = new() { ["720p"] = R(0.08m), ["1080p"] = R(0.12m) },
+                ["leonardo-grok-imagine-1.5"] = new() { ["480p"] = R(0.05m), ["720p"] = R(0.07m), ["1080p"] = R(0.10m) },
+                ["leonardo-happy-horse-1.1"]  = new() { ["720p"] = R(0.08m), ["1080p"] = R(0.12m) },
+                ["leonardo-happy-horse"]      = new() { ["720p"] = R(0.06m), ["1080p"] = R(0.10m) },
+                ["leonardo-gemini-omni-1.1-flash"] = new() { ["360p"] = R(0.05m), ["720p"] = R(0.10m), ["1080p"] = R(0.15m), ["4k"] = R(0.30m) },
+                ["leonardo-gemini-omni-flash"] = new() { ["720p"] = R(0.10m) },
+            };
+
+        /// <summary>
+        /// Tarifa de un modelo de video a una resolucion (null = la suya por defecto).
+        /// null si el modelo no es de video o no tiene tarifa para esa resolucion.
+        /// </summary>
+        public static VideoRate? GetVideoRate(string? modelName, string? resolutionId)
+        {
+            if (string.IsNullOrWhiteSpace(modelName) || !VideoRates.TryGetValue(modelName, out var byResolution))
+                return null;
+
+            resolutionId ??= VideoModelOptions.Find(modelName)?.DefaultResolution;
+            return resolutionId is not null && byResolution.TryGetValue(resolutionId, out var rate) ? rate : null;
         }
 
         // ── Image models: fixed price per image ──
@@ -473,16 +523,20 @@ namespace Server.Services.Ai
             credits <= 0 ? 0m : credits * LeonardoCreditUsd;
 
         /// <summary>
-        /// Coste estimado de un video por su duracion. La tarifa sale de
-        /// <see cref="AuxiliaryPrices"/> y solo se aplica si esta expresada por
-        /// segundo: si un modelo de video futuro se facturase por clip, devolver
-        /// tarifa x segundos multiplicaria el coste por la duracion sin que nada
-        /// avisara. Es una ESTIMACION; cuando el proveedor informa del gasto real
-        /// (Leonardo lo hace en creditos), manda ese.
+        /// Coste estimado de un video: tarifa por segundo (segun modelo, resolucion y
+        /// audio, ver <see cref="VideoRates"/>) por su duracion. Solo se aplica a
+        /// tarifas por segundo: si un modelo se facturase por clip, multiplicar por
+        /// los segundos daria un coste sin sentido sin que nada avisara. Es una
+        /// ESTIMACION; cuando el proveedor informa del gasto real (Leonardo lo hace en
+        /// creditos), manda ese.
         /// </summary>
-        public static decimal EstimateVideoCost(string modelName, double seconds)
+        /// <param name="resolutionId">Resolucion del clip; null = la del modelo por defecto.</param>
+        public static decimal EstimateVideoCost(string modelName, double seconds, string? resolutionId = null, bool audio = false)
         {
             if (string.IsNullOrWhiteSpace(modelName) || seconds <= 0) return 0m;
+
+            if (GetVideoRate(modelName, resolutionId) is { } video)
+                return video.For(audio) * (decimal)seconds;
 
             var rate = GetAuxiliaryRate(modelName);
             if (rate is null || !rate.Unit.Equals("segundo", StringComparison.OrdinalIgnoreCase))
