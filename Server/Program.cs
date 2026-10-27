@@ -1126,7 +1126,7 @@ app.MapGet("/api/elevenlabs/voices", async (
             var own = account.Select(v => v.Id).ToHashSet();
             result.AddRange(library
                 .Where(v => !own.Contains(v.Id))
-                .Select(v => new VoiceOptionResponse(v.Id, v.Label, "library", v.PreviewUrl, v.OwnerId)));
+                .Select(v => new VoiceOptionResponse(v.Id, v.Label, "library", v.PreviewUrl, v.OwnerId, v.PreviewModel)));
         }
 
         return Results.Ok(new VoiceListResponse(result, accents, useCases));

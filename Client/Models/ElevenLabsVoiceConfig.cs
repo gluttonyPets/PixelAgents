@@ -117,6 +117,18 @@ public class ElevenLabsVoiceConfig
     /// <summary>eleven_v3 no admite velocidad. Misma regla que el servidor.</summary>
     public static bool SupportsSpeed(string? model) => model != "eleven_v3";
 
+    /// <summary>Nombre legible de un modelo de ElevenLabs; uno desconocido sale tal cual.</summary>
+    public static string ModelLabel(string? model) => model switch
+    {
+        "eleven_v4" => "Eleven v4",
+        "eleven_v4_turbo" => "Eleven v4 Turbo",
+        "eleven_v3" => "Eleven v3",
+        "eleven_multilingual_v2" => "Eleven Multilingual v2",
+        "eleven_flash_v2_5" => "Eleven Flash v2.5",
+        "eleven_turbo_v2_5" => "Eleven Turbo v2.5",
+        _ => model ?? "",
+    };
+
     public string ToJson()
     {
         var map = new Dictionary<string, object>

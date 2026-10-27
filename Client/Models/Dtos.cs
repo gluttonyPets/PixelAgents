@@ -168,7 +168,9 @@ public record ModuleUsageResponse(int ProjectCount, List<string> ProjectNames);
 public record VoicePreviewRequest(Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions);
 // Voz elegible de ElevenLabs. Group: "account" (de la cuenta) o "library"
 // (biblioteca publica; OwnerId hace falta para anadirla a la cuenta al usarla).
-public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId)
+// PreviewModel: modelo con el que se grabo la muestra, si ElevenLabs lo dice.
+public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId,
+    string? PreviewModel = null)
 {
     public bool IsLibrary => Group == "library";
 }

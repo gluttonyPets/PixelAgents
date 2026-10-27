@@ -606,7 +606,11 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   por defecto `es`) y `GET /api/elevenlabs/voices?apiKeyId&language` devuelve las
   de la cuenta mas las 100 mas usadas de la biblioteca en ese idioma
   (`GET /v1/shared-voices`). La muestra de cada voz es su `preview_url` y no
-  gasta caracteres. Se oye a traves de `GET /api/elevenlabs/voice-sample?url=`
+  gasta caracteres. De la biblioteca se usa la del idioma elegido
+  (`verified_languages`, la del acento de la voz si hay varias), porque la
+  general puede estar en otro idioma; trae el modelo con el que se grabo y, si
+  no es el del modulo, el formulario avisa de que la voz puede sonar distinta
+  (cada modelo la reproduce a su manera). Se oye a traves de `GET /api/elevenlabs/voice-sample?url=`
   (`ApiClient.ElevenLabsSampleUrl`): Google Storage la entrega como `text/plain`,
   que Chrome reproduce pero Firefox y Safari no, y el endpoint la reenvia como
   `audio/mpeg` (cache 6 h, tope 5 MB). Solo acepta URLs https de
@@ -629,6 +633,11 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   (`POST /v1/voices/add/{owner}/{voice}`, ocupa un hueco de voz del plan) y
   repite. Se hace al locutar y no al elegirla para que curiosear voces no llene
   la cuenta.
+- **Que voz se uso.** Cada locucion deja en el log de la ejecucion el id de voz
+  que se pidio a ElevenLabs (y si era una copia de la cuenta o se acaba de
+  anadir) y su entrada del historial de ElevenLabs (`history-item-id`, si la
+  manda), donde se ve el nombre de la voz. Es lo primero que mirar si la voz no
+  suena a la elegida.
 - `speed` (0.7-1.2, se acota), `stability`, `similarityBoost` y `style` (0-1)
   van en `voice_settings`. `eleven_v3` no admite velocidad y no se le manda.
 - Limite por locucion segun el modelo (`ElevenLabsSpeech.MaxInputChars`: 10.000

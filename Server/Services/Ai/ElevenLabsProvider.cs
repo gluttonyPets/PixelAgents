@@ -57,7 +57,9 @@ namespace Server.Services.Ai
             var voiceId = ElevenLabsSpeech.VoiceId(context.Configuration);
 
             using var http = CreateClient(context.ApiKey);
-            var (audio, status, error) = await SpeakAsync(http, voiceId, json, ct);
+            var (audio, status, error, historyId) = await SpeakAsync(http, voiceId, json, ct);
+            var usedVoice = voiceId;
+            string? voiceSource = null;
 
             // Voz de la biblioteca que la cuenta no reconoce por su id. Puede que ya
             // este anadida con otro id (la copia de la cuenta guarda el original en
@@ -70,6 +72,7 @@ namespace Server.Services.Ai
             {
                 var account = await ListVoicesAsync(context.ApiKey, ct);
                 var accountId = ElevenLabsSpeech.FindAddedVoice(account, voiceId);
+                voiceSource = "copia de la biblioteca que ya estaba en la cuenta";
                 if (accountId is null)
                 {
                     string? addError;
@@ -78,8 +81,10 @@ namespace Server.Services.Ai
                     if (accountId is null)
                         return AiResult.Fail("No se pudo anadir la voz de la biblioteca a tu cuenta de ElevenLabs "
                             + $"(quiza no te quedan huecos de voz): {addError}");
+                    voiceSource = "anadida ahora a la cuenta desde la biblioteca";
                 }
-                (audio, status, error) = await SpeakAsync(http, accountId, json, ct);
+                usedVoice = accountId;
+                (audio, status, error, historyId) = await SpeakAsync(http, accountId, json, ct);
             }
 
             if (audio is null)
@@ -93,24 +98,37 @@ namespace Server.Services.Ai
             if (audio.Length == 0)
                 return AiResult.Fail("ElevenLabs devolvio un audio vacio");
 
-            var result = AiResult.OkFile(audio, "audio/mpeg", new Dictionary<string, object>
+            // Lo que de verdad se pidio a ElevenLabs, para el log: si la voz no suena
+            // como se esperaba, el id y la entrada del historial de ElevenLabs dicen
+            // con que voz se locuto.
+            var metadata = new Dictionary<string, object>
             {
                 ["model"] = context.ModelName,
                 ["characters"] = text.Length,
-            });
+                [ElevenLabsSpeech.UsedVoiceKey] = usedVoice,
+            };
+            if (voiceSource is not null) metadata[ElevenLabsSpeech.VoiceSourceKey] = voiceSource;
+            if (historyId is not null) metadata[ElevenLabsSpeech.HistoryItemKey] = historyId;
+
+            var result = AiResult.OkFile(audio, "audio/mpeg", metadata);
             result.EstimatedCost = ElevenLabsSpeech.EstimateCost(context.ModelName, text.Length);
             result.SentPayload = json;
             return result;
         }
 
-        private static async Task<(byte[]? Audio, int Status, string Error)> SpeakAsync(
+        private static async Task<(byte[]? Audio, int Status, string Error, string? HistoryId)> SpeakAsync(
             HttpClient http, string voiceId, string json, CancellationToken ct)
         {
             using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
             using var response = await http.PostAsync(ElevenLabsSpeech.BuildRequestUrl(voiceId), content, ct);
             if (!response.IsSuccessStatusCode)
-                return (null, (int)response.StatusCode, await response.Content.ReadAsStringAsync(ct));
-            return (await response.Content.ReadAsByteArrayAsync(ct), (int)response.StatusCode, "");
+                return (null, (int)response.StatusCode, await response.Content.ReadAsStringAsync(ct), null);
+
+            // Id de la locucion en el historial de ElevenLabs, si lo manda.
+            var historyId = response.Headers.TryGetValues("history-item-id", out var values)
+                ? values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
+                : null;
+            return (await response.Content.ReadAsByteArrayAsync(ct), (int)response.StatusCode, "", historyId);
         }
 
         /// <summary>Anade a la cuenta una voz de la biblioteca y devuelve su id en la cuenta.</summary>
@@ -147,7 +165,7 @@ namespace Server.Services.Ai
             var body = await response.Content.ReadAsStringAsync(ct);
             if (!response.IsSuccessStatusCode)
                 throw new InvalidOperationException($"ElevenLabs ({(int)response.StatusCode}) al buscar en la biblioteca: {body}");
-            return ElevenLabsSpeech.ParseSharedVoices(body);
+            return ElevenLabsSpeech.ParseSharedVoices(body, language);
         }
 
         /// <summary>

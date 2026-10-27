@@ -30,6 +30,9 @@ public static class ElevenLabsSpeech
     /// </summary>
     public const string VoiceOwnerKey = "voiceOwner";
 
+    /// <summary>Claves de los metadatos de una locucion que el handler apunta en el log.</summary>
+    public const string UsedVoiceKey = "voiceId", VoiceSourceKey = "voiceSource", HistoryItemKey = "historyItemId";
+
     public const string StabilityKey = "stability";
     public const string SimilarityKey = "similarityBoost";
     public const string StyleKey = "style";
@@ -196,8 +199,9 @@ public static class ElevenLabsSpeech
     /// (<c>sharing.original_voice_id</c>). La copia puede tener otro id, y el modulo
     /// guarda el de la biblioteca.
     /// </param>
+    /// <param name="PreviewModel">Modelo con el que se grabo la muestra, si ElevenLabs lo dice.</param>
     public record Voice(string Id, string Label, string? PreviewUrl, string? OwnerId = null,
-        string? Accent = null, string? UseCase = null, string? OriginalVoiceId = null);
+        string? Accent = null, string? UseCase = null, string? OriginalVoiceId = null, string? PreviewModel = null);
 
     /// <summary>
     /// Voces de la cuenta (respuesta de <c>GET /v2/voices</c>), con una etiqueta
@@ -245,7 +249,12 @@ public static class ElevenLabsSpeech
     /// Voces de la biblioteca (respuesta de <c>GET /v1/shared-voices</c>). Llevan
     /// el dueno publico, que hace falta para anadirlas a la cuenta.
     /// </summary>
-    public static List<Voice> ParseSharedVoices(string json)
+    /// <param name="language">
+    /// Idioma buscado. La muestra general de una voz puede estar en otro idioma;
+    /// la de <c>verified_languages</c> es la de este idioma y dice con que modelo
+    /// se grabo, que es como suena la voz que se va a locutar.
+    /// </param>
+    public static List<Voice> ParseSharedVoices(string json, string? language = null)
     {
         using var doc = JsonDocument.Parse(json);
         var voices = new List<Voice>();
@@ -262,11 +271,36 @@ public static class ElevenLabsSpeech
             foreach (var key in new[] { "gender", "age", "accent", "descriptive" })
                 if (Str(v, key) is { } value) details.Add(value);
 
-            voices.Add(new Voice(id, Label(Str(v, "name") ?? id, details), Str(v, "preview_url"), owner,
-                Str(v, "accent"), Str(v, "use_case")));
+            var verified = VerifiedPreview(v, language);
+            voices.Add(new Voice(id, Label(Str(v, "name") ?? id, details),
+                verified?.PreviewUrl ?? Str(v, "preview_url"), owner, Str(v, "accent"), Str(v, "use_case"),
+                PreviewModel: verified?.Model));
         }
 
         return voices;
+    }
+
+    /// <summary>
+    /// Muestra de la voz en ese idioma y modelo con el que se grabo. Si hay varias
+    /// (un idioma con dos acentos), la del acento de la voz.
+    /// </summary>
+    private static (string PreviewUrl, string? Model)? VerifiedPreview(JsonElement voice, string? language)
+    {
+        if (string.IsNullOrWhiteSpace(language)
+            || !voice.TryGetProperty("verified_languages", out var list) || list.ValueKind != JsonValueKind.Array)
+            return null;
+
+        var accent = Str(voice, "accent");
+        var matches = list.EnumerateArray()
+            .Where(l => l.ValueKind == JsonValueKind.Object
+                && string.Equals(Str(l, "language"), language.Trim(), StringComparison.OrdinalIgnoreCase)
+                && Str(l, "preview_url") is not null)
+            .ToList();
+        if (matches.Count == 0) return null;
+
+        var best = matches.FirstOrDefault(l => string.Equals(Str(l, "accent"), accent, StringComparison.OrdinalIgnoreCase));
+        if (best.ValueKind == JsonValueKind.Undefined) best = matches[0];
+        return (Str(best, "preview_url")!, Str(best, "model_id"));
     }
 
     private static string Label(string name, List<string> details) =>

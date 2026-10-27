@@ -96,6 +96,25 @@ public class AudioModuleHandlerTests
         Assert.Empty(provider.Calls);
     }
 
+    [Fact]
+    public void ElLogDiceConQueVozLocutoElevenLabs()
+    {
+        // Es lo que hay que mirar cuando la voz no suena a la elegida.
+        var copia = AudioModuleHandler.DescribeVoice(new Dictionary<string, object>
+        {
+            [ElevenLabsSpeech.UsedVoiceKey] = "copia1",
+            [ElevenLabsSpeech.VoiceSourceKey] = "copia de la biblioteca que ya estaba en la cuenta",
+            [ElevenLabsSpeech.HistoryItemKey] = "hist9",
+        });
+
+        Assert.Equal("Locutado con la voz copia1 (copia de la biblioteca que ya estaba en la cuenta); "
+            + "en el historial de ElevenLabs: hist9", copia);
+        Assert.Equal("Locutado con la voz v1",
+            AudioModuleHandler.DescribeVoice(new Dictionary<string, object> { [ElevenLabsSpeech.UsedVoiceKey] = "v1" }));
+        // OpenAI no lo apunta.
+        Assert.Null(AudioModuleHandler.DescribeVoice(new Dictionary<string, object> { ["model"] = "gpt-4o-mini-tts" }));
+    }
+
     private static IAiProviderRegistry Registry(IAiProvider provider) => new AiProviderRegistry([provider]);
 
     private static ModuleExecutionContext CreateContext(string text)

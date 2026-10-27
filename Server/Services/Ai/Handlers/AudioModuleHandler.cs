@@ -82,6 +82,9 @@ public class AudioModuleHandler : IModuleHandler
 
             totalCost += result.EstimatedCost;
             totalChars += takes[i].Length;
+
+            if (DescribeVoice(result.Metadata) is { } used)
+                await ctx.LogInfoAsync(takes.Count > 1 ? $"Toma {i + 1}: {used}" : used);
         }
 
         // ElevenLabs guarda la voz por id; su nombre va aparte para que se lea.
@@ -92,6 +95,25 @@ public class AudioModuleHandler : IModuleHandler
         output.Metadata["characters"] = totalChars;
 
         return ModuleResult.Completed(output, totalCost, producedFiles);
+    }
+
+    /// <summary>
+    /// Con que voz locuto ElevenLabs: el id que se pidio (puede no ser el guardado si
+    /// la voz de la biblioteca se uso desde su copia en la cuenta) y su entrada en el
+    /// historial de ElevenLabs, donde se ve el nombre de la voz. null si el
+    /// proveedor no lo dice.
+    /// </summary>
+    public static string? DescribeVoice(IReadOnlyDictionary<string, object> metadata)
+    {
+        if (!metadata.TryGetValue(ElevenLabsSpeech.UsedVoiceKey, out var voice) || voice is not string id)
+            return null;
+
+        var text = $"Locutado con la voz {id}";
+        if (metadata.TryGetValue(ElevenLabsSpeech.VoiceSourceKey, out var source) && source is string s)
+            text += $" ({s})";
+        if (metadata.TryGetValue(ElevenLabsSpeech.HistoryItemKey, out var history) && history is string h)
+            text += $"; en el historial de ElevenLabs: {h}";
+        return text;
     }
 
     /// <summary>

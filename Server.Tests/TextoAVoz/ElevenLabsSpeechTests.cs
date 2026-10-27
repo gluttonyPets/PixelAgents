@@ -227,6 +227,33 @@ public class ElevenLabsSpeechTests
     }
 
     [Fact]
+    public void LaMuestraEsLaDelIdiomaBuscado_ConElModeloConQueSeGrabo()
+    {
+        // La muestra general puede estar en ingles; la que se oye al elegir voz en
+        // espanol tiene que ser la de espanol, y del acento de la voz si hay varias.
+        const string json = """
+            {"voices":[{"voice_id":"v","public_owner_id":"o","name":"Carla","accent":"peninsular",
+              "preview_url":"https://storage.googleapis.com/eleven-public-prod/en.mp3",
+              "verified_languages":[
+                {"language":"en","model_id":"eleven_multilingual_v2","preview_url":"https://storage.googleapis.com/eleven-public-prod/en.mp3"},
+                {"language":"es","model_id":"eleven_flash_v2_5","accent":"latin american","preview_url":"https://storage.googleapis.com/eleven-public-prod/es-latam.mp3"},
+                {"language":"es","model_id":"eleven_multilingual_v2","accent":"peninsular","preview_url":"https://storage.googleapis.com/eleven-public-prod/es.mp3"}
+              ]}]}
+            """;
+
+        var es = Assert.Single(ElevenLabsSpeech.ParseSharedVoices(json, "es"));
+        var sinIdioma = Assert.Single(ElevenLabsSpeech.ParseSharedVoices(json));
+        var fr = Assert.Single(ElevenLabsSpeech.ParseSharedVoices(json, "fr"));
+
+        Assert.Equal("https://storage.googleapis.com/eleven-public-prod/es.mp3", es.PreviewUrl);
+        Assert.Equal("eleven_multilingual_v2", es.PreviewModel);
+        Assert.Equal("https://storage.googleapis.com/eleven-public-prod/en.mp3", sinIdioma.PreviewUrl);
+        Assert.Null(sinIdioma.PreviewModel);
+        Assert.Equal("https://storage.googleapis.com/eleven-public-prod/en.mp3", fr.PreviewUrl);
+        Assert.Null(fr.PreviewModel);
+    }
+
+    [Fact]
     public void LaVozDeBibliotecaYaAnadidaSeEncuentraPorSuIdOriginal()
     {
         // La copia en la cuenta puede tener otro id: si no se buscara por el

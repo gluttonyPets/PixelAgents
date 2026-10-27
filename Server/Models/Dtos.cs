@@ -38,7 +38,9 @@ namespace Server.Models
     // Demostracion de una voz de texto a voz con los valores del formulario.
     public record VoicePreviewRequest(Guid? ApiKeyId, string ModelName, string? Voice, double? Speed, string? VoiceInstructions);
     // Group: "account" (voces de la cuenta) o "library" (biblioteca publica, con OwnerId).
-    public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId);
+    // PreviewModel: modelo con el que se grabo la muestra, si ElevenLabs lo dice.
+    public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId,
+        string? PreviewModel = null);
     // Valor de un filtro de la biblioteca (acento o uso) y cuantas voces lo tienen.
     public record VoiceFacetResponse(string Value, int Count);
     // Voces para el selector y los acentos y usos que hay en la biblioteca para el idioma.
