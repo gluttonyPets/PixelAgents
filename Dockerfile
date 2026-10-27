@@ -1,5 +1,5 @@
 # ── Stage 1: Build Server ──
-# trigger rebuild: 2026-10-23 (orquestador loop: redeploy de prueba)
+# trigger rebuild: 2026-10-27 (ElevenLabs: modelo en Editar nodo; redeploy de prueba)
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build-server
 WORKDIR /src
 
