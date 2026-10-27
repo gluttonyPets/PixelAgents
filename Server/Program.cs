@@ -1137,6 +1137,39 @@ app.MapGet("/api/elevenlabs/voices", async (
     }
 }).RequireAuthorization();
 
+// Muestra gratis de una voz de ElevenLabs (su preview_url). Se sirve desde aqui y
+// no directamente porque Google Storage la entrega como text/plain, y Firefox y
+// Safari no reproducen audio con ese tipo. Solo acepta muestras de ElevenLabs
+// (ElevenLabsSpeech.TryParseSampleUrl) y las guarda en memoria unas horas.
+app.MapGet("/api/elevenlabs/voice-sample", async (
+    string url, IHttpClientFactory httpFactory,
+    Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
+{
+    if (!ElevenLabsSpeech.TryParseSampleUrl(url, out var sample))
+        return Results.BadRequest(new { error = "No es una muestra de voz de ElevenLabs." });
+
+    // Con query no se cachea: cambiando solo la query se llenaria la memoria con
+    // copias del mismo audio.
+    var cacheKey = string.IsNullOrEmpty(sample.Query) ? "elevenlabs-sample:" + sample.AbsoluteUri : null;
+    byte[]? audio = null;
+    if (cacheKey is null || !Microsoft.Extensions.Caching.Memory.CacheExtensions.TryGetValue(cache, cacheKey, out audio) || audio is null)
+    {
+        using var http = httpFactory.CreateClient();
+        using var response = await http.GetAsync(sample, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode || response.Content.Headers.ContentLength > ElevenLabsSpeech.MaxSampleBytes)
+            return Results.NotFound();
+
+        audio = await response.Content.ReadAsByteArrayAsync(ct);
+        if (audio.Length is 0 or > ElevenLabsSpeech.MaxSampleBytes) return Results.NotFound();
+
+        if (cacheKey is not null)
+            Microsoft.Extensions.Caching.Memory.CacheExtensions.Set(cache, cacheKey, audio, TimeSpan.FromHours(6));
+    }
+
+    // Con rangos: Safari no reproduce audio de un servidor que no los acepte.
+    return Results.File(audio, ElevenLabsSpeech.SampleContentType(sample), enableRangeProcessing: true);
+}).RequireAuthorization();
+
 // ==================== Module File Endpoints ====================
 
 app.MapPost("/api/project-modules/{projectModuleId}/files", async (

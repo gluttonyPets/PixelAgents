@@ -226,6 +226,65 @@ public class ElevenLabsSpeechTests
         Assert.Equal("narrative_story", voice.UseCase);
     }
 
+    [Fact]
+    public void LaVozDeBibliotecaYaAnadidaSeEncuentraPorSuIdOriginal()
+    {
+        // La copia en la cuenta puede tener otro id: si no se buscara por el
+        // original, cada locucion volveria a anadirla y ocuparia otro hueco.
+        const string json = """
+            {"voices":[
+              {"voice_id":"copia1","name":"Carmen","sharing":{"original_voice_id":"lib1"}},
+              {"voice_id":"lib2","name":"Beto","sharing":{"original_voice_id":"lib2"}},
+              {"voice_id":"propia","name":"Mi voz","sharing":null}
+            ]}
+            """;
+
+        var account = ElevenLabsSpeech.ParseVoices(json, out _);
+
+        Assert.Equal("lib1", account[0].OriginalVoiceId);
+        Assert.Null(account[1].OriginalVoiceId);
+        Assert.Null(account[2].OriginalVoiceId);
+        Assert.Equal("copia1", ElevenLabsSpeech.FindAddedVoice(account, "lib1"));
+        Assert.Equal("lib2", ElevenLabsSpeech.FindAddedVoice(account, "lib2"));
+        Assert.Null(ElevenLabsSpeech.FindAddedVoice(account, "lib3"));
+    }
+
+    [Theory]
+    [InlineData("https://storage.googleapis.com/eleven-public-prod/premade/voices/abc/sample.mp3")]
+    [InlineData(" https://storage.googleapis.com/eleven-public-cdn/x/y.mp3 ")]
+    public void LaMuestraDeElevenLabsSePuedeReenviar(string url)
+    {
+        Assert.True(ElevenLabsSpeech.TryParseSampleUrl(url, out var sample));
+        Assert.Equal("storage.googleapis.com", sample.Host);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("no es una url")]
+    [InlineData("http://storage.googleapis.com/eleven-public-prod/a.mp3")]
+    [InlineData("https://evil.com/eleven-public-prod/a.mp3")]
+    [InlineData("https://storage.googleapis.com.evil.com/eleven-public-prod/a.mp3")]
+    [InlineData("https://storage.googleapis.com@evil.com/eleven-public-prod/a.mp3")]
+    [InlineData("https://user:pass@storage.googleapis.com/eleven-public-prod/a.mp3")]
+    [InlineData("https://storage.googleapis.com:8443/eleven-public-prod/a.mp3")]
+    [InlineData("https://storage.googleapis.com/otro-bucket/a.mp3")]
+    public void ElEndpointDeMuestrasNoEsUnProxyAbierto(string? url)
+    {
+        Assert.False(ElevenLabsSpeech.TryParseSampleUrl(url, out _));
+    }
+
+    [Theory]
+    [InlineData("https://storage.googleapis.com/eleven-x/a.mp3", "audio/mpeg")]
+    [InlineData("https://storage.googleapis.com/eleven-x/a", "audio/mpeg")]
+    [InlineData("https://storage.googleapis.com/eleven-x/a.WAV", "audio/wav")]
+    [InlineData("https://storage.googleapis.com/eleven-x/a.ogg", "audio/ogg")]
+    public void LaMuestraSeSirveComoAudio(string url, string contentType)
+    {
+        // Google Storage la entrega como text/plain, que Firefox y Safari no reproducen.
+        Assert.Equal(contentType, ElevenLabsSpeech.SampleContentType(new Uri(url)));
+    }
+
     private static Dictionary<string, object> Config(params (string Key, object Value)[] values) =>
         values.ToDictionary(v => v.Key, v => v.Value);
 

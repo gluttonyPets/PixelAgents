@@ -249,6 +249,17 @@ public class ApiClient
         return (null, await ReadErrorAsync(resp));
     }
 
+    /// <summary>
+    /// URL con la que reproducir la muestra de una voz de ElevenLabs. Las de su
+    /// almacen en Google Storage pasan por el servidor, que las sirve como audio:
+    /// Google las entrega como text/plain y Firefox y Safari no las reproducen.
+    /// Cualquier otra se usa tal cual.
+    /// </summary>
+    public string ElevenLabsSampleUrl(string previewUrl) =>
+        previewUrl.StartsWith("https://storage.googleapis.com/eleven-", StringComparison.OrdinalIgnoreCase)
+            ? new Uri(_http.BaseAddress!, "/api/elevenlabs/voice-sample?url=" + Uri.EscapeDataString(previewUrl)).ToString()
+            : previewUrl;
+
     public async Task<AiModuleResponse?> GetModuleAsync(Guid id)
     {
         var resp = await SendAsync(HttpMethod.Get, $"/api/modules/{id}");

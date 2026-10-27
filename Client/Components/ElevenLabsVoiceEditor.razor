@@ -126,6 +126,14 @@
             <audio @key="sample" controls preload="none" src="@sample"></audio>
         </div>
     }
+    else if (_voices is { Count: > 0 } && !string.IsNullOrEmpty(Config.Voice))
+    {
+        <span class="text-sm text-muted">
+            @(_voices.Any(v => v.Id == Config.Voice)
+                ? "ElevenLabs no tiene muestra de esta voz."
+                : "La voz guardada no esta en esta lista: cambia el idioma o los filtros para encontrarla y oirla.")
+        </span>
+    }
 </div>
 
 <div class="form-row">
@@ -133,7 +141,7 @@
     {
         <div class="form-group">
             <label>Velocidad <span class="text-sm text-muted">(@ElevenLabsVoiceConfig.MinSpeed - @ElevenLabsVoiceConfig.MaxSpeed)</span></label>
-            <input type="number" step="0.05" min="@ElevenLabsVoiceConfig.MinSpeed" max="@ElevenLabsVoiceConfig.MaxSpeed" @bind="Config.Speed" />
+            <input type="number" step="0.05" min="@ElevenLabsVoiceConfig.MinSpeed" max="@ElevenLabsVoiceConfig.MaxSpeed" @bind="Config.Speed" @bind:after="Changed" />
         </div>
     }
     @* Los sliders van con cultura invariante: Blazor no la aplica solo a type="range"
@@ -141,7 +149,7 @@
     <div class="form-group voice-slider">
         <label>Estabilidad <span class="voice-slider-value">@Percent(Config.Stability)</span></label>
         <input type="range" min="0" max="1" step="0.05" @bind="Config.Stability" @bind:event="oninput"
-               @bind:culture="CultureInfo.InvariantCulture" />
+               @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
         <small class="voice-slider-hint">Baja = mas expresiva; alta = mas monotona y constante.</small>
     </div>
 </div>
@@ -149,13 +157,13 @@
     <div class="form-group voice-slider">
         <label>Parecido a la voz <span class="voice-slider-value">@Percent(Config.SimilarityBoost)</span></label>
         <input type="range" min="0" max="1" step="0.05" @bind="Config.SimilarityBoost" @bind:event="oninput"
-               @bind:culture="CultureInfo.InvariantCulture" />
+               @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
         <small class="voice-slider-hint">Cuanto se cine a la voz original.</small>
     </div>
     <div class="form-group voice-slider">
         <label>Exageracion de estilo <span class="voice-slider-value">@Percent(Config.Style)</span></label>
         <input type="range" min="0" max="1" step="0.05" @bind="Config.Style" @bind:event="oninput"
-               @bind:culture="CultureInfo.InvariantCulture" />
+               @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
         <small class="voice-slider-hint">0 recomendado; subirlo da mas caracter pero tarda mas.</small>
     </div>
 </div>
@@ -166,6 +174,12 @@
     [Parameter] public Guid? ApiKeyId { get; set; }
     [Parameter] public string Model { get; set; } = "";
 
+    /// <summary>
+    /// Avisa de cada cambio al formulario que lo contiene. Sin el, el editor de un
+    /// modulo no se enteraba de que la voz habia cambiado y no dejaba guardar.
+    /// </summary>
+    [Parameter] public EventCallback OnChange { get; set; }
+
     private List<VoiceOptionResponse>? _voices;
     private List<VoiceFacetResponse> _accents = [];
     private List<VoiceFacetResponse> _useCases = [];
@@ -174,7 +188,10 @@
     private (Guid? Key, string Language, string Accent, string UseCase)? _loaded;
 
     /// <summary>Audio de ejemplo de la voz elegida, alojado en ElevenLabs: oirlo no gasta caracteres.</summary>
-    private string? SelectedSample => _voices?.FirstOrDefault(v => v.Id == Config.Voice)?.PreviewUrl;
+    private string? SelectedSample =>
+        _voices?.FirstOrDefault(v => v.Id == Config.Voice)?.PreviewUrl is { Length: > 0 } preview
+            ? Api.ElevenLabsSampleUrl(preview)
+            : null;
 
     protected override Task OnParametersSetAsync() => LoadVoicesAsync();
 
@@ -185,19 +202,24 @@
         Config.Accent = "";
         Config.UseCase = "";
         await LoadVoicesAsync();
+        await Changed();
     }
 
     private async Task OnAccentChanged(ChangeEventArgs e)
     {
         Config.Accent = e.Value?.ToString() ?? "";
         await LoadVoicesAsync();
+        await Changed();
     }
 
     private async Task OnUseCaseChanged(ChangeEventArgs e)
     {
         Config.UseCase = e.Value?.ToString() ?? "";
         await LoadVoicesAsync();
+        await Changed();
     }
+
+    private Task Changed() => OnChange.InvokeAsync();
 
     private async Task LoadVoicesAsync()
     {
@@ -226,21 +248,27 @@
         // Sin voz elegida se propone la primera (la mas usada del idioma): el
         // selector no puede quedar vacio.
         if (string.IsNullOrEmpty(Config.Voice) && voices is { Count: > 0 })
+        {
             Select(voices.FirstOrDefault(v => v.IsLibrary) ?? voices[0]);
+            await Changed();
+        }
     }
 
-    private void OnVoiceSelected(ChangeEventArgs e)
+    private async Task OnVoiceSelected(ChangeEventArgs e)
     {
         var id = e.Value?.ToString() ?? "";
         var voice = _voices?.FirstOrDefault(v => v.Id == id);
-        if (voice is not null) Select(voice);
+        if (voice is null) return;
+        Select(voice);
+        await Changed();
     }
 
     // Un id escrito a mano ya no es la voz cuyo nombre y dueno estaban guardados.
-    private void ClearVoiceName()
+    private Task ClearVoiceName()
     {
         Config.VoiceName = "";
         Config.VoiceOwner = "";
+        return Changed();
     }
 
     private void Select(VoiceOptionResponse voice)

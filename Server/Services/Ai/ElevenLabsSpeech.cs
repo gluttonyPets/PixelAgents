@@ -80,6 +80,48 @@ public static class ElevenLabsSpeech
         $"{BaseUrl}/v1/voices/add/{Uri.EscapeDataString(ownerId)}/{Uri.EscapeDataString(voiceId)}";
 
     /// <summary>
+    /// Id en la cuenta de una voz de la biblioteca que ya se anadio, buscandola por
+    /// el id que tenia en la biblioteca. null si no esta.
+    /// </summary>
+    public static string? FindAddedVoice(IEnumerable<Voice> account, string libraryVoiceId) =>
+        account.FirstOrDefault(v => v.Id == libraryVoiceId || v.OriginalVoiceId == libraryVoiceId)?.Id;
+
+    /// <summary>Tope de una muestra de voz: son unos segundos de mp3, no mas de unos cientos de KB.</summary>
+    public const int MaxSampleBytes = 5 * 1024 * 1024;
+
+    /// <summary>
+    /// URL de la muestra gratis de una voz (<c>preview_url</c>) que el servidor puede
+    /// reenviar. Solo las del almacen publico de ElevenLabs en Google Storage: el
+    /// endpoint que las sirve no puede convertirse en un proxy hacia cualquier sitio.
+    /// </summary>
+    public static bool TryParseSampleUrl(string? url, out Uri sample)
+    {
+        sample = null!;
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+            return false;
+        if (uri.Scheme != Uri.UriSchemeHttps || !string.IsNullOrEmpty(uri.UserInfo) || !uri.IsDefaultPort)
+            return false;
+        if (!uri.Host.Equals("storage.googleapis.com", StringComparison.OrdinalIgnoreCase)
+            || !uri.AbsolutePath.StartsWith("/eleven-", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        sample = uri;
+        return true;
+    }
+
+    /// <summary>
+    /// Tipo con el que se sirve la muestra. Google Storage las entrega como
+    /// <c>text/plain</c>: Chrome las reproduce igual, pero Firefox y Safari no.
+    /// </summary>
+    public static string SampleContentType(Uri sample) =>
+        Path.GetExtension(sample.AbsolutePath).ToLowerInvariant() switch
+        {
+            ".wav" => "audio/wav",
+            ".ogg" => "audio/ogg",
+            _ => "audio/mpeg",
+        };
+
+    /// <summary>
     /// La API respondio que la voz no existe para esta cuenta: es lo que pasa con
     /// una voz de la biblioteca que todavia no se ha anadido.
     /// </summary>
@@ -149,8 +191,13 @@ public static class ElevenLabsSpeech
     }
 
     /// <summary>Voz elegible: de la cuenta (sin dueno) o de la biblioteca (con dueno).</summary>
+    /// <param name="OriginalVoiceId">
+    /// En una voz de la cuenta anadida desde la biblioteca, el id que tenia alli
+    /// (<c>sharing.original_voice_id</c>). La copia puede tener otro id, y el modulo
+    /// guarda el de la biblioteca.
+    /// </param>
     public record Voice(string Id, string Label, string? PreviewUrl, string? OwnerId = null,
-        string? Accent = null, string? UseCase = null);
+        string? Accent = null, string? UseCase = null, string? OriginalVoiceId = null);
 
     /// <summary>
     /// Voces de la cuenta (respuesta de <c>GET /v2/voices</c>), con una etiqueta
@@ -183,7 +230,12 @@ public static class ElevenLabsSpeech
             if (Str(v, "category") is "cloned" or "professional")
                 details.Add("clonada");
 
-            voices.Add(new Voice(id, Label(Str(v, "name") ?? id, details), Str(v, "preview_url")));
+            var original = v.TryGetProperty("sharing", out var sharing) && sharing.ValueKind == JsonValueKind.Object
+                ? Str(sharing, "original_voice_id")
+                : null;
+
+            voices.Add(new Voice(id, Label(Str(v, "name") ?? id, details), Str(v, "preview_url"),
+                OriginalVoiceId: original != id ? original : null));
         }
 
         return voices;

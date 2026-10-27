@@ -59,18 +59,27 @@ namespace Server.Services.Ai
             using var http = CreateClient(context.ApiKey);
             var (audio, status, error) = await SpeakAsync(http, voiceId, json, ct);
 
-            // Voz de la biblioteca que aun no esta en la cuenta: se anade (ocupa un
-            // hueco de voz en ElevenLabs) y se repite. Se hace aqui y no al elegirla
-            // para que curiosear voces en el formulario no llene la cuenta.
+            // Voz de la biblioteca que la cuenta no reconoce por su id. Puede que ya
+            // este anadida con otro id (la copia de la cuenta guarda el original en
+            // sharing.original_voice_id): entonces se usa esa copia, porque anadirla en
+            // cada locucion ocuparia un hueco de voz por vez o fallaria. Si no esta, se
+            // anade (ocupa un hueco en ElevenLabs) y se repite. Se hace aqui y no al
+            // elegirla para que curiosear voces en el formulario no llene la cuenta.
             var owner = ElevenLabsSpeech.VoiceOwner(context.Configuration);
             if (audio is null && owner is not null && ElevenLabsSpeech.IsVoiceNotFound(status, error))
             {
-                var (addedId, addError) = await AddSharedVoiceAsync(
-                    http, owner, voiceId, ElevenLabsSpeech.VoiceName(context.Configuration), ct);
-                if (addedId is null)
-                    return AiResult.Fail("No se pudo anadir la voz de la biblioteca a tu cuenta de ElevenLabs "
-                        + $"(quiza no te quedan huecos de voz): {addError}");
-                (audio, status, error) = await SpeakAsync(http, addedId, json, ct);
+                var account = await ListVoicesAsync(context.ApiKey, ct);
+                var accountId = ElevenLabsSpeech.FindAddedVoice(account, voiceId);
+                if (accountId is null)
+                {
+                    string? addError;
+                    (accountId, addError) = await AddSharedVoiceAsync(
+                        http, owner, voiceId, ElevenLabsSpeech.VoiceName(context.Configuration), ct);
+                    if (accountId is null)
+                        return AiResult.Fail("No se pudo anadir la voz de la biblioteca a tu cuenta de ElevenLabs "
+                            + $"(quiza no te quedan huecos de voz): {addError}");
+                }
+                (audio, status, error) = await SpeakAsync(http, accountId, json, ct);
             }
 
             if (audio is null)

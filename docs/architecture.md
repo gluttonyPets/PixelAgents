@@ -605,8 +605,13 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   biblioteca publica. El formulario tiene un select de idioma (`voiceLanguage`,
   por defecto `es`) y `GET /api/elevenlabs/voices?apiKeyId&language` devuelve las
   de la cuenta mas las 100 mas usadas de la biblioteca en ese idioma
-  (`GET /v1/shared-voices`). La muestra de cada voz se oye desde su `preview_url`,
-  sin gastar caracteres.
+  (`GET /v1/shared-voices`). La muestra de cada voz es su `preview_url` y no
+  gasta caracteres. Se oye a traves de `GET /api/elevenlabs/voice-sample?url=`
+  (`ApiClient.ElevenLabsSampleUrl`): Google Storage la entrega como `text/plain`,
+  que Chrome reproduce pero Firefox y Safari no, y el endpoint la reenvia como
+  `audio/mpeg` (cache 6 h, tope 5 MB). Solo acepta URLs https de
+  `storage.googleapis.com/eleven-*` (`ElevenLabsSpeech.TryParseSampleUrl`) para no
+  ser un proxy abierto.
 - **Acento y estilo.** Dos selects mas filtran la biblioteca por acento
   (`voiceAccent`: argentino, peninsular, latino neutro, mexicano...) y por uso
   (`voiceUseCase`: narracion, anuncios, conversacional...). ElevenLabs no publica
@@ -618,7 +623,9 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   muestra tal cual.
 - **Voces de la biblioteca.** La API no locuta con una voz que no este en la
   cuenta, asi que al elegir una se guarda tambien su dueno (`voiceOwner`). Si
-  ElevenLabs responde `voice_not_found`, el proveedor la anade a la cuenta
+  ElevenLabs responde `voice_not_found`, el proveedor busca primero si ya esta
+  anadida con otro id (la copia guarda el original en `sharing.original_voice_id`,
+  `ElevenLabsSpeech.FindAddedVoice`) y la usa; si no, la anade
   (`POST /v1/voices/add/{owner}/{voice}`, ocupa un hueco de voz del plan) y
   repite. Se hace al locutar y no al elegirla para que curiosear voces no llene
   la cuenta.
@@ -632,7 +639,9 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
 
 El formulario de ElevenLabs es `ElevenLabsVoiceEditor.razor` (con
 `ElevenLabsVoiceConfig` para leer y escribir el JSON), el mismo en la pagina
-Modulos y en el popup "Editar nodo".
+Modulos y en el popup "Editar nodo". Avisa de cada cambio con `OnChange` (igual
+que `SearchConsoleConfigEditor`): sin ese aviso el editor de la pagina Modulos no
+se enteraba de que habia cambios y no dejaba guardar otra voz.
 
 **Escuchar voz.** En los modulos de OpenAI, el boton "Escuchar voz"
 (`VoicePreview.razor` -> `POST /api/voice-preview`) locuta una frase corta

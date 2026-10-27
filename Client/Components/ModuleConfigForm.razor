@@ -197,9 +197,7 @@ else if (ModuleType == "Design" && Provider == "Canva")
 }
 else if (ModuleType == SearchConsoleConfig.ModuleType)
 {
-    <div @onchange="Changed" @oninput="Changed">
-        <SearchConsoleConfigEditor Config="Draft.SearchConsole" ApiKeyId="@ApiKeyId" />
-    </div>
+    <SearchConsoleConfigEditor Config="Draft.SearchConsole" ApiKeyId="@ApiKeyId" OnChange="Changed" />
 }
 else if (ModuleType == "StaticText")
 {
@@ -245,9 +243,7 @@ else if (ModuleType == "Audio" && Provider == "OpenAI")
 }
 else if (ElevenLabsVoiceConfig.IsElevenLabsAudio(Provider, ModuleType))
 {
-    <div @onchange="Changed" @oninput="Changed" @onclick="Changed">
-        <ElevenLabsVoiceEditor Config="Draft.ElevenLabs" Model="@Model" ApiKeyId="@ApiKeyId" />
-    </div>
+    <ElevenLabsVoiceEditor Config="Draft.ElevenLabs" Model="@Model" ApiKeyId="@ApiKeyId" OnChange="Changed" />
 }
 else if (ModuleType == "Transcription" && Provider == "OpenAI")
 {

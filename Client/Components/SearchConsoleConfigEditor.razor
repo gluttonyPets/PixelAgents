@@ -6,7 +6,7 @@
 <div class="form-group">
     <label>Propiedad de Search Console</label>
     <div style="display:flex; gap:0.5rem;">
-        <input type="text" @bind="Config.SiteUrl" style="flex:1;"
+        <input type="text" @bind="Config.SiteUrl" @bind:after="Changed" style="flex:1;"
                placeholder="sc-domain:ejemplo.com  o  https://www.ejemplo.com/" />
         <button type="button" class="btn btn-sm" @onclick="LoadSites"
                 disabled="@(_loadingSites || ApiKeyId is null)"
@@ -39,7 +39,7 @@
 <div class="form-row">
     <div class="form-group">
         <label>Periodo</label>
-        <select @bind="Config.DateRange">
+        <select @bind="Config.DateRange" @bind:after="Changed">
             @foreach (var (value, label) in SearchConsoleConfig.DateRangeOptions)
             {
                 <option value="@value">@label</option>
@@ -48,7 +48,7 @@
     </div>
     <div class="form-group">
         <label>Tipo de busqueda</label>
-        <select @bind="Config.SearchType">
+        <select @bind="Config.SearchType" @bind:after="Changed">
             @foreach (var (value, label) in SearchConsoleConfig.SearchTypeOptions)
             {
                 <option value="@value">@label</option>
@@ -62,11 +62,11 @@
     <div class="form-row">
         <div class="form-group">
             <label>Desde <span class="text-sm text-muted">(AAAA-MM-DD o {{variable}})</span></label>
-            <input type="text" @bind="Config.StartDate" placeholder="2026-01-01" />
+            <input type="text" @bind="Config.StartDate" @bind:after="Changed" placeholder="2026-01-01" />
         </div>
         <div class="form-group">
             <label>Hasta <span class="text-sm text-muted">(AAAA-MM-DD o {{variable}})</span></label>
-            <input type="text" @bind="Config.EndDate" placeholder="2026-01-31" />
+            <input type="text" @bind="Config.EndDate" @bind:after="Changed" placeholder="2026-01-31" />
         </div>
     </div>
 }
@@ -78,7 +78,7 @@
         {
             <label class="form-check">
                 <input type="checkbox" checked="@Config.Dimensions.Contains(value)"
-                       @onchange="e => Config.ToggleDimension(value, e.Value is true)" />
+                       @onchange="e => { Config.ToggleDimension(value, e.Value is true); return Changed(); }" />
                 @label
             </label>
         }
@@ -87,7 +87,7 @@
 
 <div class="form-group">
     <label>Filtros <span class="text-sm text-muted">(uno por linea: dimension operador valor)</span></label>
-    <textarea @bind="Config.Filters" rows="3"
+    <textarea @bind="Config.Filters" @bind:after="Changed" rows="3"
               placeholder="@FiltersPlaceholder"></textarea>
     <span class="text-sm text-muted">
         Dimensiones: query, page, country, device, searchAppearance. Operadores: equals, notEquals,
@@ -98,28 +98,28 @@
 <div class="form-row">
     <div class="form-group">
         <label>Filtrar: impresiones minimas</label>
-        <input type="number" min="0" @bind="Config.MinImpressions" placeholder="Sin minimo" />
+        <input type="number" min="0" @bind="Config.MinImpressions" @bind:after="Changed" placeholder="Sin minimo" />
     </div>
     <div class="form-group">
         <label>Filtrar: clics minimos</label>
-        <input type="number" min="0" @bind="Config.MinClicks" placeholder="Sin minimo" />
+        <input type="number" min="0" @bind="Config.MinClicks" @bind:after="Changed" placeholder="Sin minimo" />
     </div>
 </div>
 <div class="form-row">
     <div class="form-group">
         <label>Filtrar: posicion desde</label>
-        <input type="text" inputmode="decimal" @bind="Config.MinPosition" placeholder="Ej: 8" />
+        <input type="text" inputmode="decimal" @bind="Config.MinPosition" @bind:after="Changed" placeholder="Ej: 8" />
     </div>
     <div class="form-group">
         <label>Filtrar: posicion hasta</label>
-        <input type="text" inputmode="decimal" @bind="Config.MaxPosition" placeholder="Ej: 20" />
+        <input type="text" inputmode="decimal" @bind="Config.MaxPosition" @bind:after="Changed" placeholder="Ej: 20" />
     </div>
 </div>
 
 <div class="form-row">
     <div class="form-group">
         <label>Ordenar por</label>
-        <select @bind="Config.OrderBy">
+        <select @bind="Config.OrderBy" @bind:after="Changed">
             @foreach (var (value, label) in SearchConsoleConfig.OrderByOptions)
             {
                 <option value="@value">@label</option>
@@ -128,7 +128,7 @@
     </div>
     <div class="form-group">
         <label>Formato de salida</label>
-        <select @bind="Config.OutputFormat">
+        <select @bind="Config.OutputFormat" @bind:after="Changed">
             @foreach (var (value, label) in SearchConsoleConfig.OutputFormatOptions)
             {
                 <option value="@value">@label</option>
@@ -140,18 +140,18 @@
 <div class="form-row">
     <div class="form-group">
         <label>Limite de filas <span class="text-sm text-muted">(1 - 25000)</span></label>
-        <input type="number" min="1" max="25000" @bind="Config.RowLimit" />
+        <input type="number" min="1" max="25000" @bind="Config.RowLimit" @bind:after="Changed" />
     </div>
     <div class="form-group">
         <label>Fila inicial <span class="text-sm text-muted">(para paginar)</span></label>
-        <input type="number" min="0" @bind="Config.StartRow" placeholder="0" />
+        <input type="number" min="0" @bind="Config.StartRow" @bind:after="Changed" placeholder="0" />
     </div>
 </div>
 
 <div class="form-row">
     <div class="form-group">
         <label>Agregacion</label>
-        <select @bind="Config.AggregationType">
+        <select @bind="Config.AggregationType" @bind:after="Changed">
             <option value="auto">Automatica</option>
             <option value="byPage">Por pagina</option>
             <option value="byProperty">Por propiedad</option>
@@ -159,7 +159,7 @@
     </div>
     <div class="form-group">
         <label>Datos</label>
-        <select @bind="Config.DataState">
+        <select @bind="Config.DataState" @bind:after="Changed">
             <option value="final">Solo datos cerrados (~3 dias de retraso)</option>
             <option value="all">Incluir datos recientes (provisionales)</option>
         </select>
@@ -180,6 +180,9 @@
 
     /// <summary>API key "SearchConsole" elegida para el modulo (para listar propiedades).</summary>
     [Parameter] public Guid? ApiKeyId { get; set; }
+
+    /// <summary>Avisa de cada cambio al formulario que lo contiene (el editor lo usa para saber si hay cambios sin guardar).</summary>
+    [Parameter] public EventCallback OnChange { get; set; }
 
     private List<SearchConsoleSiteDto>? _sites;
     private string? _sitesError;
@@ -215,10 +218,13 @@
         _loadingSites = false;
     }
 
-    private void OnSiteSelected(ChangeEventArgs e)
+    private Task OnSiteSelected(ChangeEventArgs e)
     {
         var value = e.Value?.ToString();
-        if (!string.IsNullOrEmpty(value))
-            Config.SiteUrl = value;
+        if (string.IsNullOrEmpty(value)) return Task.CompletedTask;
+        Config.SiteUrl = value;
+        return Changed();
     }
+
+    private Task Changed() => OnChange.InvokeAsync();
 }
