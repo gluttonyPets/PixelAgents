@@ -81,16 +81,16 @@ public class AudioModuleHandlerTests
     {
         var takes = AudioModuleHandler.BuildTakes(["**Oferta** limitada:\n- solo hoy"], out _);
 
-        Assert.Equal("Oferta limitada:\n\nsolo hoy", takes.Single());
+        Assert.Equal("Oferta limitada:\nsolo hoy", takes.Single());
     }
 
     [Fact]
-    public void LosSaltosDeLineaSeConservanComoParrafos()
+    public void LosSaltosDeLineaYLosParrafosSeConservan()
     {
         // Son las pausas de la locucion: aplanados, la voz lo lee todo de un tiron.
         var takes = AudioModuleHandler.BuildTakes(["Tu perro te espera.\n¿Sabes por que?\n\n\n  No es venganza.  "], out _);
 
-        Assert.Equal("Tu perro te espera.\n\n¿Sabes por que?\n\nNo es venganza.", takes.Single());
+        Assert.Equal("Tu perro te espera.\n¿Sabes por que?\n\nNo es venganza.", takes.Single());
     }
 
     [Fact]

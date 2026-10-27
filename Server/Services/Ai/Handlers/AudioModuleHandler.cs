@@ -119,7 +119,7 @@ public class AudioModuleHandler : IModuleHandler
     /// <summary>
     /// Textos a locutar, uno por toma. Se limpian de markdown y simbolos porque
     /// el TTS los leeria en voz alta ("asterisco", "almohadilla"). Los saltos de
-    /// linea se conservan como parrafos: son las pausas de la locucion.
+    /// linea y los parrafos se conservan: son las pausas de la locucion.
     /// </summary>
     public static List<string> BuildTakes(IEnumerable<string?> inputs, out bool droppedPreamble)
     {

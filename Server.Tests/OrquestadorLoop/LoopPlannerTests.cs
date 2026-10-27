@@ -206,9 +206,10 @@ public class LoopPlannerTests
 
         Assert.Equal(8, LoopPlanner.FindPacer(frame)!.ClipSeconds);
 
-        // La configuracion del paso manda sobre la del modulo, como al ejecutar.
+        // La duracion solo se edita en el modulo: una copia vieja en el nodo (se
+        // copiaba al anadirlo al pipeline) no cuenta, igual que al ejecutar.
         video.ProjectModule.Configuration = """{"duration":12}""";
-        Assert.Equal(12, LoopPlanner.FindPacer(frame)!.ClipSeconds);
+        Assert.Equal(8, LoopPlanner.FindPacer(frame)!.ClipSeconds);
     }
 
     [Fact]

@@ -393,45 +393,6 @@ static string? ResolveFilePath(string mediaRoot, string workspacePath, string fi
     return null;
 }
 
-/// <summary>
-/// Copies the configuration from an AiModule but excludes the systemPrompt field.
-/// This ensures that systemPrompt is always read from the current AiModule configuration
-/// rather than being frozen at the time the module is added to a pipeline.
-/// Other fields (like numberOfImages, temperature, modelName) are copied to allow
-/// per-pipeline customization.
-/// </summary>
-static string? CopyConfigurationExcludingSystemPrompt(string? sourceConfig)
-{
-    if (string.IsNullOrWhiteSpace(sourceConfig)) return null;
-    
-    try
-    {
-        using var doc = System.Text.Json.JsonDocument.Parse(sourceConfig);
-        var root = doc.RootElement;
-        
-        if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
-            return sourceConfig;
-        
-        var filtered = new Dictionary<string, System.Text.Json.JsonElement>();
-        foreach (var prop in root.EnumerateObject())
-        {
-            // Exclude systemPrompt - it should always come from AiModule
-            if (!prop.Name.Equals("systemPrompt", StringComparison.OrdinalIgnoreCase))
-            {
-                filtered[prop.Name] = prop.Value.Clone();
-            }
-        }
-        
-        if (filtered.Count == 0) return null;
-        
-        return System.Text.Json.JsonSerializer.Serialize(filtered);
-    }
-    catch
-    {
-        // If parsing fails, return original config
-        return sourceConfig;
-    }
-}
 
 // ==================== Auth Endpoints ====================
 
@@ -1708,7 +1669,7 @@ app.MapGet("/api/projects/{id:guid}", async (
             subProjectSummaries.TryGetValue(spId, out subSummary);
         return new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
             pm.AiModule.ModuleType, effectiveModel, pm.StepName,
-            pm.Configuration, pm.IsActive,
+            ModuleConfigKeys.NodeOnly(pm.Configuration), pm.IsActive,
             pm.PosX, pm.PosY,
             pm.AiModule.ModuleType == "Orchestrator"
                 ? pm.OrchestratorOutputs.Select(o => new OrchestratorOutputResponse(
@@ -2297,9 +2258,9 @@ app.MapPost("/api/projects/{id}/duplicate", async (
             ProjectId = newProject.Id,
             AiModuleId = pm.AiModuleId,
             StepName = pm.StepName,
-            // When cloning, also exclude systemPrompt to ensure the cloned project
-            // gets the latest systemPrompt from the AiModule rather than a frozen copy.
-            Configuration = CopyConfigurationExcludingSystemPrompt(pm.Configuration),
+            // Solo lo del nodo: lo del modulo (prompt, voz, tamano...) se lee siempre
+            // del modulo y una copia aqui se quedaria congelada.
+            Configuration = ModuleConfigKeys.NodeOnly(pm.Configuration),
             IsActive = pm.IsActive,
             PosX = pm.PosX,
             PosY = pm.PosY,
@@ -2426,11 +2387,10 @@ app.MapPost("/api/projects/{projectId}/modules", async (
         ProjectId = projectId,
         AiModuleId = req.AiModuleId,
         StepName = req.StepName,
-        // Inherit the AiModule's Configuration as the initial pipeline-level
-        // override so per-module defaults (e.g. numberOfImages, n, modelName)
-        // are honored the first time the module is added to a pipeline.
-        // IMPORTANT: systemPrompt is excluded to allow dynamic updates from AiModule.
-        Configuration = req.Configuration ?? CopyConfigurationExcludingSystemPrompt(module.Configuration),
+        // El nodo arranca con lo que el canvas lee del nodo (n, numberOfImages,
+        // sceneCount: cuantas salidas pinta). Lo que solo se edita en el modulo no se
+        // copia: la copia ganaba al modulo y sus cambios dejaban de llegar al nodo.
+        Configuration = req.Configuration ?? ModuleConfigKeys.NodeOnly(module.Configuration),
         IsActive = true,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
@@ -2456,7 +2416,7 @@ app.MapPost("/api/projects/{projectId}/modules", async (
     return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, module.Name,
             module.ModuleType, addEffectiveModel, pm.StepName,
-            pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
+            ModuleConfigKeys.NodeOnly(pm.Configuration), pm.IsActive, pm.PosX, pm.PosY));
 }).RequireAuthorization();
 
 // Inserta un proyecto entero como un unico nodo "SubProject" dentro de otro
@@ -2512,7 +2472,7 @@ app.MapPost("/api/projects/{projectId}/subprojects", async (
     return Results.Created($"/api/projects/{projectId}/modules/{pm.Id}",
         new ProjectModuleResponse(pm.Id, pm.AiModuleId, subProjectModule.Name,
             subProjectModule.ModuleType, subProjectModule.ModelName, pm.StepName,
-            pm.Configuration, pm.IsActive, pm.PosX, pm.PosY, null,
+            ModuleConfigKeys.NodeOnly(pm.Configuration), pm.IsActive, pm.PosX, pm.PosY, null,
             pm.SubProjectId, summary));
 }).RequireAuthorization();
 
@@ -2550,7 +2510,7 @@ app.MapPut("/api/projects/{projectId}/modules/{id}", async (
     }
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, pm.AiModule.Name,
         pm.AiModule.ModuleType, updateEffectiveModel, pm.StepName,
-        pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
+        ModuleConfigKeys.NodeOnly(pm.Configuration), pm.IsActive, pm.PosX, pm.PosY));
 }).RequireAuthorization();
 
 // Reapunta un nodo del pipeline a otro modulo de catalogo (mismo tipo). Se usa al
@@ -2580,7 +2540,7 @@ app.MapPut("/api/projects/{projectId}/modules/{id}/reassign", async (
 
     return Results.Ok(new ProjectModuleResponse(pm.Id, pm.AiModuleId, newModule.Name,
         newModule.ModuleType, newModule.ModelName, pm.StepName,
-        pm.Configuration, pm.IsActive, pm.PosX, pm.PosY));
+        ModuleConfigKeys.NodeOnly(pm.Configuration), pm.IsActive, pm.PosX, pm.PosY));
 }).RequireAuthorization();
 
 app.MapDelete("/api/projects/{projectId}/modules/{id}", async (

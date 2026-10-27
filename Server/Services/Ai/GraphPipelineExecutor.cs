@@ -2057,12 +2057,16 @@ public class GraphPipelineExecutor : IPipelineExecutor
         return (config, ResolveWorkspacePath(exec.WorkspacePath), filePaths);
     }
 
-    /// <summary>Configuracion efectiva de un paso: la del modulo con la del paso por encima.</summary>
-    internal static Dictionary<string, object> MergeConfiguration(string? moduleConfig, string? stepConfig)
+    /// <summary>
+    /// Configuracion efectiva de un paso: la del modulo con la del paso por encima,
+    /// salvo en las claves que solo se editan en el modulo (<see cref="ModuleConfigKeys"/>):
+    /// la copia que guarde el nodo de esas es vieja y no cuenta.
+    /// </summary>
+    public static Dictionary<string, object> MergeConfiguration(string? moduleConfig, string? stepConfig)
     {
         var merged = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         MergeJson(moduleConfig, merged);
-        MergeJson(stepConfig, merged);
+        MergeJson(ModuleConfigKeys.NodeOnly(stepConfig), merged);
         return merged;
     }
 

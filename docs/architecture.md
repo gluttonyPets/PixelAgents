@@ -479,6 +479,19 @@ tipo, las claves anteriores se descartan, porque ya no significan nada. El popup
 reconstruia el JSON desde cero y guardar un nodo de video, transcripcion o
 embeddings le borraba la configuracion entera.
 
+**Configuracion del modulo y del nodo.** Al ejecutar, la configuracion de un
+nodo (`ProjectModule.Configuration`) va por encima de la del modulo
+(`GraphPipelineExecutor.MergeConfiguration`), salvo en las claves que solo se
+editan en el modulo: prompts, voz y sus ajustes, tamano y calidad de imagen,
+opciones de video, busqueda web... (`ModuleConfigKeys`). Esas salen siempre del
+modulo. Antes, al anadir un modulo a un pipeline se copiaba toda su configuracion
+en el nodo, y esa copia ganaba a los cambios posteriores del modulo (se elegia
+otra voz y el nodo seguia con la de antes). Ahora el nodo solo recibe lo suyo
+(`n`, `numberOfImages`, `sceneCount`, que son sus salidas en el canvas), las
+respuestas de la API no devuelven las copias viejas de los nodos antiguos y el
+export del pipeline muestra la configuracion con la que se ejecuta (modulo mas
+nodo).
+
 Tras guardar en "Editar nodo", el canvas repinta las tarjetas si cambio el
 nombre o el modelo de algun nodo (`PipelineCanvas.NodeLabels`). Antes solo
 repintaba al cambiar el numero de nodos o de conexiones, y la tarjeta seguia
@@ -653,10 +666,12 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   van en `voice_settings`. `eleven_v3` no admite velocidad y no se le manda.
 - **Pausas.** Los saltos de linea del texto llegan como parrafos (antes el
   limpiador los convertia en espacios y la voz lo leia todo de un tiron). En
-  Multilingual v2 y Flash/Turbo v2.5 cada parrafo lleva ademas
-  `<break time="0.5s" />` (`ElevenLabsSpeech.WithPauses`, como mucho 8: muchas
-  pausas vuelven inestable la locucion). v3 y v4 no entienden `break`; en ellos
-  pausan el parrafo y la puntuacion (puntos suspensivos).
+  Multilingual v2 y Flash/Turbo v2.5 cada cambio de bloque (linea en blanco)
+  lleva ademas `<break time="0.5s" />` (`ElevenLabsSpeech.WithPauses`, como
+  mucho 3); un salto de linea simple no, ya hace de pausa corta. Con una pausa
+  por frase la locucion metia ruidos raros: ElevenLabs avisa de que muchas la
+  vuelven inestable. Si el texto ya trae sus `break`, se deja tal cual. v3 y v4
+  no entienden `break`; en ellos pausan el parrafo y la puntuacion.
 - Limite por locucion segun el modelo (`ElevenLabsSpeech.MaxInputChars`: 10.000
   en v4 y Multilingual v2, 5.000 en v3, 40.000 en Flash v2.5). Pasado el limite
   la toma falla con el motivo, igual que en OpenAI: no se recorta.

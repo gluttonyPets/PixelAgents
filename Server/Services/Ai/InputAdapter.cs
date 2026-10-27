@@ -38,9 +38,9 @@ namespace Server.Services.Ai
         /// Limpia texto de emojis, markdown, saltos de linea y caracteres decorativos.
         /// </summary>
         /// <param name="keepLineBreaks">
-        /// Conserva cada linea como un parrafo (separados por una linea en blanco) en
-        /// vez de juntarlo todo. Lo usa el texto a voz: un salto de linea es una pausa
-        /// y, aplanado, la locucion sale de un tiron.
+        /// Conserva los saltos de linea (uno) y las lineas en blanco entre bloques
+        /// (un parrafo) en vez de juntarlo todo. Lo usa el texto a voz: son sus
+        /// pausas y, aplanado, la locucion sale de un tiron.
         /// </param>
         public static string SanitizePlainText(string text, bool keepLineBreaks = false)
         {
@@ -62,10 +62,21 @@ namespace Server.Services.Ai
 
             if (keepLineBreaks)
             {
-                var lines = Regex.Split(s, @"\r?\n")
-                    .Select(l => Regex.Replace(l, @"\s+", " ").Trim())
-                    .Where(l => l.Length > 0);
-                return string.Join("\n\n", lines);
+                var sb = new System.Text.StringBuilder();
+                var paragraph = false;
+                foreach (var raw in Regex.Split(s, @"\r?\n"))
+                {
+                    var line = Regex.Replace(raw, @"\s+", " ").Trim();
+                    if (line.Length == 0)
+                    {
+                        paragraph = sb.Length > 0;
+                        continue;
+                    }
+                    if (sb.Length > 0) sb.Append(paragraph ? "\n\n" : "\n");
+                    sb.Append(line);
+                    paragraph = false;
+                }
+                return sb.ToString();
             }
 
             // Replace newlines/tabs with spaces, collapse multiple spaces

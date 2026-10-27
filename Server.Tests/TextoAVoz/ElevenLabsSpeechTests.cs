@@ -227,13 +227,21 @@ public class ElevenLabsSpeechTests
     }
 
     [Fact]
-    public void CadaParrafoLlevaUnaPausaEnLosModelosQueLaAdmiten()
+    public void CadaBloqueLlevaUnaPausa_UnaLineaSimpleNo()
     {
         var json = Parse(ElevenLabsSpeech.BuildRequestJson("eleven_multilingual_v2",
-            "Tu perro te espera.\n\n¿Sabes por que?\n\nNo es venganza.", Config()));
+            "Tu perro te espera.\n¿Sabes por que?\n\nNo es venganza.", Config()));
 
-        Assert.Equal("Tu perro te espera. <break time=\"0.5s\" />\n\n¿Sabes por que? <break time=\"0.5s\" />\n\nNo es venganza.",
+        Assert.Equal("Tu perro te espera.\n¿Sabes por que? <break time=\"0.5s\" />\n\nNo es venganza.",
             json.GetProperty("text").GetString());
+    }
+
+    [Fact]
+    public void UnTextoConSusPropiasPausasNoSeToca()
+    {
+        const string text = "Hola. <break time=\"1s\" />\n\nAdios.";
+
+        Assert.Equal(text, ElevenLabsSpeech.WithPauses("eleven_multilingual_v2", text));
     }
 
     [Theory]

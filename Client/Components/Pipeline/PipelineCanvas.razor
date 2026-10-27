@@ -1844,27 +1844,19 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     }
 
     /// <summary>
-    /// Configuracion efectiva de un nodo: lo guardado en el servidor mas lo que
-    /// el usuario ha tocado en el inspector y aun no se ha recargado.
+    /// Configuracion efectiva de un nodo, la misma con la que se ejecuta: la del
+    /// modulo del catalogo, la del nodo por encima (el servidor ya la manda sin las
+    /// claves que solo son del modulo) y lo que el usuario ha tocado en el
+    /// inspector y aun no se ha recargado.
     /// </summary>
     private Dictionary<string, JsonElement> GetEffectiveConfig(Guid moduleId)
     {
         var config = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
 
         var module = Modules.FirstOrDefault(m => m.Id == moduleId);
-        if (!string.IsNullOrWhiteSpace(module?.Configuration))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(module!.Configuration!);
-                if (doc.RootElement.ValueKind == JsonValueKind.Object)
-                {
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                        config[prop.Name] = prop.Value.Clone();
-                }
-            }
-            catch { /* configuracion invalida: se exporta el resto del nodo */ }
-        }
+        var catalog = module is null ? null : AvailableModules.FirstOrDefault(m => m.Id == module.AiModuleId);
+        AddJson(config, catalog?.Configuration);
+        AddJson(config, module?.Configuration);
 
         if (_moduleConfigs.TryGetValue(moduleId, out var overrides))
         {
@@ -1873,6 +1865,19 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         }
 
         return config;
+    }
+
+    private static void AddJson(Dictionary<string, JsonElement> config, string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+            foreach (var prop in doc.RootElement.EnumerateObject())
+                config[prop.Name] = prop.Value.Clone();
+        }
+        catch { /* configuracion invalida: se exporta el resto del nodo */ }
     }
 
     /// <summary>

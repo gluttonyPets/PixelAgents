@@ -189,10 +189,10 @@ public static class ElevenLabsSpeech
 
     /// <summary>
     /// ElevenLabs avisa de que muchas pausas en una misma locucion la vuelven
-    /// inestable (acelera o mete ruidos); pasado este numero los parrafos se dejan
-    /// solo con el salto de linea.
+    /// inestable (acelera o mete ruidos raros), y con una por frase pasaba. Pasado
+    /// este numero los parrafos se quedan solo con la linea en blanco.
     /// </summary>
-    public const int MaxPauses = 8;
+    public const int MaxPauses = 3;
 
     /// <summary>
     /// Modelos que entienden <c>&lt;break time="x.xs" /&gt;</c>. v3 y v4 no: en ellos
@@ -202,13 +202,13 @@ public static class ElevenLabsSpeech
         "eleven_multilingual_v2" or "eleven_flash_v2_5" or "eleven_turbo_v2_5" or "eleven_flash_v2" or "eleven_turbo_v2";
 
     /// <summary>
-    /// Texto que se manda: cada salto de parrafo (linea en blanco) lleva una pausa
-    /// real en los modelos que la admiten. Sin ella el modelo encadena los parrafos
-    /// casi sin respirar y la locucion suena leida.
+    /// Texto que se manda: cada cambio de bloque (linea en blanco) lleva una pausa
+    /// real en los modelos que la admiten; un salto de linea simple no, ya hace de
+    /// pausa corta. Si el texto ya trae sus propias pausas se deja tal cual.
     /// </summary>
     public static string WithPauses(string model, string text)
     {
-        if (!SupportsBreakTags(model)) return text;
+        if (!SupportsBreakTags(model) || text.Contains("<break", StringComparison.OrdinalIgnoreCase)) return text;
 
         var paragraphs = System.Text.RegularExpressions.Regex.Split(text.Trim(), @"\r?\n\s*\r?\n");
         if (paragraphs.Length < 2) return text;

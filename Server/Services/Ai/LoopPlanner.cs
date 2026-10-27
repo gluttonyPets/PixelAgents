@@ -116,7 +116,7 @@ public static class LoopPlanner
 
     /// <summary>
     /// Segundos del clip que entregara el modulo: los que pida su configuracion (la
-    /// del paso manda sobre la del modulo), encajados en los que admite su modelo.
+    /// misma que al ejecutar), encajados en los que admite su modelo.
     /// Es el mismo calculo que hace el provider al llamar, asi que el loop pide
     /// exactamente las vueltas que luego se generan.
     /// </summary>
