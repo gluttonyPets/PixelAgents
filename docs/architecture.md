@@ -610,7 +610,10 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   (`verified_languages`, la del acento de la voz si hay varias), porque la
   general puede estar en otro idioma; trae el modelo con el que se grabo y, si
   no es el del modulo, el formulario avisa de que la voz puede sonar distinta
-  (cada modelo la reproduce a su manera). Se oye a traves de `GET /api/elevenlabs/voice-sample?url=`
+  (cada modelo la reproduce a su manera). Solo recomienda cambiar a ese modelo
+  si PixelAgents lo ofrece; muchas muestras estan grabadas con modelos de
+  ElevenLabs que aqui no estan (Turbo v2.5, Flash v2...) y entonces solo lo
+  informa. Se oye a traves de `GET /api/elevenlabs/voice-sample?url=`
   (`ApiClient.ElevenLabsSampleUrl`): Google Storage la entrega como `text/plain`,
   que Chrome reproduce pero Firefox y Safari no, y el endpoint la reenvia como
   `audio/mpeg` (cache 6 h, tope 5 MB). Solo acepta URLs https de

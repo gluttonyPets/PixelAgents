@@ -117,17 +117,26 @@ public class ElevenLabsVoiceConfig
     /// <summary>eleven_v3 no admite velocidad. Misma regla que el servidor.</summary>
     public static bool SupportsSpeed(string? model) => model != "eleven_v3";
 
-    /// <summary>Nombre legible de un modelo de ElevenLabs; uno desconocido sale tal cual.</summary>
-    public static string ModelLabel(string? model) => model switch
-    {
-        "eleven_v4" => "Eleven v4",
-        "eleven_v4_turbo" => "Eleven v4 Turbo",
-        "eleven_v3" => "Eleven v3",
-        "eleven_multilingual_v2" => "Eleven Multilingual v2",
-        "eleven_flash_v2_5" => "Eleven Flash v2.5",
-        "eleven_turbo_v2_5" => "Eleven Turbo v2.5",
-        _ => model ?? "",
-    };
+    /// <summary>
+    /// Si el modelo se puede elegir en PixelAgents. Las muestras de la biblioteca
+    /// pueden estar grabadas con modelos de ElevenLabs que aqui no se ofrecen
+    /// (Turbo v2.5, Flash v2...), y esos no se pueden recomendar.
+    /// </summary>
+    public static bool IsOfferedModel(string? model) =>
+        Client.Pages.Modules.AllModels.Any(m => m.Provider == Provider && m.Id == model);
+
+    /// <summary>Nombre legible de un modelo de ElevenLabs, ofrezca PixelAgents o no.</summary>
+    public static string ModelLabel(string? model) =>
+        Client.Pages.Modules.AllModels.FirstOrDefault(m => m.Provider == Provider && m.Id == model)?.DisplayName
+        ?? model switch
+        {
+            "eleven_turbo_v2_5" => "Eleven Turbo v2.5",
+            "eleven_turbo_v2" => "Eleven Turbo v2",
+            "eleven_flash_v2" => "Eleven Flash v2",
+            "eleven_multilingual_v1" => "Eleven Multilingual v1",
+            "eleven_monolingual_v1" => "Eleven English v1",
+            _ => model ?? "",
+        };
 
     public string ToJson()
     {

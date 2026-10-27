@@ -128,13 +128,26 @@
         @if (SelectedVoice?.PreviewModel is { Length: > 0 } sampleModel && sampleModel != Model)
         {
             @* Una misma voz suena distinta segun el modelo: la muestra solo es fiel
-               si el modulo locuta con el modelo con el que se grabo. *@
-            <span class="text-sm voice-sample-model">
-                <i class="bi bi-exclamation-triangle"></i>
-                La muestra esta grabada con @ElevenLabsVoiceConfig.ModelLabel(sampleModel) y este modulo usa
-                @ElevenLabsVoiceConfig.ModelLabel(Model): la voz puede sonar distinta. Para que suene como la
-                muestra, usa @ElevenLabsVoiceConfig.ModelLabel(sampleModel).
-            </span>
+               si el modulo locuta con el modelo con el que se grabo. Solo se
+               recomienda ese modelo si aqui se puede elegir. *@
+            @if (ElevenLabsVoiceConfig.IsOfferedModel(sampleModel))
+            {
+                <span class="text-sm voice-sample-model">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    La muestra esta grabada con @ElevenLabsVoiceConfig.ModelLabel(sampleModel) y este modulo usa
+                    @ElevenLabsVoiceConfig.ModelLabel(Model): la voz puede sonar distinta. Para que suene como la
+                    muestra, usa @ElevenLabsVoiceConfig.ModelLabel(sampleModel).
+                </span>
+            }
+            else
+            {
+                <span class="text-sm text-muted voice-sample-note">
+                    <i class="bi bi-info-circle"></i>
+                    La muestra esta grabada con @ElevenLabsVoiceConfig.ModelLabel(sampleModel), un modelo de
+                    ElevenLabs que PixelAgents no ofrece. Con @ElevenLabsVoiceConfig.ModelLabel(Model) la voz
+                    puede sonar algo distinta.
+                </span>
+            }
         }
     }
     else if (_voices is { Count: > 0 } && !string.IsNullOrEmpty(Config.Voice))

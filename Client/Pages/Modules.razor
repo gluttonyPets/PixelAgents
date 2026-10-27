@@ -905,9 +905,10 @@ else
     private string? _fileUploadError;
 
     // ── Model catalog ──
-    private record ModelInfo(string Id, string DisplayName, string Provider, string[] Types, string[] Capabilities, string Description, string? MaxContext = null);
+    internal record ModelInfo(string Id, string DisplayName, string Provider, string[] Types, string[] Capabilities, string Description, string? MaxContext = null);
 
-    private static readonly ModelInfo[] AllModels =
+    // Interno y no privado: el editor de voz de ElevenLabs mira aqui que modelos se pueden elegir.
+    internal static readonly ModelInfo[] AllModels =
     [
         // ─── OpenAI: Chat / Text (GPT-6) ───
         // Misma nomenclatura que 5.6: Astra es el tope de gama, Sol el equilibrado y
