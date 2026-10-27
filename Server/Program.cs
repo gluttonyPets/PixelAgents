@@ -962,7 +962,7 @@ app.MapPost("/api/modules/{id}/duplicate", async (
         return Results.BadRequest(new { error = "Los modulos de sistema son integrados y no se pueden duplicar." });
 
     var copy = await ModuleDuplication.DuplicateAsync(
-        db, source, req?.Name, req?.Description, req?.Configuration, DateTime.UtcNow, ct);
+        db, source, req?.Name, req?.Description, req?.Configuration, DateTime.UtcNow, ct, req?.ModelName);
 
     // Si la copia nace con el prompt ya cambiado, ese cambio es una version mas del
     // historial que acaba de heredar.

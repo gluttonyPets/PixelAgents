@@ -156,7 +156,8 @@ public record CreateAiModuleRequest(
     string ModuleType, string ModelName, Guid? ApiKeyId, string? Configuration);
 // Duplicado de un modulo: lo que no venga se hereda del original (y la copia se lleva
 // su historial de prompts y sus excepciones de regla).
-public record DuplicateAiModuleRequest(string? Name, string? Description, string? Configuration);
+public record DuplicateAiModuleRequest(string? Name, string? Description, string? Configuration,
+    string? ModelName = null);
 public record UpdateAiModuleApiKeyRequest(Guid? ApiKeyId);
 public record AiModuleResponse(
     Guid Id, string Name, string? Description, string ProviderType,

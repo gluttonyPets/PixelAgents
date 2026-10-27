@@ -603,7 +603,8 @@ Gestion de catalogo reusable:
   versiones del prompt (`/api/modules/{id}/prompt-history`, con sus fechas) y las
   excepciones de regla del original, asi que se puede restaurar a cualquier punto
   del original y se comporta igual desde el primer momento. Es lo que usa
-  "Duplicar con cambios" del editor de nodo. Los modulos de sistema no se
+  "Duplicar con cambios" del editor de nodo; el cuerpo puede cambiar nombre,
+  descripcion, configuracion y modelo. Los modulos de sistema no se
   duplican: son unicos y los comparten todos los pipelines.
 - `/api/modules/{moduleId}/files`: subir y listar archivos asociados a un
   modulo.

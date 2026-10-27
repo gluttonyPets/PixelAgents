@@ -243,7 +243,8 @@ else if (ModuleType == "Audio" && Provider == "OpenAI")
 }
 else if (ElevenLabsVoiceConfig.IsElevenLabsAudio(Provider, ModuleType))
 {
-    <ElevenLabsVoiceEditor Config="Draft.ElevenLabs" Model="@Model" ApiKeyId="@ApiKeyId" OnChange="Changed" />
+    <ElevenLabsVoiceEditor Config="Draft.ElevenLabs" Model="@Model" ApiKeyId="@ApiKeyId" OnChange="Changed"
+                           OnModelChange="OnModelChange" />
 }
 else if (ModuleType == "Transcription" && Provider == "OpenAI")
 {
@@ -283,6 +284,9 @@ else if (!ModuleConfigDraft.Handles(Provider, ModuleType))
 
     /// <summary>Avisa al formulario padre de cada cambio (el editor lo usa para saber si hay cambios sin guardar).</summary>
     [Parameter] public EventCallback OnChange { get; set; }
+
+    /// <summary>Cambia el modelo del modulo desde el formulario (p. ej. al modelo de la muestra de voz).</summary>
+    [Parameter] public EventCallback<string> OnModelChange { get; set; }
 
     private Task Changed() => OnChange.InvokeAsync();
 }

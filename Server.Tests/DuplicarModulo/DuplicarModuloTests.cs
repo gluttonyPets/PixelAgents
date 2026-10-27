@@ -153,6 +153,23 @@ public class DuplicarModuloTests
     }
 
     [Fact]
+    public async Task ElModeloCambiadoEnElEditorTambienPasaALaCopia()
+    {
+        // En "Editar nodo" el aviso de la muestra de voz puede cambiar el modelo.
+        await using var db = NuevaBd();
+        var source = ModuloBase();
+        db.AiModules.Add(source);
+        await db.SaveChangesAsync();
+
+        var copy = await ModuleDuplication.DuplicateAsync(db, source, null, null, null, DateTime.UtcNow, modelName: "gpt-5.4");
+        var sinCambio = await ModuleDuplication.DuplicateAsync(db, source, null, null, null, DateTime.UtcNow, modelName: " ");
+
+        Assert.Equal("gpt-5.4", copy.ModelName);
+        Assert.Equal(source.ModelName, sinCambio.ModelName);
+        Assert.Equal("gpt-5.2", source.ModelName);
+    }
+
+    [Fact]
     public async Task LaCopiaEsIndependiente_BorrarElOriginalNoSeLaLleva()
     {
         await using var db = NuevaBd();

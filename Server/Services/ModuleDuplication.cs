@@ -16,9 +16,10 @@ namespace Server.Services
     public static class ModuleDuplication
     {
         /// <summary>
-        /// Crea la copia de <paramref name="source"/> y la persiste. Los tres
-        /// campos opcionales sobreescriben lo que traiga el original: es lo que el
-        /// usuario haya cambiado en el editor antes de pulsar duplicar.
+        /// Crea la copia de <paramref name="source"/> y la persiste. Los campos
+        /// opcionales (nombre, descripcion, configuracion y modelo) sobreescriben lo
+        /// que traiga el original: es lo que el usuario haya cambiado en el editor
+        /// antes de pulsar duplicar.
         /// </summary>
         public static async Task<AiModule> DuplicateAsync(
             UserDbContext db,
@@ -27,7 +28,8 @@ namespace Server.Services
             string? description,
             string? configuration,
             DateTime now,
-            CancellationToken ct = default)
+            CancellationToken ct = default,
+            string? modelName = null)
         {
             var copy = new AiModule
             {
@@ -36,7 +38,7 @@ namespace Server.Services
                 Description = description ?? source.Description,
                 ProviderType = source.ProviderType,
                 ModuleType = source.ModuleType,
-                ModelName = source.ModelName,
+                ModelName = string.IsNullOrWhiteSpace(modelName) ? source.ModelName : modelName.Trim(),
                 ApiKeyId = source.ApiKeyId,
                 Configuration = configuration ?? source.Configuration,
                 IsEnabled = source.IsEnabled,

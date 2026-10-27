@@ -610,8 +610,10 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   (`verified_languages`, la del acento de la voz si hay varias), porque la
   general puede estar en otro idioma; trae el modelo con el que se grabo y, si
   no es el del modulo, el formulario avisa de que la voz puede sonar distinta
-  (cada modelo la reproduce a su manera). Solo recomienda cambiar a ese modelo
-  si PixelAgents lo ofrece; muchas muestras estan grabadas con modelos de
+  (cada modelo la reproduce a su manera) y ofrece un boton para cambiar el
+  modulo a ese modelo (`OnModelChange`: en el alta, en el editor de Modulos y en
+  "Editar nodo", donde se aplica al guardar o duplicar). Solo lo ofrece si
+  PixelAgents tiene ese modelo; muchas muestras estan grabadas con modelos de
   ElevenLabs que aqui no estan (Turbo v2.5, Flash v2...) y entonces solo lo
   informa. Se oye a traves de `GET /api/elevenlabs/voice-sample?url=`
   (`ApiClient.ElevenLabsSampleUrl`): Google Storage la entrega como `text/plain`,
@@ -1092,7 +1094,7 @@ solo colgaban de ellas, en cascada. Detalles que importan:
 |              | `GET|POST|DELETE /api/rule-exceptions`            | Excepciones por modulo del catalogo: ese `AiModule` deja de recibir la regla (`RuleKey` = clave de constante o `tenant:GUID`) |
 | Modules      | `GET|POST|PUT|DELETE /api/modules`                | Definiciones de modulos reutilizables + archivos  |
 |              | `GET /api/modules/{id}/prompt-history`            | Historial de versiones del prompt del modulo (systemPrompt/imagePrompt); se registra una version en cada `PUT` que cambie el prompt, restaurable desde la UI |
-|              | `POST /api/modules/{id}/duplicate`                | Copia del modulo con su historial de prompts y sus excepciones de regla; el cuerpo (opcional) sobreescribe nombre, descripcion y configuracion. Los modulos de sistema no se duplican |
+|              | `POST /api/modules/{id}/duplicate`                | Copia del modulo con su historial de prompts y sus excepciones de regla; el cuerpo (opcional) sobreescribe nombre, descripcion, configuracion y modelo. Los modulos de sistema no se duplican |
 | ProjectGroups| `GET|POST /api/project-groups`, `PUT|DELETE /api/project-groups/{id}` | Proyectos de alto nivel que agrupan pipelines (organizativo) |
 |              | `POST /api/project-groups/{id}/projects`          | Anade pipelines existentes al proyecto            |
 | Projects     | `GET|POST|PUT|DELETE /api/projects`               | Pipeline; incluye graph save y duplicar           |

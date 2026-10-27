@@ -2746,7 +2746,10 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             var config = _nodeConfigEditor?.BuildConfig();
             // UpdateModuleConfigAsync envia Name/Description desde 'current', asi que pasamos
             // el modulo con el nombre/descripcion ya actualizados para persistirlo todo.
-            var updated = _editNodeModule with { Name = _editNodeName, Description = _editNodeDesc, Configuration = config };
+            var updated = _editNodeModule with
+            {
+                Name = _editNodeName, Description = _editNodeDesc, Configuration = config, ModelName = EditNodeModel,
+            };
             var (ok, error) = await Api.UpdateModuleConfigAsync(_editNodeModule.Id, updated, config);
             if (ok)
             {
@@ -2763,6 +2766,10 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         _editNodeSaving = false;
     }
 
+    /// <summary>Modelo con el que guardar el nodo: el del popup si lo cambio, si no el del modulo.</summary>
+    private string EditNodeModel =>
+        _nodeConfigEditor?.ModelName is { Length: > 0 } model ? model : _editNodeModule!.ModelName;
+
     // Crea una copia del modulo con los cambios y la asigna solo a este nodo.
     private async Task DuplicateNodeModule()
     {
@@ -2778,7 +2785,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             // Duplicado en el servidor: la copia hereda el historial de versiones del
             // prompt y las excepciones de regla. Crear un modulo nuevo con los mismos
             // datos, que es lo que se hacia antes, dejaba la copia sin historial.
-            var req = new DuplicateAiModuleRequest(dupName + " (copia)", _editNodeDesc, config);
+            var req = new DuplicateAiModuleRequest(dupName + " (copia)", _editNodeDesc, config, EditNodeModel);
 
             var (ok, error, newId) = await Api.DuplicateModuleAsync(_editNodeModule.Id, req);
             if (!ok || newId is null)

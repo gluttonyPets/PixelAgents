@@ -132,12 +132,23 @@
                recomienda ese modelo si aqui se puede elegir. *@
             @if (ElevenLabsVoiceConfig.IsOfferedModel(sampleModel))
             {
-                <span class="text-sm voice-sample-model">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    La muestra esta grabada con @ElevenLabsVoiceConfig.ModelLabel(sampleModel) y este modulo usa
-                    @ElevenLabsVoiceConfig.ModelLabel(Model): la voz puede sonar distinta. Para que suene como la
-                    muestra, usa @ElevenLabsVoiceConfig.ModelLabel(sampleModel).
-                </span>
+                <div class="text-sm voice-sample-model">
+                    <span>
+                        <i class="bi bi-exclamation-triangle"></i>
+                        La muestra esta grabada con @ElevenLabsVoiceConfig.ModelLabel(sampleModel) y este modulo usa
+                        @ElevenLabsVoiceConfig.ModelLabel(Model): la voz puede sonar distinta.
+                        @if (!OnModelChange.HasDelegate)
+                        {
+                            <text>Para que suene como la muestra, usa @ElevenLabsVoiceConfig.ModelLabel(sampleModel).</text>
+                        }
+                    </span>
+                    @if (OnModelChange.HasDelegate)
+                    {
+                        <button type="button" class="btn btn-sm voice-sample-use" @onclick="() => UseModel(sampleModel)">
+                            <i class="bi bi-arrow-repeat"></i> Usar @ElevenLabsVoiceConfig.ModelLabel(sampleModel)
+                        </button>
+                    }
+                </div>
             }
             else
             {
@@ -204,6 +215,12 @@
     /// </summary>
     [Parameter] public EventCallback OnChange { get; set; }
 
+    /// <summary>
+    /// Cambia el modelo del modulo. Lo pone quien sabe guardarlo; sin el, el aviso de
+    /// que la muestra es de otro modelo solo dice cual usar.
+    /// </summary>
+    [Parameter] public EventCallback<string> OnModelChange { get; set; }
+
     private List<VoiceOptionResponse>? _voices;
     private List<VoiceFacetResponse> _accents = [];
     private List<VoiceFacetResponse> _useCases = [];
@@ -246,6 +263,12 @@
     }
 
     private Task Changed() => OnChange.InvokeAsync();
+
+    private async Task UseModel(string model)
+    {
+        await OnModelChange.InvokeAsync(model);
+        await Changed();
+    }
 
     private async Task LoadVoicesAsync()
     {

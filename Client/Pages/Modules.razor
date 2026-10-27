@@ -317,7 +317,7 @@
 
             <ModuleConfigForm Draft="_draft" Provider="@_provider" ModuleType="@_moduleType" Model="@_model"
                               ApiKeyId="@(Guid.TryParse(_apiKeyId, out var cfgKey) ? cfgKey : null)"
-                              VideoOptions="@VideoOptionsFor(_model)" />
+                              VideoOptions="@VideoOptionsFor(_model)" OnModelChange="SelectModel" />
         </fieldset>
 
         @if (_moduleType == "FileUpload")
@@ -538,7 +538,8 @@
                         case "config":
                             <div class="module-editor-section">
                                 <ModuleConfigForm Draft="_editDraft" Provider="@m.ProviderType" ModuleType="@m.ModuleType" Model="@m.ModelName"
-                                                  ApiKeyId="@m.ApiKeyId" VideoOptions="@VideoOptionsFor(m.ModelName)" OnChange="StateHasChanged" />
+                                                  ApiKeyId="@m.ApiKeyId" VideoOptions="@VideoOptionsFor(m.ModelName)" OnChange="StateHasChanged"
+                                                  OnModelChange="SelectEditModel" />
 
                             </div>
                             break;

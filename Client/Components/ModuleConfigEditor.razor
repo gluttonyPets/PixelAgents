@@ -281,7 +281,16 @@ else if (m.ModuleType == "Audio" && m.ProviderType == "OpenAI")
 }
 else if (ElevenLabsVoiceConfig.IsElevenLabsAudio(m.ProviderType, m.ModuleType))
 {
-    <ElevenLabsVoiceEditor Config="_editElevenLabs" Model="@m.ModelName" ApiKeyId="@m.ApiKeyId" />
+    <ElevenLabsVoiceEditor Config="_editElevenLabs" Model="@_model" ApiKeyId="@m.ApiKeyId"
+                           OnModelChange="model => _model = model" />
+    @if (_model != m.ModelName)
+    {
+        <p class="text-sm text-muted">
+            <i class="bi bi-info-circle"></i>
+            Modelo cambiado a @ElevenLabsVoiceConfig.ModelLabel(_model) (antes @ElevenLabsVoiceConfig.ModelLabel(m.ModelName)).
+            Se aplica al guardar o duplicar.
+        </p>
+    }
 }
 else if (m.ModuleType == "Design" && m.ProviderType == "Canva")
 {
@@ -370,6 +379,13 @@ else
 
 @code {
     [Parameter] public AiModuleResponse? Module { get; set; }
+
+    /// <summary>
+    /// Modelo elegido en el popup. Solo lo cambia el aviso de la muestra de voz de
+    /// ElevenLabs; quien guarda (PipelineCanvas) lo lee de aqui.
+    /// </summary>
+    public string ModelName => _model;
+    private string _model = "";
 
     // ── Asistentes "Crear/Anadir prompt con IA" e historial ──
     private bool _showWizard;
@@ -519,6 +535,7 @@ else
 
     private void LoadFromConfiguration(AiModuleResponse module)
     {
+        _model = module.ModelName;
         _editVideo = VideoModuleConfig.FromJson(module.Configuration);
         _editSearchConsole = SearchConsoleConfig.FromJson(module.Configuration);
         _editElevenLabs = ElevenLabsVoiceConfig.FromJson(module.Configuration);

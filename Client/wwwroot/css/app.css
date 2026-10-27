@@ -8527,7 +8527,14 @@ td.cell-actions .icon-btn { margin-left: 0.15rem; }
 .voice-preview-error { color: var(--danger); }
 .voice-sample-model,
 .voice-sample-note { display: block; margin: -0.35rem 0 0.75rem; }
-.voice-sample-model { color: var(--warning); }
+.voice-sample-model {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.75rem;
+    color: var(--warning);
+}
+.voice-sample-use { white-space: nowrap; }
 .voice-sample-model i,
 .voice-sample-note i { margin-right: 0.25rem; }
 
