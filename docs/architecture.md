@@ -479,6 +479,11 @@ tipo, las claves anteriores se descartan, porque ya no significan nada. El popup
 reconstruia el JSON desde cero y guardar un nodo de video, transcripcion o
 embeddings le borraba la configuracion entera.
 
+Tras guardar en "Editar nodo", el canvas repinta las tarjetas si cambio el
+nombre o el modelo de algun nodo (`PipelineCanvas.NodeLabels`). Antes solo
+repintaba al cambiar el numero de nodos o de conexiones, y la tarjeta seguia
+mostrando el modelo anterior hasta recargar la pagina.
+
 ### Modulo Search Console (Search Analytics)
 
 Fuente de datos de la web: no tiene entradas y emite por `output_text` el
@@ -612,7 +617,8 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   no es el del modulo, el formulario avisa de que la voz puede sonar distinta
   (cada modelo la reproduce a su manera) y ofrece un boton para cambiar el
   modulo a ese modelo (`OnModelChange`: en el alta, en el editor de Modulos y en
-  "Editar nodo", donde se aplica al guardar o duplicar). Solo lo ofrece si
+  "Editar nodo", que muestra el modelo del nodo y lo aplica al guardar o
+  duplicar). Solo lo ofrece si
   PixelAgents tiene ese modelo; muchas muestras estan grabadas con modelos de
   ElevenLabs que aqui no estan (Turbo v2.5, Flash v2...) y entonces solo lo
   informa. Se oye a traves de `GET /api/elevenlabs/voice-sample?url=`

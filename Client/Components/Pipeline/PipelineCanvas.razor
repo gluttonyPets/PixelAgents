@@ -1385,10 +1385,28 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
                     <label>Descripcion</label>
                     <input type="text" @bind="_editNodeDesc" placeholder="Descripcion opcional" />
                 </div>
+                @if (!string.IsNullOrEmpty(_editNodeModel))
+                {
+                    <div class="form-group">
+                        <label>Modelo</label>
+                        <div class="edit-node-model">
+                            <span>@ModelLabel(_editNodeModel)</span>
+                            <span class="text-sm text-muted">@_editNodeModule.ProviderType</span>
+                            @if (_editNodeModel != _editNodeModule.ModelName)
+                            {
+                                <span class="text-sm edit-node-model-changed">
+                                    <i class="bi bi-arrow-repeat"></i>
+                                    Antes @ModelLabel(_editNodeModule.ModelName). Se aplica al guardar o duplicar.
+                                </span>
+                            }
+                        </div>
+                    </div>
+                }
 
                 <fieldset class="config-fieldset">
                     <legend>Configuracion</legend>
-                    <ModuleConfigEditor @ref="_nodeConfigEditor" Module="_editNodeModule" />
+                    <ModuleConfigEditor @ref="_nodeConfigEditor" Module="_editNodeModule"
+                                        Model="@_editNodeModel" OnModelChange="model => _editNodeModel = model" />
                 </fieldset>
 
                 @if (_editNodeProjectModule is { } dirNode && dirNode.ModuleType == "FileDirectory")
@@ -1505,6 +1523,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     private CancellationTokenSource? _saveDebounce;
     private DotNetObjectReference<PipelineCanvas>? _dotNetRef;
     private int _lastModuleCount;
+    private string _lastNodeLabels = "";
     private string _lastProjectType = "Normal";
     private int _lastConnectionCount;
     private Dictionary<Guid, int> _sceneCountOverrides = new();
@@ -1515,6 +1534,8 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
     private ModuleConfigEditor? _nodeConfigEditor;
     private string _editNodeName = "";
     private string? _editNodeDesc;
+    /// <summary>Modelo del nodo en el popup: el del modulo, o el que se eligio desde el aviso de la muestra de voz.</summary>
+    private string _editNodeModel = "";
     private bool _editNodeSaving;
     private bool _editNodeSuccess;
     private string? _editNodeError;
@@ -1968,6 +1989,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             _lastModuleCount = Modules.Count;
             _lastConnectionCount = Connections.Count;
             _lastProjectType = ProjectType;
+            _lastNodeLabels = NodeLabels();
         }
         else if (_jsInitialized)
         {
@@ -1996,7 +2018,17 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
                 _lastModuleCount = Modules.Count;
                 _lastConnectionCount = Connections.Count;
+                _lastNodeLabels = NodeLabels();
                 LoadFromParameters();
+                await RebuildDrawflow();
+            }
+            else if (NodeLabels() is var labels && labels != _lastNodeLabels)
+            {
+                // Mismos nodos pero otro nombre o modelo (p. ej. tras "Editar nodo"):
+                // se repintan las tarjetas, que si no seguian con lo de antes hasta
+                // recargar la pagina. Sin LoadFromParameters, para no perder lo que
+                // se haya movido o conectado sin guardar.
+                _lastNodeLabels = labels;
                 await RebuildDrawflow();
             }
         }
@@ -2028,6 +2060,10 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             }
         }
     }
+
+    /// <summary>Lo que pinta cada tarjeta de nodo y puede cambiar sin cambiar el numero de nodos.</summary>
+    private string NodeLabels() =>
+        string.Join("\n", Modules.Select(m => $"{m.Id}|{m.StepName ?? m.AiModuleName}|{m.ModelName}"));
 
     /// <summary>Load local mutable state from parent parameters.</summary>
     private void LoadFromParameters()
@@ -2714,6 +2750,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
 
         _editNodeModule = catalog;
         _editNodeName = catalog.Name;
+        _editNodeModel = catalog.ModelName;
         _editNodeDesc = catalog.Description;
 
         // Comprobar uso en otros proyectos (excluyendo el actual) para advertir.
@@ -2748,7 +2785,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             // el modulo con el nombre/descripcion ya actualizados para persistirlo todo.
             var updated = _editNodeModule with
             {
-                Name = _editNodeName, Description = _editNodeDesc, Configuration = config, ModelName = EditNodeModel,
+                Name = _editNodeName, Description = _editNodeDesc, Configuration = config, ModelName = _editNodeModel,
             };
             var (ok, error) = await Api.UpdateModuleConfigAsync(_editNodeModule.Id, updated, config);
             if (ok)
@@ -2766,9 +2803,9 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
         _editNodeSaving = false;
     }
 
-    /// <summary>Modelo con el que guardar el nodo: el del popup si lo cambio, si no el del modulo.</summary>
-    private string EditNodeModel =>
-        _nodeConfigEditor?.ModelName is { Length: > 0 } model ? model : _editNodeModule!.ModelName;
+    /// <summary>Nombre legible de un modelo del catalogo; uno desconocido sale tal cual.</summary>
+    private static string ModelLabel(string model) =>
+        Client.Pages.Modules.AllModels.FirstOrDefault(m => m.Id == model)?.DisplayName ?? model;
 
     // Crea una copia del modulo con los cambios y la asigna solo a este nodo.
     private async Task DuplicateNodeModule()
@@ -2785,7 +2822,7 @@ Sin acentos ni mayusculas: la comparacion los ignora.</pre>
             // Duplicado en el servidor: la copia hereda el historial de versiones del
             // prompt y las excepciones de regla. Crear un modulo nuevo con los mismos
             // datos, que es lo que se hacia antes, dejaba la copia sin historial.
-            var req = new DuplicateAiModuleRequest(dupName + " (copia)", _editNodeDesc, config, EditNodeModel);
+            var req = new DuplicateAiModuleRequest(dupName + " (copia)", _editNodeDesc, config, _editNodeModel);
 
             var (ok, error, newId) = await Api.DuplicateModuleAsync(_editNodeModule.Id, req);
             if (!ok || newId is null)
