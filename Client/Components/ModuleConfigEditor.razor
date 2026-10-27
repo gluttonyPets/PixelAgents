@@ -334,6 +334,10 @@ else if (m.ModuleType == VideoModuleConfig.ModuleType)
 {
     <VideoModuleConfigEditor Config="_editVideo" Options="_videoOptions" />
 }
+else if (m.ModuleType == SubtitlesConfig.ModuleType)
+{
+    <SubtitlesConfigEditor Config="_editSubtitles" />
+}
 else if (m.ModuleType == "FileDirectory")
 {
     @* El contenido del directorio es del nodo, no de este modulo de catalogo,
@@ -481,6 +485,7 @@ else
     private int _editGrokImageCount = 1;
     private SearchConsoleConfig _editSearchConsole = new();
     private ElevenLabsVoiceConfig _editElevenLabs = new();
+    private SubtitlesConfig _editSubtitles = new();
     private string _editCanvaAccessToken = "";
     private string _editCanvaExportFormat = "png";
     private string _editCanvaBrandTemplate = "";
@@ -531,6 +536,7 @@ else
         _editVideo = VideoModuleConfig.FromJson(module.Configuration);
         _editSearchConsole = SearchConsoleConfig.FromJson(module.Configuration);
         _editElevenLabs = ElevenLabsVoiceConfig.FromJson(module.Configuration);
+        _editSubtitles = SubtitlesConfig.FromJson(module.Configuration);
         _editSystemPrompt = "";
         _editTemperature = 0.7;
         _editMaxTokens = 4096;
@@ -625,6 +631,7 @@ else
             "Image" when providerType == "LeonardoAI" => [.. image, "width", "height", "presetStyle"],
             "Image" => [.. image, "size", "quality"],
             VideoModuleConfig.ModuleType => VideoModuleConfig.Keys,
+            SubtitlesConfig.ModuleType => SubtitlesConfig.Keys,
             "Audio" => ["voice", "speed", "voiceInstructions"],
             "Design" when providerType == "Canva" => ["accessToken", "exportFormat", "brandTemplateId", "designType"],
             "StaticText" => ["content"],
@@ -640,6 +647,8 @@ else
             return _videoOptions is null ? Module.Configuration : _editVideo.ToJson(_videoOptions);
         if (moduleType == SearchConsoleConfig.ModuleType)
             return _editSearchConsole.ToJson();
+        if (moduleType == SubtitlesConfig.ModuleType)
+            return _editSubtitles.ToJson();
         if (ElevenLabsVoiceConfig.IsElevenLabsAudio(providerType, moduleType))
             return _editElevenLabs.ToJson();
 

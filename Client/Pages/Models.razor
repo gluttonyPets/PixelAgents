@@ -341,7 +341,7 @@ else
         _providers = _models.Select(m => m.Provider).Distinct().OrderBy(p => p).ToList();
 
         // El orden no es alfabetico a proposito: texto e imagen son el 90% del uso.
-        string[] order = ["Text", "Image", "Embeddings", "Audio", "Transcription", "Design"];
+        string[] order = ["Text", "Image", "Embeddings", "Audio", "Transcription", "Subtitles", "Design"];
         _moduleTypes = order.Where(t => _models.Any(m => m.ModuleType == t))
             .Concat(_models.Select(m => m.ModuleType).Distinct().Where(t => !order.Contains(t)))
             .ToList();
@@ -721,6 +721,7 @@ else
         "Embeddings"    => "bi-bounding-box-circles",
         "Audio"         => "bi-soundwave",
         "Transcription" => "bi-mic",
+        "Subtitles"     => "bi-badge-cc",
         "Design"        => "bi-palette",
         _               => "bi-cpu",
     };
@@ -732,6 +733,7 @@ else
         "Embeddings"    => "Embeddings",
         "Audio"         => "Audio (TTS)",
         "Transcription" => "Transcripcion",
+        "Subtitles"     => "Subtitulos",
         "Design"        => "Diseno",
         _               => moduleType,
     };

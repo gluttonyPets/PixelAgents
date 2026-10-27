@@ -196,6 +196,14 @@ public static class ModulePortRegistry
                 ports.Add(new("output_text", "Texto", PortDataType.Text, isInput: false));
                 break;
 
+            case "Subtitles":
+                ports.Add(new("input_video", "Video", PortDataType.Video, isInput: true, isRequired: true));
+                // El texto de la locucion: con el, los subtitulos salen con el texto
+                // exacto (se alinea con el audio) en vez de transcribirlo.
+                ports.Add(new("input_text", "Texto", PortDataType.Text, isInput: true));
+                ports.Add(new("output_video", "Video", PortDataType.Video, isInput: false));
+                break;
+
             case "Orchestrator":
                 ports.Add(new("input_prompt", "Instrucciones", PortDataType.Text, isInput: true, isRequired: true));
                 if (loopMode)
@@ -337,6 +345,7 @@ public static class ModulePortRegistry
         "Video" => "bi-camera-reels",
         "VideoAssembly" => "bi-film",
         "Transcription" => "bi-mic",
+        "Subtitles" => "bi-badge-cc",
         "Orchestrator" => "bi-diagram-3",
         "Design" => "bi-palette",
         "Interaction" => "bi-chat-dots",
@@ -374,6 +383,7 @@ public static class ModulePortRegistry
         "Video" => "#d81b60",
         "VideoAssembly" => "#880e4f",
         "Transcription" => "#ad1457",
+        "Subtitles" => "#f9a825",
         "Orchestrator" => "#7c4dff",
         "Design" => "#00bcd4",
         "Interaction" => "#26a69a",

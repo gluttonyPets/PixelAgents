@@ -349,7 +349,7 @@ public static class VideoAssembler
     }
 
     /// <summary>Dimensiones del primer clip; si no se pueden leer, el lienzo por defecto.</summary>
-    private static async Task<(int Width, int Height)> ProbeDimensionsAsync(string path, CancellationToken ct)
+    internal static async Task<(int Width, int Height)> ProbeDimensionsAsync(string path, CancellationToken ct)
     {
         try
         {
@@ -409,8 +409,8 @@ public static class VideoAssembler
         return true;
     }
 
-    private static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(
-        string fileName, IEnumerable<string> arguments, CancellationToken ct)
+    internal static async Task<(int ExitCode, string Stdout, string Stderr)> RunAsync(
+        string fileName, IEnumerable<string> arguments, CancellationToken ct, string? workingDirectory = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -420,6 +420,7 @@ public static class VideoAssembler
             UseShellExecute = false,
             CreateNoWindow = true,
         };
+        if (workingDirectory is not null) psi.WorkingDirectory = workingDirectory;
 
         foreach (var arg in arguments)
             psi.ArgumentList.Add(arg);
@@ -447,7 +448,7 @@ public static class VideoAssembler
     }
 
     /// <summary>Ultimas lineas de la salida de error: ffmpeg escribe cientos y el motivo real va al final.</summary>
-    private static string Tail(string text, int lines = 6)
+    internal static string Tail(string text, int lines = 6)
     {
         if (string.IsNullOrWhiteSpace(text)) return "sin detalle";
 

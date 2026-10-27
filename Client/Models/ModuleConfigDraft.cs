@@ -63,6 +63,9 @@ public class ModuleConfigDraft
     // ── Search Console ──
     public SearchConsoleConfig SearchConsole { get; set; } = new();
 
+    // ── Subtitulos ──
+    public SubtitlesConfig Subtitles { get; set; } = new();
+
     // ── Texto plano ──
     public string StaticTextContent { get; set; } = "";
 
@@ -89,6 +92,7 @@ public class ModuleConfigDraft
             Video = VideoModuleConfig.FromJson(json),
             ElevenLabs = ElevenLabsVoiceConfig.FromJson(json),
             SearchConsole = SearchConsoleConfig.FromJson(json),
+            Subtitles = SubtitlesConfig.FromJson(json),
         };
         if (string.IsNullOrWhiteSpace(json)) return d;
 
@@ -180,6 +184,7 @@ public class ModuleConfigDraft
             "Image" when provider == "LeonardoAI" => ["systemPrompt", "width", "height", "presetStyle"],
             "Image" => ["systemPrompt", "size", "quality", "n"],
             VideoModuleConfig.ModuleType => VideoModuleConfig.Keys,
+            SubtitlesConfig.ModuleType => SubtitlesConfig.Keys,
             "Audio" => ["voice", "speed", "voiceInstructions"],
             "Transcription" => ["language", "response_format"],
             "Embeddings" => ["dimensions"],
@@ -209,6 +214,7 @@ public class ModuleConfigDraft
         if (moduleType == SearchConsoleConfig.ModuleType) return SearchConsole.ToJson();
         if (ElevenLabsVoiceConfig.IsElevenLabsAudio(provider, moduleType)) return ElevenLabs.ToJson();
         if (moduleType == VideoModuleConfig.ModuleType) return Video.ToJson(videoOptions);
+        if (moduleType == SubtitlesConfig.ModuleType) return Subtitles.ToJson();
 
         var map = new JsonObject();
         void Text(string key, string value) { if (!string.IsNullOrWhiteSpace(value)) map[key] = value; }

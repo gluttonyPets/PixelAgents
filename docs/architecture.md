@@ -880,6 +880,39 @@ orquestador loop. Si el modelo rechaza ese formato se repite sin marcas y se
 avisa (whisper-1 las da). Se transcribe el primer audio de la entrada; el coste
 sale de los minutos medidos con la tarifa del catalogo.
 
+### Modulo Subtitulos (palabra a palabra, estilo TikTok)
+
+Tipo `Subtitles`, proveedor ElevenLabs, modelo `scribe_v2`
+(`SubtitlesModuleHandler`). Entradas: `input_video` (obligatoria, normalmente la
+salida del Montaje) e `input_text` (opcional, el texto de la voz en off). Salida
+`output_video` con `video_subtitulado.mp4` y ademas `subtitulos.srt`.
+
+La IA solo da los tiempos de cada palabra; las letras las pinta ffmpeg:
+
+1. `SubtitleBurner.ExtractAudioAsync` saca el audio del video (mp3 mono).
+2. `ElevenLabsTimings`: con texto, `POST /v1/forced-alignment` alinea ese texto
+   con el audio (subtitulos con el texto exacto). El texto pasa antes por
+   `AudioModuleHandler.BuildTakes`, la misma limpieza que para locutarlo: sin
+   marcas de toma ni el contexto previo, que no se dicen. Sin texto,
+   `POST /v1/speech-to-text` (Scribe, `timestamps_granularity=word`, idioma de la
+   configuracion). Las dos cuestan 0,22 $ por hora de audio.
+3. `SubtitleBuilder` agrupa las palabras (de 1 a 5; corta antes tras un punto,
+   tras una coma si ya hay dos palabras, en un silencio de mas de 0,7 s o si no
+   cabria en dos lineas) y escribe un fichero ASS: cada grupo se repite una vez
+   por palabra, con esa palabra en color y un pequeno "pop" de escala, asi el
+   resaltado avanza mientras el grupo sigue fijo. Tamano y posicion son
+   porcentajes del alto del video (6,5 % y 65 % por defecto: por debajo del 75 %
+   lo tapan la descripcion y los botones de TikTok).
+4. `SubtitleBurner.BurnAsync` lo pinta con el filtro `subtitles` (libass) dentro
+   de una carpeta temporal, con nombres relativos para no escapar rutas en el
+   filtro. La fuente, Poppins ExtraBold (licencia OFL), va con la app en
+   `Server/Assets/Fonts`; sin ella libass usaria una del sistema.
+
+Configuracion (`subtitleWords`, `subtitleColor`, `subtitleSize`,
+`subtitlePosition`, `subtitleUppercase`, `language`): formulario
+`SubtitlesConfigEditor` con vista previa aproximada, el mismo al crear, en
+"Configurar" y en "Editar nodo".
+
 ### Modulo Directorio de archivos: indice y URLs publicas
 
 `FileDirectoryModuleHandler` publica un conjunto de ficheros organizados en

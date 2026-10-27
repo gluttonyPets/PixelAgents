@@ -985,6 +985,7 @@ else
         new("eleven_v3",              "Eleven v3",              "ElevenLabs", ["Audio"], ["text-to-speech"], "Generacion anterior, muy expresiva. Sin control de velocidad."),
         new("eleven_multilingual_v2", "Eleven Multilingual v2", "ElevenLabs", ["Audio"], ["text-to-speech"], "Estable en locuciones largas y lee bien numeros y fechas."),
         new("eleven_flash_v2_5",      "Eleven Flash v2.5",      "ElevenLabs", ["Audio"], ["text-to-speech"], "Rapida y economica, a mitad de precio."),
+        new("scribe_v2",              "Scribe v2 · Subtitulos", "ElevenLabs", ["Subtitles"], ["speech-to-text", "forced-alignment", "subtitles"], "Subtitulos palabra a palabra con la palabra que suena resaltada, estilo TikTok. ElevenLabs da los tiempos y ffmpeg los pinta en el video."),
 
         // ─── Anthropic: Chat / Text (Claude 4.6) ───
         new("claude-opus-4-6",             "Claude Opus 4.6",     "Anthropic", ["Text"], ["text","vision","streaming"], "El mas capaz. Razonamiento adaptativo.", "200K"),
@@ -1120,6 +1121,7 @@ else
         "Video"         => new("Video", "bi-camera-reels", "#ec4899", "Convierte una imagen en un clip de video animado."),
         "Audio"         => new("Audio (TTS)", "bi-soundwave", "#f97316", "Convierte texto en voz natural."),
         "Transcription" => new("Transcripcion", "bi-mic", "#22d3ee", "Pasa audio o video a texto."),
+        "Subtitles"     => new("Subtitulos", "bi-badge-cc", "#facc15", "Pone subtitulos palabra a palabra en un video, estilo TikTok."),
         "Embeddings"    => new("Embeddings", "bi-bounding-box-circles", "#14b8a6", "Vectoriza texto para buscar por significado."),
         "Orchestrator"  => new("Orquestador", "bi-diagram-3", "#a78bfa", "Planifica tareas y reparte el trabajo entre modulos."),
         "Coordinator"   => new("Coordinador", "bi-people", "#60a5fa", "Combina varias entradas en una sola salida."),
@@ -1293,6 +1295,7 @@ else
                 "Audio"         => "Audio (TTS)",
                 "Video"         => "Video (imagen -> video)",
                 "Transcription" => "Transcripcion (STT)",
+                "Subtitles"     => "Subtitulos (video)",
                 "Design"        => "Diseno (Canva)",
                 "SearchConsole" => "Datos de busqueda (Search Analytics)",
                 "Orchestrator"  => "Orquestador de pipeline",

@@ -450,6 +450,9 @@ Handlers actuales:
 - `Audio`: texto a voz (OpenAI). Con el texto repartido en tomas genera un
   audio por toma (ver `docs/architecture.md`).
 - `Transcription`: audio a texto (OpenAI), con marcas de tiempo opcionales.
+- `Subtitles`: subtitulos palabra a palabra sobre un video, estilo TikTok
+  (ElevenLabs da los tiempos de cada palabra y ffmpeg los pinta; tambien sale
+  un `.srt`). Ver `docs/architecture.md`.
 - `Embeddings`: generacion de embeddings.
 - `Orchestrator`: planificacion y salidas multiples. En modo loop el numero de
   partes sale de la duracion de un audio/video de entrada, y un rectangulo de

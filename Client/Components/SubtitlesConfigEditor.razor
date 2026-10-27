@@ -1,0 +1,112 @@
+@using System.Globalization
+@* Formulario del modulo de subtitulos (palabra a palabra, estilo TikTok), el mismo
+   al crear, en "Configurar" y en "Editar nodo". La vista previa es aproximada:
+   el video real lo pinta ffmpeg con la fuente Poppins ExtraBold. *@
+
+<div class="subs-editor">
+    <div class="subs-fields">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Palabras a la vez</label>
+                <select @bind="Config.WordsPerGroup" @bind:after="Changed">
+                    @for (var n = 1; n <= 5; n++)
+                    {
+                        <option value="@n">@n @(n == 1 ? "palabra" : "palabras")</option>
+                    }
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Color de la palabra que suena</label>
+                <div class="subs-colors">
+                    @foreach (var (value, label) in SubtitlesConfig.HighlightOptions)
+                    {
+                        <button type="button" class="subs-swatch @(Config.HighlightColor == value ? "is-selected" : "")"
+                                style="--swatch:@value" title="@label" aria-label="@label"
+                                @onclick="() => SetColor(value)"></button>
+                    }
+                    <input type="color" class="subs-color-input" title="Otro color"
+                           @bind="Config.HighlightColor" @bind:after="Changed" />
+                </div>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group voice-slider">
+                <label>Tamano de letra <span class="voice-slider-value">@Config.SizePercent.ToString("0.#", CultureInfo.InvariantCulture) %</span></label>
+                <input type="range" min="3" max="10" step="0.5" @bind="Config.SizePercent" @bind:event="oninput"
+                       @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
+                <small class="voice-slider-hint">Porcentaje del alto del video.</small>
+            </div>
+            <div class="form-group voice-slider">
+                <label>Posicion vertical <span class="voice-slider-value">@Config.PositionPercent.ToString("0", CultureInfo.InvariantCulture) %</span></label>
+                <input type="range" min="15" max="90" step="1" @bind="Config.PositionPercent" @bind:event="oninput"
+                       @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
+                <small class="voice-slider-hint">Desde arriba. Por debajo del 75 % lo tapan la descripcion y los botones de TikTok.</small>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label class="subs-check">
+                    <input type="checkbox" @bind="Config.Uppercase" @bind:after="Changed" />
+                    <span>En mayusculas</span>
+                </label>
+            </div>
+            <div class="form-group">
+                <label>Idioma del audio</label>
+                <select @bind="Config.Language" @bind:after="Changed">
+                    @foreach (var (value, label) in ElevenLabsVoiceConfig.LanguageOptions.Where(l => l.Value != ""))
+                    {
+                        <option value="@value">@label</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <p class="text-sm text-muted subs-help">
+            <i class="bi bi-info-circle"></i>
+            Conecta el video al puerto <strong>Video</strong> y, si puedes, el texto de la voz en off al puerto
+            <strong>Texto</strong>: ElevenLabs lo alinea con el audio y los subtitulos salen con el texto exacto.
+            Sin texto, transcribe el audio (en el idioma de arriba) y puede fallar alguna palabra. Ademas del
+            video sale un fichero <code>.srt</code>.
+        </p>
+    </div>
+
+    <div class="subs-preview" aria-hidden="true">
+        <style>
+            @($"@keyframes subs-hl-{Words} {{ 0%, {PercentString(100.0 / Words - 0.5)}% {{ color: var(--subs-hl); transform: scale(1.08); }} {PercentString(100.0 / Words)}%, 100% {{ color: #fff; transform: scale(1); }} }}")
+        </style>
+        <div class="subs-phone">
+            <div class="subs-phone-ui"></div>
+            <div class="subs-phone-text @(Config.Uppercase ? "is-upper" : "")"
+                 style="top:@PercentString(Config.PositionPercent)%; font-size:@PercentString(Config.SizePercent * 2.13)px; --subs-hl:@Config.HighlightColor">
+                @for (var i = 0; i < Words; i++)
+                {
+                    <span style="animation: subs-hl-@Words @PercentString(Words * 0.6)s infinite; animation-delay:@PercentString(i * 0.6)s">@SampleWords[i]</span>
+                }
+            </div>
+        </div>
+        <small class="text-muted">Vista previa aproximada</small>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public SubtitlesConfig Config { get; set; } = new();
+
+    /// <summary>Avisa al formulario que lo contiene de cada cambio (para saber si hay algo sin guardar).</summary>
+    [Parameter] public EventCallback OnChange { get; set; }
+
+    private static readonly string[] SampleWords = ["Tu", "perro", "te", "echa", "de"];
+
+    private int Words => Math.Clamp(Config.WordsPerGroup, 1, SampleWords.Length);
+
+    private Task Changed() => OnChange.InvokeAsync();
+
+    private Task SetColor(string color)
+    {
+        Config.HighlightColor = color;
+        return Changed();
+    }
+
+    private static string PercentString(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

@@ -86,6 +86,10 @@ else if (ModuleType == VideoModuleConfig.ModuleType)
 {
     <VideoModuleConfigEditor Config="Draft.Video" Options="@VideoOptions" OnChange="Changed" />
 }
+else if (ModuleType == SubtitlesConfig.ModuleType)
+{
+    <SubtitlesConfigEditor Config="Draft.Subtitles" OnChange="Changed" />
+}
 else if (ModuleType == "Image" && Provider == "LeonardoAI")
 {
     <div class="form-group">

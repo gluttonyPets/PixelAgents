@@ -8564,3 +8564,68 @@ td.cell-actions .icon-btn { margin-left: 0.15rem; }
     font-size: 0.75rem;
     color: var(--text-muted);
 }
+
+/* Modulo de subtitulos: formulario con vista previa en un movil en miniatura */
+.subs-editor {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1.25rem;
+    align-items: start;
+}
+.subs-colors { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.subs-swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    background: var(--swatch);
+    cursor: pointer;
+    padding: 0;
+}
+.subs-swatch.is-selected { border-color: #fff; box-shadow: 0 0 0 2px var(--primary, #6c63ff); }
+.subs-color-input { width: 34px; height: 28px; padding: 0; border: none; background: none; cursor: pointer; }
+.subs-check { display: inline-flex; align-items: center; gap: 0.45rem; margin-top: 1.6rem; cursor: pointer; }
+.subs-help { margin-top: 0.25rem; }
+.subs-preview { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+.subs-phone {
+    position: relative;
+    width: 120px;
+    height: 213px;
+    border-radius: 14px;
+    overflow: hidden;
+    background: linear-gradient(160deg, #2b5876, #4e4376);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+}
+/* Donde TikTok pone la descripcion y los botones: lo que caiga ahi queda tapado. */
+.subs-phone-ui {
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 25%;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
+}
+.subs-phone-ui::after {
+    content: "";
+    position: absolute;
+    right: 6px;
+    bottom: 30px;
+    width: 12px;
+    height: 70px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.55) 4px, transparent 5px) 0 0 / 12px 23px repeat-y;
+}
+.subs-phone-text {
+    position: absolute;
+    left: 6%;
+    right: 6%;
+    transform: translateY(-50%);
+    text-align: center;
+    color: #fff;
+    font-weight: 800;
+    line-height: 1.15;
+    -webkit-text-stroke: 0.6px #000;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.subs-phone-text.is-upper { text-transform: uppercase; }
+.subs-phone-text span { display: inline-block; margin: 0 0.12em; }
+@media (max-width: 640px) {
+    .subs-editor { grid-template-columns: 1fr; }
+}

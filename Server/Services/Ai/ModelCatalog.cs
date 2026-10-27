@@ -141,6 +141,10 @@ public static class ModelCatalog
         new("eleven_flash_v2_5",      "Eleven Flash v2.5",      "ElevenLabs", ["Audio"],
             ["text-to-speech"], null),
 
+        // ─── ElevenLabs: Subtitulos (tiempos por palabra con Scribe / alineacion) ───
+        new("scribe_v2",              "Scribe v2 · Subtitulos", "ElevenLabs", ["Subtitles"],
+            ["speech-to-text","forced-alignment","subtitles"], null),
+
         // ─── OpenAI: Transcripción (STT) ───
         new("gpt-transcribe",         "GPT Transcribe",         "OpenAI", ["Transcription"],
             ["speech-to-text"], null),

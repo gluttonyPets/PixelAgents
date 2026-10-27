@@ -131,6 +131,10 @@ namespace Server.Services.Ai
                 ["gpt-4o-transcribe"]      = new(0.006m, "minuto"),
                 ["gpt-4o-mini-transcribe"] = new(0.003m, "minuto"),
 
+                // Subtitulos: ElevenLabs cobra 0,22 $ por hora de audio, igual en Scribe
+                // que en la alineacion de un texto (elevenlabs.io/pricing/api, 2026-10).
+                ["scribe_v2"]              = new(0.0037m, "minuto"),
+
                 // Video: no va aqui sino en VideoRates, porque su tarifa depende de la
                 // resolucion y del audio. GetAuxiliaryRate la deriva de alli.
             };

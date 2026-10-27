@@ -35,8 +35,12 @@ public static class ModuleConfigKeys
         ElevenLabsSpeech.StyleKey,
         // Canva, texto fijo, embeddings y transcripcion
         "accessToken", "exportFormat", "brandTemplateId", "designType", "content", "dimensions", "language",
+        // Subtitulos
+        SubtitleBuilder.WordsKey, SubtitleBuilder.ColorKey, SubtitleBuilder.SizeKey,
+        SubtitleBuilder.PositionKey, SubtitleBuilder.UppercaseKey,
         // Search Console
-        "siteUrl", "searchType", "dateRange", "aggregationType", "dataState", "orderBy", "rowLimit", "outputFormat",
+        "siteUrl", "searchType", "dateRange", "startDate", "endDate", "filters", "aggregationType", "dataState",
+        "orderBy", "rowLimit", "startRow", "outputFormat", "minImpressions", "minClicks", "minPosition", "maxPosition",
     };
 
     /// <summary>Si la clave solo se edita en el modulo y la de un nodo no cuenta.</summary>

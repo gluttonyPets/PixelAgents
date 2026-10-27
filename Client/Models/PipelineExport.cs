@@ -77,6 +77,7 @@ public static class PipelineExporter
         ["Image"] = "Genera imagenes con un modelo de imagen",
         ["Audio"] = "Genera audio (voz) a partir de texto",
         ["Transcription"] = "Transcribe audio a texto",
+        ["Subtitles"] = "Pone subtitulos palabra a palabra en un video",
         ["Embeddings"] = "Genera embeddings a partir de texto",
         ["Scene"] = "Agrupa campos y entradas en un objeto de escena",
         ["Orchestrator"] = "Planifica salidas dinamicas y las reparte a los nodos hijo",

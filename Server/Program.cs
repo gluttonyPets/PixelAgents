@@ -80,6 +80,7 @@ builder.Services.AddTransient<IModuleHandler, ImageModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, AudioModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, VideoModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, VideoAssemblyModuleHandler>();
+builder.Services.AddTransient<IModuleHandler, SubtitlesModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, TranscriptionModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, EmbeddingsModuleHandler>();
 builder.Services.AddTransient<IModuleHandler, OrchestratorModuleHandler>();

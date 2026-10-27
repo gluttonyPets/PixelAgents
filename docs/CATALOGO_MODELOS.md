@@ -198,6 +198,9 @@ embeddings por millón de tokens, `tts-1`/`tts-1-hd` por millón de **caracteres
 las transcripciones por **minuto** de audio. Forzarlos todos a "$/1M tokens" sería
 equivocarse por tres órdenes de magnitud en dos de los tres casos.
 
+Los subtítulos (`scribe_v2`, ElevenLabs) también van por minuto de audio: 0,22 $ la
+hora, lo mismo si se transcribe con Scribe que si se alinea el texto de la voz en off.
+
 Canva no tiene entrada: se paga por suscripción, no por llamada. La UI lo muestra
 como "sin coste por uso", que es distinto de un precio que falta. Lo mismo con
 `search-analytics` (proveedor `SearchConsole`): no es un modelo de IA sino la API
