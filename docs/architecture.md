@@ -651,6 +651,12 @@ cabecera `xi-api-key`, salida mp3). La peticion la arma `ElevenLabsSpeech`:
   suena a la elegida.
 - `speed` (0.7-1.2, se acota), `stability`, `similarityBoost` y `style` (0-1)
   van en `voice_settings`. `eleven_v3` no admite velocidad y no se le manda.
+- **Pausas.** Los saltos de linea del texto llegan como parrafos (antes el
+  limpiador los convertia en espacios y la voz lo leia todo de un tiron). En
+  Multilingual v2 y Flash/Turbo v2.5 cada parrafo lleva ademas
+  `<break time="0.5s" />` (`ElevenLabsSpeech.WithPauses`, como mucho 8: muchas
+  pausas vuelven inestable la locucion). v3 y v4 no entienden `break`; en ellos
+  pausan el parrafo y la puntuacion (puntos suspensivos).
 - Limite por locucion segun el modelo (`ElevenLabsSpeech.MaxInputChars`: 10.000
   en v4 y Multilingual v2, 5.000 en v3, 40.000 en Flash v2.5). Pasado el limite
   la toma falla con el motivo, igual que en OpenAI: no se recorta.

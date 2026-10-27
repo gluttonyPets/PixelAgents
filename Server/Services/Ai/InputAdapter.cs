@@ -37,7 +37,12 @@ namespace Server.Services.Ai
         /// <summary>
         /// Limpia texto de emojis, markdown, saltos de linea y caracteres decorativos.
         /// </summary>
-        public static string SanitizePlainText(string text)
+        /// <param name="keepLineBreaks">
+        /// Conserva cada linea como un parrafo (separados por una linea en blanco) en
+        /// vez de juntarlo todo. Lo usa el texto a voz: un salto de linea es una pausa
+        /// y, aplanado, la locucion sale de un tiron.
+        /// </param>
+        public static string SanitizePlainText(string text, bool keepLineBreaks = false)
         {
             // Remove markdown formatting: **bold**, *italic*, # headings, ``` code blocks
             var s = Regex.Replace(text, @"\*{1,3}([^*]+)\*{1,3}", "$1"); // bold/italic
@@ -54,6 +59,14 @@ namespace Server.Services.Ai
 
             // Remove decorative unicode symbols (arrows, bullets, stars, geometric shapes etc)
             s = Regex.Replace(s, @"[\u2190-\u27BF\u2B00-\u2BFF\u25A0-\u25FF\u2600-\u26FF\u2700-\u27BF]", "");
+
+            if (keepLineBreaks)
+            {
+                var lines = Regex.Split(s, @"\r?\n")
+                    .Select(l => Regex.Replace(l, @"\s+", " ").Trim())
+                    .Where(l => l.Length > 0);
+                return string.Join("\n\n", lines);
+            }
 
             // Replace newlines/tabs with spaces, collapse multiple spaces
             s = Regex.Replace(s, @"[\r\n\t]+", " ");

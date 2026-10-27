@@ -176,12 +176,50 @@ public static class ElevenLabsSpeech
 
         var body = new Dictionary<string, object>
         {
-            ["text"] = text,
+            ["text"] = WithPauses(model, text),
             ["model_id"] = model,
         };
         if (settings.Count > 0) body["voice_settings"] = settings;
 
         return JsonSerializer.Serialize(body);
+    }
+
+    /// <summary>Pausa entre parrafos: lo que se respira entre dos ideas al narrar.</summary>
+    public const string ParagraphPause = "<break time=\"0.5s\" />";
+
+    /// <summary>
+    /// ElevenLabs avisa de que muchas pausas en una misma locucion la vuelven
+    /// inestable (acelera o mete ruidos); pasado este numero los parrafos se dejan
+    /// solo con el salto de linea.
+    /// </summary>
+    public const int MaxPauses = 8;
+
+    /// <summary>
+    /// Modelos que entienden <c>&lt;break time="x.xs" /&gt;</c>. v3 y v4 no: en ellos
+    /// la pausa la marcan la puntuacion y el salto de parrafo.
+    /// </summary>
+    public static bool SupportsBreakTags(string model) => model.ToLowerInvariant() is
+        "eleven_multilingual_v2" or "eleven_flash_v2_5" or "eleven_turbo_v2_5" or "eleven_flash_v2" or "eleven_turbo_v2";
+
+    /// <summary>
+    /// Texto que se manda: cada salto de parrafo (linea en blanco) lleva una pausa
+    /// real en los modelos que la admiten. Sin ella el modelo encadena los parrafos
+    /// casi sin respirar y la locucion suena leida.
+    /// </summary>
+    public static string WithPauses(string model, string text)
+    {
+        if (!SupportsBreakTags(model)) return text;
+
+        var paragraphs = System.Text.RegularExpressions.Regex.Split(text.Trim(), @"\r?\n\s*\r?\n");
+        if (paragraphs.Length < 2) return text;
+
+        var sb = new System.Text.StringBuilder(paragraphs[0].Trim());
+        for (var i = 1; i < paragraphs.Length; i++)
+        {
+            sb.Append(i <= MaxPauses ? $" {ParagraphPause}\n\n" : "\n\n");
+            sb.Append(paragraphs[i].Trim());
+        }
+        return sb.ToString();
     }
 
     /// <summary>Coste de una locucion: ElevenLabs factura por caracter.</summary>

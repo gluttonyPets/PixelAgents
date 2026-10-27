@@ -227,6 +227,41 @@ public class ElevenLabsSpeechTests
     }
 
     [Fact]
+    public void CadaParrafoLlevaUnaPausaEnLosModelosQueLaAdmiten()
+    {
+        var json = Parse(ElevenLabsSpeech.BuildRequestJson("eleven_multilingual_v2",
+            "Tu perro te espera.\n\n¿Sabes por que?\n\nNo es venganza.", Config()));
+
+        Assert.Equal("Tu perro te espera. <break time=\"0.5s\" />\n\n¿Sabes por que? <break time=\"0.5s\" />\n\nNo es venganza.",
+            json.GetProperty("text").GetString());
+    }
+
+    [Theory]
+    [InlineData("eleven_v4")]
+    [InlineData("eleven_v4_turbo")]
+    [InlineData("eleven_v3")]
+    public void V3YV4NoEntiendenBreak_LaPausaEsElParrafo(string model)
+    {
+        // Leerian la etiqueta o la ignorarian: ahi pausan con la puntuacion y el parrafo.
+        const string text = "Tu perro te espera.\n\nNo es venganza.";
+
+        Assert.Equal(text, ElevenLabsSpeech.WithPauses(model, text));
+    }
+
+    [Fact]
+    public void SinParrafosNoSeAnadenPausas_YDemasiadasSeLimitan()
+    {
+        Assert.Equal("Una sola frase.", ElevenLabsSpeech.WithPauses("eleven_flash_v2_5", "Una sola frase."));
+
+        var muchos = string.Join("\n\n", Enumerable.Range(1, 12).Select(i => $"Frase {i}."));
+        var text = ElevenLabsSpeech.WithPauses("eleven_flash_v2_5", muchos);
+
+        // Muchas pausas en una locucion la vuelven inestable (aviso de ElevenLabs).
+        Assert.Equal(ElevenLabsSpeech.MaxPauses, text.Split(ElevenLabsSpeech.ParagraphPause).Length - 1);
+        Assert.EndsWith("Frase 12.", text);
+    }
+
+    [Fact]
     public void LaMuestraEsLaDelIdiomaBuscado_ConElModeloConQueSeGrabo()
     {
         // La muestra general puede estar en ingles; la que se oye al elegir voz en
