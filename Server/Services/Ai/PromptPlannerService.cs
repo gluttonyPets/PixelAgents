@@ -86,6 +86,16 @@ namespace Server.Services.Ai
         /// <summary>Lo que se cita de una ejecucion sin titulo de tema.</summary>
         private const int TopicExcerptLength = 160;
 
+        /// <summary>
+        /// Ejemplo de lo que NO es el prompt de una ejecucion. Sin el, una peticion como
+        /// "creame tematicas de Halloween" acababa copiada dentro de cada ejecucion
+        /// ("Genera 5 tematicas...") y cada corrida intentaba sacar cinco publicaciones
+        /// en vez de la suya.
+        /// </summary>
+        private const string OnePieceExample =
+@"- Mal: ""Genera 5 tematicas para publicaciones sobre disfraces de Halloween para mascotas.""
+- Bien: ""Publicacion sobre como elegir un disfraz de Halloween seguro para tu perro: tallas, tejidos transpirables y senales de incomodidad.""";
+
         private readonly IAiProviderRegistry _registry;
         private readonly ILogger<PromptPlannerService> _log;
 
@@ -275,10 +285,19 @@ Como elegir las tematicas:
 2. Quedate con {temas}: las mas atractivas y utiles para el publico del proyecto, concretas
    (nada generico tipo ""ideas de Halloween"") y distintas entre si, cada una con un angulo diferente.
 3. Ordenalas en el orden en que conviene ejecutarlas.
-4. Para cada tematica escribe su ""prompt"": la descripcion de esa ejecucion con el tema concreto,
-   el enfoque y los puntos clave que debe cubrir. Es la entrada que recibira el pipeline en esa
-   ejecucion, asi que debe ser autocontenida y estar lista para ejecutarse. No repitas las
+4. Para cada tematica escribe su ""prompt"": la descripcion de la UNICA pieza de esa ejecucion, con
+   su tema, el enfoque y los puntos clave que debe cubrir. Es la entrada que recibira el pipeline en
+   esa ejecucion, asi que debe ser autocontenida y estar lista para ejecutarse. No repitas las
    instrucciones generales del proyecto: el pipeline ya las conoce.
+
+MUY IMPORTANTE: cada ejecucion del pipeline produce UNA sola pieza (una publicacion, un articulo,
+un video...) sobre UN solo tema.
+- Si el usuario pide ""tematicas"", ""temas"" o ""ideas"", buscarlas es tu trabajo aqui: {count} es el
+  numero de ejecuciones que planificas, no lo que tiene que sacar cada una.
+- El ""prompt"" de una ejecucion habla solo de su tema y NUNCA le pide al pipeline varias tematicas,
+  temas, ideas o publicaciones, ni listas de ellos. En cambio, puede pedir varios puntos o consejos
+  dentro de esa unica pieza.
+{OnePieceExample}
 
 " + PlannerSchema.BuildInstruction(count, variables, folderOptions, withTopic: true);
         }
@@ -325,7 +344,10 @@ Como elegir las tematicas:
 
             return
 $@"Eres un asistente que redacta UNA ejecucion planificada para un pipeline de IA.
-El prompt debe ser autocontenido, claro y listo para ejecutarse tal cual en una corrida.{ctxBlock}{draftBlock}{fixedBlock}
+El prompt debe ser autocontenido, claro y listo para ejecutarse tal cual en una corrida.
+Cada ejecucion produce UNA sola pieza (una publicacion, un articulo, un video...) sobre UN solo
+tema: el prompt nunca le pide al pipeline varias tematicas, temas, ideas o publicaciones.
+{OnePieceExample}{ctxBlock}{draftBlock}{fixedBlock}
 
 Idea del usuario para esta ejecucion:
 {ideaBlock}

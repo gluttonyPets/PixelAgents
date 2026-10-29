@@ -67,6 +67,29 @@ public class BuscarTematicasTests
     }
 
     [Fact]
+    public void BuildPlannerPrompt_CadaEjecucionEsUnaSolaPiezaYNoPideMasTematicas()
+    {
+        // Bug real: con "creame tematicas para publicaciones de Halloween" y 5, cada una
+        // de las 5 ejecuciones salia con "Genera 5 tematicas..." dentro de su prompt.
+        var prompt = PromptPlannerService.BuildPlannerPrompt(
+            5, "quiero que me crees tematicas para publicaciones de Halloween", null, SinVariables);
+
+        Assert.Contains("produce UNA sola pieza", prompt, StringComparison.Ordinal);
+        Assert.Contains("5 es el\n  numero de ejecuciones", prompt.ReplaceLineEndings("\n"), StringComparison.Ordinal);
+        Assert.Contains("NUNCA le pide al pipeline varias tematicas", prompt, StringComparison.Ordinal);
+        Assert.Contains("- Mal: \"Genera 5 tematicas", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildDraftPrompt_TambienEsUnaSolaPieza()
+    {
+        var prompt = PromptPlannerService.BuildDraftPrompt("tematicas de Halloween", null, SinVariables);
+
+        Assert.Contains("UNA sola pieza", prompt, StringComparison.Ordinal);
+        Assert.Contains("nunca le pide al pipeline varias tematicas", prompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildPlannerPrompt_PideElTituloDelTemaDeCadaEjecucion()
     {
         var prompt = PromptPlannerService.BuildPlannerPrompt(5, "Halloween", null, SinVariables);

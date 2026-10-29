@@ -291,7 +291,11 @@ le pide al modelo que piense muchas ideas dentro de eso, se quede con las N mejo
 y distintas entre si— y dedique una ejecucion a cada una. Cada `PlannedPrompt` guarda el titulo
 corto del tema (`Topic`, campo `tema` del contrato de `PlannerSchema`), que la cola muestra como
 cabecera y se puede renombrar, y en `Content` la descripcion de esa ejecucion. Si el pipeline
-tiene una variable para la tematica, su valor es ese mismo tema. Para no gastar ejecuciones en
+tiene una variable para la tematica, su valor es ese mismo tema. El prompt deja claro que cada
+ejecucion produce **una sola pieza**: pedir "tematicas" es trabajo del planificador, asi que el
+prompt de una ejecucion nunca le pide al pipeline varias tematicas o publicaciones (antes una
+peticion como "creame tematicas de Halloween" acababa copiada como "Genera 5 tematicas..." en
+cada una). Para no gastar ejecuciones en
 lo mismo, al modelo se le pasan la fecha de hoy (peticiones de temporada) y los temas que ya
 estan en la cola —salvo que se vayan a reemplazar— o se han usado hace poco (las 30 ultimas
 ejecuciones planificadas gastadas).
