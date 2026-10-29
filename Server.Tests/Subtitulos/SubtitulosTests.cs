@@ -162,6 +162,19 @@ public class SubtitulosTests
     }
 
     [Fact]
+    public void LaVistaPreviaEsLaFraseDeMuestraConUnaPalabraPorSegundo()
+    {
+        // El fotograma del segundo k de la tira es el momento de la palabra k: tiene
+        // que haber una linea por palabra y la k empezar justo en el segundo k.
+        var ass = SubtitleBuilder.BuildPreviewAss(new SubtitleBuilder.Style(WordsPerGroup: 2), 360, 640);
+        var events = ass.Split('\n').Where(l => l.StartsWith("Dialogue:")).ToList();
+
+        Assert.Equal(SubtitleBuilder.PreviewWords.Length, events.Count);
+        Assert.StartsWith("Dialogue: 0,0:00:03.00,0:00:04.00,", events[3]);
+        Assert.Contains("PlayResX: 360", ass);
+    }
+
+    [Fact]
     public void ElSrtLlevaUnGrupoPorSubtitulo()
     {
         var groups = SubtitleBuilder.Group(Words("Tu", "perro", "te", "espera."), 3);

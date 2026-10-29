@@ -910,8 +910,19 @@ La IA solo da los tiempos de cada palabra; las letras las pinta ffmpeg:
 
 Configuracion (`subtitleWords`, `subtitleColor`, `subtitleSize`,
 `subtitlePosition`, `subtitleUppercase`, `language`): formulario
-`SubtitlesConfigEditor` con vista previa aproximada, el mismo al crear, en
-"Configurar" y en "Editar nodo".
+`SubtitlesConfigEditor`, el mismo al crear, en "Configurar" y en "Editar nodo".
+
+**Vista previa real.** A la derecha del formulario hay una plantilla de TikTok
+(barra de arriba, botones, usuario y descripcion, en HTML) y detras los
+subtitulos tal como saldran: no se imitan con CSS, porque libass dibuja la fuente
+con otras proporciones que el navegador, sino que los pinta el servidor con el
+mismo `SubtitleBuilder` y ffmpeg (`GET /api/subtitles/preview`,
+`SubtitleBurner.RenderPreviewAsync`). Devuelve una tira PNG con un fotograma por
+palabra de una frase de muestra (`SubtitleBuilder.PreviewWords`, 360x640 cada
+uno) que el formulario anima con CSS. Se pinta sobre un fondo opaco (oscuro, claro
+o de color, a elegir) porque el filtro solo respeta la transparencia en ffmpeg
+recientes. El formulario espera 250 ms tras el ultimo cambio antes de pedirla y el
+servidor cachea cada combinacion una hora.
 
 ### Modulo Directorio de archivos: indice y URLs publicas
 

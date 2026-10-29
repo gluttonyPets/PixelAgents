@@ -255,6 +255,27 @@ public class ApiClient
     /// Google las entrega como text/plain y Firefox y Safari no las reproducen.
     /// Cualquier otra se usa tal cual.
     /// </summary>
+    /// <summary>
+    /// Vista previa real de los subtitulos con esa configuracion: la pinta el
+    /// servidor con libass, igual que en el video.
+    /// </summary>
+    public async Task<(SubtitlePreviewResponse? Preview, string? Error)> GetSubtitlePreviewAsync(
+        SubtitlesConfig config, string background)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var url = "/api/subtitles/preview"
+            + $"?words={config.WordsPerGroup}"
+            + "&color=" + Uri.EscapeDataString(config.HighlightColor)
+            + "&size=" + config.SizePercent.ToString(inv)
+            + "&position=" + config.PositionPercent.ToString(inv)
+            + "&uppercase=" + (config.Uppercase ? "true" : "false")
+            + "&background=" + Uri.EscapeDataString(background);
+        var resp = await SendAsync(HttpMethod.Get, url);
+        if (resp.IsSuccessStatusCode)
+            return (await resp.Content.ReadFromJsonAsync<SubtitlePreviewResponse>(), null);
+        return (null, await ReadErrorAsync(resp));
+    }
+
     public string ElevenLabsSampleUrl(string previewUrl) =>
         previewUrl.StartsWith("https://storage.googleapis.com/eleven-", StringComparison.OrdinalIgnoreCase)
             ? new Uri(_http.BaseAddress!, "/api/elevenlabs/voice-sample?url=" + Uri.EscapeDataString(previewUrl)).ToString()

@@ -155,6 +155,20 @@ public static class SubtitleBuilder
         return sb.ToString();
     }
 
+    /// <summary>Frase de la vista previa del formulario: una palabra por fotograma.</summary>
+    public static readonly string[] PreviewWords = "¿Sabes qué siente tu perro cuando te vas de casa?".Split(' ');
+
+    /// <summary>
+    /// ASS de la vista previa: la frase de muestra con una palabra por segundo, asi
+    /// el fotograma del segundo k es el momento en que suena la palabra k. Es el
+    /// mismo <see cref="BuildAss"/> que el del video, para que se vea igual.
+    /// </summary>
+    public static string BuildPreviewAss(Style style, int width, int height)
+    {
+        var words = PreviewWords.Select((w, i) => new ElevenLabsTimings.Word(w, i, i + 1)).ToList();
+        return BuildAss(Group(words, style.WordsPerGroup), style, width, height);
+    }
+
     /// <summary>SRT sin estilo: un grupo por subtitulo, con el texto tal cual.</summary>
     public static string BuildSrt(IReadOnlyList<List<ElevenLabsTimings.Word>> groups)
     {

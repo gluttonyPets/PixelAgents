@@ -1,66 +1,67 @@
 @using System.Globalization
+@inject ApiClient Api
+@implements IDisposable
 @* Formulario del modulo de subtitulos (palabra a palabra, estilo TikTok), el mismo
-   al crear, en "Configurar" y en "Editar nodo". La vista previa es aproximada:
-   el video real lo pinta ffmpeg con la fuente Poppins ExtraBold. *@
+   al crear, en "Configurar" y en "Editar nodo". A la derecha, una plantilla de
+   TikTok con la vista previa REAL: la pinta el servidor con libass, el mismo
+   motor que el video, asi que tamano, borde, cortes de linea y posicion son los
+   que saldran. Llega como una tira con un fotograma por palabra y aqui se anima. *@
 
 <div class="subs-editor">
     <div class="subs-fields">
-        <div class="form-row">
-            <div class="form-group">
-                <label>Palabras a la vez</label>
-                <select @bind="Config.WordsPerGroup" @bind:after="Changed">
-                    @for (var n = 1; n <= 5; n++)
-                    {
-                        <option value="@n">@n @(n == 1 ? "palabra" : "palabras")</option>
-                    }
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Color de la palabra que suena</label>
-                <div class="subs-colors">
-                    @foreach (var (value, label) in SubtitlesConfig.HighlightOptions)
-                    {
-                        <button type="button" class="subs-swatch @(Config.HighlightColor == value ? "is-selected" : "")"
-                                style="--swatch:@value" title="@label" aria-label="@label"
-                                @onclick="() => SetColor(value)"></button>
-                    }
-                    <input type="color" class="subs-color-input" title="Otro color"
-                           @bind="Config.HighlightColor" @bind:after="Changed" />
-                </div>
+        <div class="form-group">
+            <label>Palabras a la vez</label>
+            <select @bind="Config.WordsPerGroup" @bind:after="Changed">
+                @for (var n = 1; n <= 5; n++)
+                {
+                    <option value="@n">@n @(n == 1 ? "palabra" : "palabras")</option>
+                }
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Color de la palabra que suena</label>
+            <div class="subs-colors">
+                @foreach (var (value, label) in SubtitlesConfig.HighlightOptions)
+                {
+                    <button type="button" class="subs-swatch @(Config.HighlightColor == value ? "is-selected" : "")"
+                            style="--swatch:@value" title="@label" aria-label="@label"
+                            @onclick="() => SetColor(value)"></button>
+                }
+                <input type="color" class="subs-color-input" title="Otro color"
+                       @bind="Config.HighlightColor" @bind:after="Changed" />
             </div>
         </div>
 
-        <div class="form-row">
-            <div class="form-group voice-slider">
-                <label>Tamano de letra <span class="voice-slider-value">@Config.SizePercent.ToString("0.#", CultureInfo.InvariantCulture) %</span></label>
-                <input type="range" min="3" max="10" step="0.5" @bind="Config.SizePercent" @bind:event="oninput"
-                       @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
-                <small class="voice-slider-hint">Porcentaje del alto del video.</small>
-            </div>
-            <div class="form-group voice-slider">
-                <label>Posicion vertical <span class="voice-slider-value">@Config.PositionPercent.ToString("0", CultureInfo.InvariantCulture) %</span></label>
-                <input type="range" min="15" max="90" step="1" @bind="Config.PositionPercent" @bind:event="oninput"
-                       @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
-                <small class="voice-slider-hint">Desde arriba. Por debajo del 75 % lo tapan la descripcion y los botones de TikTok.</small>
-            </div>
+        <div class="form-group voice-slider">
+            <label>Tamano de letra <span class="voice-slider-value">@Config.SizePercent.ToString("0.#", CultureInfo.InvariantCulture) %</span></label>
+            <input type="range" min="3" max="10" step="0.5" @bind="Config.SizePercent" @bind:event="oninput"
+                   @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
+            <small class="voice-slider-hint">Porcentaje del alto del video.</small>
         </div>
 
-        <div class="form-row">
-            <div class="form-group">
-                <label class="subs-check">
-                    <input type="checkbox" @bind="Config.Uppercase" @bind:after="Changed" />
-                    <span>En mayusculas</span>
-                </label>
-            </div>
-            <div class="form-group">
-                <label>Idioma del audio</label>
-                <select @bind="Config.Language" @bind:after="Changed">
-                    @foreach (var (value, label) in ElevenLabsVoiceConfig.LanguageOptions.Where(l => l.Value != ""))
-                    {
-                        <option value="@value">@label</option>
-                    }
-                </select>
-            </div>
+        <div class="form-group voice-slider">
+            <label>Posicion vertical <span class="voice-slider-value">@Config.PositionPercent.ToString("0", CultureInfo.InvariantCulture) %</span></label>
+            <input type="range" min="15" max="90" step="1" @bind="Config.PositionPercent" @bind:event="oninput"
+                   @bind:culture="CultureInfo.InvariantCulture" @bind:after="Changed" />
+            <small class="voice-slider-hint">Desde arriba. Por debajo del 75 % lo tapan la descripcion y los botones de TikTok: lo ves en la plantilla.</small>
+        </div>
+
+        <div class="form-group">
+            <label class="subs-check">
+                <input type="checkbox" @bind="Config.Uppercase" @bind:after="Changed" />
+                <span>En mayusculas</span>
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label>Idioma del audio</label>
+            <select @bind="Config.Language" @bind:after="Changed">
+                @foreach (var (value, label) in ElevenLabsVoiceConfig.LanguageOptions.Where(l => l.Value != ""))
+                {
+                    <option value="@value">@label</option>
+                }
+            </select>
         </div>
 
         <p class="text-sm text-muted subs-help">
@@ -72,21 +73,74 @@
         </p>
     </div>
 
-    <div class="subs-preview" aria-hidden="true">
-        <style>
-            @($"@keyframes subs-hl-{Words} {{ 0%, {PercentString(100.0 / Words - 0.5)}% {{ color: var(--subs-hl); transform: scale(1.08); }} {PercentString(100.0 / Words)}%, 100% {{ color: #fff; transform: scale(1); }} }}")
-        </style>
-        <div class="subs-phone">
-            <div class="subs-phone-ui"></div>
-            <div class="subs-phone-text @(Config.Uppercase ? "is-upper" : "")"
-                 style="top:@PercentString(Config.PositionPercent)%; font-size:@PercentString(Config.SizePercent * 2.13)px; --subs-hl:@Config.HighlightColor">
-                @for (var i = 0; i < Words; i++)
+    <div class="subs-preview">
+        <div class="tt-phone @(_showUi ? "" : "is-bare")">
+            @if (_preview is { } p)
+            {
+                <style>
+                    @($"@keyframes subs-sprite-{p.Frames} {{ from {{ background-position-x: 0; }} to {{ background-position-x: -{p.Frames * PhoneWidth}px; }} }}")
+                </style>
+                <div class="tt-video"
+                     style="background-image:url('@p.Image'); background-size:@(p.Frames * PhoneWidth)px @(PhoneHeight)px; animation: subs-sprite-@p.Frames @Seconds(p.Frames * 0.45)s steps(@p.Frames) infinite;"></div>
+            }
+            else
+            {
+                <div class="tt-video tt-video-@_background"></div>
+            }
+
+            @if (_showUi)
+            {
+                <div class="tt-ui" aria-hidden="true">
+                    <div class="tt-top">
+                        <span>Siguiendo</span>
+                        <span class="is-active">Para ti</span>
+                        <i class="bi bi-search"></i>
+                    </div>
+                    <div class="tt-side">
+                        <div class="tt-avatar"><i class="bi bi-person-fill"></i><span class="tt-follow">+</span></div>
+                        <div class="tt-act"><i class="bi bi-heart-fill"></i><span>12,4K</span></div>
+                        <div class="tt-act"><i class="bi bi-chat-dots-fill"></i><span>318</span></div>
+                        <div class="tt-act"><i class="bi bi-bookmark-fill"></i><span>1204</span></div>
+                        <div class="tt-act"><i class="bi bi-reply-fill tt-share"></i><span>Compartir</span></div>
+                        <div class="tt-disc"></div>
+                    </div>
+                    <div class="tt-bottom">
+                        <strong>tucuenta</strong>
+                        <p>¿Que siente tu perro cuando te vas de casa? #perros #mascotas</p>
+                        <span class="tt-music"><i class="bi bi-music-note-beamed"></i> sonido original</span>
+                    </div>
+                    <div class="tt-progress"><span></span></div>
+                </div>
+            }
+
+            @if (_loading)
+            {
+                <span class="tt-loading" title="Actualizando la vista previa"><i class="bi bi-arrow-repeat"></i></span>
+            }
+        </div>
+
+        <div class="tt-controls">
+            <div class="tt-backgrounds" role="group" aria-label="Fondo de la vista previa">
+                @foreach (var (value, label) in Backgrounds)
                 {
-                    <span style="animation: subs-hl-@Words @PercentString(Words * 0.6)s infinite; animation-delay:@PercentString(i * 0.6)s">@SampleWords[i]</span>
+                    <button type="button" class="tt-bg-btn @(_background == value ? "is-selected" : "")"
+                            @onclick="() => SetBackground(value)">@label</button>
                 }
             </div>
+            <label class="subs-check tt-ui-toggle">
+                <input type="checkbox" @bind="_showUi" />
+                <span>Interfaz de TikTok</span>
+            </label>
         </div>
-        <small class="text-muted">Vista previa aproximada</small>
+
+        @if (_error is not null)
+        {
+            <small class="voice-preview-error">@_error</small>
+        }
+        else
+        {
+            <small class="text-muted tt-caption">Vista real: la dibuja el mismo motor que el video.</small>
+        }
     </div>
 </div>
 
@@ -96,11 +150,30 @@
     /// <summary>Avisa al formulario que lo contiene de cada cambio (para saber si hay algo sin guardar).</summary>
     [Parameter] public EventCallback OnChange { get; set; }
 
-    private static readonly string[] SampleWords = ["Tu", "perro", "te", "echa", "de"];
+    // Tamano en pantalla del movil de la plantilla (9:16). La tira llega a 360x640
+    // por fotograma y se reduce aqui, asi se ve nitida.
+    private const int PhoneWidth = 270, PhoneHeight = 480;
 
-    private int Words => Math.Clamp(Config.WordsPerGroup, 1, SampleWords.Length);
+    private static readonly (string Value, string Label)[] Backgrounds =
+        [("oscuro", "Oscuro"), ("claro", "Claro"), ("color", "Color")];
 
-    private Task Changed() => OnChange.InvokeAsync();
+    private SubtitlePreviewResponse? _preview;
+    private string? _error;
+    private bool _loading;
+    private bool _showUi = true;
+    private string _background = "oscuro";
+
+    // Lo que se pidio por ultima vez: al pintar el padre no se vuelve a pedir lo mismo.
+    private string? _requested;
+    private CancellationTokenSource? _debounce;
+
+    protected override void OnParametersSet() => QueueRefresh(immediate: _preview is null);
+
+    private async Task Changed()
+    {
+        QueueRefresh();
+        await OnChange.InvokeAsync();
+    }
 
     private Task SetColor(string color)
     {
@@ -108,5 +181,64 @@
         return Changed();
     }
 
-    private static string PercentString(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+    private void SetBackground(string background)
+    {
+        _background = background;
+        QueueRefresh(immediate: true);
+    }
+
+    private string RequestKey() => string.Join('|', Config.WordsPerGroup, Config.HighlightColor,
+        Config.SizePercent.ToString(CultureInfo.InvariantCulture), Config.PositionPercent.ToString(CultureInfo.InvariantCulture),
+        Config.Uppercase, _background);
+
+    /// <summary>
+    /// Pide la vista previa con la configuracion actual. Al arrastrar un control
+    /// llegan muchos cambios seguidos: se espera un momento y solo se pide el ultimo.
+    /// </summary>
+    private void QueueRefresh(bool immediate = false)
+    {
+        var key = RequestKey();
+        if (key == _requested) return;
+
+        _debounce?.Cancel();
+        _debounce = new CancellationTokenSource();
+        _ = RefreshAsync(key, immediate ? 0 : 250, _debounce.Token);
+    }
+
+    private async Task RefreshAsync(string key, int delayMs, CancellationToken token)
+    {
+        try
+        {
+            if (delayMs > 0) await Task.Delay(delayMs, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        _requested = key;
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+
+        var (preview, error) = await Api.GetSubtitlePreviewAsync(Config, _background);
+        if (token.IsCancellationRequested) return; // ya hay una peticion mas nueva
+
+        if (preview is not null)
+        {
+            _preview = preview;
+            _error = null;
+        }
+        else
+        {
+            _error = "No se pudo generar la vista previa: " + error;
+            _requested = null; // que el siguiente cambio lo vuelva a intentar
+        }
+
+        _loading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string Seconds(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+
+    public void Dispose() => _debounce?.Cancel();
 }

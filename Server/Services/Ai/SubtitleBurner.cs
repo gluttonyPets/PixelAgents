@@ -42,6 +42,58 @@ public static class SubtitleBurner
             : (bytes, null);
     }
 
+    /// <summary>Tamano de cada fotograma de la vista previa (9:16).</summary>
+    public const int PreviewWidth = 360, PreviewHeight = 640;
+
+    /// <summary>Fondos de la vista previa, para ver si se lee sobre uno oscuro, uno claro o uno de color.</summary>
+    public static readonly IReadOnlyDictionary<string, string> PreviewBackgrounds = new Dictionary<string, string>
+    {
+        ["oscuro"] = "0x1b1e24",
+        ["claro"] = "0xe9e4d8",
+        ["color"] = "0x355c7d",
+    };
+
+    /// <summary>
+    /// Vista previa real del estilo: la frase de muestra pintada por libass, igual
+    /// que en el video, en una tira PNG con un fotograma por palabra (la palabra k
+    /// resaltada en el fotograma k). El formulario la anima. Se pinta sobre un fondo
+    /// opaco: el filtro solo respeta la transparencia en ffmpeg nuevos.
+    /// </summary>
+    public static async Task<(byte[]? Png, string? Error)> RenderPreviewAsync(
+        SubtitleBuilder.Style style, string background, CancellationToken ct)
+    {
+        var color = PreviewBackgrounds.GetValueOrDefault(background) ?? PreviewBackgrounds["oscuro"];
+        var frames = SubtitleBuilder.PreviewWords.Length;
+        var workDir = Path.Combine(Path.GetTempPath(), $"pixelagents_subsprev_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(workDir);
+
+        try
+        {
+            var ass = SubtitleBuilder.BuildPreviewAss(style, PreviewWidth, PreviewHeight);
+            await File.WriteAllTextAsync(Path.Combine(workDir, "subs.ass"), ass, ct);
+            CopyFonts(workDir);
+
+            var (exitCode, _, stderr) = await VideoAssembler.RunAsync("ffmpeg",
+            [
+                "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "lavfi", "-i", $"color=c={color}:s={PreviewWidth}x{PreviewHeight}:r=1:d={frames}",
+                "-vf", $"subtitles=subs.ass:fontsdir=fonts,tile={frames}x1",
+                "-frames:v", "1",
+                "preview.png",
+            ], ct, workingDirectory: workDir);
+
+            var output = Path.Combine(workDir, "preview.png");
+            return exitCode == 0 && File.Exists(output)
+                ? (await File.ReadAllBytesAsync(output, ct), null)
+                : (null, $"ffmpeg no pudo pintar la vista previa: {VideoAssembler.Tail(stderr)}");
+        }
+        finally
+        {
+            try { Directory.Delete(workDir, recursive: true); }
+            catch { /* el temporal se lo lleva el sistema */ }
+        }
+    }
+
     /// <summary>
     /// Pinta <paramref name="ass"/> sobre el video y deja el resultado en
     /// <paramref name="outputPath"/>. El audio se copia tal cual.
@@ -51,13 +103,7 @@ public static class SubtitleBurner
     {
         await File.WriteAllTextAsync(Path.Combine(workDir, "subs.ass"), ass, ct);
 
-        // La fuente va a una carpeta junto al .ass. Si no estuviera, libass tira de
-        // las del sistema y el video sale igual, con otra letra.
-        var fonts = Path.Combine(workDir, "fonts");
-        Directory.CreateDirectory(fonts);
-        if (Directory.Exists(FontsDirectory))
-            foreach (var font in Directory.EnumerateFiles(FontsDirectory, "*.ttf"))
-                File.Copy(font, Path.Combine(fonts, Path.GetFileName(font)), overwrite: true);
+        CopyFonts(workDir);
 
         var (exitCode, _, stderr) = await VideoAssembler.RunAsync("ffmpeg",
         [
@@ -73,5 +119,18 @@ public static class SubtitleBurner
         return exitCode == 0 && File.Exists(outputPath)
             ? null
             : $"ffmpeg no pudo poner los subtitulos: {VideoAssembler.Tail(stderr)}";
+    }
+
+    /// <summary>
+    /// La fuente va a una carpeta junto al .ass. Si no estuviera, libass tira de las
+    /// del sistema y sale igual, con otra letra.
+    /// </summary>
+    private static void CopyFonts(string workDir)
+    {
+        var fonts = Path.Combine(workDir, "fonts");
+        Directory.CreateDirectory(fonts);
+        if (Directory.Exists(FontsDirectory))
+            foreach (var font in Directory.EnumerateFiles(FontsDirectory, "*.ttf"))
+                File.Copy(font, Path.Combine(fonts, Path.GetFileName(font)), overwrite: true);
     }
 }

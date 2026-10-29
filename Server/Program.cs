@@ -1132,6 +1132,39 @@ app.MapGet("/api/elevenlabs/voice-sample", async (
     return Results.File(audio, ElevenLabsSpeech.SampleContentType(sample), enableRangeProcessing: true);
 }).RequireAuthorization();
 
+// Vista previa real de los subtitulos para el formulario del modulo: la pinta
+// libass, igual que en el video. Misma configuracion => misma imagen, asi que se
+// cachea y mover un control adelante y atras no vuelve a llamar a ffmpeg.
+app.MapGet("/api/subtitles/preview", async (
+    int? words, string? color, double? size, double? position, bool? uppercase, string? background,
+    Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
+{
+    var config = new Dictionary<string, object>();
+    if (words is { } w) config[SubtitleBuilder.WordsKey] = w;
+    if (color is not null) config[SubtitleBuilder.ColorKey] = color;
+    if (size is { } s) config[SubtitleBuilder.SizeKey] = s;
+    if (position is { } p) config[SubtitleBuilder.PositionKey] = p;
+    if (uppercase is { } u) config[SubtitleBuilder.UppercaseKey] = u;
+    var style = SubtitleBuilder.Style.FromConfig(config);
+    var bg = background is not null && SubtitleBurner.PreviewBackgrounds.ContainsKey(background) ? background : "oscuro";
+
+    var key = $"subtitle-preview:{style}:{bg}";
+    if (!Microsoft.Extensions.Caching.Memory.CacheExtensions.TryGetValue(cache, key, out SubtitlePreviewResponse? preview)
+        || preview is null)
+    {
+        if (!await VideoAssembler.IsAvailableAsync(ct))
+            return Results.Problem("ffmpeg no esta instalado en el servidor: hace falta para la vista previa.", statusCode: 503);
+
+        var (png, error) = await SubtitleBurner.RenderPreviewAsync(style, bg, ct);
+        if (png is null) return Results.Problem(error, statusCode: 500);
+
+        preview = new SubtitlePreviewResponse(SubtitleBuilder.PreviewWords.Length,
+            SubtitleBurner.PreviewWidth, SubtitleBurner.PreviewHeight, "data:image/png;base64," + Convert.ToBase64String(png));
+        Microsoft.Extensions.Caching.Memory.CacheExtensions.Set(cache, key, preview, TimeSpan.FromHours(1));
+    }
+    return Results.Ok(preview);
+}).RequireAuthorization();
+
 // ==================== Module File Endpoints ====================
 
 app.MapPost("/api/project-modules/{projectModuleId}/files", async (

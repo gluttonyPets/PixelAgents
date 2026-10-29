@@ -170,6 +170,8 @@ public record VoicePreviewRequest(Guid? ApiKeyId, string ModelName, string? Voic
 // Voz elegible de ElevenLabs. Group: "account" (de la cuenta) o "library"
 // (biblioteca publica; OwnerId hace falta para anadirla a la cuenta al usarla).
 // PreviewModel: modelo con el que se grabo la muestra, si ElevenLabs lo dice.
+// Vista previa real de subtitulos: tira PNG (data URI) con un fotograma por palabra.
+public record SubtitlePreviewResponse(int Frames, int Width, int Height, string Image);
 public record VoiceOptionResponse(string Id, string Label, string Group, string? PreviewUrl, string? OwnerId,
     string? PreviewModel = null)
 {

@@ -44,6 +44,8 @@ namespace Server.Models
         string? PreviewModel = null);
     // Valor de un filtro de la biblioteca (acento o uso) y cuantas voces lo tienen.
     public record VoiceFacetResponse(string Value, int Count);
+    // Vista previa de subtitulos: tira PNG (data URI) con un fotograma por palabra.
+    public record SubtitlePreviewResponse(int Frames, int Width, int Height, string Image);
     // Voces para el selector y los acentos y usos que hay en la biblioteca para el idioma.
     public record VoiceListResponse(
         List<VoiceOptionResponse> Voices, List<VoiceFacetResponse> Accents, List<VoiceFacetResponse> UseCases);
