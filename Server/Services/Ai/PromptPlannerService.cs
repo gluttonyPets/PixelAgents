@@ -7,12 +7,21 @@ namespace Server.Services.Ai
 {
     public interface IPromptPlannerService
     {
+        /// <summary>
+        /// Busca las <paramref name="count"/> mejores tematicas dentro de lo que pide el
+        /// usuario ("Halloween", "recetas de otono"...) y planifica una ejecucion por
+        /// tema: titulo, descripcion y valor de las variables del pipeline. Evita los
+        /// temas que ya estan en la cola o se han usado hace poco.
+        /// </summary>
+        /// <param name="replacePending">Los pendientes se van a borrar: no cuentan como
+        /// temas ya planificados que haya que evitar.</param>
         Task<PromptPlannerResult> GenerateAsync(
             UserDbContext db,
             Guid projectId,
             string modelName,
             int count,
             string instructions,
+            bool replacePending = false,
             CancellationToken ct = default);
 
         /// <summary>
@@ -33,10 +42,11 @@ namespace Server.Services.Ai
     }
 
     /// <summary>
-    /// Una ejecucion planificada: el prompt y el valor que el planificador propone
-    /// para cada variable del pipeline (vacio cuando el proyecto no declara ninguna).
+    /// Una ejecucion planificada: el prompt, el valor que el planificador propone
+    /// para cada variable del pipeline (vacio cuando el proyecto no declara ninguna)
+    /// y el titulo corto de su tematica, si el modelo lo ha dado.
     /// </summary>
-    public record PlannedPromptDraft(string Content, Dictionary<string, string> Variables);
+    public record PlannedPromptDraft(string Content, Dictionary<string, string> Variables, string? Topic = null);
 
     public record PromptPlannerResult(bool Success, List<PlannedPromptDraft> Prompts, string? Error);
 
@@ -65,6 +75,17 @@ namespace Server.Services.Ai
             new(PlannerProvider, "gpt-3.5-turbo", "GPT-3.5 Turbo"),
         };
 
+        /// <summary>Ejecuciones ya gastadas que se le recuerdan al planificador para
+        /// que no vuelva a proponer el mismo tema.</summary>
+        private const int RecentUsedTopics = 30;
+
+        /// <summary>Tope de temas a evitar: con la cola entera y las ultimas usadas basta,
+        /// y una lista mas larga solo encarece cada llamada.</summary>
+        private const int MaxTopicsToAvoid = 60;
+
+        /// <summary>Lo que se cita de una ejecucion sin titulo de tema.</summary>
+        private const int TopicExcerptLength = 160;
+
         private readonly IAiProviderRegistry _registry;
         private readonly ILogger<PromptPlannerService> _log;
 
@@ -82,18 +103,22 @@ namespace Server.Services.Ai
             string modelName,
             int count,
             string instructions,
+            bool replacePending = false,
             CancellationToken ct = default)
         {
             if (count < 1 || count > 50)
                 return new PromptPlannerResult(false, new(), "La cantidad debe estar entre 1 y 50");
 
             if (string.IsNullOrWhiteSpace(instructions))
-                return new PromptPlannerResult(false, new(), "Faltan instrucciones para el planificador");
+                return new PromptPlannerResult(false, new(), "Di sobre que tematica quieres las proximas ejecuciones");
+
+            var alreadyPlanned = await LoadPlannedTopicsAsync(db, projectId, includePending: !replacePending, ct);
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
             return await AskModelAsync(
                 db, projectId, modelName, count,
-                (project, variables, folders) =>
-                    BuildPlannerPrompt(count, instructions, project.Context, variables, folders),
+                (project, variables, folders) => BuildPlannerPrompt(
+                    count, instructions, project.Context, variables, alreadyPlanned, today, folders),
                 ct);
         }
 
@@ -204,27 +229,58 @@ namespace Server.Services.Ai
         }
 
         /// <summary>
-        /// Prompt del planificador: quien es, que contexto tiene, que pide el usuario
-        /// y —al final— el contrato de salida (<see cref="PlannerSchema"/>), que incluye
-        /// las variables del pipeline que hay que rellenar en cada ejecucion.
+        /// Prompt del planificador de tematicas. El usuario dice sobre que quiere las
+        /// proximas ejecuciones ("Halloween") y cuantas; el modelo piensa muchas ideas
+        /// dentro de eso, se queda con las mejores —distintas entre si y sin repetir lo
+        /// ya planificado— y escribe una ejecucion por tema. Al final va el contrato de
+        /// salida (<see cref="PlannerSchema"/>) con el titulo del tema y las variables.
         /// </summary>
-        private static string BuildPlannerPrompt(
+        /// <param name="alreadyPlanned">Temas que ya estan en la cola o se han usado hace
+        /// poco: el modelo no los puede repetir.</param>
+        /// <param name="today">Fecha de hoy, para que una peticion de temporada o de
+        /// actualidad (Halloween, rebajas...) salga a tiempo y no desfasada.</param>
+        public static string BuildPlannerPrompt(
             int count, string instructions, string? projectContext,
             IReadOnlyList<ProjectVariable> variables,
+            IReadOnlyList<string>? alreadyPlanned = null,
+            DateOnly? today = null,
             IReadOnlyDictionary<string, List<string>>? folderOptions = null)
         {
             var ctxBlock = string.IsNullOrWhiteSpace(projectContext)
                 ? ""
-                : $"\n\nContexto del proyecto:\n{projectContext}\n";
+                : $"\n\nContexto del proyecto:\n{projectContext.Trim()}";
+
+            var dateBlock = today is { } date
+                ? $"\n\nFecha de hoy: {date:yyyy-MM-dd}. Tenla en cuenta si lo que pide el usuario es de temporada o de actualidad."
+                : "";
+
+            var avoidBlock = alreadyPlanned is { Count: > 0 }
+                ? "\nTematicas que ya estan planificadas o se han usado hace poco. NO las repitas ni propongas variaciones casi iguales:\n"
+                    + string.Join("\n", alreadyPlanned.Select(t => $"- {t}")) + "\n"
+                : "";
+
+            var temas = count == 1 ? "la mejor tematica" : $"las {count} mejores tematicas";
+            var candidatas = Math.Max(count * 3, 10);
 
             return
-$@"Eres un planificador que genera una lista de {count} prompts independientes para un pipeline de IA.
-Cada prompt debe ser autocontenido, claro y listo para ejecutarse en una corrida del pipeline.{ctxBlock}
+$@"Eres un estratega de contenidos que planifica las proximas ejecuciones de un pipeline de IA.
+El usuario te dice sobre que quiere las proximas ejecuciones y tu trabajo es encontrar {temas}
+dentro de lo que pide y dedicar una ejecucion a cada una.{ctxBlock}{dateBlock}
 
-Necesidades / instrucciones del usuario:
-{instructions}
+Lo que pide el usuario para las proximas ejecuciones:
+{instructions.Trim()}
+{avoidBlock}
+Como elegir las tematicas:
+1. Piensa primero, sin escribirlas, al menos {candidatas} ideas candidatas dentro de lo que pide el usuario.
+2. Quedate con {temas}: las mas atractivas y utiles para el publico del proyecto, concretas
+   (nada generico tipo ""ideas de Halloween"") y distintas entre si, cada una con un angulo diferente.
+3. Ordenalas en el orden en que conviene ejecutarlas.
+4. Para cada tematica escribe su ""prompt"": la descripcion de esa ejecucion con el tema concreto,
+   el enfoque y los puntos clave que debe cubrir. Es la entrada que recibira el pipeline en esa
+   ejecucion, asi que debe ser autocontenida y estar lista para ejecutarse. No repitas las
+   instrucciones generales del proyecto: el pipeline ya las conoce.
 
-" + PlannerSchema.BuildInstruction(count, variables, folderOptions);
+" + PlannerSchema.BuildInstruction(count, variables, folderOptions, withTopic: true);
         }
 
         /// <summary>
@@ -275,6 +331,51 @@ Idea del usuario para esta ejecucion:
 {ideaBlock}
 
 " + PlannerSchema.BuildInstruction(1, variables, folderOptions);
+        }
+
+        /// <summary>
+        /// Temas que el planificador no debe repetir: los pendientes de la cola (salvo
+        /// que se vayan a reemplazar) y las ultimas ejecuciones planificadas ya gastadas.
+        /// De cada una se cita su titulo de tema o, si no tiene, el principio del prompt.
+        /// </summary>
+        public static async Task<List<string>> LoadPlannedTopicsAsync(
+            UserDbContext db,
+            Guid projectId,
+            bool includePending,
+            CancellationToken ct = default)
+        {
+            var pending = includePending
+                ? await db.PlannedPrompts
+                    .Where(p => p.ProjectId == projectId && p.Status == PlannedPromptStatus.Pending)
+                    .OrderBy(p => p.OrderIndex).ThenBy(p => p.CreatedAt)
+                    .Take(MaxTopicsToAvoid)
+                    .ToListAsync(ct)
+                : [];
+
+            var used = await db.PlannedPrompts
+                .Where(p => p.ProjectId == projectId && p.Status == PlannedPromptStatus.Used)
+                .OrderByDescending(p => p.UsedAt ?? p.UpdatedAt)
+                .Take(RecentUsedTopics)
+                .ToListAsync(ct);
+
+            return pending.Concat(used)
+                .Select(p => TopicLabel(p.Topic, p.Content))
+                .Where(label => label.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(MaxTopicsToAvoid)
+                .ToList();
+        }
+
+        /// <summary>Como se cita una ejecucion: su tema o la primera linea del prompt, recortada.</summary>
+        public static string TopicLabel(string? topic, string? content)
+        {
+            if (PlannerSchema.NormalizeTopic(topic) is { } title) return title;
+            if (string.IsNullOrWhiteSpace(content)) return "";
+
+            var firstLine = content.Trim().Split('\n')[0].Trim();
+            return firstLine.Length <= TopicExcerptLength
+                ? firstLine
+                : firstLine[..TopicExcerptLength].TrimEnd() + "...";
         }
 
         /// <summary>

@@ -345,8 +345,8 @@ namespace Server.Services.Scheduler
 
             var msg =
                 $"📭 [#{correlation.Token}] No quedan temáticas planificadas para \"{project.Name}\".\n\n" +
-                "Responde a este mensaje (citándolo) describiendo qué temas quieres generar y crearé una nueva " +
-                "planificación. También puedes enviar varios prompts, uno por línea.";
+                "Responde a este mensaje (citándolo) con la temática de las próximas ejecuciones " +
+                "(p. ej. «Halloween») y buscaré los mejores temas para planificarlas. También puedes enviar varios prompts, uno por línea.";
 
             try
             {

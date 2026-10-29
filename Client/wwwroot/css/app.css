@@ -4625,6 +4625,34 @@ a.link:hover { text-decoration: underline; }
 
 .planner-prompt-editor:focus { border-color: var(--accent); }
 
+/* Titulo del tema de una ejecucion planificada: cabecera de la tarjeta. */
+.planner-prompt-topic {
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text);
+    padding-top: 0.15rem;
+}
+
+.planner-prompt-topic-input {
+    width: 100%;
+    margin-bottom: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--text);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: inherit;
+    outline: none;
+    transition: border 0.15s;
+}
+
+.planner-prompt-topic-input:hover { border-color: var(--border); }
+.planner-prompt-topic-input:focus { border-color: var(--accent); background: var(--bg); }
+.planner-prompt-topic-input::placeholder { color: var(--text-muted); font-weight: 400; }
+
 .planner-prompt-content {
     font-size: 0.75rem;
     line-height: 1.45;

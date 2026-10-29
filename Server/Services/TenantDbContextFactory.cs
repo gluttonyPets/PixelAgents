@@ -249,6 +249,7 @@ namespace Server.Services
                     ""ExecutionId"" uuid
                 )", log);
             RunSafe(ctx, @"ALTER TABLE ""PlannedPrompts"" ADD COLUMN IF NOT EXISTS ""VariablesJson"" text", log);
+            RunSafe(ctx, @"ALTER TABLE ""PlannedPrompts"" ADD COLUMN IF NOT EXISTS ""Topic"" text", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PlannedPrompts_ProjectId"" ON ""PlannedPrompts"" (""ProjectId"")", log);
             RunSafe(ctx, @"CREATE INDEX IF NOT EXISTS ""IX_PlannedPrompts_ProjectId_Status_OrderIndex"" ON ""PlannedPrompts"" (""ProjectId"", ""Status"", ""OrderIndex"")", log);
             // ModuleFiles: paso de AiModuleId (catalogo) a ProjectModuleId (instancia).

@@ -435,7 +435,9 @@ public record PromptVersionResponse(Guid Id, string Field, string Content, strin
 public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);
 public record PlannerModelOption(string Provider, string ModelName, string DisplayName);
 public record CreatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
-public record UpdatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
+/// <param name="Topic">Titulo del tema. Null lo deja como estaba; vacio lo quita.</param>
+public record UpdatePlannedPromptRequest(
+    string Content, Dictionary<string, string>? Variables = null, string? Topic = null);
 public record ReorderPlannedPromptsRequest(List<Guid> OrderedIds);
 public record DraftPlannedPromptRequest(
     string ModelName, string Idea, string? Content = null,
@@ -444,7 +446,7 @@ public record PlannedPromptDraftResponse(string Content, Dictionary<string, stri
 public record PlannedPromptResponse(
     Guid Id, Guid ProjectId, int OrderIndex, string Content, string Status,
     DateTime CreatedAt, DateTime UpdatedAt, DateTime? UsedAt, Guid? ExecutionId,
-    Dictionary<string, string>? Variables = null);
+    Dictionary<string, string>? Variables = null, string? Topic = null);
 
 // ── Structured Output ──
 public class StepOutputDto

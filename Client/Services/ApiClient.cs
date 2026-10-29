@@ -1201,10 +1201,11 @@ public class ApiClient
     }
 
     public async Task<(bool Ok, PlannedPromptResponse? Result, string? Error)> UpdatePlannedPromptAsync(
-        Guid projectId, Guid promptId, string content, Dictionary<string, string>? variables = null)
+        Guid projectId, Guid promptId, string content, Dictionary<string, string>? variables = null,
+        string? topic = null)
     {
         var resp = await SendAsync(HttpMethod.Put, $"/api/projects/{projectId}/planned-prompts/{promptId}",
-            new UpdatePlannedPromptRequest(content, variables));
+            new UpdatePlannedPromptRequest(content, variables, topic));
         if (!resp.IsSuccessStatusCode)
             return (false, null, await ReadErrorAsync(resp));
         var result = await resp.Content.ReadFromJsonAsync<PlannedPromptResponse>();

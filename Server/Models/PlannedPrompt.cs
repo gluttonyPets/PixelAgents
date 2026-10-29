@@ -14,6 +14,11 @@ namespace Server.Models
         public int OrderIndex { get; set; }
         public string Content { get; set; } = default!;
 
+        /// <summary>Titulo corto de la tematica de esta ejecucion ("Calabazas con
+        /// plantillas de constelaciones"). Lo pone el planificador al buscar temas; las
+        /// ejecuciones escritas a mano pueden no tenerlo.</summary>
+        public string? Topic { get; set; }
+
         /// <summary>Valor de las variables del pipeline para esta ejecucion planificada,
         /// como objeto JSON { "clave": "valor" }. Lo rellena el planificador junto al
         /// prompt (o el usuario a mano) y manda sobre lo que fije la programacion.</summary>

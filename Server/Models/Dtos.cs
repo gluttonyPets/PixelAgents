@@ -390,7 +390,9 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     // ── Planned Prompts ──
     public record GeneratePlannedPromptsRequest(string ModelName, int Count, string Instructions, bool ReplaceExisting = false);
     public record CreatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
-    public record UpdatePlannedPromptRequest(string Content, Dictionary<string, string>? Variables = null);
+    /// <param name="Topic">Titulo del tema. Null lo deja como estaba; vacio lo quita.</param>
+    public record UpdatePlannedPromptRequest(
+        string Content, Dictionary<string, string>? Variables = null, string? Topic = null);
     public record ReorderPlannedPromptsRequest(List<Guid> OrderedIds);
     /// <summary>Peticion del asistente: la idea suelta del usuario y lo que ya lleve
     /// escrito a mano en el formulario de "anadir ejecucion".</summary>
@@ -402,8 +404,10 @@ public record UpdateProjectModuleRequest(string? StepName, string? Configuration
     public record PlannedPromptDraftResponse(string Content, Dictionary<string, string> Variables);
     /// <param name="Variables">Valor de las variables del pipeline para esta ejecucion
     /// planificada; manda sobre lo que fije la programacion.</param>
+    /// <param name="Topic">Titulo corto de la tematica que el planificador eligio para
+    /// esta ejecucion (null si se escribio a mano sin tema).</param>
     public record PlannedPromptResponse(
         Guid Id, Guid ProjectId, int OrderIndex, string Content, string Status,
         DateTime CreatedAt, DateTime UpdatedAt, DateTime? UsedAt, Guid? ExecutionId,
-        Dictionary<string, string>? Variables = null);
+        Dictionary<string, string>? Variables = null, string? Topic = null);
 }

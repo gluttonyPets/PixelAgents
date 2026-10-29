@@ -395,13 +395,17 @@ else
                             </select>
                         </label>
                         <label class="planner-field">
-                            <span class="planner-field-label">Cantidad</span>
-                            <input type="number" min="1" max="50" @bind="_plannerCount" class="planner-input" />
+                            <span class="planner-field-label">Tematica de las proximas ejecuciones</span>
+                            <textarea @bind="_plannerInstructions" rows="3" class="planner-input planner-textarea" placeholder="Ej.: Halloween: decoracion, disfraces y recetas para familias"></textarea>
                         </label>
                         <label class="planner-field">
-                            <span class="planner-field-label">Instrucciones / necesidades</span>
-                            <textarea @bind="_plannerInstructions" rows="3" class="planner-input planner-textarea" placeholder="Describe que debe generar el planificador..."></textarea>
+                            <span class="planner-field-label">Numero de temas (una ejecucion por tema)</span>
+                            <input type="number" min="1" max="50" @bind="_plannerCount" class="planner-input" />
                         </label>
+                        <div class="planner-variables-hint">
+                            La IA buscara los mejores temas dentro de lo que pidas, distintos entre si y
+                            sin repetir los que ya estan en la cola o se han usado hace poco.
+                        </div>
                         @if (_variables.Count > 0)
                         {
                             <div class="planner-variables-hint">
@@ -421,11 +425,11 @@ else
                             @if (_plannerBusy)
                             {
                                 <span class="spinner" style="width: 0.7rem; height: 0.7rem;"></span>
-                                <span>Generando...</span>
+                                <span>Buscando temas...</span>
                             }
                             else
                             {
-                                <span>Generar prompts</span>
+                                <span>Buscar @TopicCountLabel(_plannerCount)</span>
                             }
                         </button>
 
@@ -463,6 +467,10 @@ else
                                         </div>
                                         @if (sel.Prompt is { } runPrompt)
                                         {
+                                            @if (!string.IsNullOrWhiteSpace(runPrompt.Topic))
+                                            {
+                                                <div class="planner-prompt-topic">@runPrompt.Topic</div>
+                                            }
                                             <div class="planner-prompt-content">@runPrompt.Content</div>
                                             @if (_variables.Count > 0)
                                             {
@@ -613,6 +621,10 @@ else
                                                 </div>
                                                 @if (p.Status == "Pending")
                                                 {
+                                                    <input type="text" class="planner-prompt-topic-input"
+                                                           value="@p.Topic" maxlength="200" placeholder="Tema (opcional)"
+                                                           title="Titulo del tema de esta ejecucion"
+                                                           @onchange="@(e => OnPromptTopicChanged(p.Id, e.Value?.ToString() ?? string.Empty))" />
                                                     <textarea rows="2" class="planner-prompt-editor"
                                                               value="@p.Content"
                                                               @onchange="@(e => OnPromptContentChanged(p.Id, e.Value?.ToString() ?? string.Empty))"></textarea>
@@ -638,6 +650,10 @@ else
                                                 }
                                                 else
                                                 {
+                                                    @if (!string.IsNullOrWhiteSpace(p.Topic))
+                                                    {
+                                                        <div class="planner-prompt-topic">@p.Topic</div>
+                                                    }
                                                     <div class="planner-prompt-content">@p.Content</div>
                                                     @if (p.Variables is { Count: > 0 })
                                                     {
@@ -4189,11 +4205,16 @@ else
     {
         var when = RunWhenLabel(run);
         var content = run.Prompt?.Content ?? "";
-        var what = run.Prompt is null
-            ? "entrada fija de la programacion"
-            : (content.Length <= 80 ? content : content[..80] + "...");
+        var what = run.Prompt switch
+        {
+            null => "entrada fija de la programacion",
+            { Topic: { Length: > 0 } topic } => topic,
+            _ => content.Length <= 80 ? content : content[..80] + "...",
+        };
         return $"#{run.Index} — {when}\n{what}";
     }
+
+    private static string TopicCountLabel(int count) => count == 1 ? "1 tema" : $"{count} temas";
 
     private async Task GeneratePlannedPrompts()
     {
@@ -4206,12 +4227,12 @@ else
         }
         if (string.IsNullOrWhiteSpace(_plannerInstructions))
         {
-            _plannerError = "Escribe las instrucciones";
+            _plannerError = "Escribe sobre que tematica quieres las proximas ejecuciones";
             return;
         }
         if (_plannerCount < 1 || _plannerCount > 50)
         {
-            _plannerError = "Cantidad debe estar entre 1 y 50";
+            _plannerError = "El numero de temas debe estar entre 1 y 50";
             return;
         }
 
@@ -4371,6 +4392,23 @@ else
             var idx = _plannedPrompts.FindIndex(p => p.Id == promptId);
             if (idx >= 0) _plannedPrompts[idx] = item;
         }
+    }
+
+    /// <summary>Renombra el tema de una ejecucion pendiente; vacio lo deja sin tema.</summary>
+    private async Task OnPromptTopicChanged(Guid promptId, string newTopic)
+    {
+        if (_project is null) return;
+        var current = _plannedPrompts.FirstOrDefault(p => p.Id == promptId);
+        if (current is null) return;
+
+        var (ok, item, error) = await Api.UpdatePlannedPromptAsync(
+            _project.Id, promptId, current.Content, current.Variables, newTopic.Trim());
+        if (ok && item is not null)
+        {
+            var idx = _plannedPrompts.FindIndex(p => p.Id == promptId);
+            if (idx >= 0) _plannedPrompts[idx] = item;
+        }
+        else _plannerError = error;
     }
 
     /// <summary>Valor de una variable en un prompt de la cola (busqueda sin distinguir mayusculas).</summary>

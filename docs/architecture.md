@@ -285,6 +285,17 @@ corrida salen coherentes entre si. Si el modelo ignora el esquema y devuelve la 
 prompts se guardan igual y sin valores. En la cola del planificador cada prompt pendiente
 muestra sus variables y se pueden corregir a mano antes de que le toque el turno.
 
+El generador de la cola es un **buscador de tematicas**: el usuario escribe sobre que quiere
+las proximas ejecuciones ("Halloween") y cuantos temas (5), y `PromptPlannerService.GenerateAsync`
+le pide al modelo que piense muchas ideas dentro de eso, se quede con las N mejores —concretas
+y distintas entre si— y dedique una ejecucion a cada una. Cada `PlannedPrompt` guarda el titulo
+corto del tema (`Topic`, campo `tema` del contrato de `PlannerSchema`), que la cola muestra como
+cabecera y se puede renombrar, y en `Content` la descripcion de esa ejecucion. Si el pipeline
+tiene una variable para la tematica, su valor es ese mismo tema. Para no gastar ejecuciones en
+lo mismo, al modelo se le pasan la fecha de hoy (peticiones de temporada) y los temas que ya
+estan en la cola —salvo que se vayan a reemplazar— o se han usado hace poco (las 30 ultimas
+ejecuciones planificadas gastadas).
+
 En la interfaz el planificador vive en su propio panel, que se abre con el boton
 "Planificador" de la barra del canvas (junto a "Sub-proyecto"). Ese panel reune la
 configuracion del generador, la cola de prompts, el historial y un timeline de
@@ -313,8 +324,9 @@ Cuando el planificador esta activo pero **no queda ningun prompt** (cola vacia y
 `UserInput`), el scheduler no ejecuta el pipeline con un prompt vacio: crea una correlacion
 Telegram en estado `awaiting_planning` (asociada al proyecto, sin ejecucion) y envia un mensaje
 al chat del proyecto pidiendo una nueva planificacion. La respuesta del usuario se procesa en
-`TelegramUpdateHandler`, que genera prompts con `PromptPlannerService` (o, si no hay API Key,
-toma cada linea como un prompt) y los encola como `PlannedPrompt` para las proximas corridas.
+`TelegramUpdateHandler`, que toma la respuesta como la tematica y busca los temas con
+`PromptPlannerService` (o, si no hay API Key, toma cada linea como un prompt), los encola como
+`PlannedPrompt` para las proximas corridas y contesta con la lista de temas elegidos.
 Solo se abre una peticion por proyecto a la vez.
 
 ### Correlacion de respuestas: dos pipelines en el mismo chat

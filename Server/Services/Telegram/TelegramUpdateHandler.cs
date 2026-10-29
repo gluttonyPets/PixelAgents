@@ -712,6 +712,7 @@ namespace Server.Services.Telegram
                     ProjectId = projectId,
                     OrderIndex = idx++,
                     Content = draft.Content,
+                    Topic = draft.Topic,
                     VariablesJson = ExecutionVariables.Serialize(draft.Variables),
                     Status = PlannedPromptStatus.Pending,
                     CreatedAt = now,
@@ -725,7 +726,11 @@ namespace Server.Services.Telegram
 
             if (tgConfig is not null)
             {
-                var confirm = $"✅ Nueva planificación creada con {prompts.Count} temática(s). " +
+                // Se listan los temas elegidos para que el usuario vea en el chat que ha
+                // planificado sin tener que abrir la cola.
+                var topics = string.Join("\n", prompts.Select((d, i) =>
+                    $"{i + 1}. {PromptPlannerService.TopicLabel(d.Topic, d.Content)}"));
+                var confirm = $"✅ Nueva planificación creada con {prompts.Count} temática(s):\n{topics}\n\n" +
                     "Se usarán en las próximas ejecuciones programadas.";
                 try { await _telegram.SendTextMessageAsync(tgConfig, confirm); }
                 catch { /* non-critical */ }
@@ -831,8 +836,8 @@ namespace Server.Services.Telegram
             {
                 correlation.BotMessageId = await _telegram.SendTextMessageAsync(tgConfig,
                     $"📭 [#{correlation.Token}] No quedan temáticas planificadas.\n\n" +
-                    "Responde a este mensaje (citándolo) describiendo qué temas quieres generar y crearé una nueva " +
-                    "planificación. También puedes enviar varios prompts, uno por línea.");
+                    "Responde a este mensaje (citándolo) con la temática de las próximas ejecuciones " +
+                    "(p. ej. «Halloween») y buscaré los mejores temas para planificarlas. También puedes enviar varios prompts, uno por línea.");
                 await _coreDb.SaveChangesAsync();
             }
             catch { /* non-critical */ }

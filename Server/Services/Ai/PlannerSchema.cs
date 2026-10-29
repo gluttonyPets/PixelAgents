@@ -14,6 +14,12 @@ namespace Server.Services.Ai;
 /// </summary>
 public static class PlannerSchema
 {
+    /// <summary>Campo del JSON con el titulo del tema de cada ejecucion.</summary>
+    public const string TopicKey = "tema";
+
+    /// <summary>Tope del titulo del tema: es una cabecera, no una descripcion.</summary>
+    public const int MaxTopicLength = 200;
+
     /// <summary>
     /// Bloque final del prompt del planificador: que variables hay que rellenar
     /// (si las hay) y el JSON exacto que debe devolver.
@@ -21,17 +27,20 @@ public static class PlannerSchema
     /// <param name="folderOptions">Para las variables de tipo carpeta, las carpetas que
     /// existen de verdad en la biblioteca. El planificador tiene que elegir una de ellas:
     /// una carpeta inventada tumbaria la ejecucion programada.</param>
+    /// <param name="withTopic">El planificador de tematicas pide ademas el titulo corto
+    /// del tema de cada ejecucion (<c>tema</c>), que la cola muestra como cabecera.</param>
     public static string BuildInstruction(
         int count,
         IReadOnlyList<ProjectVariable> variables,
-        IReadOnlyDictionary<string, List<string>>? folderOptions = null)
+        IReadOnlyDictionary<string, List<string>>? folderOptions = null,
+        bool withTopic = false)
     {
         // El asistente de una sola ejecucion pide el mismo contrato con un unico
         // elemento, asi que la cuenta se escribe en singular cuando toca.
         var promptsPedidos = count == 1 ? "1 prompt" : $"{count} prompts ordenados";
         var ejecucionesPedidas = count == 1 ? "1 ejecucion" : $"{count} ejecuciones ordenadas";
 
-        if (variables.Count == 0)
+        if (variables.Count == 0 && !withTopic)
         {
             return
 $@"Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adicional, sin comentarios, sin markdown:
@@ -42,6 +51,25 @@ $@"Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adi
   ]
 }}
 La lista debe contener exactamente {promptsPedidos}.";
+        }
+
+        var topicField = withTopic
+            ? $@"
+      ""{TopicKey}"": ""titulo corto del tema (maximo 8 palabras)"","
+            : "";
+
+        if (variables.Count == 0)
+        {
+            return
+$@"Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adicional, sin comentarios, sin markdown:
+{{
+  ""prompts"": [
+    {{{topicField}
+      ""prompt"": ""descripcion de la primera ejecucion""
+    }}
+  ]
+}}
+La lista debe contener exactamente {ejecucionesPedidas}.";
         }
 
         // Ficha de cada variable: su nombre y para que sirve, que es lo unico que
@@ -64,18 +92,24 @@ La lista debe contener exactamente {promptsPedidos}.";
         var varKeys = string.Join(", ", variables.Select(v => $@"""{v.Key}"""));
         var varSample = string.Join(", ", variables.Select(v => $@"""{v.Key}"": ""valor para este prompt"""));
 
+        // Si el pipeline guarda el tema en una variable (p. ej. "tematica"), su valor
+        // tiene que ser el mismo tema que encabeza la ejecucion, no otro distinto.
+        var topicRule = withTopic
+            ? "\nSi alguna variable recoge la tematica o el tema, su valor es el \"tema\" de esa ejecucion."
+            : "";
+
         return
 $@"Ademas del prompt, cada ejecucion fija el valor de estas variables del pipeline:
 {varList}
 
 Para CADA ejecucion tienes que dar un valor concreto y coherente con su prompt a todas
 las variables ({varKeys}). Nada de valores vacios ni genericos, y no repitas el mismo
-valor en varias ejecuciones salvo que el prompt lo pida.
+valor en varias ejecuciones salvo que el prompt lo pida.{topicRule}
 
 Devuelve EXCLUSIVAMENTE un JSON valido con este formato exacto, sin texto adicional, sin comentarios, sin markdown:
 {{
   ""prompts"": [
-    {{
+    {{{topicField}
       ""prompt"": ""primer prompt"",
       ""variables"": {{ {varSample} }}
     }}
@@ -132,7 +166,8 @@ La lista debe contener exactamente {ejecucionesPedidas}.";
 
                 list.Add(new PlannedPromptDraft(
                     content.Trim(),
-                    ReadVariables(item, declared, variables, folderOptions)));
+                    ReadVariables(item, declared, variables, folderOptions),
+                    ReadTopic(item)));
             }
 
             if (list.Count > expected) list = list.Take(expected).ToList();
@@ -190,6 +225,25 @@ La lista debe contener exactamente {ejecucionesPedidas}.";
         }
 
         return values;
+    }
+
+    /// <summary>Titulo del tema que propone el modelo, o null si no lo trae.</summary>
+    private static string? ReadTopic(JsonElement item)
+    {
+        if (!item.TryGetProperty(TopicKey, out var topicProp) || topicProp.ValueKind != JsonValueKind.String)
+            return null;
+        return NormalizeTopic(topicProp.GetString());
+    }
+
+    /// <summary>
+    /// Deja el titulo de un tema listo para guardarse: una sola linea, sin espacios de
+    /// sobra y con un tope de longitud. Vacio se guarda como "sin tema" (null).
+    /// </summary>
+    public static string? NormalizeTopic(string? topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic)) return null;
+        var line = string.Join(' ', topic.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return line.Length <= MaxTopicLength ? line : line[..MaxTopicLength].TrimEnd();
     }
 
     /// <summary>Carpetas que puede elegir una variable, tal y como se le ofrecen al modelo.</summary>

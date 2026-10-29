@@ -315,6 +315,7 @@ namespace Server.Data
             {
                 e.HasKey(x => x.Id);
                 e.Property(x => x.Content).IsRequired().HasColumnType("text");
+                e.Property(x => x.Topic).HasColumnType("text");
                 e.Property(x => x.VariablesJson).HasColumnType("text");
                 e.Property(x => x.Status).IsRequired().HasMaxLength(20).HasDefaultValue(PlannedPromptStatus.Pending);
                 e.Property(x => x.OrderIndex).HasDefaultValue(0);

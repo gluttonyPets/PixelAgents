@@ -3938,7 +3938,7 @@ app.MapDelete("/api/projects/{projectId:guid}/schedule", async (
 static PlannedPromptResponse ToPlannedPromptResponse(PlannedPrompt p) =>
     new(p.Id, p.ProjectId, p.OrderIndex, p.Content, p.Status,
         p.CreatedAt, p.UpdatedAt, p.UsedAt, p.ExecutionId,
-        ExecutionVariables.Parse(p.VariablesJson));
+        ExecutionVariables.Parse(p.VariablesJson), p.Topic);
 
 app.MapGet("/api/planner/models", (IPromptPlannerService planner) =>
 {
@@ -4041,7 +4041,8 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/generate", async (
     var project = await db.Projects.FindAsync(projectId);
     if (project is null) return Results.NotFound();
 
-    var result = await planner.GenerateAsync(db, projectId, req.ModelName, req.Count, req.Instructions, ct);
+    var result = await planner.GenerateAsync(
+        db, projectId, req.ModelName, req.Count, req.Instructions, req.ReplaceExisting, ct);
     if (!result.Success)
         return Results.BadRequest(new { error = result.Error });
 
@@ -4070,6 +4071,7 @@ app.MapPost("/api/projects/{projectId:guid}/planned-prompts/generate", async (
             ProjectId = projectId,
             OrderIndex = idx++,
             Content = draft.Content,
+            Topic = draft.Topic,
             VariablesJson = ExecutionVariables.Serialize(draft.Variables),
             Status = PlannedPromptStatus.Pending,
             CreatedAt = now,
@@ -4164,6 +4166,8 @@ app.MapPut("/api/projects/{projectId:guid}/planned-prompts/{promptId:guid}", asy
 
     prompt.Content = req.Content.Trim();
     prompt.VariablesJson = ExecutionVariables.Serialize(req.Variables);
+    // Sin Topic en la peticion el tema se conserva; vacio lo quita.
+    if (req.Topic is not null) prompt.Topic = PlannerSchema.NormalizeTopic(req.Topic);
     prompt.UpdatedAt = DateTime.UtcNow;
 
     await db.SaveChangesAsync();

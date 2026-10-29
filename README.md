@@ -794,14 +794,16 @@ de las variables con que correra cada una. Se llenan en lote con el generador o
 **una a una a mano**, con la IA como ayuda opcional para redactarlas.
 
 - `GET /api/projects/{projectId}/planned-prompts`: lista la cola.
-- `POST /api/projects/{projectId}/planned-prompts/generate`: genera N ejecuciones
-  con el planificador.
+- `POST /api/projects/{projectId}/planned-prompts/generate`: busca las N mejores
+  tematicas sobre lo que pide el usuario (p. ej. "Halloween") y crea una ejecucion
+  por tema, con su titulo (`Topic`) y su descripcion, sin repetir los temas que ya
+  estan en la cola o se han usado hace poco.
 - `POST /api/projects/{projectId}/planned-prompts/draft`: redacta **una** ejecucion
   (prompt + variables) a partir de la idea del usuario y del borrador que lleve
   escrito. No guarda nada: la propuesta vuelve al formulario para revisarla.
 - `POST /api/projects/{projectId}/planned-prompts`: anade una ejecucion a la cola.
-- `PUT|DELETE /api/projects/{projectId}/planned-prompts/{promptId}`: edita o quita
-  una ejecucion pendiente.
+- `PUT|DELETE /api/projects/{projectId}/planned-prompts/{promptId}`: edita (prompt,
+  variables o titulo del tema) o quita una ejecucion pendiente.
 - `POST /api/projects/{projectId}/planned-prompts/reorder`: reordena la cola.
 - `POST /api/projects/{projectId}/planned-prompts/{promptId}/execute`: lanza esa
   ejecucion ahora, sin esperar a la programacion.
