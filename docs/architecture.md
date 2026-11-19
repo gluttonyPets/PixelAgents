@@ -33,6 +33,7 @@ ASP.NET Core Minimal API (:5000)
   |-- ExecutionHub (SignalR)
   |-- TelegramPollingService    (hosted service)
   |-- SchedulerBackgroundService (hosted service, cron via Cronos)
+  |-- StaleInteractionResumeService (hosted service, 1 vez al dia reanuda ejecuciones huerfanas en WaitingForInput)
   |-- TriggerBackgroundService  (hosted service, pipelines de tipo Trigger)
   v
 PostgreSQL :5432 (Docker interno) / :5433 (host)
@@ -54,6 +55,7 @@ PostgreSQL :5432 (Docker interno) / :5433 (host)
 | ExecutionHub (SignalR)      | `Server/Hubs/ExecutionHub.cs`                          | Emite logs y progreso de ejecucion al cliente en tiempo real       |
 | TelegramPollingService      | `Server/Services/Telegram/TelegramPollingService.cs`   | Hosted service; recibe respuestas de usuarios via Telegram         |
 | SchedulerBackgroundService  | `Server/Services/Scheduler/SchedulerBackgroundService.cs` | Hosted service; lanza ejecuciones programadas con expresiones cron |
+| StaleInteractionResumeService | `Server/Services/Scheduler/StaleInteractionResumeService.cs` | Hosted service; a las 09:00 (Europe/Madrid) reanuda con "continue" las ejecuciones en `WaitingForInput` con mas de 12 h y sin interaccion de Telegram abierta |
 
 ---
 

@@ -103,6 +103,7 @@ builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
+builder.Services.AddHostedService<Server.Services.Scheduler.StaleInteractionResumeService>();
 builder.Services.AddHostedService<Server.Services.Triggers.TriggerBackgroundService>();
 builder.Services.AddTransient<IPipelineExecutor, GraphPipelineExecutor>();
 builder.Services.AddScoped<IPromptPlannerService, PromptPlannerService>();
