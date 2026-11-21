@@ -3,7 +3,22 @@
 @inject NavigationManager Nav
 @implements IDisposable
 
-<nav class="sidebar">
+@* En movil la barra lateral se oculta tras esta cabecera y se abre como cajon. *@
+<header class="mobile-topbar">
+    <button class="mobile-menu-btn" aria-label="Abrir menu" aria-expanded="@_open" @onclick="Toggle">
+        <i class="bi @(_open ? "bi-x-lg" : "bi-list")"></i>
+    </button>
+    <a class="mobile-brand" href="/projects">
+        <span class="brand-mark"><i class="bi bi-diagram-3-fill"></i></span>
+        <span>Pixel<strong>Agents</strong></span>
+    </a>
+</header>
+@if (_open)
+{
+    <div class="sidebar-backdrop" @onclick="Close"></div>
+}
+
+<nav class="sidebar @(_open ? "open" : null)">
     <a class="sidebar-brand" href="/projects">
         <span class="brand-mark"><i class="bi bi-diagram-3-fill"></i></span>
         <span>Pixel<strong>Agents</strong></span>
@@ -46,10 +61,23 @@
 
 @code {
     private Client.Models.BuildInfoResponse? _buildInfo;
+    private bool _open;
+
+    private void Toggle() => _open = !_open;
+    private void Close() => _open = false;
+
+    // Al navegar desde el cajon movil, se cierra solo.
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (!_open) return;
+        _open = false;
+        InvokeAsync(StateHasChanged);
+    }
 
     protected override async Task OnInitializedAsync()
     {
         AuthState.OnChange += StateHasChanged;
+        Nav.LocationChanged += OnLocationChanged;
         if (!AuthState.IsAuthenticated)
         {
             try
@@ -102,5 +130,6 @@
     public void Dispose()
     {
         AuthState.OnChange -= StateHasChanged;
+        Nav.LocationChanged -= OnLocationChanged;
     }
 }
