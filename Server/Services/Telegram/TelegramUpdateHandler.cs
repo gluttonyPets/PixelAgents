@@ -17,6 +17,7 @@ namespace Server.Services.Telegram
         private readonly TelegramService _telegram;
         private readonly IPromptPlannerService _planner;
         private readonly ILearningAnalysisService _learning;
+        private readonly ITelegramWorkDispatcher _work;
 
         // Defaults used when the user asks for a new planning from Telegram.
         private const string PlanningModel = "gpt-4o-mini";
@@ -40,7 +41,8 @@ namespace Server.Services.Telegram
             IPipelineExecutor executor,
             TelegramService telegram,
             IPromptPlannerService planner,
-            ILearningAnalysisService learning)
+            ILearningAnalysisService learning,
+            ITelegramWorkDispatcher? work = null)
         {
             _coreDb = coreDb;
             _factory = factory;
@@ -48,6 +50,7 @@ namespace Server.Services.Telegram
             _telegram = telegram;
             _planner = planner;
             _learning = learning;
+            _work = work ?? new InlineTelegramWorkDispatcher(new TelegramWork(coreDb, factory, executor, telegram));
         }
 
         private class EditFlowState
@@ -250,11 +253,31 @@ namespace Server.Services.Telegram
 
                         // Se reinicia lo mismo: las variables de la ejecucion original
                         // (tematica, keyword...) tienen que seguir siendo las mismas.
-                        await _executor.ExecuteAsync(
-                            projectIdForRestart.Value, restartInput, db, correlation.TenantDbName,
-                            variableValues: ExecutionVariables.Parse(execForRestart?.VariablesJson));
+                        // El pipeline corre en segundo plano: esperarlo aqui bloqueaba el
+                        // resto de botones de Telegram hasta que terminaba.
+                        var restartProjectId = projectIdForRestart.Value;
+                        var restartTenant = correlation.TenantDbName;
+                        var restartVariables = ExecutionVariables.Parse(execForRestart?.VariablesJson);
+                        var restartTgConfig = await GetTgConfigAsync();
+                        await _work.DispatchAsync($"restart {correlation.ExecutionId}", async w =>
+                        {
+                            await using var bgDb = w.Factory.Create(restartTenant);
+                            try
+                            {
+                                await w.Executor.ExecuteAsync(
+                                    restartProjectId, restartInput, bgDb, restartTenant,
+                                    variableValues: restartVariables);
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"[TG-Update] Restart of project {restartProjectId} failed: {ex}");
+                                if (restartTgConfig is not null)
+                                    try { await w.Telegram.SendTextMessageAsync(restartTgConfig, $"⚠️ Error al reiniciar el pipeline: {ex.Message}"); }
+                                    catch { /* non-critical */ }
+                            }
+                        });
 
-                        var tgConfig = await GetTgConfigAsync();
+                        var tgConfig = restartTgConfig;
                         if (tgConfig is not null)
                         {
                             var restartMsg = string.IsNullOrWhiteSpace(clarification)
@@ -556,13 +579,21 @@ namespace Server.Services.Telegram
                     // "Continuar" with no extra text — keep the original behaviour: forward "continue" as the response.
                 }
 
+                // La pregunta se cierra ya, antes de reanudar: si el pipeline llega a otra
+                // Interaccion, se envia al momento en vez de quedarse en cola detras de esta.
                 Console.WriteLine($"[TG-Update] Resuming execution {correlation.ExecutionId}, moduleId={correlation.ProjectModuleId}");
-                await _executor.ResumeFromInteractionAsync(correlation.ExecutionId, text, db, correlation.TenantDbName);
                 correlation.IsResolved = true;
                 await _coreDb.SaveChangesAsync();
 
-                // Send next queued interaction message if any
-                await _executor.SendNextQueuedInteractionAsync(correlation.ExecutionId, normalizedChatId);
+                // El resto del pipeline corre en segundo plano. Antes se esperaba aqui, dentro
+                // del bucle de Telegram: mientras corria, ningun otro "Continuar" se atendia y
+                // la ejecucion seguia en "Esperando" aunque ya se hubiera pulsado.
+                var correlationId = correlation.Id;
+                var executionId = correlation.ExecutionId;
+                var tenant = correlation.TenantDbName;
+                var tgConfigResume = await GetTgConfigAsync();
+                await _work.DispatchAsync($"resume {executionId}", w =>
+                    ResumeInBackgroundAsync(w, correlationId, executionId, tenant, text, normalizedChatId, tgConfigResume));
             }
             catch (Exception ex)
             {
@@ -767,30 +798,122 @@ namespace Server.Services.Telegram
             // ejecucion arranca con las variables de la que se acaba de abortar, y encima
             // las que el planificador escribio para este prompt concreto.
             var abortedExecution = await db.ProjectExecutions.FindAsync(correlation.ExecutionId);
+            var variables = ExecutionVariables.Merge(
+                ExecutionVariables.Parse(abortedExecution?.VariablesJson),
+                ExecutionVariables.Parse(nextPrompt.VariablesJson));
+            var promptId = nextPrompt.Id;
+            var content = nextPrompt.Content;
+            var tenant = correlation.TenantDbName;
 
-            ProjectExecution newExecution;
+            // Se reserva ya: el pipeline corre en segundo plano y una segunda pulsacion no
+            // debe coger la misma tematica mientras tanto. Si no llega a lanzarse, se devuelve.
+            nextPrompt.Status = PlannedPromptStatus.Used;
+            nextPrompt.UsedAt = DateTime.UtcNow;
+            nextPrompt.UpdatedAt = DateTime.UtcNow;
+            await db.SaveChangesAsync();
+
+            // El pipeline nuevo corre en segundo plano para no bloquear el resto de Telegram.
+            await _work.DispatchAsync($"next execution {projectId}", async w =>
+            {
+                await using var bgDb = w.Factory.Create(tenant);
+                ProjectExecution newExecution;
+                try
+                {
+                    newExecution = await w.Executor.ExecuteAsync(
+                        projectId, content, bgDb, tenant, variableValues: variables);
+                }
+                catch (Exception ex)
+                {
+                    var failed = await bgDb.PlannedPrompts.FindAsync(promptId);
+                    if (failed is not null)
+                    {
+                        failed.Status = PlannedPromptStatus.Pending;
+                        failed.UsedAt = null;
+                        failed.UpdatedAt = DateTime.UtcNow;
+                        await bgDb.SaveChangesAsync();
+                    }
+                    if (tgConfig is not null)
+                        try { await w.Telegram.SendTextMessageAsync(tgConfig, $"⚠️ Error al lanzar la siguiente temática: {ex.Message}"); }
+                        catch { /* non-critical */ }
+                    return;
+                }
+
+                var prompt = await bgDb.PlannedPrompts.FindAsync(promptId);
+                if (prompt is null) return;
+                prompt.ExecutionId = newExecution.Id;
+                await bgDb.SaveChangesAsync();
+            });
+        }
+
+        /// <summary>
+        /// Reanuda la ejecucion con la respuesta del usuario y, al acabar, envia la siguiente
+        /// interaccion en cola. Si falla antes de arrancar (la ejecucion sigue esperando), la
+        /// pregunta se reabre con sus botones: antes quedaba cerrada y la ejecucion se quedaba
+        /// en "Esperando" sin nada que pulsar.
+        /// </summary>
+        private static async Task ResumeInBackgroundAsync(
+            TelegramWork w, Guid correlationId, Guid executionId, string tenant,
+            string text, string chatId, TelegramConfig? tgConfig)
+        {
             try
             {
-                newExecution = await _executor.ExecuteAsync(
-                    projectId, nextPrompt.Content, db, correlation.TenantDbName,
-                    variableValues: ExecutionVariables.Merge(
-                        ExecutionVariables.Parse(abortedExecution?.VariablesJson),
-                        ExecutionVariables.Parse(nextPrompt.VariablesJson)));
+                await using (var db = w.Factory.Create(tenant))
+                {
+                    await w.Executor.ResumeFromInteractionAsync(executionId, text, db, tenant);
+                }
+                await w.Executor.SendNextQueuedInteractionAsync(executionId, chatId);
+                return;
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[TG-Update] ERROR resuming execution {executionId} (correlation {correlationId}): {ex}");
+                await RecoverFailedResumeAsync(w, correlationId, executionId, tenant, tgConfig, ex);
+            }
+        }
+
+        private static async Task RecoverFailedResumeAsync(
+            TelegramWork w, Guid correlationId, Guid executionId, string tenant,
+            TelegramConfig? tgConfig, Exception error)
+        {
+            string? status = null;
+            try
+            {
+                await using var db = w.Factory.Create(tenant);
+                status = await db.ProjectExecutions
+                    .AsNoTracking()
+                    .Where(e => e.Id == executionId)
+                    .Select(e => e.Status)
+                    .FirstOrDefaultAsync();
+            }
+            catch { /* sin estado no se reabre */ }
+
+            var correlation = status == "WaitingForInput"
+                ? await w.CoreDb.TelegramCorrelations.FirstOrDefaultAsync(c => c.Id == correlationId)
+                : null;
+
+            if (correlation is null)
+            {
+                // Fallo a mitad del pipeline: la ejecucion ya no espera, solo queda avisar.
                 if (tgConfig is not null)
-                    try { await _telegram.SendTextMessageAsync(tgConfig, $"⚠️ Error al lanzar la siguiente temática: {ex.Message}"); }
+                    try { await w.Telegram.SendTextMessageAsync(tgConfig, $"⚠️ Error al procesar respuesta: {error.Message}"); }
                     catch { /* non-critical */ }
                 return;
             }
 
-            // Only mark the prompt consumed once the run actually started.
-            nextPrompt.Status = PlannedPromptStatus.Used;
-            nextPrompt.UsedAt = DateTime.UtcNow;
-            nextPrompt.UpdatedAt = DateTime.UtcNow;
-            nextPrompt.ExecutionId = newExecution.Id;
-            await db.SaveChangesAsync();
+            correlation.IsResolved = false;
+            correlation.State = "waiting";
+            correlation.EditStateData = null;
+            await w.CoreDb.SaveChangesAsync();
+
+            if (tgConfig is null) return;
+            try
+            {
+                correlation.BotMessageId = await w.Telegram.SendTextMessageWithOptionsAsync(tgConfig,
+                    $"⚠️ No se pudo continuar: {error.Message}\nLa ejecución sigue esperando; puedes volver a intentarlo.",
+                    ControlOptionsFor(correlation.Token));
+                await w.CoreDb.SaveChangesAsync();
+            }
+            catch { /* non-critical */ }
         }
 
         /// <summary>

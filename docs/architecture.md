@@ -160,6 +160,8 @@ para que al restaurarlo no apunte a una agrupacion que ya no existe.
 9. Si un nodo es de tipo `Interaction` o `Checkpoint`, el executor pausa la ejecucion
    (`PausedStepData` serializado en la BD) y espera respuesta externa (Telegram, WhatsApp o
    UI). La ejecucion se reanuda con `ResumeFromInteractionAsync` o `ResumeFromCheckpointAsync`.
+   Desde Telegram, la reanudacion (y "Reiniciar" / "Siguiente ejecucion") corre en segundo
+   plano via `ITelegramWorkDispatcher`: el bucle de updates nunca espera a un pipeline.
 10. Si un nodo `Conditional` descarta una rama, sus modulos quedan en `Skipped` y el
     resto del grafo sigue con normalidad (ver "Modulo Condicional" mas abajo).
 11. Al terminar todos los nodos, la ejecucion queda en `Completed`, `Failed` o `Cancelled`.
