@@ -91,6 +91,13 @@ Su `Program.cs` configura:
 - `ApiClient` para acceso HTTP.
 - `AuthStateService` para estado de sesion.
 
+Layout de la app (`MainLayout` + `NavMenu`): barra lateral fija en escritorio.
+Por debajo de 768px pasa a cajon que se abre desde una cabecera superior y se
+cierra al navegar; los ajustes de pantallas pequenas (cabeceras apiladas,
+tablas con desplazamiento horizontal, lienzo del pipeline con el inspector
+debajo y modales como hoja inferior) estan agrupados al final de
+`wwwroot/css/app.css`.
+
 Rutas actuales:
 
 - `/`: portada comercial publica (`Pages/Landing.razor`, layout
