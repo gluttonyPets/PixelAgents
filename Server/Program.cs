@@ -101,6 +101,8 @@ builder.Services.AddHttpClient<Server.Services.Instagram.BufferService>();
 builder.Services.AddSingleton<Server.Services.Instagram.BufferImagePoolService>();
 builder.Services.AddHttpClient<Server.Services.Canva.CanvaService>();
 builder.Services.AddScoped<Server.Services.Telegram.TelegramUpdateHandler>();
+// Lo que ejecuta un pipeline desde Telegram corre fuera del bucle de updates.
+builder.Services.AddSingleton<Server.Services.Telegram.ITelegramWorkDispatcher, Server.Services.Telegram.BackgroundTelegramWorkDispatcher>();
 builder.Services.AddHostedService<Server.Services.Telegram.TelegramPollingService>();
 builder.Services.AddHostedService<Server.Services.Scheduler.SchedulerBackgroundService>();
 builder.Services.AddHostedService<Server.Services.Scheduler.StaleInteractionResumeService>();

@@ -24,6 +24,7 @@ histórica, no documentación viva del sistema.
 | [`SHOPIFY_HANDLE_DUPLICADO.md`](SHOPIFY_HANDLE_DUPLICADO.md) | Shopify rechazaba el artículo con "Handle has already been taken" al repetirse el slug; ahora se reintenta con sufijo (`-2`, `-3`, fecha) y solo se avisa en el log. |
 | [`IMAGEN_MULTIPLE_N.md`](IMAGEN_MULTIPLE_N.md) | Un modulo de imagen con varias salidas devolvia la misma composicion repetida: `n` son muestras del mismo prompt, no partes. Ahora se reparte el texto por escenas y se hace una llamada por imagen. |
 | [`TELEGRAM_INTERACCIONES_SOLAPADAS.md`](TELEGRAM_INTERACCIONES_SOLAPADAS.md) | Con dos pipelines esperando en el mismo chat, la respuesta a uno reanudaba el otro: ahora cada interacción lleva token en los botones, se correlaciona por cita o por hilo y, si hay duda, el bot pregunta. |
+| [`TELEGRAM_CONTINUAR_ESPERANDO.md`](TELEGRAM_CONTINUAR_ESPERANDO.md) | Tras pulsar "Continuar" la ejecución seguía en "Esperando": el pipeline reanudado corría dentro del bucle de Telegram y bloqueaba el resto de botones; si la reanudación fallaba, la pregunta quedaba cerrada sin botones. Ahora corre en segundo plano y un fallo antes de arrancar reabre la pregunta. |
 | [`REGLAS_CONFIG_VACIA.md`](REGLAS_CONFIG_VACIA.md) | Los modulos ensenaban "Reglas activas" y Configuracion -> Reglas salia vacia: son las reglas integradas del producto, no filas de la BD del tenant. Ahora se listan alli y un fallo de carga ya no se confunde con "sin reglas". |
 
 ## Convención
