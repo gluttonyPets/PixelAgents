@@ -34,6 +34,29 @@ de `StaleInteractionResumeService`.
   no espera), solo se avisa del error.
 - `StaleInteractionResumeService` se mantiene como red para reinicios del servidor.
 
+### Segunda parte: el clic no llegaba a su pregunta (2026-11-22)
+
+Con lo anterior desplegado seguía pasando: el log de ejecución acababa en el `step-start` de
+la Interacción y la pasada de las 09:00 no la rescataba, señal de que la correlación seguía
+abierta, es decir, el clic nunca se emparejó. Vías cerradas:
+
+- **Chat guardado distinto del que manda Telegram.** La correlación guardaba el `ChatId` de
+  la conexión tal cual (puede ser `@canal`), y el clic llega con el id numérico. Ahora la
+  correlación guarda el id numérico (`TelegramService.ResolveNumericChatIdAsync`, con
+  `getChat` y caché) y un botón con token se busca por token en cualquier chat (las
+  correlaciones antiguas se corrigen al primer clic). El aviso de "interacción cerrada"
+  también busca por token.
+- **Webhook activo en modo polling.** Con un webhook registrado, `getUpdates` responde 409 y
+  no entrega nada. `TelegramPollingService` lo elimina al ver ese 409, y
+  `EnsureTelegramWebhookAsync` ya no intenta registrar uno con una URL http (Telegram exige
+  HTTPS), sino que lo borra.
+- **Offsets del polling.** Cada bot se sondea en paralelo y todos escribían en un
+  `Dictionary` normal; ahora es `ConcurrentDictionary`.
+- **Trazas en el log de ejecución.** `[Telegram] Pregunta #TOKEN enviada…` (o "en cola") y
+  `[Telegram] Respuesta recibida…`: si un log acaba tras "enviada" sin "recibida", el clic
+  no llegó al servidor o no casó; mirar `[TG-Update]` / `[TG-Polling]` en el log del
+  contenedor.
+
 ## Verificación
 
 `Server.Tests/HilosTelegram/ContinuarEnSegundoPlanoTests.cs`:
@@ -42,5 +65,9 @@ de `StaleInteractionResumeService`.
   trabajo, reanuda esa ejecución y envía la siguiente interacción en cola;
 - un fallo antes de arrancar reabre la pregunta y reenvía los botones;
 - un fallo a mitad del pipeline no la reabre.
+
+`Server.Tests/HilosTelegram/ClicConChatDistintoTests.cs`: un botón con token reanuda aunque la
+correlación guarde `@canal` y se queda con el id numérico; un id numérico no llama a Telegram
+y un `@canal` se resuelve con `getChat`.
 
 Sin dispatcher inyectado, el handler ejecuta el trabajo en línea (lo usan los tests existentes).

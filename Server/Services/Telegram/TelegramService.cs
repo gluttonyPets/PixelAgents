@@ -38,6 +38,9 @@ namespace Server.Services.Telegram
         // en cada interaccion. Compartida por proceso, clave botToken:chatId.
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> ForumChatCache = new();
 
+        // Cache del id numerico de un chat configurado por @nombre (botToken:chatId).
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> NumericChatIdCache = new();
+
         public TelegramService(HttpClient http)
         {
             _http = http;
@@ -165,6 +168,44 @@ namespace Server.Services.Telegram
 
             ForumChatCache[cacheKey] = isForum;
             return isForum;
+        }
+
+        /// <summary>
+        /// Id numerico del chat. Telegram manda siempre el numerico en los updates (tambien al
+        /// pulsar un boton), pero la conexion se puede configurar con "@canal": comparados tal
+        /// cual nunca coinciden y la respuesta del usuario no se atribuia a su pregunta.
+        /// Si ya es numerico se devuelve sin llamar a Telegram; si getChat falla, el original.
+        /// </summary>
+        public async Task<string> ResolveNumericChatIdAsync(string botToken, string chatId)
+        {
+            var trimmed = chatId.Trim();
+            if (long.TryParse(trimmed, out _))
+                return trimmed;
+
+            var cacheKey = $"{botToken}:{trimmed}";
+            if (NumericChatIdCache.TryGetValue(cacheKey, out var cached))
+                return cached;
+
+            try
+            {
+                var url = $"{ApiBase}/bot{botToken}/getChat?chat_id={Uri.EscapeDataString(trimmed)}";
+                var response = await _http.GetAsync(url);
+                await EnsureSuccessAsync(response);
+                var root = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+                if (root.TryGetProperty("result", out var result)
+                    && result.TryGetProperty("id", out var idProp)
+                    && idProp.ValueKind == JsonValueKind.Number)
+                {
+                    var numeric = idProp.GetRawText();
+                    NumericChatIdCache[cacheKey] = numeric;
+                    return numeric;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TG] No se pudo resolver el id numerico de {trimmed}: {ex.Message}");
+            }
+            return trimmed;
         }
 
         /// <summary>

@@ -4382,7 +4382,10 @@ async Task EnsureTelegramWebhookAsync(Server.Services.Telegram.TelegramService t
         ?? "";
     try
     {
-        if (string.IsNullOrWhiteSpace(baseUrl))
+        // Telegram solo acepta webhooks HTTPS: con http el setWebhook fallaba y se funciona
+        // por polling, que necesita que no haya ningun webhook registrado.
+        if (string.IsNullOrWhiteSpace(baseUrl)
+            || !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             await telegram.DeleteWebhookAsync(botToken);
         else
             await telegram.SetWebhookAsync(botToken, $"{baseUrl.TrimEnd('/')}/api/webhooks/telegram");

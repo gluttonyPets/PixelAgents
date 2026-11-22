@@ -79,7 +79,9 @@ namespace Server.Services.Telegram
             }
         }
 
-        private readonly Dictionary<string, long> _offsets = new();
+        // Concurrente: cada bot se sondea en su propia tarea y todas escriben aqui a la vez.
+        // Con un Dictionary normal las escrituras simultaneas pueden corromperlo.
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _offsets = new();
 
         private async Task PollBotAsync(string botToken, CancellationToken ct)
         {
@@ -97,6 +99,26 @@ namespace Server.Services.Telegram
                 {
                     var errorBody = await response.Content.ReadAsStringAsync(ct);
                     _logger.LogWarning("[TG-Polling] getUpdates failed: {Status} {Body}", (int)response.StatusCode, errorBody);
+
+                    // 409 con un webhook activo: Telegram no entrega nada por getUpdates hasta que
+                    // se quite, asi que los botones no llegaban nunca. En modo polling el webhook
+                    // no sirve (no hay HTTPS), se elimina.
+                    if ((int)response.StatusCode == 409
+                        && errorBody.Contains("webhook", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            var telegram = scope.ServiceProvider.GetRequiredService<TelegramService>();
+                            await telegram.DeleteWebhookAsync(botToken);
+                            _logger.LogWarning("[TG-Polling] Webhook activo eliminado para poder recibir updates por polling");
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "[TG-Polling] No se pudo eliminar el webhook");
+                        }
+                    }
+
                     await Task.Delay(5000, ct);
                     return;
                 }
@@ -131,9 +153,6 @@ namespace Server.Services.Telegram
                 }
 
                 _offsets[botToken] = offset;
-
-                // Also remove webhook for this bot token to avoid conflicts
-                // (only need to do this once, but it's idempotent)
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {

@@ -229,6 +229,10 @@ public class GraphPipelineExecutor : IPipelineExecutor
         if (node is null)
             throw new InvalidOperationException("Modulo pausado no encontrado");
 
+        await _logger.LogAsync(project.Id, executionId, "info",
+            $"[Telegram] Respuesta recibida: {Truncate(responseText, 200)}; reanudando",
+            node.ModuleId, node.ProjectModule.StepName ?? node.AiModule.Name);
+
         var step = await GetPausedStepAsync(executionId, node.ModuleId, db, ct);
         var pausedOutput = node.Output;
         var output = new StepOutput
@@ -1802,13 +1806,16 @@ public class GraphPipelineExecutor : IPipelineExecutor
             var threadId = await EnsureExecutionThreadAsync(config, execution.Id, BuildTopicName(project, execution));
             config.MessageThreadId = threadId;
 
+            // Se guarda el id numerico: es el que trae Telegram al responder o pulsar un boton.
+            var correlationChatId = await _telegram.ResolveNumericChatIdAsync(config.BotToken, config.ChatId);
+
             var correlation = new TelegramCorrelation
             {
                 Id = Guid.NewGuid(),
                 ExecutionId = execution.Id,
                 ProjectModuleId = node.ModuleId,
                 TenantDbName = tenantDbName,
-                ChatId = config.ChatId,
+                ChatId = correlationChatId,
                 CreatedAt = DateTime.UtcNow,
                 IsResolved = false,
                 State = hasActive ? "queued" : "waiting",
@@ -1821,6 +1828,11 @@ public class GraphPipelineExecutor : IPipelineExecutor
             _coreDb.TelegramCorrelations.Add(correlation);
             await _coreDb.SaveChangesAsync(ct);
 
+            if (hasActive)
+                await _logger.LogAsync(project.Id, execution.Id, "info",
+                    $"[Telegram] Pregunta #{correlation.Token} en cola: se envia al responder la anterior",
+                    node.ModuleId, stepName);
+
             if (!hasActive)
             {
                 try
@@ -1831,6 +1843,9 @@ public class GraphPipelineExecutor : IPipelineExecutor
                         ControlOptions(correlation.Token));
                     await SendMediaToTelegramAsync(config, mediaFiles, workspacePath, filePaths);
                     await _coreDb.SaveChangesAsync(ct);
+                    await _logger.LogAsync(project.Id, execution.Id, "info",
+                        $"[Telegram] Pregunta #{correlation.Token} enviada al chat {correlationChatId}; esperando respuesta",
+                        node.ModuleId, stepName);
                 }
                 catch
                 {
