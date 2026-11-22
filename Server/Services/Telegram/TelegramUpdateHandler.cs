@@ -1003,6 +1003,26 @@ namespace Server.Services.Telegram
             {
                 var byToken = candidates.FirstOrDefault(c =>
                     string.Equals(c.Token, token, StringComparison.OrdinalIgnoreCase));
+
+                // El token basta para identificar la pregunta: si el chat guardado no coincide
+                // con el del update (conexion configurada como "@canal" frente al id numerico
+                // que manda Telegram), se busca por token en cualquier chat. Antes el clic se
+                // descartaba en silencio y la ejecucion se quedaba esperando.
+                if (byToken is null)
+                {
+                    byToken = await _coreDb.TelegramCorrelations
+                        .Where(c => !c.IsResolved && c.State != "queued" && c.Token == token)
+                        .OrderBy(c => c.CreatedAt)
+                        .FirstOrDefaultAsync();
+                    if (byToken is not null)
+                    {
+                        Console.WriteLine($"[TG-Update] Token {token} matched correlation {byToken.Id} in chat "
+                            + $"'{byToken.ChatId}' (update chat {chatId}); storing the update chat id");
+                        byToken.ChatId = chatId;
+                        await _coreDb.SaveChangesAsync();
+                    }
+                }
+
                 if (byToken is not null && await IsUsableAsync(byToken))
                     return new CorrelationResolution(byToken, empty, "token");
 
@@ -1227,8 +1247,9 @@ namespace Server.Services.Telegram
                 return;
 
             // Se busca tambien entre las resueltas: solo se necesita el bot token del chat.
+            // Por token y no por chat: el chat guardado puede ser "@canal".
             var any = await _coreDb.TelegramCorrelations
-                .Where(c => c.ChatId == chatId && c.Token == token)
+                .Where(c => c.Token == token)
                 .OrderByDescending(c => c.CreatedAt)
                 .FirstOrDefaultAsync();
             if (any is null) return;
